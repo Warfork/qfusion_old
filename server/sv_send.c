@@ -33,15 +33,17 @@ char sv_outputbuf[SV_OUTPUTBUF_LENGTH];
 
 void SV_FlushRedirect (int sv_redirected, char *outputbuf)
 {
+	if (sv_client->edict && (sv_client->edict->r.svflags & SVF_FAKECLIENT))
+		return;
+
 	if (sv_redirected == RD_PACKET)
 	{
 		Netchan_OutOfBandPrint (NS_SERVER, net_from, "print\n%s", outputbuf);
 	}
 	else if (sv_redirected == RD_CLIENT)
 	{
-		MSG_WriteByte (&sv_client->netchan.message, svc_print);
-		MSG_WriteByte (&sv_client->netchan.message, PRINT_HIGH);
-		MSG_WriteString (&sv_client->netchan.message, outputbuf);
+		MSG_WriteByte (&sv_client->netchan.message, svc_servercmd);
+		MSG_WriteString (&sv_client->netchan.message, va ("pr %i \"%s\"", PRINT_HIGH, outputbuf));
 	}
 }
 
@@ -69,14 +71,15 @@ void SV_ClientPrintf (client_t *cl, int level, char *fmt, ...)
 	
 	if (level < cl->messagelevel)
 		return;
-	
+	if (cl->edict && (cl->edict->r.svflags & SVF_FAKECLIENT))
+		return;
+
 	va_start (argptr, fmt);
 	vsnprintf (string, sizeof(string), fmt, argptr);
 	va_end (argptr);
 	
-	MSG_WriteByte (&cl->netchan.message, svc_print);
-	MSG_WriteByte (&cl->netchan.message, level);
-	MSG_WriteString (&cl->netchan.message, string);
+	MSG_WriteByte (&cl->netchan.message, svc_servercmd);
+	MSG_WriteString (&cl->netchan.message, va ("pr %i \"%s\"", level, string));
 }
 
 /*
@@ -123,9 +126,11 @@ void SV_BroadcastPrintf (int level, char *fmt, ...)
 			continue;
 		if (cl->state != cs_spawned)
 			continue;
-		MSG_WriteByte (&cl->netchan.message, svc_print);
-		MSG_WriteByte (&cl->netchan.message, level);
-		MSG_WriteString (&cl->netchan.message, string);
+		if (cl->edict && (cl->edict->r.svflags & SVF_FAKECLIENT))
+			continue;
+
+		MSG_WriteByte (&cl->netchan.message, svc_servercmd);
+		MSG_WriteString (&cl->netchan.message, va ("pr %i \"%s\"", level, string));
 	}
 }
 
@@ -152,7 +157,6 @@ void SV_BroadcastCommand (char *fmt, ...)
 	SV_Multicast (NULL, MULTICAST_ALL_R);
 }
 
-
 /*
 =================
 SV_Multicast
@@ -168,16 +172,18 @@ MULTICAST_PHS	send to clients potentially hearable from org
 void SV_Multicast (vec3_t origin, multicast_t to)
 {
 	client_t	*client;
-	byte		*mask;
+	qbyte		*mask;
 	int			leafnum, cluster;
 	int			j;
 	qboolean	reliable;
 	int			area1, area2;
 
-	reliable = false;
+	reliable = qfalse;
 
 	if (to != MULTICAST_ALL_R && to != MULTICAST_ALL)
 	{
+		assert (origin != NULL);
+
 		leafnum = CM_PointLeafnum (origin);
 		area1 = CM_LeafArea (leafnum);
 	}
@@ -194,14 +200,14 @@ void SV_Multicast (vec3_t origin, multicast_t to)
 	switch (to)
 	{
 	case MULTICAST_ALL_R:
-		reliable = true;	// intentional fallthrough
+		reliable = qtrue;	// intentional fallthrough
 	case MULTICAST_ALL:
 		leafnum = 0;
 		mask = NULL;
 		break;
 
 	case MULTICAST_PHS_R:
-		reliable = true;	// intentional fallthrough
+		reliable = qtrue;	// intentional fallthrough
 	case MULTICAST_PHS:
 		leafnum = CM_PointLeafnum (origin);
 		cluster = CM_LeafCluster (leafnum);
@@ -209,7 +215,7 @@ void SV_Multicast (vec3_t origin, multicast_t to)
 		break;
 
 	case MULTICAST_PVS_R:
-		reliable = true;	// intentional fallthrough
+		reliable = qtrue;	// intentional fallthrough
 	case MULTICAST_PVS:
 		leafnum = CM_PointLeafnum (origin);
 		cluster = CM_LeafCluster (leafnum);
@@ -227,6 +233,8 @@ void SV_Multicast (vec3_t origin, multicast_t to)
 		if (client->state == cs_free || client->state == cs_zombie)
 			continue;
 		if (client->state != cs_spawned && !reliable)
+			continue;
+		if (client->edict && (client->edict->r.svflags & SVF_FAKECLIENT))
 			continue;
 
 		if (mask)
@@ -278,36 +286,33 @@ or the midpoint of the entity box for bmodels.
 */  
 void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 					int soundindex, float volume,
-					float attenuation, float timeofs)
+					float attenuation)
 {       
 	int			sendchan;
     int			flags;
-    int			i;
+    int			i, v;
 	int			ent;
 	vec3_t		origin_v;
-	qboolean	use_phs, send_org = false;
+	qboolean	use_phs;
 
+	if (soundindex < 0 || soundindex >= MAX_SOUNDS)
+		Com_Error (ERR_FATAL, "SV_StartSound: soundindex = %i", soundindex);
 	if (volume < 0 || volume > 1.0)
 		Com_Error (ERR_FATAL, "SV_StartSound: volume = %f", volume);
-
 	if (attenuation < 0 || attenuation > 4)
 		Com_Error (ERR_FATAL, "SV_StartSound: attenuation = %f", attenuation);
-
 //	if (channel < 0 || channel > 15)
 //		Com_Error (ERR_FATAL, "SV_StartSound: channel = %i", channel);
-
-	if (timeofs < 0 || timeofs > 0.255)
-		Com_Error (ERR_FATAL, "SV_StartSound: timeofs = %f", timeofs);
 
 	ent = NUM_FOR_EDICT(entity);
 
 	if (channel & CHAN_NO_PHS_ADD)	// no PHS flag
 	{
-		use_phs = false;
+		use_phs = qfalse;
 		channel &= 7;
 	}
 	else
-		use_phs = true;
+		use_phs = qtrue;
 
 	sendchan = (ent<<3) | (channel&7);
 
@@ -317,27 +322,17 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 	if (attenuation != DEFAULT_SOUND_PACKET_ATTENUATION)
 		flags |= SND_ATTENUATION;
 
-	// the client doesn't know that bmodels have weird origins
-	// the origin can also be explicitly set
-	if ( (entity->svflags & SVF_NOCLIENT)
-		|| (entity->solid == SOLID_BSP) || origin ) {
-		send_org = true;
-	}
-
-	// always send the entity number for channel overrides
-	flags |= SND_ENT;
-
-	if (timeofs)
-		flags |= SND_OFFSET;
-
 	// use the entity origin unless it is a bmodel or explicitly specified
 	if (!origin)
 	{
 		origin = origin_v;
-		if (entity->solid == SOLID_BSP)
+
+		// the client doesn't know that bmodels have weird origins
+		// the origin can also be explicitly set
+		if (entity->r.solid == SOLID_BSP)
 		{
 			for (i=0 ; i<3 ; i++)
-				origin_v[i] = entity->s.origin[i]+0.5*(entity->mins[i]+entity->maxs[i]);
+				origin_v[i] = entity->s.origin[i]+0.5*(entity->r.mins[i]+entity->r.maxs[i]);
 		}
 		else
 		{
@@ -345,30 +340,52 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 		}
 	}
 
-	if (send_org)
-		flags |= SND_POS;
+	v = Q_rint(origin[0]); flags |= (SND_POS0_8|SND_POS0_16);
+	if (v+256/2 >= 0 && v+256/2 < 256) flags &= ~SND_POS0_16; else if (v+65536/2 >= 0 && v+65536/2 < 65536) flags &= ~SND_POS0_8;
+
+	v = Q_rint(origin[1]); flags |= (SND_POS1_8|SND_POS1_16);
+	if (v+256/2 >= 0 && v+256/2 < 256) flags &= ~SND_POS1_16; else if (v+65536/2 >= 0 && v+65536/2 < 65536) flags &= ~SND_POS1_8;
+
+	v = Q_rint(origin[2]); flags |= (SND_POS2_8|SND_POS2_16);
+	if (v+256/2 >= 0 && v+256/2 < 256) flags &= ~SND_POS2_16; else if (v+65536/2 >= 0 && v+65536/2 < 65536) flags &= ~SND_POS2_8;
 
 	MSG_WriteByte (&sv.multicast, svc_sound);
 	MSG_WriteByte (&sv.multicast, flags);
 	MSG_WriteByte (&sv.multicast, soundindex);
 
+	// always send the entity number for channel overrides
+	MSG_WriteShort (&sv.multicast, sendchan);
+
+	if ((flags & (SND_POS0_8|SND_POS0_16)) == SND_POS0_8)
+		MSG_WriteChar (&sv.multicast, Q_rint(origin[0]));
+	else if ((flags & (SND_POS0_8|SND_POS0_16)) == SND_POS0_16)
+		MSG_WriteShort (&sv.multicast, Q_rint(origin[0]));
+	else
+		MSG_WriteInt3 (&sv.multicast, Q_rint(origin[0]));
+
+	if ((flags & (SND_POS1_8|SND_POS1_16)) == SND_POS1_8)
+		MSG_WriteChar (&sv.multicast, Q_rint(origin[1]));
+	else if ((flags & (SND_POS1_8|SND_POS1_16)) == SND_POS1_16)
+		MSG_WriteShort (&sv.multicast, Q_rint(origin[1]));
+	else
+		MSG_WriteInt3 (&sv.multicast, Q_rint(origin[1]));
+
+	if ((flags & (SND_POS2_8|SND_POS2_16)) == SND_POS2_8)
+		MSG_WriteChar (&sv.multicast, Q_rint(origin[2]));
+	else if ((flags & (SND_POS2_8|SND_POS2_16)) == SND_POS2_16)
+		MSG_WriteShort (&sv.multicast, Q_rint(origin[2]));
+	else
+		MSG_WriteInt3 (&sv.multicast, Q_rint(origin[2]));
+
 	if (flags & SND_VOLUME)
 		MSG_WriteByte (&sv.multicast, volume*255);
 	if (flags & SND_ATTENUATION)
 		MSG_WriteByte (&sv.multicast, attenuation*64);
-	if (flags & SND_OFFSET)
-		MSG_WriteByte (&sv.multicast, timeofs*1000);
-
-	if (flags & SND_ENT)
-		MSG_WriteShort (&sv.multicast, sendchan);
-
-	if (flags & SND_POS)
-		MSG_WritePos (&sv.multicast, origin);
 
 	// if the sound doesn't attenuate,send it to everyone
 	// (global radio chatter, voiceovers, etc)
 	if (attenuation == ATTN_NONE)
-		use_phs = false;
+		use_phs = qfalse;
 
 	if (channel & CHAN_RELIABLE)
 	{
@@ -404,13 +421,13 @@ SV_SendClientDatagram
 */
 qboolean SV_SendClientDatagram (client_t *client)
 {
-	byte		msg_buf[MAX_MSGLEN];
+	qbyte		msg_buf[MAX_MSGLEN];
 	sizebuf_t	msg;
 
 	SV_BuildClientFrame (client);
 
 	SZ_Init (&msg, msg_buf, sizeof(msg_buf));
-	msg.allowoverflow = true;
+	msg.allowoverflow = qtrue;
 
 	// send over all the relevant entity_state_t
 	// and the player_state_t
@@ -438,7 +455,7 @@ qboolean SV_SendClientDatagram (client_t *client)
 	// record the size for rate estimation
 	client->message_size[sv.framenum % RATE_MESSAGES] = msg.cursize;
 
-	return true;
+	return qtrue;
 }
 
 
@@ -473,7 +490,7 @@ qboolean SV_RateDrop (client_t *c)
 
 	// never drop over the loopback
 	if (c->netchan.remote_address.type == NA_LOOPBACK)
-		return false;
+		return qfalse;
 
 	total = 0;
 
@@ -486,10 +503,10 @@ qboolean SV_RateDrop (client_t *c)
 	{
 		c->suppressCount++;
 		c->message_size[sv.framenum % RATE_MESSAGES] = 0;
-		return true;
+		return qtrue;
 	}
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -502,7 +519,7 @@ void SV_SendClientMessages (void)
 	int			i;
 	client_t	*c;
 	int			msglen;
-	byte		msgbuf[MAX_MSGLEN];
+	qbyte		msgbuf[MAX_MSGLEN];
 
 	msglen = 0;
 
@@ -529,8 +546,10 @@ void SV_SendClientMessages (void)
 				SV_DemoCompleted ();
 				return;
 			}
+
 			if (msglen > MAX_MSGLEN)
 				Com_Error (ERR_DROP, "SV_SendClientMessages: msglen > MAX_MSGLEN");
+
 			if (sv.demolen <= 0)
 			{
 				SV_DemoCompleted ();
@@ -546,6 +565,9 @@ void SV_SendClientMessages (void)
 	{
 		if (!c->state)
 			continue;
+		if (c->edict && (c->edict->r.svflags & SVF_FAKECLIENT))
+			continue;
+
 		// if the reliable message overflowed,
 		// drop the client
 		if (c->netchan.message.overflowed)
@@ -571,7 +593,7 @@ void SV_SendClientMessages (void)
 		else
 		{
 	// just update reliable	if needed
-			if (c->netchan.message.cursize	|| curtime - c->netchan.last_sent > 1000 )
+			if (c->netchan.message.cursize	|| curtime - c->netchan.last_sent > 1000)
 				Netchan_Transmit (&c->netchan, 0, NULL);
 		}
 	}

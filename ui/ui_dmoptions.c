@@ -167,17 +167,17 @@ setvalue:
 
 void DMOptions_MenuInit( void )
 {
-	static const char *yes_no_names[] =
+	static char *yes_no_names[] =
 	{
 		"no", "yes", 0
 	};
-	static const char *teamplay_names[] = 
+	static char *teamplay_names[] = 
 	{
 		"disabled", "by skin", "by model", 0
 	};
 	int dmflags = trap_Cvar_VariableValue( "dmflags" );
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	s_dmoptions_menu.x = uis.vidWidth / 2;
 	s_dmoptions_menu.nitems = 0;

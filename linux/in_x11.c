@@ -50,7 +50,7 @@ void IN_Move (usercmd_t *cmd)
 		return;
 
 	if ( cls.key_dest == key_menu ) {
-		UI_MouseMove ( mx, my );
+		CL_UIModule_MouseMove ( mx, my );
 		mx = my = 0;
 		return;
 	}
@@ -81,7 +81,7 @@ static void IN_DeactivateMouse( void )
 	if (mouse_active)
 	{
 		uninstall_grabs ();
-		mouse_active = false;
+		mouse_active = qfalse;
 	}
 }
 
@@ -94,7 +94,7 @@ static void IN_ActivateMouse( void )
 	{
 		mx = my = 0; // don't spazz
 		install_grabs ();
-		mouse_active = true;
+		mouse_active = qtrue;
 	}
 }
 
@@ -125,20 +125,20 @@ void IN_Init(void)
 	Cmd_AddCommand ("force_centerview", Force_CenterView_f);
 
 	mx = my = 0.0;
-	mouse_avail = true;
+	mouse_avail = qtrue;
 }
 
 void IN_Shutdown (void)
 {
 	if (mouse_avail)
 	{
-		mouse_avail = false;
+		mouse_avail = qfalse;
 		Cmd_RemoveCommand ("force_centerview");
 	}
 }
 
 void IN_Frame (void)
 {
-	IN_Activate (true);
+	IN_Activate (qtrue);
 	HandleEvents();
 }

@@ -68,12 +68,12 @@ static void DownloadCallback( void *self )
 
 void DownloadOptions_MenuInit( void )
 {
-	static const char *yes_no_names[] =
+	static char *yes_no_names[] =
 	{
 		"no", "yes", 0
 	};
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	s_downloadoptions_menu.x = uis.vidWidth / 2;
 	s_downloadoptions_menu.nitems = 0;

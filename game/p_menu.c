@@ -22,31 +22,32 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Note that the pmenu entries are duplicated
 // this is so that a static set of pmenu entries can be used
 // for multiple clients and changed without interference
-// note that arg will be freed when the menu is closed, it must be allocated memory
 pmenuhnd_t *PMenu_Open(edict_t *ent, pmenu_t *entries, int cur, int num, void *arg)
 {
 	pmenuhnd_t *hnd;
 	pmenu_t *p;
 	int i;
 
-	if (!ent->client)
+	if (!ent->r.client)
 		return NULL;
 
-	if (ent->client->menu) {
-		gi.dprintf("warning, ent already has a menu\n");
+	if (ent->r.client->menu) {
+		G_Printf ("warning, ent already has a menu\n");
 		PMenu_Close(ent);
 	}
 
-	hnd = G_malloc(sizeof(*hnd));
+	hnd = G_Malloc(sizeof(*hnd));
 
 	hnd->arg = arg;
-	hnd->entries = G_malloc(sizeof(pmenu_t) * num);
+	hnd->entries = G_Malloc(sizeof(pmenu_t) * num);
 	memcpy (hnd->entries, entries, sizeof(pmenu_t) * num);
 
-	// duplicate the strings since they may be from static memory
+	// duplicate the strings
 	for (i = 0; i < num; i++)
-		if (entries[i].text)
-			hnd->entries[i].text = strdup(entries[i].text);
+	{
+		if (entries[i].text && entries[i].text[0])
+			hnd->entries[i].text = G_CopyString (entries[i].text);
+	}
 
 	hnd->num = num;
 
@@ -62,12 +63,11 @@ pmenuhnd_t *PMenu_Open(edict_t *ent, pmenu_t *entries, int cur, int num, void *a
 	else
 		hnd->cur = i;
 
-	ent->client->showscores = true;
-	ent->client->inmenu = true;
-	ent->client->menu = hnd;
+	ent->r.client->showscores = qtrue;
+	ent->r.client->inmenu = qtrue;
+	ent->r.client->menu = hnd;
 
-	PMenu_Do_Update(ent);
-	gi.unicast (ent, true);
+	trap_Layout (ent, PMenu_Do_Update (ent));
 
 	return hnd;
 }
@@ -77,49 +77,51 @@ void PMenu_Close(edict_t *ent)
 	int i;
 	pmenuhnd_t *hnd;
 
-	if (!ent->client->menu)
+	if (!ent->r.client->menu)
 		return;
 
-	hnd = ent->client->menu;
+	hnd = ent->r.client->menu;
 	for (i = 0; i < hnd->num; i++)
-		G_free (hnd->entries[i].text);
+	{
+		if (hnd->entries[i].text)
+			G_Free (hnd->entries[i].text);
+	}
 
-	G_free (hnd->entries);
-	G_free (hnd->arg);
-	G_free (hnd);
+	G_Free (hnd->entries);
+	G_Free (hnd);
 
-	ent->client->menu = NULL;
-	ent->client->showscores = false;
+	ent->r.client->menu = NULL;
+	ent->r.client->showscores = qfalse;
 }
 
 // only use on pmenu's that have been called with PMenu_Open
 void PMenu_UpdateEntry(pmenu_t *entry, const char *text, int align, SelectFunc_t SelectFunc)
 {
-	G_free (entry->text);
+	G_Free (entry->text);
 
-	entry->text = strdup(text);
+	entry->text = G_CopyString ((char *)text);
 	entry->align = align;
 	entry->SelectFunc = SelectFunc;
 }
 
-void PMenu_Do_Update(edict_t *ent)
+char *PMenu_Do_Update(edict_t *ent)
 {
-	char string[1400];
+	static char string[MAX_STRING_CHARS];
 	int i;
 	pmenu_t *p;
 	int x;
 	pmenuhnd_t *hnd;
 	char *t;
-	qboolean alt = false;
+	qboolean alt = qfalse;
 
-	if (!ent->client->menu) {
-		gi.dprintf("warning:  ent has no menu\n");
-		return;
+	if (!ent->r.client->menu) {
+		G_Printf ("warning:  ent has no menu\n");
+		return NULL;
 	}
 
-	hnd = ent->client->menu;
+	hnd = ent->r.client->menu;
 
-	strcpy (string, "xv 32 yv 8 picn inventory ");
+	strcpy (string, "size 256 192 xv 32 yv 8 picn inventory ");
 
 	for (i = 0, p = hnd->entries; i < hnd->num; i++, p++) {
 		if (!p->text || !*(p->text))
@@ -127,11 +129,11 @@ void PMenu_Do_Update(edict_t *ent)
 
 		t = p->text;
 		if (*t == '*') {
-			alt = true;
+			alt = qtrue;
 			t++;
 		}
 
-		sprintf (string + strlen(string), "yv %d ", 32 + i * SMALL_CHAR_HEIGHT);
+		sprintf (string + strlen(string), "yv %d ", 32 + i * 16);
 		if (p->align == PMENU_ALIGN_CENTER)
 			x = 196/2 - strlen(t)*4 + 64;
 		else if (p->align == PMENU_ALIGN_RIGHT)
@@ -148,30 +150,28 @@ void PMenu_Do_Update(edict_t *ent)
 			sprintf(string + strlen(string), "string \"%s%s\" ", S_COLOR_YELLOW, t);
 		else
 			sprintf(string + strlen(string), "string \"%s\" ", t);
-		alt = false;
+		alt = qfalse;
 	}
 
-	gi.WriteByte (svc_layout);
-	gi.WriteString (string);
+	return string;
 }
 
 void PMenu_Update(edict_t *ent)
 {
-	if (!ent->client->menu) {
-		gi.dprintf("warning:  ent has no menu\n");
+	if (!ent->r.client->menu) {
+		G_Printf ("warning:  ent has no menu\n");
 		return;
 	}
 
-	if (level.time - ent->client->menutime >= 1.0) {
+	if (level.time - ent->r.client->menutime >= 1.0) {
 		// been a second or more since last update, update now
-		PMenu_Do_Update(ent);
-		gi.unicast (ent, true);
-		ent->client->menutime = level.time;
-		ent->client->menudirty = false;
+		PMenu_Do_Update (ent);
+		ent->r.client->menutime = level.time;
+		ent->r.client->menudirty = qfalse;
 	}
 
-	ent->client->menutime = level.time + 0.2;
-	ent->client->menudirty = true;
+	ent->r.client->menutime = level.time + 0.2;
+	ent->r.client->menudirty = qtrue;
 }
 
 void PMenu_Next(edict_t *ent)
@@ -180,12 +180,12 @@ void PMenu_Next(edict_t *ent)
 	int i;
 	pmenu_t *p;
 
-	if (!ent->client->menu) {
-		gi.dprintf("warning:  ent has no menu\n");
+	if (!ent->r.client->menu) {
+		G_Printf ("warning:  ent has no menu\n");
 		return;
 	}
 
-	hnd = ent->client->menu;
+	hnd = ent->r.client->menu;
 
 	if (hnd->cur < 0)
 		return; // no selectable entries
@@ -211,12 +211,12 @@ void PMenu_Prev(edict_t *ent)
 	int i;
 	pmenu_t *p;
 
-	if (!ent->client->menu) {
-		gi.dprintf("warning:  ent has no menu\n");
+	if (!ent->r.client->menu) {
+		G_Printf ("warning:  ent has no menu\n");
 		return;
 	}
 
-	hnd = ent->client->menu;
+	hnd = ent->r.client->menu;
 
 	if (hnd->cur < 0)
 		return; // no selectable entries
@@ -243,12 +243,12 @@ void PMenu_Select(edict_t *ent)
 	pmenuhnd_t *hnd;
 	pmenu_t *p;
 
-	if (!ent->client->menu) {
-		gi.dprintf("warning:  ent has no menu\n");
+	if (!ent->r.client->menu) {
+		G_Printf ("warning:  ent has no menu\n");
 		return;
 	}
 
-	hnd = ent->client->menu;
+	hnd = ent->r.client->menu;
 
 	if (hnd->cur < 0)
 		return; // no selectable entries

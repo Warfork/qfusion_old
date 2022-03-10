@@ -19,7 +19,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "r_local.h"
-#include "jpeglib.h"
+#ifdef HAS_LIBJPEG
+# include <jpeglib.h>
+#else
+# include "jpeglib.h"
+#endif
 
 image_t		gltextures[MAX_GLTEXTURES];
 int			numgltextures;
@@ -28,14 +32,14 @@ int			gl_maxtexsize;
 
 unsigned	d_8to24table[256];
 
-void GL_Upload8 ( byte *data, int width, int height, int flags );
+void GL_Upload8 ( qbyte *data, int width, int height, int flags );
 void GL_Upload32 ( unsigned *data, int width, int height, int flags );
 
 int		gl_filter_min = GL_LINEAR_MIPMAP_NEAREST;
 int		gl_filter_max = GL_LINEAR;
 
 
-byte	default_pal[] = 
+qbyte	default_pal[] = 
 {
 #include "def_pal.dat"
 };
@@ -87,12 +91,10 @@ void GL_SelectTexture( GLenum texture )
 
 void GL_TexEnv( GLenum mode )
 {
-	static int lastmodes[2] = { -1, -1 };
-
-	if ( mode != lastmodes[gl_state.currenttmu] )
+	if ( mode != gl_state.lasttmumodes[gl_state.currenttmu] )
 	{
 		qglTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, mode );
-		lastmodes[gl_state.currenttmu] = mode;
+		gl_state.lasttmumodes[gl_state.currenttmu] = mode;
 	}
 }
 
@@ -100,7 +102,7 @@ void GL_Bind (int texnum)
 {
 	if (r_nobind->value)		// performance evaluation option
 		texnum = r_notexture->texnum;
-	if ( gl_state.currenttextures[gl_state.currenttmu] == texnum)
+	if (gl_state.currenttextures[gl_state.currenttmu] == texnum)
 		return;
 	gl_state.currenttextures[gl_state.currenttmu] = texnum;
 	qglBindTexture (GL_TEXTURE_2D, texnum);
@@ -109,10 +111,6 @@ void GL_Bind (int texnum)
 void GL_MBind( GLenum target, int texnum )
 {
 	GL_SelectTexture( target );
-
-	if ( gl_state.currenttextures[texnum-GL_TEXTURE_0] == texnum )
-		return;
-
 	GL_Bind( texnum );
 }
 
@@ -161,10 +159,19 @@ void GL_TextureMode( char *string )
 	// change all the existing mipmap texture objects
 	for (i=0, glt=gltextures ; i<numgltextures ; i++, glt++)
 	{
+		if (!glt->registration_sequence)
+			continue;		// free image_t slot
+
+		GL_Bind (glt->texnum);
+
 		if ( !(glt->flags & IT_NOMIPMAP) )
 		{
-			GL_Bind (glt->texnum);
 			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
+			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+		}
+		else
+		{
+			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
 			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
 		}
 	}
@@ -227,14 +234,14 @@ typedef struct
 LoadPCX
 ==============
 */
-void LoadPCX (char *filename, byte **pic, byte **palette, int *width, int *height)
+void LoadPCX (char *filename, qbyte **pic, qbyte **palette, int *width, int *height)
 {
-	byte	*raw;
+	qbyte	*raw;
 	pcx_t	*pcx;
 	int		x, y;
 	int		len;
 	int		dataByte, runLength;
-	byte	*out, *pix;
+	qbyte	*out, *pix;
 
 	*pic = NULL;
 	*palette = NULL;
@@ -277,7 +284,7 @@ void LoadPCX (char *filename, byte **pic, byte **palette, int *width, int *heigh
 		return;
 	}
 
-	out = Q_malloc ( (pcx->ymax+1) * (pcx->xmax+1) );
+	out = Mem_TempMalloc ( (pcx->ymax+1) * (pcx->xmax+1) );
 
 	*pic = out;
 
@@ -285,8 +292,8 @@ void LoadPCX (char *filename, byte **pic, byte **palette, int *width, int *heigh
 
 	if (palette)
 	{
-		*palette = Q_malloc(768);
-		memcpy (*palette, (byte *)pcx + len - 768, 768);
+		*palette = Mem_TempMalloc (768);
+		memcpy (*palette, (qbyte *)pcx + len - 768, 768);
 	}
 
 	if (width)
@@ -314,10 +321,16 @@ void LoadPCX (char *filename, byte **pic, byte **palette, int *width, int *heigh
 
 	}
 
-	if ( raw - (byte *)pcx > len)
+	if ( raw - (qbyte *)pcx > len)
 	{
 		Com_DPrintf ("PCX file %s was malformed", filename);
-		Q_free (*pic);
+		if (palette)
+		{
+			Mem_TempFree (*palette);
+			*palette = NULL;
+		}
+
+		Mem_TempFree (*pic);
 		*pic = NULL;
 	}
 
@@ -346,17 +359,17 @@ typedef struct _TargaHeader {
 LoadTGA
 =============
 */
-void LoadTGA (char *name, byte **pic, int *width, int *height)
+void LoadTGA (char *name, qbyte **pic, int *width, int *height)
 {
 	int		columns, rows, numPixels, row_inc;
-	byte	*pixbuf;
+	qbyte	*pixbuf;
 	int		row, column;
-	byte	*buf_p;
-	byte	*buffer;
+	qbyte	*buf_p;
+	qbyte	*buffer;
 	int		length;
-	TargaHeader		targa_header;
-	byte			*targa_rgba;
-	byte tmp[2];
+	TargaHeader	targa_header;
+	qbyte		*targa_rgba;
+	qbyte tmp[2];
 
 	*pic = NULL;
 
@@ -414,7 +427,7 @@ void LoadTGA (char *name, byte **pic, int *width, int *height)
 	if (height)
 		*height = rows;
 
-	targa_rgba = Q_malloc (numPixels*4);
+	targa_rgba = Mem_TempMalloc (numPixels*4);
 	*pic = targa_rgba;
 
 	if (targa_header.id_length != 0)
@@ -561,7 +574,7 @@ static void jpg_noop(j_decompress_ptr cinfo)
 static boolean jpg_fill_input_buffer(j_decompress_ptr cinfo)
 {
     Com_DPrintf ("Premeture end of jpeg file\n");
-    return true;
+    return 1;
 }
 
 static void jpg_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
@@ -573,7 +586,7 @@ static void jpg_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
 		Com_DPrintf ("Premeture end of jpeg file\n");
 }
 
-static void jpeg_mem_src(j_decompress_ptr cinfo, byte *mem, int len)
+static void jpeg_mem_src(j_decompress_ptr cinfo, qbyte *mem, int len)
 {
     cinfo->src = (struct jpeg_source_mgr *)
 	(*cinfo->mem->alloc_small)((j_common_ptr) cinfo,
@@ -588,11 +601,11 @@ static void jpeg_mem_src(j_decompress_ptr cinfo, byte *mem, int len)
     cinfo->src->next_input_byte = mem;
 }
 
-void LoadJPG (char *name, byte **pic, int *width, int *height)
+void LoadJPG (char *name, qbyte **pic, int *width, int *height)
 {
     struct jpeg_decompress_struct cinfo;
     struct jpeg_error_mgr jerr;
-    byte *img, *c, *buffer, *dummy;
+    qbyte *img, *c, *buffer, *dummy;
     int i, length, b;
 
 	*pic = NULL;
@@ -620,10 +633,11 @@ void LoadJPG (char *name, byte **pic, int *width, int *height)
 		return;
 	}
 
-	img = *pic = Q_malloc (cinfo.output_width * cinfo.output_height * 4);
+	img = *pic = Mem_TempMalloc (cinfo.output_width * cinfo.output_height * 4);
 
 	if ( cinfo.output_components == 1 ) {
-		dummy = c = Q_malloc (cinfo.output_width * cinfo.output_height);
+		dummy = c = Mem_TempMalloc (cinfo.output_width * cinfo.output_height);
+
 		while (cinfo.output_scanline < cinfo.output_height)
 		{
 			jpeg_read_scanlines (&cinfo, &c, 1);
@@ -638,7 +652,8 @@ void LoadJPG (char *name, byte **pic, int *width, int *height)
 			}
 		}
 	} else {
-		dummy = c = Q_malloc (cinfo.output_width * cinfo.output_height * 3);
+		dummy = c = Mem_TempMalloc (cinfo.output_width * cinfo.output_height * 3);
+
 		while (cinfo.output_scanline < cinfo.output_height)
 		{
 			jpeg_read_scanlines (&cinfo, &c, 1);
@@ -660,13 +675,13 @@ void LoadJPG (char *name, byte **pic, int *width, int *height)
     jpeg_finish_decompress (&cinfo);
     jpeg_destroy_decompress (&cinfo);
 
-    Q_free (dummy);
+    Mem_TempFree (dummy);
 	FS_FreeFile (buffer);
 }
 
 //=======================================================
 
-void R_ResampleTextureLerpLine (byte *in, byte *out, int inwidth, int outwidth)
+void R_ResampleTextureLerpLine (qbyte *in, qbyte *out, int inwidth, int outwidth)
 {
 	int		j, xi, oldx = 0, f, fstep, endx;
 
@@ -686,10 +701,10 @@ void R_ResampleTextureLerpLine (byte *in, byte *out, int inwidth, int outwidth)
 		if (xi < endx)
 		{
 			int lerp = f & 0xFFFF;
-			*out++ = (byte) ((((in[4] - in[0]) * lerp) >> 16) + in[0]);
-			*out++ = (byte) ((((in[5] - in[1]) * lerp) >> 16) + in[1]);
-			*out++ = (byte) ((((in[6] - in[2]) * lerp) >> 16) + in[2]);
-			*out++ = (byte) ((((in[7] - in[3]) * lerp) >> 16) + in[3]);
+			*out++ = (qbyte) ((((in[4] - in[0]) * lerp) >> 16) + in[0]);
+			*out++ = (qbyte) ((((in[5] - in[1]) * lerp) >> 16) + in[1]);
+			*out++ = (qbyte) ((((in[6] - in[2]) * lerp) >> 16) + in[2]);
+			*out++ = (qbyte) ((((in[7] - in[3]) * lerp) >> 16) + in[3]);
 		}
 		else // last pixel of the line has no pixel to lerp to
 		{
@@ -709,13 +724,13 @@ GL_ResampleTexture
 void GL_ResampleTexture (unsigned *indata, int inwidth, int inheight, unsigned *outdata, int outwidth, int outheight)
 {
 	int		i, j, yi, oldy, f, fstep, endy = inheight - 1;
-	byte	*inrow, *out, *row1, *row2;
-	out = (byte *) outdata;
+	qbyte	*inrow, *out, *row1, *row2;
+	out = (qbyte *) outdata;
 	fstep = (int) (inheight*65536.0f/outheight);
 	
-	row1 = Q_malloc (outwidth*4);
-	row2 = Q_malloc (outwidth*4);
-	inrow = (byte *) indata;
+	row1 = Mem_TempMalloc (outwidth*4);
+	row2 = Mem_TempMalloc (outwidth*4);
+	inrow = (qbyte *) indata;
 	oldy = 0;
 
 	R_ResampleTextureLerpLine (inrow, row1, inwidth, outwidth);
@@ -731,7 +746,7 @@ void GL_ResampleTexture (unsigned *indata, int inwidth, int inheight, unsigned *
 
 			if (yi != oldy)
 			{
-				inrow = (byte *)indata + inwidth*4*yi;
+				inrow = (qbyte *)indata + inwidth*4*yi;
 
 				if (yi == oldy+1)
 					memcpy (row1, row2, outwidth*4);
@@ -744,10 +759,10 @@ void GL_ResampleTexture (unsigned *indata, int inwidth, int inheight, unsigned *
 
 			for (j = outwidth; j; j--)
 			{
-				out[0] = (byte) ((((row2[0] - row1[0]) * lerp) >> 16) + row1[0]);
-				out[1] = (byte) ((((row2[1] - row1[1]) * lerp) >> 16) + row1[1]);
-				out[2] = (byte) ((((row2[2] - row1[2]) * lerp) >> 16) + row1[2]);
-				out[3] = (byte) ((((row2[3] - row1[3]) * lerp) >> 16) + row1[3]);
+				out[0] = (qbyte) ((((row2[0] - row1[0]) * lerp) >> 16) + row1[0]);
+				out[1] = (qbyte) ((((row2[1] - row1[1]) * lerp) >> 16) + row1[1]);
+				out[2] = (qbyte) ((((row2[2] - row1[2]) * lerp) >> 16) + row1[2]);
+				out[3] = (qbyte) ((((row2[3] - row1[3]) * lerp) >> 16) + row1[3]);
 				out += 4;
 				row1 += 4;
 				row2 += 4;
@@ -760,7 +775,7 @@ void GL_ResampleTexture (unsigned *indata, int inwidth, int inheight, unsigned *
 		{
 			if (yi != oldy)
 			{
-				inrow = (byte *)indata + inwidth*4*yi;
+				inrow = (qbyte *)indata + inwidth*4*yi;
 
 				if (yi == oldy+1)
 					memcpy (row1, row2, outwidth*4);
@@ -774,8 +789,8 @@ void GL_ResampleTexture (unsigned *indata, int inwidth, int inheight, unsigned *
 		}
 	}
 
-	Q_free (row1);
-	Q_free (row2);
+	Mem_TempFree (row1);
+	Mem_TempFree (row2);
 }
 
 /*
@@ -785,10 +800,10 @@ GL_MipMap
 Operates in place, quartering the size of the texture
 ================
 */
-void GL_MipMap (byte *in, int width, int height)
+void GL_MipMap (qbyte *in, int width, int height)
 {
 	int		i, j;
-	byte	*out;
+	qbyte	*out;
 
 	width <<=2;
 	height >>= 1;
@@ -817,7 +832,7 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 	unsigned	*scaled;
 	int			scaled_width, scaled_height;
 	int			i, c;
-	byte		*scan;
+	qbyte		*scan;
 	int			comp;
 
 	for (scaled_width = 1 ; scaled_width < width ; scaled_width<<=1)
@@ -850,11 +865,11 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 	if (scaled_width * scaled_height > gl_maxtexsize*gl_maxtexsize)
 		Com_Error (ERR_DROP, "GL_Upload32: too big");
 
-	scaled = (unsigned *)Q_malloc(scaled_width*scaled_height*4);
+	scaled = (unsigned *)Mem_TempMalloc(scaled_width*scaled_height*4);
 
 	// scan the texture for any non-255 alpha
 	c = width*height;
-	scan = ((byte *)data) + 3;
+	scan = ((qbyte *)data) + 3;
 	samples = 3;
 	for (i=0 ; i<c ; i++, scan += 4)
 	{
@@ -901,6 +916,38 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 		}
 	}
 
+	if (!(flags & IT_NOMIPMAP))
+	{
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+	}
+	else
+	{
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+	}
+
+	if ( gl_config.texture_filter_anisotropic ) {
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 
+			min (gl_ext_texture_filter_anisotropic->value, gl_config.max_texture_filter_anisotropic));
+	}
+	
+	if (flags & IT_CLAMP)
+	{
+		if ( gl_config.texture_edge_clamp ) {
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		} else {
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		}
+	}
+	else
+	{
+		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	}
+
 	if (scaled_width == width && scaled_height == height)
 	{
 		if (flags & IT_NOMIPMAP)
@@ -915,7 +962,7 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 		GL_ResampleTexture (data, width, height, scaled, scaled_width, scaled_height);
 
 	if ( !(flags & IT_NOMIPMAP) && gl_config.sgis_mipmap ) {
-		qglTexParameteri( GL_TEXTURE_2D, GL_GENERATE_MIPMAP_SGIS, true );
+		qglTexParameteri( GL_TEXTURE_2D, GL_GENERATE_MIPMAP_SGIS, qtrue );
 		qglTexImage2D( GL_TEXTURE_2D, 0, comp, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaled );
 	} else {
 		qglTexImage2D( GL_TEXTURE_2D, 0, comp, scaled_width, scaled_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, scaled );
@@ -927,7 +974,7 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 			miplevel = 0;
 			while (scaled_width > 1 || scaled_height > 1)
 			{
-				GL_MipMap ((byte *)scaled, scaled_width, scaled_height);
+				GL_MipMap ((qbyte *)scaled, scaled_width, scaled_height);
 				scaled_width >>= 1;
 				scaled_height >>= 1;
 				if (scaled_width < 1)
@@ -942,29 +989,7 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 
 done: ;
 
-	if (!(flags & IT_NOMIPMAP))
-	{
-		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
-		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
-	}
-	else
-	{
-		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
-		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
-	}
-
-	if (flags & IT_CLAMP)
-	{
-		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
-	}
-	else
-	{
-		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-	}
-
-	Q_free ( scaled );
+	Mem_TempFree ( scaled );
 }
 
 /*
@@ -972,7 +997,7 @@ done: ;
 GL_Upload8
 ===============
 */
-void GL_Upload8 (byte *data, int width, int height, int flags )
+void GL_Upload8 (qbyte *data, int width, int height, int flags )
 {
 	unsigned	trans[512*256];
 	int			i, s;
@@ -1004,9 +1029,9 @@ void GL_Upload8 (byte *data, int width, int height, int flags )
 				p = 0;
 
 			// copy rgb components
-			((byte *)&trans[i])[0] = ((byte *)&d_8to24table[p])[0];
-			((byte *)&trans[i])[1] = ((byte *)&d_8to24table[p])[1];
-			((byte *)&trans[i])[2] = ((byte *)&d_8to24table[p])[2];
+			((qbyte *)&trans[i])[0] = ((qbyte *)&d_8to24table[p])[0];
+			((qbyte *)&trans[i])[1] = ((qbyte *)&d_8to24table[p])[1];
+			((qbyte *)&trans[i])[2] = ((qbyte *)&d_8to24table[p])[2];
 		}
 	}
 	
@@ -1021,7 +1046,7 @@ GL_LoadPic
 This is also used as an entry point for the generated r_notexture
 ================
 */
-image_t *GL_LoadPic (char *name, byte *pic, int width, int height, int flags, int bits)
+image_t *GL_LoadPic (char *name, qbyte *pic, int width, int height, int flags, int bits)
 {
 	image_t		*image = NULL;
 	int			i;
@@ -1062,13 +1087,23 @@ image_t *GL_LoadPic (char *name, byte *pic, int width, int height, int flags, in
 		image->upload_width = upload_width;		// after power of 2 and scales
 		image->upload_height = upload_height;
 	} else {
-		qglTexImage2D (GL_TEXTURE_2D, 0, GL_ALPHA, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, pic);
-		
 		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
 		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
-		
-		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+		if ( gl_config.texture_filter_anisotropic ) {
+			qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, 
+				min (gl_ext_texture_filter_anisotropic->value, gl_config.max_texture_filter_anisotropic));
+		}
+
+		if ( gl_config.texture_edge_clamp ) {
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		} else {
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+			qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+		}
+
+		qglTexImage2D (GL_TEXTURE_2D, 0, GL_ALPHA, width, height, 0, GL_ALPHA, GL_UNSIGNED_BYTE, pic);
 
 		image->upload_width = width;
 		image->upload_height = height;
@@ -1123,7 +1158,7 @@ image_t	*GL_LoadImage (char *name, int flags)
 {
 	image_t	*image;
 	int		i, len;
-	byte	*pic, *palette;
+	qbyte	*pic, *palette;
 	int		width, height;
 	char	tempname[MAX_QPATH-4], newname[MAX_QPATH];
 
@@ -1178,8 +1213,12 @@ image_t	*GL_LoadImage (char *name, int flags)
 	}
 
 freetrash:
-	Q_free (pic);
-	Q_free (palette);
+	if ( pic ) {
+		Mem_TempFree ( pic );
+	}
+	if ( palette ) {
+		Mem_TempFree ( palette );
+	}
 
 	return image;
 }
@@ -1227,7 +1266,7 @@ void GL_GetPalette (void)
 	int		i;
 	int		r, g, b;
 	unsigned	v;
-	byte	*pic, *pal;
+	qbyte	*pic, *pal;
 	int		width, height;
 
 	// get the palette
@@ -1247,6 +1286,13 @@ void GL_GetPalette (void)
 	}
 
 	d_8to24table[255] &= LittleLong(0xffffff);	// 255 is transparent
+
+	if ( pic ) {
+		Mem_TempFree ( pic );
+	}
+	if ( pal != default_pal ) {
+		Mem_TempFree ( pal );
+	}
 }
 
 
@@ -1258,6 +1304,12 @@ GL_InitImages
 void GL_InitImages (void)
 {
 	registration_sequence = 1;
+
+	memset ( gl_state.lasttmumodes, -1, sizeof(gl_state.lasttmumodes) );
+	memset ( gl_state.currenttextures, -1, sizeof(gl_state.currenttextures) );
+
+	GL_SelectTexture( GL_TEXTURE_0 );
+	GL_TexEnv( GL_MODULATE );
 
 	GL_GetPalette ();
 
@@ -1283,4 +1335,3 @@ void GL_ShutdownImages (void)
 		memset (image, 0, sizeof(*image));
 	}
 }
-

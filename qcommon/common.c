@@ -185,7 +185,7 @@ void Com_Error (int code, char *fmt, ...)
 
 	if (recursive)
 		Sys_Error ("recursive error after: %s", msg);
-	recursive = true;
+	recursive = qtrue;
 
 	va_start (argptr, fmt);
 	vsnprintf (msg, sizeof(msg), fmt, argptr);
@@ -194,7 +194,7 @@ void Com_Error (int code, char *fmt, ...)
 	if (code == ERR_DISCONNECT)
 	{
 		CL_Drop ();
-		recursive = false;
+		recursive = qfalse;
 		if (!com_initialized)
 			Sys_Error ("%s", msg);
 		longjmp (abortframe, -1);
@@ -202,16 +202,16 @@ void Com_Error (int code, char *fmt, ...)
 	else if (code == ERR_DROP)
 	{
 		Com_Printf ("********************\nERROR: %s\n********************\n", msg);
-		SV_Shutdown (va("Server crashed: %s\n", msg), false);
+		SV_Shutdown (va("Server crashed: %s\n", msg), qfalse);
 		CL_Drop ();
-		recursive = false;
+		recursive = qfalse;
 		if (!com_initialized)
 			Sys_Error ("%s", msg);
 		longjmp (abortframe, -1);
 	}
 	else
 	{
-		SV_Shutdown (va("Server fatal crashed: %s\n", msg), false);
+		SV_Shutdown (va("Server fatal crashed: %s\n", msg), qfalse);
 		CL_Shutdown ();
 	}
 
@@ -235,7 +235,7 @@ do the apropriate things.
 */
 void Com_Quit (void)
 {
-	SV_Shutdown ("Server quit\n", false);
+	SV_Shutdown ("Server quit\n", qfalse);
 	CL_Shutdown ();
 
 	if (logfile)
@@ -315,18 +315,13 @@ Handles byte ordering and avoids alignment errors
 ==============================================================================
 */
 
-vec3_t	bytedirs[NUMVERTEXNORMALS] =
-{
-#include "../client/anorms.h"
-};
-
 //
 // writing functions
 //
 
 void MSG_WriteChar (sizebuf_t *sb, int c)
 {
-	byte	*buf;
+	qbyte	*buf;
 	
 #ifdef PARANOID
 	if (c < -128 || c > 127)
@@ -339,7 +334,7 @@ void MSG_WriteChar (sizebuf_t *sb, int c)
 
 void MSG_WriteByte (sizebuf_t *sb, int c)
 {
-	byte	*buf;
+	qbyte	*buf;
 	
 #ifdef PARANOID
 	if (c < 0 || c > 255)
@@ -352,7 +347,7 @@ void MSG_WriteByte (sizebuf_t *sb, int c)
 
 void MSG_WriteShort (sizebuf_t *sb, int c)
 {
-	byte	*buf;
+	qbyte	*buf;
 	
 #ifdef PARANOID
 	if (c < ((short)0x8000) || c > (short)0x7fff)
@@ -366,7 +361,7 @@ void MSG_WriteShort (sizebuf_t *sb, int c)
 
 void MSG_WriteLong (sizebuf_t *sb, int c)
 {
-	byte	*buf;
+	qbyte	*buf;
 	
 	buf = SZ_GetSpace (sb, 4);
 	buf[0] = c&0xff;
@@ -400,7 +395,7 @@ void MSG_WriteString (sizebuf_t *sb, char *s)
 
 void MSG_WriteInt3 (sizebuf_t *sb, int c)
 {
-	byte	*buf;
+	qbyte	*buf;
 	
 	buf = SZ_GetSpace (sb, 3);
 	buf[0] = c&0xff;
@@ -410,7 +405,7 @@ void MSG_WriteInt3 (sizebuf_t *sb, int c)
 
 void MSG_WriteCoord (sizebuf_t *sb, float f)
 {
-	MSG_WriteInt3 (sb, Q_rint(f*8));
+	MSG_WriteInt3 (sb, Q_rint(f));
 }
 
 void MSG_WritePos (sizebuf_t *sb, vec3_t pos)
@@ -422,7 +417,7 @@ void MSG_WritePos (sizebuf_t *sb, vec3_t pos)
 
 void MSG_WriteAngle (sizebuf_t *sb, float f)
 {
-	MSG_WriteByte (sb, Q_rint(f*256/360) & 255);
+	MSG_WriteByte (sb, ANGLE2BYTE(f));
 }
 
 void MSG_WriteAngle16 (sizebuf_t *sb, float f)
@@ -479,38 +474,19 @@ void MSG_WriteDeltaUsercmd (sizebuf_t *buf, usercmd_t *from, usercmd_t *cmd)
 
 void MSG_WriteDir (sizebuf_t *sb, vec3_t dir)
 {
-	int		i, best;
-	float	d, bestd;
-	
 	if (!dir)
 	{
 		MSG_WriteByte (sb, 0);
 		return;
 	}
 
-	bestd = 0;
-	best = 0;
-	for (i=0 ; i<NUMVERTEXNORMALS ; i++)
-	{
-		d = DotProduct (dir, bytedirs[i]);
-		if (d > bestd)
-		{
-			bestd = d;
-			best = i;
-		}
-	}
-	MSG_WriteByte (sb, best);
+	MSG_WriteByte (sb, DirToByte(dir));
 }
 
 
 void MSG_ReadDir (sizebuf_t *sb, vec3_t dir)
 {
-	int		b;
-
-	b = MSG_ReadByte (sb);
-	if (b >= NUMVERTEXNORMALS)
-		Com_Error (ERR_DROP, "MSF_ReadDir: out of range");
-	VectorCopy (bytedirs[b], dir);
+	ByteToDir (MSG_ReadByte (sb), dir);
 }
 
 
@@ -592,9 +568,11 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if ( to->solid != from->solid )
 		bits |= U_SOLID;
 
-	// event is not delta compressed, just 0 compressed
-	if ( to->event  )
+	// events are not delta compressed, just 0 compressed
+	if ( to->events[0] )
 		bits |= U_EVENT;
+	if ( to->events[1] )
+		bits |= U_EVENT2;
 	
 	if ( to->modelindex != from->modelindex )
 		bits |= U_MODEL;
@@ -602,14 +580,18 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		bits |= U_MODEL2;
 	if ( to->modelindex3 != from->modelindex3 )
 		bits |= U_MODEL3;
-	if ( to->modelindex4 != from->modelindex4 )
-		bits |= U_MODEL4;
+
+	if ( to->type != from->type )
+		bits |= U_TYPE;
 
 	if ( to->sound != from->sound )
 		bits |= U_SOUND;
 
-	if (newentity || (to->renderfx & (RF_BEAM|RF_PORTALSURFACE)))
+	if (newentity)
 		bits |= U_OLDORIGIN;
+
+	if ( to->weapon != from->weapon )
+		bits |= U_WEAPON;
 
 	if ( to->light != from->light )
 		bits |= U_LIGHT;
@@ -654,18 +636,19 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	else
 		MSG_WriteByte (msg,	to->number);
 
+	if (bits & U_SOLID)
+		MSG_WriteShort (msg, to->solid);
+
 	if (bits & U_MODEL)
 		MSG_WriteByte (msg,	to->modelindex);
 	if (bits & U_MODEL2)
 		MSG_WriteByte (msg,	to->modelindex2);
 	if (bits & U_MODEL3)
 		MSG_WriteByte (msg,	to->modelindex3);
-	if (bits & U_MODEL4)
-		MSG_WriteByte (msg,	to->modelindex4);
 
 	if (bits & U_FRAME8)
 		MSG_WriteByte (msg, to->frame);
-	if (bits & U_FRAME16)
+	else if (bits & U_FRAME16)
 		MSG_WriteShort (msg, to->frame);
 
 	if ((bits & U_SKIN8) && (bits & U_SKIN16))		//used for laser colors
@@ -697,22 +680,48 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if (bits & U_ORIGIN3)
 		MSG_WriteCoord (msg, to->origin[2]);
 
-	if (bits & U_ANGLE1)
+	if (bits & U_ANGLE1 && (to->solid == SOLID_BMODEL))
+		MSG_WriteAngle16(msg, to->angles[0]);
+	else if (bits & U_ANGLE1)
 		MSG_WriteAngle(msg, to->angles[0]);
-	if (bits & U_ANGLE2)
+
+	if (bits & U_ANGLE2 && (to->solid == SOLID_BMODEL))
+		MSG_WriteAngle16(msg, to->angles[1]);
+	else if (bits & U_ANGLE2)
 		MSG_WriteAngle(msg, to->angles[1]);
-	if (bits & U_ANGLE3)
+
+	if (bits & U_ANGLE3 && (to->solid == SOLID_BMODEL))
+		MSG_WriteAngle16(msg, to->angles[2]);
+	else if (bits & U_ANGLE3)
 		MSG_WriteAngle(msg, to->angles[2]);
 
 	if (bits & U_OLDORIGIN)
 		MSG_WritePos (msg, to->old_origin);
 
+	if (bits & U_TYPE)
+		MSG_WriteByte (msg, to->type);
+
 	if (bits & U_SOUND)
 		MSG_WriteByte (msg, to->sound);
-	if (bits & U_EVENT)
-		MSG_WriteByte (msg, to->event);
-	if (bits & U_SOLID)
-		MSG_WriteShort (msg, to->solid);
+	if ( bits & U_EVENT ) {
+		if ( !to->eventParms[0] ) {
+			MSG_WriteByte ( msg, to->events[0] );
+		} else {
+			MSG_WriteByte ( msg, to->events[0] | EV_INVERSE );
+			MSG_WriteByte ( msg, to->eventParms[0] );
+		}
+	}
+	if ( bits & U_EVENT2 ) {
+		if ( !to->eventParms[1] ) {
+			MSG_WriteByte ( msg, to->events[1] );
+		} else {
+			MSG_WriteByte ( msg, to->events[1] | EV_INVERSE );
+			MSG_WriteByte ( msg, to->eventParms[1] );
+		}
+	}
+
+	if (bits & U_WEAPON)
+		MSG_WriteByte (msg, to->weapon);
 
 	if (bits & U_LIGHT)
 		MSG_WriteLong (msg, to->light);
@@ -810,7 +819,7 @@ float MSG_ReadFloat (sizebuf_t *msg_read)
 {
 	union
 	{
-		byte	b[4];
+		qbyte	b[4];
 		float	f;
 		int	l;
 	} dat;
@@ -873,7 +882,7 @@ char *MSG_ReadStringLine (sizebuf_t *msg_read)
 
 float MSG_ReadCoord (sizebuf_t *msg_read)
 {
-	return MSG_ReadInt3( msg_read ) * (1.0/8.0);
+	return MSG_ReadInt3( msg_read );
 }
 
 void MSG_ReadPos (sizebuf_t *msg_read, vec3_t pos)
@@ -885,7 +894,7 @@ void MSG_ReadPos (sizebuf_t *msg_read, vec3_t pos)
 
 float MSG_ReadAngle (sizebuf_t *msg_read)
 {
-	return MSG_ReadChar(msg_read) * (360.0/256);
+	return BYTE2ANGLE(MSG_ReadByte(msg_read));
 }
 
 float MSG_ReadAngle16 (sizebuf_t *msg_read)
@@ -900,7 +909,7 @@ void MSG_ReadDeltaUsercmd (sizebuf_t *msg_read, usercmd_t *from, usercmd_t *move
 	memcpy (move, from, sizeof(*move));
 
 	bits = MSG_ReadByte (msg_read);
-		
+
 // read current angles
 	if (bits & CM_ANGLE1)
 		move->angles[0] = MSG_ReadShort (msg_read);
@@ -908,7 +917,7 @@ void MSG_ReadDeltaUsercmd (sizebuf_t *msg_read, usercmd_t *from, usercmd_t *move
 		move->angles[1] = MSG_ReadShort (msg_read);
 	if (bits & CM_ANGLE3)
 		move->angles[2] = MSG_ReadShort (msg_read);
-		
+
 // read movement
 	if (bits & CM_FORWARD)
 		move->forwardmove = MSG_ReadShort (msg_read);
@@ -916,7 +925,7 @@ void MSG_ReadDeltaUsercmd (sizebuf_t *msg_read, usercmd_t *from, usercmd_t *move
 		move->sidemove = MSG_ReadShort (msg_read);
 	if (bits & CM_UP)
 		move->upmove = MSG_ReadShort (msg_read);
-	
+
 // read buttons
 	if (bits & CM_BUTTONS)
 		move->buttons = MSG_ReadByte (msg_read);
@@ -931,13 +940,13 @@ void MSG_ReadData (sizebuf_t *msg_read, void *data, int len)
 	int		i;
 
 	for (i=0 ; i<len ; i++)
-		((byte *)data)[i] = MSG_ReadByte (msg_read);
+		((qbyte *)data)[i] = MSG_ReadByte (msg_read);
 }
 
 
 //===========================================================================
 
-void SZ_Init (sizebuf_t *buf, byte *data, int length)
+void SZ_Init (sizebuf_t *buf, qbyte *data, int length)
 {
 	memset (buf, 0, sizeof(*buf));
 	buf->data = data;
@@ -947,7 +956,7 @@ void SZ_Init (sizebuf_t *buf, byte *data, int length)
 void SZ_Clear (sizebuf_t *buf)
 {
 	buf->cursize = 0;
-	buf->overflowed = false;
+	buf->overflowed = qfalse;
 }
 
 void *SZ_GetSpace (sizebuf_t *buf, int length)
@@ -964,7 +973,7 @@ void *SZ_GetSpace (sizebuf_t *buf, int length)
 			
 		Com_Printf ("SZ_GetSpace: overflow\n");
 		SZ_Clear (buf); 
-		buf->overflowed = true;
+		buf->overflowed = qtrue;
 	}
 
 	data = buf->data + buf->cursize;
@@ -987,12 +996,12 @@ void SZ_Print (sizebuf_t *buf, char *data)
 	if (buf->cursize)
 	{
 		if (buf->data[buf->cursize-1])
-			memcpy ((byte *)SZ_GetSpace(buf, len),data,len); // no trailing 0
+			memcpy ((qbyte *)SZ_GetSpace(buf, len), data, len); // no trailing 0
 		else
-			memcpy ((byte *)SZ_GetSpace(buf, len-1)-1,data,len); // write over trailing 0
+			memcpy ((qbyte *)SZ_GetSpace(buf, len-1)-1, data, len); // write over trailing 0
 	}
 	else
-		memcpy ((byte *)SZ_GetSpace(buf, len),data,len);
+		memcpy ((qbyte *)SZ_GetSpace(buf, len),data,len);
 }
 
 
@@ -1071,7 +1080,7 @@ Adds the given string at the end of the current argument list
 void COM_AddParm (char *parm)
 {
 	if (com_argc == MAX_NUM_ARGVS)
-		Com_Error (ERR_FATAL, "COM_AddParm: MAX_NUM)ARGS");
+		Com_Error (ERR_FATAL, "COM_AddParm: MAX_NUM_ARGVS");
 	com_argv[com_argc++] = parm;
 }
 
@@ -1079,8 +1088,9 @@ char *CopyString (char *in)
 {
 	char	*out;
 	
-	out = Z_Malloc (strlen(in)+1);
+	out = Mem_ZoneMalloc (strlen(in)+1);
 	strcpy (out, in);
+
 	return out;
 }
 
@@ -1127,123 +1137,63 @@ void Info_Print (char *s)
 	}
 }
 
-
-/*
-==============================================================================
-
-						ZONE MEMORY ALLOCATION
-
-just cleared malloc with counters now...
-
-==============================================================================
-*/
-
-#define	Z_MAGIC		0x1d1d
-
-
-typedef struct zhead_s
-{
-	struct zhead_s	*prev, *next;
-	short	magic;
-	short	tag;			// for group free
-	int		size;
-} zhead_t;
-
-zhead_t		z_chain;
-int		z_count, z_bytes;
-
-/*
-========================
-Z_Free
-========================
-*/
-void Z_Free (void *ptr)
-{
-	zhead_t	*z;
-
-	z = ((zhead_t *)ptr) - 1;
-
-	if (z->magic != Z_MAGIC)
-		Com_Error (ERR_FATAL, "Z_Free: bad magic");
-
-	z->prev->next = z->next;
-	z->next->prev = z->prev;
-
-	z_count--;
-	z_bytes -= z->size;
-	free (z);
-}
-
-
-/*
-========================
-Z_Stats_f
-========================
-*/
-void Z_Stats_f (void)
-{
-	Com_Printf ("%i bytes in %i blocks\n", z_bytes, z_count);
-}
-
-/*
-========================
-Z_FreeTags
-========================
-*/
-void Z_FreeTags (int tag)
-{
-	zhead_t	*z, *next;
-
-	for (z=z_chain.next ; z != &z_chain ; z=next)
-	{
-		next = z->next;
-		if (z->tag == tag)
-			Z_Free ((void *)(z+1));
-	}
-}
-
-/*
-========================
-Z_TagMalloc
-========================
-*/
-void *Z_TagMalloc (int size, int tag)
-{
-	zhead_t	*z;
-	
-	size = size + sizeof(zhead_t);
-	z = malloc(size);
-	if (!z)
-		Com_Error (ERR_FATAL, "Z_Malloc: failed on allocation of %i bytes",size);
-	memset (z, 0, size);
-	z_count++;
-	z_bytes += size;
-	z->magic = Z_MAGIC;
-	z->tag = tag;
-	z->size = size;
-
-	z->next = z_chain.next;
-	z->prev = &z_chain;
-	z_chain.next->prev = z;
-	z_chain.next = z;
-
-	return (void *)(z+1);
-}
-
-/*
-========================
-Z_Malloc
-========================
-*/
-void *Z_Malloc (int size)
-{
-	return Z_TagMalloc (size, 0);
-}
-
-
 //============================================================================
 
-static byte chktbl[1024] = {
+// this is a 16 bit, non-reflected CRC using the polynomial 0x1021
+// and the initial and final xor values shown below...  in other words, the
+// CCITT standard CRC used by XMODEM
+
+#define CRC_INIT_VALUE	0xffff
+#define CRC_XOR_VALUE	0x0000
+
+static unsigned short crctable[256] =
+{
+	0x0000,	0x1021,	0x2042,	0x3063,	0x4084,	0x50a5,	0x60c6,	0x70e7,
+	0x8108,	0x9129,	0xa14a,	0xb16b,	0xc18c,	0xd1ad,	0xe1ce,	0xf1ef,
+	0x1231,	0x0210,	0x3273,	0x2252,	0x52b5,	0x4294,	0x72f7,	0x62d6,
+	0x9339,	0x8318,	0xb37b,	0xa35a,	0xd3bd,	0xc39c,	0xf3ff,	0xe3de,
+	0x2462,	0x3443,	0x0420,	0x1401,	0x64e6,	0x74c7,	0x44a4,	0x5485,
+	0xa56a,	0xb54b,	0x8528,	0x9509,	0xe5ee,	0xf5cf,	0xc5ac,	0xd58d,
+	0x3653,	0x2672,	0x1611,	0x0630,	0x76d7,	0x66f6,	0x5695,	0x46b4,
+	0xb75b,	0xa77a,	0x9719,	0x8738,	0xf7df,	0xe7fe,	0xd79d,	0xc7bc,
+	0x48c4,	0x58e5,	0x6886,	0x78a7,	0x0840,	0x1861,	0x2802,	0x3823,
+	0xc9cc,	0xd9ed,	0xe98e,	0xf9af,	0x8948,	0x9969,	0xa90a,	0xb92b,
+	0x5af5,	0x4ad4,	0x7ab7,	0x6a96,	0x1a71,	0x0a50,	0x3a33,	0x2a12,
+	0xdbfd,	0xcbdc,	0xfbbf,	0xeb9e,	0x9b79,	0x8b58,	0xbb3b,	0xab1a,
+	0x6ca6,	0x7c87,	0x4ce4,	0x5cc5,	0x2c22,	0x3c03,	0x0c60,	0x1c41,
+	0xedae,	0xfd8f,	0xcdec,	0xddcd,	0xad2a,	0xbd0b,	0x8d68,	0x9d49,
+	0x7e97,	0x6eb6,	0x5ed5,	0x4ef4,	0x3e13,	0x2e32,	0x1e51,	0x0e70,
+	0xff9f,	0xefbe,	0xdfdd,	0xcffc,	0xbf1b,	0xaf3a,	0x9f59,	0x8f78,
+	0x9188,	0x81a9,	0xb1ca,	0xa1eb,	0xd10c,	0xc12d,	0xf14e,	0xe16f,
+	0x1080,	0x00a1,	0x30c2,	0x20e3,	0x5004,	0x4025,	0x7046,	0x6067,
+	0x83b9,	0x9398,	0xa3fb,	0xb3da,	0xc33d,	0xd31c,	0xe37f,	0xf35e,
+	0x02b1,	0x1290,	0x22f3,	0x32d2,	0x4235,	0x5214,	0x6277,	0x7256,
+	0xb5ea,	0xa5cb,	0x95a8,	0x8589,	0xf56e,	0xe54f,	0xd52c,	0xc50d,
+	0x34e2,	0x24c3,	0x14a0,	0x0481,	0x7466,	0x6447,	0x5424,	0x4405,
+	0xa7db,	0xb7fa,	0x8799,	0x97b8,	0xe75f,	0xf77e,	0xc71d,	0xd73c,
+	0x26d3,	0x36f2,	0x0691,	0x16b0,	0x6657,	0x7676,	0x4615,	0x5634,
+	0xd94c,	0xc96d,	0xf90e,	0xe92f,	0x99c8,	0x89e9,	0xb98a,	0xa9ab,
+	0x5844,	0x4865,	0x7806,	0x6827,	0x18c0,	0x08e1,	0x3882,	0x28a3,
+	0xcb7d,	0xdb5c,	0xeb3f,	0xfb1e,	0x8bf9,	0x9bd8,	0xabbb,	0xbb9a,
+	0x4a75,	0x5a54,	0x6a37,	0x7a16,	0x0af1,	0x1ad0,	0x2ab3,	0x3a92,
+	0xfd2e,	0xed0f,	0xdd6c,	0xcd4d,	0xbdaa,	0xad8b,	0x9de8,	0x8dc9,
+	0x7c26,	0x6c07,	0x5c64,	0x4c45,	0x3ca2,	0x2c83,	0x1ce0,	0x0cc1,
+	0xef1f,	0xff3e,	0xcf5d,	0xdf7c,	0xaf9b,	0xbfba,	0x8fd9,	0x9ff8,
+	0x6e17,	0x7e36,	0x4e55,	0x5e74,	0x2e93,	0x3eb2,	0x0ed1,	0x1ef0
+};
+
+unsigned short CRC_Block (qbyte *start, int count)
+{
+	unsigned short	crc;
+
+	crc = CRC_INIT_VALUE;
+	while (count--)
+		crc = (crc << 8) ^ crctable[(crc >> 8) ^ *start++];
+
+	return crc ^ CRC_XOR_VALUE;
+}
+
+static qbyte chktbl[1024] = {
 0x84, 0x47, 0x51, 0xc1, 0x93, 0x22, 0x21, 0x24, 0x2f, 0x66, 0x60, 0x4d, 0xb0, 0x7c, 0xda,
 0x88, 0x54, 0x15, 0x2b, 0xc6, 0x6c, 0x89, 0xc5, 0x9d, 0x48, 0xee, 0xe6, 0x8a, 0xb5, 0xf4,
 0xcb, 0xfb, 0xf1, 0x0c, 0x2e, 0xa0, 0xd7, 0xc9, 0x1f, 0xd6, 0x06, 0x9a, 0x09, 0x41, 0x54,
@@ -1317,12 +1267,12 @@ COM_BlockSequenceCRCByte
 For proxy protecting
 ====================
 */
-byte	COM_BlockSequenceCRCByte (byte *base, int length, int sequence)
+qbyte COM_BlockSequenceCRCByte (qbyte *base, int length, int sequence)
 {
 	int		n;
-	byte	*p;
+	qbyte	*p;
 	int		x;
-	byte chkb[60 + 4];
+	qbyte chkb[60 + 4];
 	unsigned short crc;
 
 	if (sequence < 0)
@@ -1352,16 +1302,6 @@ byte	COM_BlockSequenceCRCByte (byte *base, int length, int sequence)
 }
 
 //========================================================
-
-float	frand(void)
-{
-	return (rand()&32767)* (1.0/32767);
-}
-
-float	crand(void)
-{
-	return (rand()&32767)* (2.0/32767) - 1;
-}
 
 void Key_Init (void);
 void SCR_EndLoadingPlaque (void);
@@ -1423,7 +1363,8 @@ void Qcommon_Init (int argc, char **argv)
 	if (setjmp (abortframe) )
 		Sys_Error ("Error during initialization");
 
-	z_chain.next = z_chain.prev = &z_chain;
+	// initialize memory manager
+	Memory_Init ();
 
 	// prepare enough of the subsystems to handle
 	// cvar and command buffer management
@@ -1437,11 +1378,13 @@ void Qcommon_Init (int argc, char **argv)
 
 	Key_Init ();
 
+	Huff_Init ();
+
 	// we need to add the early commands twice, because
 	// a basedir or cddir needs to be set before execing
 	// config files, but we want other parms to override
 	// the settings of the config files
-	Cbuf_AddEarlyCommands (false);
+	Cbuf_AddEarlyCommands (qfalse);
 	Cbuf_Execute ();
 
 	FS_InitFilesystem ();
@@ -1449,13 +1392,14 @@ void Qcommon_Init (int argc, char **argv)
 	Cbuf_AddText ("exec default.cfg\n");
 	Cbuf_AddText ("exec qfconfig.cfg\n");
 
-	Cbuf_AddEarlyCommands (true);
+	Cbuf_AddEarlyCommands (qtrue);
 	Cbuf_Execute ();
 
 	//
 	// init commands and vars
 	//
-    Cmd_AddCommand ("z_stats", Z_Stats_f);
+	Memory_InitCommands ();
+
     Cmd_AddCommand ("error", Com_Error_f);
 
 	host_speeds = Cvar_Get ("host_speeds", "0", 0);
@@ -1507,7 +1451,7 @@ void Qcommon_Init (int argc, char **argv)
 
 	Com_Printf ("====== %s Initialized ======\n\n", APPLICATION);	
 
-	com_initialized = true;
+	com_initialized = qtrue;
 }
 
 /*
@@ -1525,7 +1469,7 @@ void Qcommon_Frame (int msec)
 
 	if ( log_stats->modified )
 	{
-		log_stats->modified = false;
+		log_stats->modified = qfalse;
 		if ( log_stats->value )
 		{
 			if ( log_stats_file )
@@ -1615,4 +1559,5 @@ Qcommon_Shutdown
 */
 void Qcommon_Shutdown (void)
 {
+	Memory_Shutdown ();
 }

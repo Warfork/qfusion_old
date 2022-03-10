@@ -304,8 +304,8 @@ void ED_CallSpawn (edict_t *ent)
 
 	if (!ent->classname)
 	{
-		if ( developer->value )
-			gi.dprintf ("ED_CallSpawn: NULL classname\n");
+		if (developer->value)
+			G_Printf ("ED_CallSpawn: NULL classname\n");
 		return;
 	}
 
@@ -331,8 +331,8 @@ void ED_CallSpawn (edict_t *ent)
 		}
 	}
 
-	if ( developer->value )
-		gi.dprintf ("%s doesn't have a spawn function\n", ent->classname);
+	if (developer->value)
+		G_Printf ("%s doesn't have a spawn function\n", ent->classname);
 }
 
 /*
@@ -347,7 +347,7 @@ char *ED_NewString (char *string)
 	
 	l = strlen(string) + 1;
 
-	newb = gi.TagMalloc (l, TAG_LEVEL);
+	newb = G_Malloc (l);
 
 	new_p = newb;
 
@@ -384,7 +384,7 @@ in an edict
 void ED_ParseField (char *key, char *value, edict_t *ent)
 {
 	field_t	*f;
-	byte	*b;
+	qbyte	*b;
 	float	v;
 	vec3_t	vec;
 
@@ -393,9 +393,9 @@ void ED_ParseField (char *key, char *value, edict_t *ent)
 		if (!Q_stricmp(f->name, key))
 		{	// found it
 			if (f->flags & FFL_SPAWNTEMP)
-				b = (byte *)&st;
+				b = (qbyte *)&st;
 			else
-				b = (byte *)ent;
+				b = (qbyte *)ent;
 
 			switch (f->type)
 			{
@@ -427,8 +427,8 @@ void ED_ParseField (char *key, char *value, edict_t *ent)
 		}
 	}
 
-	if ( developer->value )
-		gi.dprintf ("%s is not a field\n", key);
+	if (developer->value)
+		G_Printf ("%s is not a field\n", key);
 }
 
 /*
@@ -445,7 +445,7 @@ char *ED_ParseEdict (char *data, edict_t *ent)
 	char		keyname[256];
 	char		*com_token;
 
-	init = false;
+	init = qfalse;
 	memset (&st, 0, sizeof(st));
 
 // go through all the dictionary pairs
@@ -456,19 +456,19 @@ char *ED_ParseEdict (char *data, edict_t *ent)
 		if (com_token[0] == '}')
 			break;
 		if (!data)
-			gi.error ("ED_ParseEntity: EOF without closing brace");
+			G_Error ("ED_ParseEntity: EOF without closing brace");
 
 		Q_strncpyz (keyname, com_token, sizeof(keyname));
 		
 	// parse value	
 		com_token = COM_Parse (&data);
 		if (!data)
-			gi.error ("ED_ParseEntity: EOF without closing brace");
+			G_Error ("ED_ParseEntity: EOF without closing brace");
 
 		if (com_token[0] == '}')
-			gi.error ("ED_ParseEntity: closing brace without data");
+			G_Error ("ED_ParseEntity: closing brace without data");
 
-		init = true;	
+		init = qtrue;	
 
 	// keynames with a leading underscore are used for utility comments,
 	// and are immediately discarded by quake
@@ -503,9 +503,9 @@ void G_FindTeams (void)
 
 	c = 0;
 	c2 = 0;
-	for (i=1, e=g_edicts+i ; i < globals.num_edicts ; i++,e++)
+	for (i=1, e=game.edicts+i ; i < game.numentities ; i++,e++)
 	{
-		if (!e->inuse)
+		if (!e->r.inuse)
 			continue;
 		if (!e->team)
 			continue;
@@ -515,9 +515,9 @@ void G_FindTeams (void)
 		e->teammaster = e;
 		c++;
 		c2++;
-		for (j=i+1, e2=e+1 ; j < globals.num_edicts ; j++,e2++)
+		for (j=i+1, e2=e+1 ; j < game.numentities ; j++,e2++)
 		{
-			if (!e2->inuse)
+			if (!e2->r.inuse)
 				continue;
 			if (!e2->team)
 				continue;
@@ -534,8 +534,8 @@ void G_FindTeams (void)
 		}
 	}
 
-	if ( developer->value )
-		gi.dprintf ("%i teams with %i entities\n", c, c2);
+	if (developer->value)
+		G_Printf ("%i teams with %i entities\n", c, c2);
 }
 
 /*
@@ -557,21 +557,21 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 	skill_level = floor (skill->value);
 	clamp (skill_level, 0, 3);
 	if (skill->value != skill_level)
-		gi.cvar_forceset("skill", va("%f", skill_level));
+		trap_Cvar_ForceSet ("skill", va("%f", skill_level));
 
 	SaveClientData ();
 
-	gi.FreeTags (TAG_LEVEL);
+	G_EmptyLevelPool ();
 
 	memset (&level, 0, sizeof(level));
-	memset (g_edicts, 0, game.maxentities * sizeof (g_edicts[0]));
+	memset (game.edicts, 0, game.maxentities * sizeof (game.edicts[0]));
 
 	Q_strncpyz (level.mapname, mapname, sizeof(level.mapname));
 	Q_strncpyz (game.spawnpoint, spawnpoint, sizeof(game.spawnpoint));
 
 	// set client fields on player ents
 	for (i=0 ; i<game.maxclients ; i++)
-		g_edicts[i+1].client = game.clients + i;
+		game.edicts[i+1].r.client = game.clients + i;
 
 	ent = NULL;
 	inhibit = 0;
@@ -584,16 +584,16 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 		if (!entities)
 			break;
 		if (com_token[0] != '{')
-			gi.error ("ED_LoadFromFile: found %s when expecting {",com_token);
+			G_Error ("ED_LoadFromFile: found %s when expecting {",com_token);
 
 		if (!ent)
-			ent = g_edicts;
+			ent = world;
 		else
 			ent = G_Spawn ();
 		entities = ED_ParseEdict (entities, ent);
 		
 		// remove things (except the world) from different skill levels or deathmatch
-		if (ent != g_edicts)
+		if (ent != world)
 		{
 			if ( deathmatch->value )
 			{
@@ -633,8 +633,8 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 		ED_CallSpawn (ent);
 	}	
 
-	if ( developer->value )
-		gi.dprintf ("%i entities inhibited\n", inhibit);
+	if (developer->value)
+		G_Printf ("%i entities inhibited\n", inhibit);
 
 	G_FindTeams ();
 
@@ -688,8 +688,8 @@ Only used for the world.
 void SP_worldspawn (edict_t *ent)
 {
 	ent->movetype = MOVETYPE_PUSH;
-	ent->solid = SOLID_BSP;
-	ent->inuse = true;			// since the world doesn't use G_Spawn()
+	ent->r.solid = SOLID_BSP;
+	ent->r.inuse = qtrue;			// since the world doesn't use G_Spawn()
 	ent->s.modelindex = 1;		// world model is always index 1
 	VectorClear (ent->s.origin);
 	VectorClear (ent->s.angles);
@@ -708,117 +708,122 @@ void SP_worldspawn (edict_t *ent)
 	// make some data visible to the server
 	if (ent->message && ent->message[0])
 	{
-		gi.configstring ( CS_MESSAGE, ent->message );
+		trap_ConfigString ( CS_MESSAGE, ent->message );
 		Q_strncpyz ( level.level_name, ent->message, sizeof(level.level_name) );
 	}
 	else
+	{
+		trap_ConfigString ( CS_MESSAGE, level.mapname );
 		Q_strncpyz ( level.level_name, level.mapname, sizeof(level.level_name) );
+	}
 
 	// send music
 	if ( st.music ) {
-		gi.configstring ( CS_AUDIOTRACK, st.music );
+		trap_ConfigString ( CS_AUDIOTRACK, st.music );
 	}
 
-	gi.configstring (CS_MAXCLIENTS, va("%i", (int)(maxclients->value) ) );
+	trap_ConfigString (CS_MAPNAME, level.mapname);
+	trap_ConfigString (CS_MAXCLIENTS, va("%i", (int)(maxclients->value) ) );
+	trap_ConfigString (CS_AIRACCEL, va("%g", sv_airaccelerate->value) );
 
 	// status bar program
 	if (deathmatch->value)
 //ZOID
 		if (ctf->value) {
-			gi.configstring (CS_STATUSBAR, ctf_statusbar);
+			trap_ConfigString (CS_STATUSBAR, ctf_statusbar);
 			CTFPrecache();
 		} else
 //ZOID
-			gi.configstring (CS_STATUSBAR, dm_statusbar);
+			trap_ConfigString (CS_STATUSBAR, dm_statusbar);
 	else
-		gi.configstring (CS_STATUSBAR, single_statusbar);
+		trap_ConfigString (CS_STATUSBAR, single_statusbar);
 
 	//---------------
 
 
 	// help icon for statusbar
-	gi.imageindex ("pics/i_help");
-	gi.imageindex ("pics/help");
+	trap_ImageIndex ("pics/i_help");
+	trap_ImageIndex ("pics/help");
 
 	if (!st.gravity)
-		gi.cvar_set("sv_gravity", "800");
+		trap_Cvar_Set("sv_gravity", "800");
 	else
-		gi.cvar_set("sv_gravity", st.gravity);
+		trap_Cvar_Set("sv_gravity", st.gravity);
 
-	snd_fry = gi.soundindex ("sound/player/fry.wav");	// standing in lava / slime
+	snd_fry = trap_SoundIndex ("sound/player/fry.wav");	// standing in lava / slime
 
 	PrecacheItem (FindItem ("Blaster"));
+	PrecacheItem (FindItem ("Machinegun"));
 
-	gi.soundindex ("sound/player/lava1.wav");
-	gi.soundindex ("sound/player/lava2.wav");
+	trap_SoundIndex ("sound/player/lava1.wav");
+	trap_SoundIndex ("sound/player/lava2.wav");
 
-	gi.soundindex ("sound/misc/pc_up.wav");
-	gi.soundindex ("sound/misc/talk1.wav");
+	trap_SoundIndex ("sound/misc/pc_up.wav");
+	trap_SoundIndex ("sound/misc/talk1.wav");
 
-	gi.soundindex ("sound/misc/udeath.wav");
+	trap_SoundIndex ("sound/misc/udeath.wav");
 
 	// sexed sounds
-	gi.soundindex ("*death1.wav");
-	gi.soundindex ("*death2.wav");
-	gi.soundindex ("*death3.wav");
-	gi.soundindex ("*death4.wav");
-	gi.soundindex ("*fall1.wav");
-	gi.soundindex ("*fall2.wav");	
-	gi.soundindex ("*gurp1.wav");		// drowning damage
-	gi.soundindex ("*gurp2.wav");	
-	gi.soundindex ("*pain25_1.wav");
-	gi.soundindex ("*pain25_2.wav");
-	gi.soundindex ("*pain50_1.wav");
-	gi.soundindex ("*pain50_2.wav");
-	gi.soundindex ("*pain75_1.wav");
-	gi.soundindex ("*pain75_2.wav");
-	gi.soundindex ("*pain100_1.wav");
-	gi.soundindex ("*pain100_2.wav");
+	trap_SoundIndex ("*death1.wav");
+	trap_SoundIndex ("*death2.wav");
+	trap_SoundIndex ("*death3.wav");
+	trap_SoundIndex ("*death4.wav");
+	trap_SoundIndex ("*fall1.wav");
+	trap_SoundIndex ("*fall2.wav");	
+	trap_SoundIndex ("*gurp1.wav");		// drowning damage
+	trap_SoundIndex ("*gurp2.wav");	
+	trap_SoundIndex ("*pain25_1.wav");
+	trap_SoundIndex ("*pain25_2.wav");
+	trap_SoundIndex ("*pain50_1.wav");
+	trap_SoundIndex ("*pain50_2.wav");
+	trap_SoundIndex ("*pain75_1.wav");
+	trap_SoundIndex ("*pain75_2.wav");
+	trap_SoundIndex ("*pain100_1.wav");
+	trap_SoundIndex ("*pain100_2.wav");
 
-	// sexed models
-	// THIS ORDER MUST MATCH THE DEFINES IN g_local.h
-	// you can add more, max 15
-	gi.modelindex ("#w_blaster.md2");
-	gi.modelindex ("#w_shotgun.md2");
-	gi.modelindex ("#w_sshotgun.md2");
-	gi.modelindex ("#w_machinegun.md2");
-	gi.modelindex ("#w_chaingun.md2");
-	gi.modelindex ("#a_grenades.md2");
-	gi.modelindex ("#w_glauncher.md2");
-	gi.modelindex ("#w_rlauncher.md2");
-	gi.modelindex ("#w_hyperblaster.md2");
-	gi.modelindex ("#w_railgun.md2");
-	gi.modelindex ("#w_bfg.md2");
-	gi.modelindex ("#w_grapple.md2");
+	// viewable weapon models
+	// THIS ORDER MUST MATCH THE DEFINES IN gs_public.h
+	// you can add more, max 255
+	trap_ModelIndex ("#w_blaster.md2");			// WEAP_BLASTER
+	trap_ModelIndex ("#w_shotgun.md2");			// WEAP_SHOTGUN
+	trap_ModelIndex ("#w_sshotgun.md2");			// WEAP_SUPERSHOTGUN
+	trap_ModelIndex ("#w_machinegun.md2");		// WEAP_MACHINEGUN
+	trap_ModelIndex ("#w_chaingun.md2");			// WEAP_CHAINGUN
+	trap_ModelIndex ("#a_grenades.md2");			// WEAP_GRENADES
+	trap_ModelIndex ("#w_glauncher.md2");			// WEAP_GRENADELAUNCHER
+	trap_ModelIndex ("#w_rlauncher.md2");			// WEAP_ROCKETLAUNCHER
+	trap_ModelIndex ("#w_hyperblaster.md2");		// WEAP_HYPERBLASTER
+	trap_ModelIndex ("#w_railgun.md2");			// WEAP_RAILGUN
+	trap_ModelIndex ("#w_bfg.md2");				// WEAP_BFG
+	trap_ModelIndex ("#w_grapple.md2");			// WEAP_GRAPPLE
 
 	//-------------------
 
-	gi.soundindex ("sound/player/gasp1.wav");		// gasping for air
-	gi.soundindex ("sound/player/gasp2.wav");		// head breaking surface, not gasping
+	trap_SoundIndex ("sound/player/gasp1.wav");		// gasping for air
+	trap_SoundIndex ("sound/player/gasp2.wav");		// head breaking surface, not gasping
 
-	gi.soundindex ("sound/player/watr_in.wav");	// feet hitting water
-	gi.soundindex ("sound/player/watr_out.wav");	// feet leaving water
+	trap_SoundIndex ("sound/player/watr_in.wav");		// feet hitting water
+	trap_SoundIndex ("sound/player/watr_out.wav");	// feet leaving water
 
-	gi.soundindex ("sound/player/watr_un.wav");	// head going underwater
+	trap_SoundIndex ("sound/player/watr_un.wav");		// head going underwater
 	
-	gi.soundindex ("sound/player/u_breath1.wav");
-	gi.soundindex ("sound/player/u_breath2.wav");
+	trap_SoundIndex ("sound/player/u_breath1.wav");
+	trap_SoundIndex ("sound/player/u_breath2.wav");
 
-	gi.soundindex ("sound/items/pkup.wav");		// bonus item pickup
-	gi.soundindex ("sound/world/land.wav");		// landing thud
-	gi.soundindex ("sound/misc/h2ohit1.wav");		// landing splash
+	trap_SoundIndex ("sound/world/land.wav");			// landing thud
+	trap_SoundIndex ("sound/misc/h2ohit1.wav");		// landing splash
 
-	gi.soundindex ("sound/items/damage.wav");
-	gi.soundindex ("sound/items/protect.wav");
-	gi.soundindex ("sound/items/protect4.wav");
-	gi.soundindex ("sound/weapons/noammo.wav");
+	trap_SoundIndex ("sound/items/damage.wav");
+	trap_SoundIndex ("sound/items/protect.wav");
+	trap_SoundIndex ("sound/items/protect4.wav");
+	trap_SoundIndex ("sound/weapons/noammo.wav");
 
-	sm_meat_index = gi.modelindex ("models/objects/gibs/sm_meat/tris.md2");
-	gi.modelindex ("models/objects/gibs/arm/tris.md2");
-	gi.modelindex ("models/objects/gibs/bone/tris.md2");
-	gi.modelindex ("models/objects/gibs/bone2/tris.md2");
-	gi.modelindex ("models/objects/gibs/chest/tris.md2");
-	gi.modelindex ("models/objects/gibs/skull/tris.md2");
-	gi.modelindex ("models/objects/gibs/head2/tris.md2");
+	sm_meat_index = trap_ModelIndex ("models/objects/gibs/sm_meat/tris.md2");
+	trap_ModelIndex ("models/objects/gibs/arm/tris.md2");
+	trap_ModelIndex ("models/objects/gibs/bone/tris.md2");
+	trap_ModelIndex ("models/objects/gibs/bone2/tris.md2");
+	trap_ModelIndex ("models/objects/gibs/chest/tris.md2");
+	trap_ModelIndex ("models/objects/gibs/skull/tris.md2");
+	trap_ModelIndex ("models/objects/gibs/head2/tris.md2");
 }
 

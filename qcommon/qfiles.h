@@ -51,8 +51,8 @@ typedef struct
 #define MD2_ALIAS_VERSION	8
 
 #define	MD2_MAX_TRIANGLES	4096
-#define MD2_MAX_VERTS		2048
-#define MD2_MAX_FRAMES		512
+#define MD2_MAX_VERTS		4096
+#define MD2_MAX_FRAMES		1024
 #define MD2_MAX_SKINS		32
 #define	MD2_MAX_SKINNAME	64
 
@@ -70,8 +70,8 @@ typedef struct
 
 typedef struct
 {
-	byte	v[3];				// scaled byte to fit in frame mins/maxs
-	byte	lightnormalindex;
+	qbyte	v[3];				// scaled byte to fit in frame mins/maxs
+	qbyte	lightnormalindex;
 } dtrivertx_t;
 
 typedef struct
@@ -223,79 +223,56 @@ typedef struct
 /*
 ========================================================================
 
-.DPM model file format
+.SKM and .SKP models file formats
 
 ========================================================================
 */
 
-#define DPMHEADER				"DARKPLACESMODEL\0"
+#define SKMHEADER				"SKM1"
 
-#define DPM_MAX_NAME			32
-#define DPM_MAX_MESHES			32
-#define DPM_MAX_FRAMES			65536
-#define DPM_MAX_TRIS			65536
-#define DPM_MAX_VERTS			(DPM_MAX_TRIS * 3)
-#define DPM_MAX_BONES			256
-#define DPM_MAX_SHADERS			256
-#define DPM_MAX_FILESIZE		16777216
-#define DPM_MAX_ATTACHMENTS		DPM_MAX_BONES
-#define DPM_MAX_LODS			4
+#define SKM_MAX_NAME			64
+#define SKM_MAX_MESHES			32
+#define SKM_MAX_FRAMES			65536
+#define SKM_MAX_TRIS			65536
+#define SKM_MAX_VERTS			(SKM_MAX_TRIS * 3)
+#define SKM_MAX_BONES			256
+#define SKM_MAX_SHADERS			256
+#define SKM_MAX_FILESIZE		16777216
+#define SKM_MAX_ATTACHMENTS		DPM_MAX_BONES
+#define SKM_MAX_LODS			4
 
 // model format related flags
-#define DPM_BONEFLAG_ATTACH		1
-#define DPM_MODELTYPE			2
+#define SKM_BONEFLAG_ATTACH		1
+#define SKM_MODELTYPE			2	// (hierarchical skeletal pose)
 
 typedef struct
 {
-	char id[16];			// "DARKPLACESMODEL\0", length 16
-	unsigned int type;		// 2 (hierarchical skeletal pose)
+	char id[4];				// SKMHEADER
+	unsigned int type;
 	unsigned int filesize;	// size of entire model file
-	float mins[3], maxs[3], yawradius, allradius; // for clipping uses
 
-	// these offsets are relative to the file
 	unsigned int num_bones;
 	unsigned int num_meshes;
-	unsigned int num_frames;
-	unsigned int ofs_bones;
+
+	// this offset is relative to the file
 	unsigned int ofs_meshes;
-	unsigned int ofs_frames;
-} ddpmheader_t;
+} dskmheader_t;
 
 // there may be more than one of these
 typedef struct
 {
 	// these offsets are relative to the file
-	char shadername[32];		// name of the shader to use
+	char shadername[SKM_MAX_NAME];		// name of the shader to use
+	char meshname[SKM_MAX_NAME];
+
 	unsigned int num_verts;
 	unsigned int num_tris;
+	unsigned int num_references;
 	unsigned int ofs_verts;	
 	unsigned int ofs_texcoords;
 	unsigned int ofs_indices;
-	unsigned int ofs_groupids;
-} ddpmmesh_t;
-
-// one per bone
-typedef struct
-{
-	// name examples: upperleftarm leftfinger1 leftfinger2 hand, etc
-	char name[DPM_MAX_NAME];
-	signed int parent;		// parent bone number
-	unsigned int flags;		// flags for the bone
-} ddpmbone_t;
-
-typedef struct
-{
-	float matrix[3][4];
-} ddpmbonepose_t;
-
-// immediately followed by bone positions for the frame
-typedef struct
-{
-	// name examples: idle_1 idle_2 idle_3 shoot_1 shoot_2 shoot_3, etc
-	char name[DPM_MAX_NAME];
-	float mins[3], maxs[3], yawradius, allradius; // for clipping uses
-	unsigned int ofs_bonepositions;
-} ddpmframe_t;
+	unsigned int ofs_references;
+} dskmmesh_t;
 
 // one or more of these per vertex
 typedef struct
@@ -304,20 +281,56 @@ typedef struct
 	float influence;		// influence fraction (these must add up to 1)
 	float normal[3];		// surface normal (these blend)
 	unsigned int bonenum;	// number of the bone
-} ddpmbonevert_t;
+} dskmbonevert_t;
 
 // variable size, parsed sequentially
 typedef struct
 {
 	unsigned int numbones;
 	// immediately followed by 1 or more ddpmbonevert_t structures
-	ddpmbonevert_t verts[1];
-} ddpmvertex_t;
+	dskmbonevert_t verts[1];
+} dskmvertex_t;
 
 typedef struct
 {
 	float			st[2];
-} ddpmcoord_t;
+} dskmcoord_t;
+
+typedef struct
+{
+	char id[4];				// SKMHEADER
+	unsigned int type;
+	unsigned int filesize;	// size of entire model file
+
+	unsigned int num_bones;
+	unsigned int num_frames;
+
+	// these offsets are relative to the file
+	unsigned int ofs_bones;
+	unsigned int ofs_frames;
+} dskpheader_t;
+
+// one per bone
+typedef struct
+{
+	// name examples: upperleftarm leftfinger1 leftfinger2 hand, etc
+	char name[SKM_MAX_NAME];
+	signed int parent;		// parent bone number
+	unsigned int flags;		// flags for the bone
+} dskpbone_t;
+
+typedef struct
+{
+	float matrix[3][4];
+} dskpbonepose_t;
+
+// immediately followed by bone positions for the frame
+typedef struct
+{
+	// name examples: idle_1 idle_2 idle_3 shoot_1 shoot_2 shoot_3, etc
+	char name[SKM_MAX_NAME];
+	unsigned int ofs_bonepositions;
+} dskpframe_t;
 
 /*
 ========================================================================
@@ -358,7 +371,8 @@ typedef struct {
 
 #define IDBSPHEADER			"IBSP"
 
-#define BSPVERSION			46
+#define Q3BSPVERSION		46
+#define RTCWBSPVERSION		47
 
 // there shouldn't be any problem with increasing these values at the
 // expense of more memory allocation in the utilities

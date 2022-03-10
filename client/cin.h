@@ -37,12 +37,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 typedef struct 
 {
-	byte y0, y1, y2, y3, u, v;
+	qbyte y[4], u, v;
 } roq_cell_t;
 
 typedef struct 
 {
-	byte idx[4];
+	qbyte idx[4];
 } roq_qcell_t;
 
 typedef struct 
@@ -59,8 +59,9 @@ typedef struct
 	roq_chunk_t chunk;
 	roq_cell_t	cells[256];
 	roq_qcell_t qcells[256];
-
-	byte		*y[2], *u[2], *v[2];
+	
+	qbyte		*vid_buffer; 
+	qbyte		*vid_pic[2]; 
 
 	qboolean	restart_sound;
 
@@ -69,7 +70,6 @@ typedef struct
 	int			s_channels;
 
 	int			width;
-	int			width_2;			// width / 2
 	int			height;
 
 	int			file;
@@ -78,9 +78,8 @@ typedef struct
 	int			time;				// Sys_Milliseconds for first cinematic frame
 	int			frame;
 
-	byte		*buf;
-	byte		*pic;
-	byte		*pic_pending;
+	qbyte		*pic;
+	qbyte		*pic_pending;
 } cinematics_t;
 
 void RoQ_Init (void);
@@ -88,6 +87,6 @@ void RoQ_ReadChunk (cinematics_t *cin);
 void RoQ_SkipChunk (cinematics_t *cin);
 void RoQ_ReadInfo (cinematics_t *cin);
 void RoQ_ReadCodebook (cinematics_t *cin);
-byte *RoQ_ReadVideo (cinematics_t *cin);
+qbyte *RoQ_ReadVideo (cinematics_t *cin);
 void RoQ_ReadAudio (cinematics_t *cin);
 

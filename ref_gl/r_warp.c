@@ -35,7 +35,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define BOX_SIZE	1.0f
 #define BOX_STEP	BOX_SIZE / (SIDE_SIZE-1) * 2.0f
 
-index_t			r_skydome_indexes[5][ELEM_LEN];
+index_t			r_skydome_indexes[6][ELEM_LEN];
 meshbuffer_t	r_skydome_mbuffer;
 
 mfog_t			*r_skyfog;
@@ -46,7 +46,7 @@ float			sky_min, sky_max;
 static void Gen_BoxSide ( skydome_t *skydome, int side, vec3_t orig, vec3_t drow, vec3_t dcol, float skyheight );
 static void Gen_Box ( skydome_t *skydome, float skyheight );
 
-void R_DrawSkyBox (image_t **skybox_textures, int texenv);
+void R_DrawSkyBox (skydome_t *skydome, shader_t **shaders);
 void R_DrawFastSkyBox (void);
 void MakeSkyVec (float x, float y, float z, int axis, vec3_t v);
 
@@ -58,38 +58,56 @@ void R_InitSkydome (void)
 	sky_max = 511.0/512;
 
 	mbuffer->dlightbits = 0;
-	mbuffer->infokey = -1;
 	mbuffer->entity = &r_worldent;
 }
 
-void R_CreateSkydome (shader_t *shader, float skyheight)
+void R_CreateSkydome ( skydome_t *skydome, float skyheight )
 {
     int i;
 	mesh_t *mesh;
-	skydome_t *skydome;
 
-	skydome = shader->skydome;
 	mesh = skydome->meshes;
-	for ( i = 0; i < 5; i++, mesh++ ) {
+	for ( i = 0; i < 6; i++, mesh++ ) {
 		mesh->numvertexes = POINTS_LEN;
-		mesh->xyz_array = Z_Malloc ( sizeof(vec4_t) * POINTS_LEN );
-		mesh->normals_array = Z_Malloc ( sizeof(vec3_t) * POINTS_LEN );
-		mesh->st_array = Z_Malloc ( sizeof(vec2_t) * POINTS_LEN );
+		mesh->xyz_array = Shader_Malloc ( sizeof(vec4_t) * POINTS_LEN );
+		mesh->normals_array = Shader_Malloc ( sizeof(vec3_t) * POINTS_LEN );
+
+		if ( i != 5 ) {
+			skydome->sphereStCoords[i] = Shader_Malloc ( sizeof(vec2_t) * POINTS_LEN );
+		}
+		skydome->linearStCoords[i] = Shader_Malloc ( sizeof(vec2_t) * POINTS_LEN );
 
 		mesh->numindexes = ELEM_LEN;
 		mesh->indexes = r_skydome_indexes[i];
+#ifdef SHADOW_VOLUMES
 		mesh->trneighbors = NULL;
+#endif
 	}
 
 	Gen_Box ( skydome, skyheight );
 }
-    
+
+void R_FreeSkydome ( skydome_t *skydome )
+{
+	int i;
+
+	for ( i = 0; i < 6; i++ ) {
+		Shader_Free ( skydome->meshes[i].xyz_array );
+		Shader_Free ( skydome->meshes[i].normals_array );
+		if ( i != 5 )
+			Shader_Free ( skydome->sphereStCoords[i] );
+		Shader_Free ( skydome->linearStCoords[i] );
+	}
+
+	Shader_Free ( skydome );
+}
+
 static void Gen_Box ( skydome_t *skydome, float skyheight )
 {
 	int axis;
 	vec3_t orig, drow, dcol;
 
-	for (axis=0 ; axis<5 ; axis++)
+	for (axis=0 ; axis<6 ; axis++)
 	{
 		MakeSkyVec ( -BOX_SIZE, -BOX_SIZE, BOX_SIZE, axis, orig );
 		MakeSkyVec ( 0, BOX_STEP, 0, axis, drow );
@@ -103,22 +121,21 @@ static void Gen_Box ( skydome_t *skydome, float skyheight )
 ================
 Gen_BoxSide
 
-I don't know exactly what Q3A does for skybox 
-texturing, but this is at least fairly close.  
-We tile the texture onto the inside of a large 
-sphere, and put the camera near the top of the sphere.
-We place the box around the camera, and cast rays
-through the box verts to the sphere to find the 
-texture coordinates.
+I don't know exactly what Q3A does for skybox texturing, but
+this is at least fairly close.  We tile the texture onto the 
+inside of a large sphere, and put the camera near the top of 
+the sphere. We place the box around the camera, and cast rays
+through the box verts to the sphere to find the texture coordinates.
 ================
 */
 static void Gen_BoxSide ( skydome_t *skydome, int side, vec3_t orig, vec3_t drow, vec3_t dcol, float skyheight )
 {
     vec3_t pos, w, row, norm;
-	float *v, *n, *st;
+	float *v, *n, *st = NULL, *st2;
     int r, c;
-    float t, d, d2, b, b2, q[2];
+    float t, d, d2, b, b2, q[2], s;
 
+	s = 1.0 / (SIDE_SIZE-1);
 	d = EYE_RAD;     // sphere center to camera distance
 	d2 = d * d;
 	b = SPHERE_RAD;  // sphere radius
@@ -128,7 +145,9 @@ static void Gen_BoxSide ( skydome_t *skydome, int side, vec3_t orig, vec3_t drow
 
 	v = skydome->meshes[side].xyz_array[0];
 	n = skydome->meshes[side].normals_array[0];
-	st = skydome->meshes[side].st_array[0];
+	if ( side != 5 )
+		st = skydome->sphereStCoords[side][0];
+	st2 = skydome->linearStCoords[side][0];
 
 	VectorCopy (orig, row);
 
@@ -153,30 +172,63 @@ static void Gen_BoxSide ( skydome_t *skydome, int side, vec3_t orig, vec3_t drow
 			w[0] *= t;
 			w[1] *= t;
 
-			// use x and y on sphere as s and t
-			// minus is here so skies scoll in correct (Q3A's) direction
-			st[0] = -w[0] * q[0];
-			st[1] = -w[1] * q[1];
+			if ( st ) {
+				// use x and y on sphere as s and t
+				// minus is here so skies scoll in correct (Q3A's) direction
+				st[0] = -w[0] * q[0];
+				st[1] = -w[1] * q[1];
 
-			// avoid bilerp seam
-			st[0] = (st[0] + 1) * 0.5;
-			st[1] = (st[1] + 1) * 0.5;
+				// avoid bilerp seam
+				st[0] = (st[0] + 1) * 0.5;
+				st[1] = (st[1] + 1) * 0.5;
+			}
+
+			st2[0] = c * s;
+			st2[1] = 1.0 - r * s;
 
 			VectorAdd ( pos, dcol, pos );
 			VectorCopy ( norm, n );
 
 			v += 4;
 			n += 3;
-			st += 2;
+			if ( st ) st += 2;
+			st2 += 2;
 		}
 
 		VectorAdd ( row, drow, row );
 	}
 }
 
+void R_DrawSkyBox (skydome_t *skydome, shader_t **shaders)
+{
+	int i, features;
+	meshbuffer_t *mbuffer = &r_skydome_mbuffer;
+	int	skytexorder[6] = { SKYBOX_RIGHT, SKYBOX_FRONT, SKYBOX_LEFT, SKYBOX_BACK, SKYBOX_TOP, SKYBOX_BOTTOM };
+
+	features = shaders[0]->features;
+	if ( r_shownormals->value ) {
+		features |= MF_NORMALS;
+	}
+
+
+	for ( i = 0; i < 6; i++ ) {
+		if (r_currentlist->skymins[0][i] >= r_currentlist->skymaxs[0][i] || 
+			r_currentlist->skymins[1][i] >= r_currentlist->skymaxs[1][i]) {
+			continue;
+		}
+
+		mbuffer->fog = r_skyfog;
+		mbuffer->shader = shaders[skytexorder[i]];
+		
+		skydome->meshes[i].st_array = skydome->linearStCoords[i];
+		R_PushMesh ( &skydome->meshes[i], features );
+		R_RenderMeshBuffer ( mbuffer, qfalse );
+	}
+}
+
 void R_DrawSky (shader_t *shader)
 {
-    int i, features;
+    int i;
 	mat4_t m;
     index_t *index;
 	skydome_t *skydome = shader ? shader->skydome : NULL;
@@ -188,7 +240,7 @@ void R_DrawSky (shader_t *shader)
 	}
 
     // center skydome on camera to give the illusion of a larger space
-	Matrix4_Copy ( r_modelview_matrix, m );
+	Matrix4_Copy ( r_worldview_matrix, m );
 	m[12] = 0;
 	m[13] = 0;
 	m[14] = 0;
@@ -200,88 +252,94 @@ void R_DrawSky (shader_t *shader)
 	gldepthmax = 1;
 	qglDepthRange( gldepthmin, gldepthmax );
 
-	GL_EnableMultitexture ( false );
+	GL_EnableMultitexture ( qfalse );
 	qglDepthMask ( GL_FALSE );
 	qglDisable ( GL_ALPHA_TEST );
 	qglDisable ( GL_BLEND );
 
-	for ( i = 0; i < 5; i++ )
-	{
-		if (currentlist->skymins[0][i] >= currentlist->skymaxs[0][i] || 
-			currentlist->skymins[1][i] >= currentlist->skymaxs[1][i]) {
-			continue;
-		}
-
-		umin = (int)((currentlist->skymins[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
-		umax = (int)((currentlist->skymaxs[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
-		vmin = (int)((currentlist->skymins[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
-		vmax = (int)((currentlist->skymaxs[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
-
-		clamp ( umin, 0, SIDE_SIZE-1 );
-		clamp ( umax, 0, SIDE_SIZE-1 );
-		clamp ( vmin, 0, SIDE_SIZE-1 );
-		clamp ( vmax, 0, SIDE_SIZE-1 );
-
-		// Box indexes in tristrip order
-		index = skydome->meshes[i].indexes;
-		for (v = vmin; v < vmax; v++)
-		{
-			for (u = umin; u < umax; u++)
-			{
-				index[0] = v * SIDE_SIZE + u;
-				index[1] = index[4] = index[0] + SIDE_SIZE;
-				index[2] = index[3] = index[0] + 1;
-				index[5] = index[1] + 1;
-				index += 6;
-			}
-		}
-
-		skydome->meshes[i].numindexes = (vmax-vmin)*(umax-umin)*6;
-	}
-
 	if ( r_fastsky->value ) {
 		R_DrawFastSkyBox ();
 	} else {
-		qboolean flush = false;
+		if ( r_portalview || r_mirrorview ) {
+			qglDisable ( GL_CLIP_PLANE0 );
+		}
 
-		R_DrawSkyBox ( skydome->farbox_textures, GL_REPLACE );
+		for ( i = 0; i < 6; i++ )
+		{
+			if (r_currentlist->skymins[0][i] >= r_currentlist->skymaxs[0][i] || 
+				r_currentlist->skymins[1][i] >= r_currentlist->skymaxs[1][i]) {
+				continue;
+			}
 
-		features = shader->features;
-		if ( r_shownormals->value ) {
-			features |= MF_NORMALS;
+			umin = (int)((r_currentlist->skymins[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
+			umax = (int)((r_currentlist->skymaxs[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
+			vmin = (int)((r_currentlist->skymins[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
+			vmax = (int)((r_currentlist->skymaxs[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
+
+			clamp ( umin, 0, SIDE_SIZE-1 );
+			clamp ( umax, 0, SIDE_SIZE-1 );
+			clamp ( vmin, 0, SIDE_SIZE-1 );
+			clamp ( vmax, 0, SIDE_SIZE-1 );
+
+			// Box indexes in tristrip order
+			index = skydome->meshes[i].indexes;
+			for (v = vmin; v < vmax; v++)
+			{
+				for (u = umin; u < umax; u++)
+				{
+					index[0] = v * SIDE_SIZE + u;
+					index[1] = index[4] = index[0] + SIDE_SIZE;
+					index[2] = index[3] = index[0] + 1;
+					index[5] = index[1] + 1;
+					index += 6;
+				}
+			}
+
+			skydome->meshes[i].numindexes = (vmax-vmin)*(umax-umin)*6;
+		}
+
+		if ( skydome->farbox_shaders[0] ) {
+			R_DrawSkyBox ( skydome, skydome->farbox_shaders );
 		}
 
 		if ( shader->numpasses ) {
+			qboolean flush = qfalse;
+			int features = shader->features;
+
+			if ( r_shownormals->value ) {
+				features |= MF_NORMALS;
+			}
+
 			for ( i = 0; i < 5; i++ )
 			{
-				if (currentlist->skymins[0][i] >= currentlist->skymaxs[0][i] || 
-					currentlist->skymins[1][i] >= currentlist->skymaxs[1][i]) {
+				if (r_currentlist->skymins[0][i] >= r_currentlist->skymaxs[0][i] || 
+					r_currentlist->skymins[1][i] >= r_currentlist->skymaxs[1][i]) {
 					continue;
 				}
 
-				flush = true;
+				flush = qtrue;
 				mbuffer->fog = r_skyfog;
-				mbuffer->mesh = skydome->meshes + i;
 				mbuffer->shader = shader;
 
+				skydome->meshes[i].st_array = skydome->sphereStCoords[i];
 				R_PushMesh ( &skydome->meshes[i], features );
+			}
+
+			if ( flush ) {
+				R_RenderMeshBuffer ( mbuffer, qfalse );
 			}
 		}
 
-		if ( flush ) {
-			R_RenderMeshBuffer ( mbuffer, false );
+		if ( skydome->nearbox_shaders[0] ) {
+			R_DrawSkyBox ( skydome, skydome->nearbox_shaders );
 		}
 
-		if ( skydome->nearbox_textures[0] ) {
-			GL_EnableMultitexture ( false );
-			qglDepthMask ( GL_FALSE );
-			qglEnable ( GL_ALPHA_TEST );
-			R_DrawSkyBox ( skydome->nearbox_textures, GL_MODULATE );
-			qglDisable ( GL_ALPHA_TEST );
+		if ( r_portalview || r_mirrorview ) {
+			qglEnable ( GL_CLIP_PLANE0 );
 		}
 	}
 
-	qglLoadMatrixf ( r_modelview_matrix );
+	qglLoadMatrixf ( r_worldview_matrix );
 
 	gldepthmin = 0;
 	gldepthmax = 1;
@@ -374,14 +432,14 @@ void DrawSkyPolygon (int nump, vec3_t vecs)
 		j = vec_to_st[axis][1];
 		t = (j < 0) ? -vecs[-j -1] * dv : vecs[j-1] * dv;
 
-		if (s < currentlist->skymins[0][axis])
-			currentlist->skymins[0][axis] = s;
-		if (t < currentlist->skymins[1][axis])
-			currentlist->skymins[1][axis] = t;
-		if (s > currentlist->skymaxs[0][axis])
-			currentlist->skymaxs[0][axis] = s;
-		if (t > currentlist->skymaxs[1][axis])
-			currentlist->skymaxs[1][axis] = t;
+		if (s < r_currentlist->skymins[0][axis])
+			r_currentlist->skymins[0][axis] = s;
+		if (t < r_currentlist->skymins[1][axis])
+			r_currentlist->skymins[1][axis] = t;
+		if (s > r_currentlist->skymaxs[0][axis])
+			r_currentlist->skymaxs[0][axis] = s;
+		if (t > r_currentlist->skymaxs[1][axis])
+			r_currentlist->skymaxs[1][axis] = t;
 	}
 }
 
@@ -408,19 +466,19 @@ void ClipSkyPolygon (int nump, vec3_t vecs, int stage)
 		return;
 	}
 
-	front = back = false;
+	front = back = qfalse;
 	norm = skyclip[stage];
 	for (i=0, v = vecs ; i<nump ; i++, v+=3)
 	{
 		d = DotProduct (v, norm);
 		if (d > ON_EPSILON)
 		{
-			front = true;
+			front = qtrue;
 			sides[i] = SIDE_FRONT;
 		}
 		else if (d < -ON_EPSILON)
 		{
-			back = true;
+			back = qtrue;
 			sides[i] = SIDE_BACK;
 		}
 		else
@@ -516,8 +574,8 @@ void R_ClearSkyBox (void)
 
 	for (i=0 ; i<6 ; i++)
 	{
-		currentlist->skymins[0][i] = currentlist->skymins[1][i] = 9999999;
-		currentlist->skymaxs[0][i] = currentlist->skymaxs[1][i] = -9999999;
+		r_currentlist->skymins[0][i] = r_currentlist->skymins[1][i] = 9999999;
+		r_currentlist->skymaxs[0][i] = r_currentlist->skymaxs[1][i] = -9999999;
 	}
 }
 
@@ -556,41 +614,6 @@ void MakeSkyVec2 (float s, float t, int axis)
 
 	qglTexCoord2f ( s, 1.0 - t );
 	qglVertex3fv ( v );
-}
-
-/*
-==============
-R_DrawSkyBox
-==============
-*/
-void R_DrawSkyBox (image_t **skybox_textures, int texenv)
-{
-	int		i;
-	int	skytexorder[6] = {0,2,1,3,4,5};
-
-	GL_TexEnv ( texenv );
-
-	if ( !skybox_textures[0] ) {
-		return;
-	}
-
-	for (i=0 ; i<6 ; i++)
-	{
-		if (currentlist->skymins[0][i] >= currentlist->skymaxs[0][i]
-		|| currentlist->skymins[1][i] >= currentlist->skymaxs[1][i])
-			continue;
-
-		GL_Bind ( skybox_textures[skytexorder[i]]->texnum );
-
-		qglBegin ( GL_QUADS );
-
-		MakeSkyVec2 (currentlist->skymins[0][i], currentlist->skymins[1][i], i);
-		MakeSkyVec2 (currentlist->skymins[0][i], currentlist->skymaxs[1][i], i);
-		MakeSkyVec2 (currentlist->skymaxs[0][i], currentlist->skymaxs[1][i], i);
-		MakeSkyVec2 (currentlist->skymaxs[0][i], currentlist->skymins[1][i], i);
-
-		qglEnd ();
-	}
 }
 
 /*

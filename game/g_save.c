@@ -88,6 +88,7 @@ field_t fields[] = {
 // these don't need names, we wouldn't want map fields using
 // some of these, and if one were accidentally present twice
 // it would double swizzle (fuck) the pointer.
+mmove_t mmove_reloc;
 
 field_t		savefields[] =
 {
@@ -103,7 +104,7 @@ field_t		savefields[] =
 	{"", FOFS(map), F_LSTRING},
 	{"", FOFS(message), F_LSTRING},
 
-	{"", FOFS(client), F_CLIENT},
+	{"", FOFS(r.client), F_CLIENT},
 	{"", FOFS(item), F_ITEM},
 
 	{"", FOFS(goalentity), F_EDICT},
@@ -114,11 +115,33 @@ field_t		savefields[] =
 	{"", FOFS(groundentity), F_EDICT},
 	{"", FOFS(teamchain), F_EDICT},
 	{"", FOFS(teammaster), F_EDICT},
-	{"", FOFS(owner), F_EDICT},
+	{"", FOFS(r.owner), F_EDICT},
 	{"", FOFS(mynoise), F_EDICT},
 	{"", FOFS(mynoise2), F_EDICT},
 	{"", FOFS(target_ent), F_EDICT},
 	{"", FOFS(chain), F_EDICT},
+
+	{"", FOFS(prethink), F_FUNCTION},
+	{"", FOFS(think), F_FUNCTION},
+	{"", FOFS(blocked), F_FUNCTION},
+	{"", FOFS(touch), F_FUNCTION},
+	{"", FOFS(use), F_FUNCTION},
+	{"", FOFS(pain), F_FUNCTION},
+	{"", FOFS(die), F_FUNCTION},
+
+	{"", FOFS(monsterinfo.stand), F_FUNCTION},
+	{"", FOFS(monsterinfo.idle), F_FUNCTION},
+	{"", FOFS(monsterinfo.search), F_FUNCTION},
+	{"", FOFS(monsterinfo.walk), F_FUNCTION},
+	{"", FOFS(monsterinfo.run), F_FUNCTION},
+	{"", FOFS(monsterinfo.dodge), F_FUNCTION},
+	{"", FOFS(monsterinfo.attack), F_FUNCTION},
+	{"", FOFS(monsterinfo.melee), F_FUNCTION},
+	{"", FOFS(monsterinfo.sight), F_FUNCTION},
+	{"", FOFS(monsterinfo.checkattack), F_FUNCTION},
+	{"", FOFS(monsterinfo.currentmove), F_MMOVE},
+
+	{"", FOFS(moveinfo.endfunc), F_FUNCTION},
 
 	{NULL, 0, F_INT}
 };
@@ -144,118 +167,9 @@ field_t		clientfields[] =
 	{NULL, 0, F_INT}
 };
 
-/*
-============
-InitGame
-
-This will be called when the dll is first loaded, which
-only happens when a new game is started or a save game
-is loaded.
-============
-*/
-void InitGame (void)
-{
-	gi.dprintf ("==== InitGame ====\n");
-
-	gun_x = gi.cvar ("gun_x", "0", 0);
-	gun_y = gi.cvar ("gun_y", "0", 0);
-	gun_z = gi.cvar ("gun_z", "0", 0);
-
-	//FIXME: sv_ prefix is wrong for these
-	sv_rollspeed = gi.cvar ("sv_rollspeed", "200", 0);
-	sv_rollangle = gi.cvar ("sv_rollangle", "2", 0);
-	sv_maxvelocity = gi.cvar ("sv_maxvelocity", "2000", 0);
-	sv_gravity = gi.cvar ("sv_gravity", "800", 0);
-
-	developer = gi.cvar ( "developer", "0", 0 );
-
-	// noset vars
-	dedicated = gi.cvar ("dedicated", "0", CVAR_NOSET);
-
-	// latched vars
-	sv_cheats = gi.cvar ("sv_cheats", "0", CVAR_SERVERINFO|CVAR_LATCH);
-	gi.cvar ("gamename", GAMEVERSION , CVAR_SERVERINFO | CVAR_LATCH);
-	gi.cvar ("gamedate", __DATE__ , CVAR_SERVERINFO | CVAR_LATCH);
-
-	maxclients = gi.cvar ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
-	deathmatch = gi.cvar ("deathmatch", "1", CVAR_LATCH);
-	coop = gi.cvar ("coop", "0", CVAR_LATCH);
-	skill = gi.cvar ("skill", "1", CVAR_LATCH);
-	maxentities = gi.cvar ("maxentities", "1024", CVAR_LATCH);
-
-//ZOID
-//This game.dll only supports deathmatch
-	if (!deathmatch->value) {
-		gi.dprintf("Forcing deathmatch.");
-		gi.cvar_set("deathmatch", "1");
-	}
-	//force coop off
-	if (coop->value)
-		gi.cvar_set("coop", "0");
-//ZOID
-
-
-	// change anytime vars
-	dmflags = gi.cvar ("dmflags", "0", CVAR_SERVERINFO);
-	fraglimit = gi.cvar ("fraglimit", "0", CVAR_SERVERINFO);
-	timelimit = gi.cvar ("timelimit", "0", CVAR_SERVERINFO);
-//ZOID
-	capturelimit = gi.cvar ("capturelimit", "0", CVAR_SERVERINFO);
-	instantweap = gi.cvar ("instantweap", "0", CVAR_SERVERINFO);
-//ZOID
- 	password = gi.cvar ("password", "", CVAR_USERINFO);
-	filterban = gi.cvar ("filterban", "1", 0);
-
-	g_select_empty = gi.cvar ("g_select_empty", "0", CVAR_ARCHIVE);
-
-#if 0
-	run_pitch = gi.cvar ("run_pitch", "0.002", 0);
-	run_roll = gi.cvar ("run_roll", "0.005", 0);
-	bob_up  = gi.cvar ("bob_up", "0.005", 0);
-	bob_pitch = gi.cvar ("bob_pitch", "0.002", 0);
-	bob_roll = gi.cvar ("bob_roll", "0.002", 0);
-#else
-	run_pitch = gi.cvar ("run_pitch", "0", 0);
-	run_roll = gi.cvar ("run_roll", "0", 0);
-	bob_up  = gi.cvar ("bob_up", "0", 0);
-	bob_pitch = gi.cvar ("bob_pitch", "0", 0);
-	bob_roll = gi.cvar ("bob_roll", "0", 0);
-#endif
-
-	// flood control
-	flood_msgs = gi.cvar ("flood_msgs", "4", 0);
-	flood_persecond = gi.cvar ("flood_persecond", "4", 0);
-	flood_waitdelay = gi.cvar ("flood_waitdelay", "10", 0);
-
-	// dm map list
-	sv_maplist = gi.cvar ("sv_maplist", "", 0);
-
-	// items
-	InitItems ();
-
-	Com_sprintf (game.helpmessage1, sizeof(game.helpmessage1), "");
-
-	Com_sprintf (game.helpmessage2, sizeof(game.helpmessage2), "");
-
-	// initialize all entities for this game
-	game.maxentities = maxentities->value;
-	g_edicts =  gi.TagMalloc (game.maxentities * sizeof(g_edicts[0]), TAG_GAME);
-	globals.edicts = g_edicts;
-	globals.max_edicts = game.maxentities;
-
-	// initialize all clients for this game
-	game.maxclients = maxclients->value;
-	game.clients = gi.TagMalloc (game.maxclients * sizeof(game.clients[0]), TAG_GAME);
-	globals.num_edicts = game.maxclients+1;
-
-//ZOID
-	CTFInit();
-//ZOID
-}
-
 //=========================================================
 
-void WriteField1 (FILE *f, field_t *field, byte *base)
+void WriteField1 (FILE *f, field_t *field, qbyte *base)
 {
 	void		*p;
 	int			len;
@@ -279,13 +193,15 @@ void WriteField1 (FILE *f, field_t *field, byte *base)
 			len = 0;
 		*(int *)p = len;
 		break;
+
 	case F_EDICT:
 		if ( *(edict_t **)p == NULL)
 			index = -1;
 		else
-			index = *(edict_t **)p - g_edicts;
+			index = *(edict_t **)p - game.edicts;
 		*(int *)p = index;
 		break;
+
 	case F_CLIENT:
 		if ( *(gclient_t **)p == NULL)
 			index = -1;
@@ -293,6 +209,7 @@ void WriteField1 (FILE *f, field_t *field, byte *base)
 			index = *(gclient_t **)p - game.clients;
 		*(int *)p = index;
 		break;
+
 	case F_ITEM:
 		if ( *(edict_t **)p == NULL)
 			index = -1;
@@ -301,12 +218,30 @@ void WriteField1 (FILE *f, field_t *field, byte *base)
 		*(int *)p = index;
 		break;
 
+	// relative to code segment
+	case F_FUNCTION:
+		if (*(qbyte **)p == NULL)
+			index = 0;
+		else
+			index = *(qbyte **)p - ((qbyte *)G_Init);
+		*(int *)p = index;
+		break;
+
+	// relative to data segment
+	case F_MMOVE:
+		if (*(qbyte **)p == NULL)
+			index = 0;
+		else
+			index = *(qbyte **)p - (qbyte *)&mmove_reloc;
+		*(int *)p = index;
+		break;
+
 	default:
-		gi.error ("WriteEdict: unknown field type");
+		G_Error ("WriteEdict: unknown field type");
 	}
 }
 
-void WriteField2 (FILE *f, field_t *field, byte *base)
+void WriteField2 (FILE *f, field_t *field, qbyte *base)
 {
 	int			len;
 	void		*p;
@@ -325,7 +260,7 @@ void WriteField2 (FILE *f, field_t *field, byte *base)
 	}
 }
 
-void ReadField (FILE *f, field_t *field, byte *base)
+void ReadField (FILE *f, field_t *field, qbyte *base)
 {
 	void		*p;
 	int			len;
@@ -347,27 +282,30 @@ void ReadField (FILE *f, field_t *field, byte *base)
 			*(char **)p = NULL;
 		else
 		{
-			*(char **)p = gi.TagMalloc (len, TAG_LEVEL);
+			*(char **)p = G_GameMalloc (len);
 			fread (*(char **)p, len, 1, f);
 		}
 		break;
+
 	case F_GSTRING:
 		len = *(int *)p;
 		if (!len)
 			*(char **)p = NULL;
 		else
 		{
-			*(char **)p = gi.TagMalloc (len, TAG_GAME);
+			*(char **)p = G_GameMalloc (len);
 			fread (*(char **)p, len, 1, f);
 		}
 		break;
+
 	case F_EDICT:
 		index = *(int *)p;
 		if ( index == -1 )
 			*(edict_t **)p = NULL;
 		else
-			*(edict_t **)p = &g_edicts[index];
+			*(edict_t **)p = &game.edicts[index];
 		break;
+
 	case F_CLIENT:
 		index = *(int *)p;
 		if ( index == -1 )
@@ -375,6 +313,7 @@ void ReadField (FILE *f, field_t *field, byte *base)
 		else
 			*(gclient_t **)p = &game.clients[index];
 		break;
+
 	case F_ITEM:
 		index = *(int *)p;
 		if ( index == -1 )
@@ -383,8 +322,26 @@ void ReadField (FILE *f, field_t *field, byte *base)
 			*(gitem_t **)p = &itemlist[index];
 		break;
 
+	// relative to code segment
+	case F_FUNCTION:
+		index = *(int *)p;
+		if ( index == 0 )
+			*(qbyte **)p = NULL;
+		else
+			*(qbyte **)p = ((qbyte *)G_Init) + index;
+		break;
+
+	// relative to data segment
+	case F_MMOVE:
+		index = *(int *)p;
+		if (index == 0)
+			*(qbyte **)p = NULL;
+		else
+			*(qbyte **)p = (qbyte *)&mmove_reloc + index;
+		break;
+
 	default:
-		gi.error ("ReadEdict: unknown field type");
+		G_Error ("ReadEdict: unknown field type");
 	}
 }
 
@@ -408,7 +365,7 @@ void WriteClient (FILE *f, gclient_t *client)
 	// change the pointers to lengths or indexes
 	for (field=clientfields ; field->name ; field++)
 	{
-		WriteField1 (f, field, (byte *)&temp);
+		WriteField1 (f, field, (qbyte *)&temp);
 	}
 
 	// write the block
@@ -417,7 +374,7 @@ void WriteClient (FILE *f, gclient_t *client)
 	// now write any allocated data following the edict
 	for (field=clientfields ; field->name ; field++)
 	{
-		WriteField2 (f, field, (byte *)client);
+		WriteField2 (f, field, (qbyte *)client);
 	}
 }
 
@@ -436,7 +393,7 @@ void ReadClient (FILE *f, gclient_t *client)
 
 	for (field=clientfields ; field->name ; field++)
 	{
-		ReadField (f, field, (byte *)client);
+		ReadField (f, field, (qbyte *)client);
 	}
 }
 
@@ -465,7 +422,7 @@ void WriteGame (char *filename, qboolean autosave)
 
 	f = fopen (filename, "wb");
 	if (!f)
-		gi.error ("Couldn't open %s", filename);
+		G_Error ("Couldn't open %s", filename);
 
 	memset (str, 0, sizeof(str));
 	strcpy (str, __DATE__);
@@ -473,7 +430,7 @@ void WriteGame (char *filename, qboolean autosave)
 
 	game.autosaved = autosave;
 	fwrite (&game, sizeof(game), 1, f);
-	game.autosaved = false;
+	game.autosaved = qfalse;
 
 	for (i=0 ; i<game.maxclients ; i++)
 		WriteClient (f, &game.clients[i]);
@@ -487,24 +444,26 @@ void ReadGame (char *filename)
 	int		i;
 	char	str[16];
 
-	gi.FreeTags (TAG_GAME);
-
 	f = fopen (filename, "rb");
 	if (!f)
-		gi.error ("Couldn't open %s", filename);
+		G_Error ("Couldn't open %s", filename);
 
 	fread (str, sizeof(str), 1, f);
 	if (strcmp (str, __DATE__))
 	{
 		fclose (f);
-		gi.error ("Savegame from an older version.\n");
+		G_Error ("Savegame from an older version.\n");
 	}
 
-	g_edicts =  gi.TagMalloc (game.maxentities * sizeof(g_edicts[0]), TAG_GAME);
-	globals.edicts = g_edicts;
+	G_EmptyGamePool ();
 
 	fread (&game, sizeof(game), 1, f);
-	game.clients = gi.TagMalloc (game.maxclients * sizeof(game.clients[0]), TAG_GAME);
+
+	game.edicts = G_GameMalloc (game.maxentities * sizeof(game.edicts[0]));
+	game.clients = G_GameMalloc (game.maxclients * sizeof(game.clients[0]));
+
+	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
+
 	for (i=0 ; i<game.maxclients ; i++)
 		ReadClient (f, &game.clients[i]);
 
@@ -532,7 +491,7 @@ void WriteEdict (FILE *f, edict_t *ent)
 	// change the pointers to lengths or indexes
 	for (field=savefields ; field->name ; field++)
 	{
-		WriteField1 (f, field, (byte *)&temp);
+		WriteField1 (f, field, (qbyte *)&temp);
 	}
 
 	// write the block
@@ -541,7 +500,7 @@ void WriteEdict (FILE *f, edict_t *ent)
 	// now write any allocated data following the edict
 	for (field=savefields ; field->name ; field++)
 	{
-		WriteField2 (f, field, (byte *)ent);
+		WriteField2 (f, field, (qbyte *)ent);
 	}
 
 }
@@ -564,7 +523,7 @@ void WriteLevelLocals (FILE *f)
 	// change the pointers to lengths or indexes
 	for (field=levelfields ; field->name ; field++)
 	{
-		WriteField1 (f, field, (byte *)&temp);
+		WriteField1 (f, field, (qbyte *)&temp);
 	}
 
 	// write the block
@@ -573,7 +532,7 @@ void WriteLevelLocals (FILE *f)
 	// now write any allocated data following the edict
 	for (field=levelfields ; field->name ; field++)
 	{
-		WriteField2 (f, field, (byte *)&level);
+		WriteField2 (f, field, (qbyte *)&level);
 	}
 }
 
@@ -593,7 +552,7 @@ void ReadEdict (FILE *f, edict_t *ent)
 
 	for (field=savefields ; field->name ; field++)
 	{
-		ReadField (f, field, (byte *)ent);
+		ReadField (f, field, (qbyte *)ent);
 	}
 }
 
@@ -612,7 +571,7 @@ void ReadLevelLocals (FILE *f)
 
 	for (field=levelfields ; field->name ; field++)
 	{
-		ReadField (f, field, (byte *)&level);
+		ReadField (f, field, (qbyte *)&level);
 	}
 }
 
@@ -631,24 +590,24 @@ void WriteLevel (char *filename)
 
 	f = fopen (filename, "wb");
 	if (!f)
-		gi.error ("Couldn't open %s", filename);
+		G_Error ("Couldn't open %s", filename);
 
 	// write out edict size for checking
 	i = sizeof(edict_t);
 	fwrite (&i, sizeof(i), 1, f);
 
 	// write out a function pointer for checking
-	base = (void *)InitGame;
+	base = (void *)G_Init;
 	fwrite (&base, sizeof(base), 1, f);
 
 	// write out level_locals_t
 	WriteLevelLocals (f);
 
 	// write out all the entities
-	for (i=0 ; i<globals.num_edicts ; i++)
+	for (i=0 ; i<game.numentities ; i++)
 	{
-		ent = &g_edicts[i];
-		if (!ent->inuse)
+		ent = &game.edicts[i];
+		if (!ent->r.inuse)
 			continue;
 		fwrite (&i, sizeof(i), 1, f);
 		WriteEdict (f, ent);
@@ -686,31 +645,36 @@ void ReadLevel (char *filename)
 
 	f = fopen (filename, "rb");
 	if (!f)
-		gi.error ("Couldn't open %s", filename);
+		G_Error ("Couldn't open %s", filename);
 
-	// free any dynamic memory allocated by loading the level
-	// base state
-	gi.FreeTags (TAG_LEVEL);
+	// free any dynamic memory allocated by loading the level base state
+	G_EmptyLevelPool ();
 
 	// wipe all the entities
-	memset (g_edicts, 0, game.maxentities*sizeof(g_edicts[0]));
-	globals.num_edicts = maxclients->value+1;
+	memset (game.edicts, 0, game.maxentities*sizeof(game.edicts[0]));
+	game.numentities = maxclients->value+1;
+
+	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
 
 	// check edict size
 	fread (&i, sizeof(i), 1, f);
 	if (i != sizeof(edict_t))
 	{
 		fclose (f);
-		gi.error ("ReadLevel: mismatched edict size");
+		G_Error ("ReadLevel: mismatched edict size");
 	}
 
 	// check function pointer base address
 	fread (&base, sizeof(base), 1, f);
-	if (base != (void *)InitGame)
+#ifdef _WIN32
+	if (base != (void *)G_Init)
 	{
 		fclose (f);
-		gi.error ("ReadLevel: function pointers have moved");
+		G_Error ("ReadLevel: function pointers have moved");
 	}
+#else
+	G_Printf ("Function offsets %d\n", ((qbyte *)base) - ((qbyte *)G_Init));
+#endif
 
 	// load the level locals
 	ReadLevelLocals (f);
@@ -721,19 +685,22 @@ void ReadLevel (char *filename)
 		if (fread (&entnum, sizeof(entnum), 1, f) != 1)
 		{
 			fclose (f);
-			gi.error ("ReadLevel: failed to read entnum");
+			G_Error ("ReadLevel: failed to read entnum");
 		}
 		if (entnum == -1)
 			break;
-		if (entnum >= globals.num_edicts)
-			globals.num_edicts = entnum+1;
+		if (entnum >= game.numentities)
+		{
+			game.numentities = entnum+1;
+			trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
+		}
 
-		ent = &g_edicts[entnum];
+		ent = &game.edicts[entnum];
 		ReadEdict (f, ent);
 
 		// let the server rebuild world links for this ent
-		memset (&ent->area, 0, sizeof(ent->area));
-		gi.linkentity (ent);
+		memset (&ent->r.area, 0, sizeof(ent->r.area));
+		trap_LinkEntity (ent);
 	}
 
 	fclose (f);
@@ -741,17 +708,17 @@ void ReadLevel (char *filename)
 	// mark all clients as unconnected
 	for (i=0 ; i<maxclients->value ; i++)
 	{
-		ent = &g_edicts[i+1];
-		ent->client = game.clients + i;
-		ent->client->pers.connected = false;
+		ent = &game.edicts[i+1];
+		ent->r.client = game.clients + i;
+		ent->r.client->pers.connected = qfalse;
 	}
 
 	// do any load time things at this point
-	for (i=0 ; i<globals.num_edicts ; i++)
+	for (i=0 ; i<game.numentities ; i++)
 	{
-		ent = &g_edicts[i];
+		ent = &game.edicts[i];
 
-		if (!ent->inuse)
+		if (!ent->r.inuse)
 			continue;
 
 		// fire any cross-level triggers

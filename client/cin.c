@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "client.h"
 
-static int snd_sqr_arr[256];
+static short snd_sqr_arr[256];
 
 /*
 ==================
@@ -43,7 +43,7 @@ void RoQ_Init (void)
 RoQ_ReadChunk
 ==================
 */
-void RoQ_ReadChunk (cinematics_t *cin)
+void RoQ_ReadChunk ( cinematics_t *cin )
 {
 	roq_chunk_t *chunk = &cin->chunk;
 
@@ -60,16 +60,34 @@ void RoQ_ReadChunk (cinematics_t *cin)
 
 /*
 ==================
+RoQ_SkipBlock
+==================
+*/
+static void RoQ_SkipBlock ( cinematics_t *cin, int size )
+{
+	qbyte compressed[0x20000];
+	int block, remaining = size;
+
+	if ( !size ) {
+		return;
+	}
+
+	do {
+		block = (sizeof(compressed) < remaining) ? sizeof(compressed) : remaining;
+		remaining -= block;
+		FS_Read ( compressed, block, cin->file );
+	} while ( remaining );
+
+	cin->remaining -= size;
+}
+
+/*
+==================
 RoQ_SkipChunk
 ==================
 */
-void RoQ_SkipChunk (cinematics_t *cin)
-{
-	roq_chunk_t *chunk = &cin->chunk;
-	byte compressed[0x20000];
-
-	FS_Read ( compressed, chunk->size, cin->file );
-	cin->remaining -= chunk->size;
+void RoQ_SkipChunk ( cinematics_t *cin ) {
+	RoQ_SkipBlock ( cin, cin->chunk.size );
 }
 
 /*
@@ -77,9 +95,8 @@ void RoQ_SkipChunk (cinematics_t *cin)
 RoQ_ReadInfo
 ==================
 */
-void RoQ_ReadInfo (cinematics_t *cin)
+void RoQ_ReadInfo ( cinematics_t *cin )
 {
-	int i;
 	short t[4];
 	roq_chunk_t *chunk = &cin->chunk;
 
@@ -88,30 +105,18 @@ void RoQ_ReadInfo (cinematics_t *cin)
 
 	cin->width = LittleShort ( t[0] );
 	cin->height = LittleShort ( t[1] );
-	cin->width_2 = cin->width / 2;
 
-	if ( cin->buf ) {
-		Z_Free ( cin->buf );
+	if ( cin->vid_buffer ) {
+		Mem_ZoneFree ( cin->vid_buffer );
 	}
-	cin->buf = Z_Malloc ( cin->width * cin->height * 4 );
 
-	for (i = 0; i < 2; i++)
-	{
-		if ( cin->y[i] )  {
-			Z_Free ( cin->y[i] );
-		}
-		cin->y[i] = Z_Malloc (cin->width * cin->height);
+	cin->vid_buffer = Mem_ZoneMalloc ( cin->width * cin->height * 4 * 2 );
 
-		if ( cin->u[i] ) {
-			Z_Free ( cin->u[i] );
-		}
-		cin->u[i] = Z_Malloc (cin->width * cin->height/4);
+	// default to 255 for alpha
+	memset ( cin->vid_buffer, 0xFF, cin->width * cin->height * 4 * 2 );
 
-		if ( cin->v[i] ) {
-			Z_Free ( cin->v[i] );
-		}
-		cin->v[i] = Z_Malloc (cin->width * cin->height/4);
-	}
+	cin->vid_pic[0] = cin->vid_buffer;
+	cin->vid_pic[1] = cin->vid_buffer + cin->width * cin->height * 4;
 }
 
 /*
@@ -119,7 +124,7 @@ void RoQ_ReadInfo (cinematics_t *cin)
 RoQ_ReadCodebook
 ==================
 */
-void RoQ_ReadCodebook (cinematics_t *cin)
+void RoQ_ReadCodebook ( cinematics_t *cin )
 {
 	int nv1, nv2;
 	roq_chunk_t *chunk = &cin->chunk;
@@ -145,20 +150,47 @@ void RoQ_ReadCodebook (cinematics_t *cin)
 RoQ_ApplyVector2x2
 ==================
 */
-static void RoQ_ApplyVector2x2 (cinematics_t *cin, int x, int y, roq_cell_t *cell)
+static void RoQ_DecodeBlock ( qbyte *dst0, qbyte *dst1, const qbyte *src0, const qbyte *src1, float u, float v )
+{ 
+	int c[3];
+
+	// convert YCbCr to RGB
+	VectorSet ( c, 1.402f * v, -0.34414f * u - 0.71414f * v, 1.772f * u );
+
+	// 1st pixel
+	dst0[0] = bound ( 0, c[0] + src0[0], 255 );
+	dst0[1] = bound ( 0, c[1] + src0[0], 255 );
+	dst0[2] = bound ( 0, c[2] + src0[0], 255 );
+
+	// 2nd pixel
+	dst0[4] = bound ( 0, c[0] + src0[1], 255 );
+	dst0[5] = bound ( 0, c[1] + src0[1], 255 );
+	dst0[6] = bound ( 0, c[2] + src0[1], 255 );
+
+	// 3rd pixel
+	dst1[0] = bound ( 0, c[0] + src1[0], 255 );
+	dst1[1] = bound ( 0, c[1] + src1[0], 255 );
+	dst1[2] = bound ( 0, c[2] + src1[0], 255 );
+
+	// 4th pixel
+	dst1[4] = bound ( 0, c[0] + src1[1], 255 );
+	dst1[5] = bound ( 0, c[1] + src1[1], 255 );
+	dst1[6] = bound ( 0, c[2] + src1[1], 255 );
+} 
+
+/*
+==================
+RoQ_ApplyVector2x2
+==================
+*/
+static void RoQ_ApplyVector2x2 ( cinematics_t *cin, int x, int y, const roq_cell_t *cell )
 {
-	byte *yptr;
-	
-	yptr = cin->y[0] + (y * cin->width) + x;
-	*yptr++ = cell->y0;
-	*yptr++ = cell->y1;
+	qbyte *dst0, *dst1; 
 
-	yptr += (cin->width - 2);
-	*yptr++ = cell->y2;
-	*yptr++ = cell->y3;
+	dst0 = cin->vid_pic[0] + (y * cin->width + x) * 4;
+	dst1 = dst0 + cin->width * 4;
 
-	cin->u[0][(y/2) * cin->width_2 + x/2] = cell->u;
-	cin->v[0][(y/2) * cin->width_2 + x/2] = cell->v;
+	RoQ_DecodeBlock ( dst0, dst1, cell->y, cell->y+2, (float)((int)cell->u-128), (float)((int)cell->v-128) );
 }
 
 /*
@@ -166,46 +198,26 @@ static void RoQ_ApplyVector2x2 (cinematics_t *cin, int x, int y, roq_cell_t *cel
 RoQ_ApplyVector4x4
 ==================
 */
-static void RoQ_ApplyVector4x4 (cinematics_t *cin, int x, int y, roq_cell_t *cell)
+static void RoQ_ApplyVector4x4 ( cinematics_t *cin, int x, int y, const roq_cell_t *cell )
 {
-	byte u[2], v[2], yp[4];
-	int row_inc, c_row_inc;
-	byte *yptr, *uptr, *vptr;
+	qbyte *dst0, *dst1; 
+	qbyte p[4]; 
+	float u, v; 
 
-	row_inc = cin->width - 4;
-	c_row_inc = cin->width_2 - 2;
+	u = (float)((int)cell->u - 128); 
+	v = (float)((int)cell->v - 128); 
 
-	yptr = cin->y[0] + y * cin->width + x;
-	uptr = cin->u[0] + (y/2) * cin->width_2 + x/2;
-	vptr = cin->v[0] + (y/2) * cin->width_2 + x/2;
-	
-	yp[0] = yp[1] = cell->y0;
-	yp[2] = yp[3] = cell->y1;
+	p[0] = p[1] = cell->y[0];
+	p[2] = p[3] = cell->y[1];
+	dst0 = cin->vid_pic[0] + (y * cin->width + x) * 4; dst1 = dst0 + cin->width * 4;
+	RoQ_DecodeBlock ( dst0, dst0+8, p, p+2, u, v );
+	RoQ_DecodeBlock ( dst1, dst1+8, p, p+2, u, v );
 
-	u[0] = u[1] = cell->u;
-	v[0] = v[1] = cell->v;
-
-	*(int *)yptr = *(int *)yp;
-	yptr += row_inc + 4;
-	
-	*(int *)yptr = *(int *)yp;
-	yptr += row_inc + 4; 
-	
-	*(short *)uptr = *(short *)u;
-	uptr += c_row_inc + 2; 
-
-	*(short *)vptr = *(short *)v;
-	vptr += c_row_inc + 2;
-	
-	yp[0] = yp[1] = cell->y2;
-	yp[2] = yp[3] = cell->y3;
-
-	*(int *)yptr = *(int *)yp;
-	yptr += row_inc + 4;
-	
-	*(int *)yptr = *(int *)yp;
-	*(short *)uptr = *(short *)u;
-	*(short *)vptr = *(short *)v;
+	p[0] = p[1] = cell->y[2];
+	p[2] = p[3] = cell->y[3];
+	dst0 += cin->width * 4 * 2; dst1 += cin->width * 4 * 2; 
+	RoQ_DecodeBlock ( dst0, dst0+8, p, p+2, u, v );
+	RoQ_DecodeBlock ( dst1, dst1+8, p, p+2, u, v ); 
 }
 
 /*
@@ -213,39 +225,20 @@ static void RoQ_ApplyVector4x4 (cinematics_t *cin, int x, int y, roq_cell_t *cel
 RoQ_ApplyMotion4x4
 ==================
 */
-static void RoQ_ApplyMotion4x4 (cinematics_t *cin, int x, int y, byte mv, char mean_x, char mean_y)
+static void RoQ_ApplyMotion4x4 ( cinematics_t *cin, int x, int y, qbyte mv, char mean_x, char mean_y )
 {
-	int i, mx, my;
-	byte *pa, *pb;
-	
-	mx = x + 8 - (mv >> 4) - mean_x;
-	my = y + 8 - (mv & 0xF) - mean_y;
-	
-	pa = cin->y[0] + y * cin->width + x;
-	pb = cin->y[1] + my * cin->width + mx;
-	for (i = 0; i < 4; i++)
-	{
-		*(int *)(pa+0) = *(int *)(pb+0);
-		pa += cin->width;
-		pb += cin->width;
-	}
-	
-	pa = cin->u[0] + (y/2) * cin->width_2 + x/2;
-	pb = cin->u[1] + (my/2) * cin->width_2 + (mx + 1)/2;
-	for (i = 0; i < 2; i++)
-	{
-		*(short *)(pa+0) = *(short *)(pb+0);
-		pa += cin->width_2;
-		pb += cin->width_2;
-	}
-	
-	pa = cin->v[0] + (y/2) * cin->width_2 + x/2;
-	pb = cin->v[1] + (my/2) * cin->width_2 + (mx + 1)/2;
-	for (i = 0; i < 2; i++)
-	{
-		*(short *)(pa+0) = *(short *)(pb+0);
-		pa += cin->width_2;
-		pb += cin->width_2;
+	int x0, y0;
+	qbyte *src, *dst;
+
+	// calc source coords 
+	x0 = x + 8 - (mv >> 4) - mean_x;
+	y0 = y + 8 - (mv & 0xF) - mean_y;
+
+	src = cin->vid_pic[1] + (y0 * cin->width + x0) * 4; 
+	dst = cin->vid_pic[0] + (y * cin->width + x) * 4; 
+
+	for ( y = 0; y < 4; y++, src += cin->width * 4, dst += cin->width * 4 ) {
+		memcpy ( dst, src, 4 * 4 );
 	}
 }
 
@@ -254,91 +247,21 @@ static void RoQ_ApplyMotion4x4 (cinematics_t *cin, int x, int y, byte mv, char m
 RoQ_ApplyMotion8x8
 ==================
 */
-static void RoQ_ApplyMotion8x8 (cinematics_t *cin, int x, int y, byte mv, char mean_x, char mean_y)
+static void RoQ_ApplyMotion8x8 ( cinematics_t *cin, int x, int y, qbyte mv, char mean_x, char mean_y )
 {
-	int mx, my, i;
-	byte *pa, *pb;
+	int x0, y0;
+	qbyte *src, *dst;
+
+	// calc source coords 
+	x0 = x + 8 - (mv >> 4) - mean_x; 
+	y0 = y + 8 - (mv & 0xF) - mean_y; 
 	
-	mx = x + 8 - (mv >> 4) - mean_x;
-	my = y + 8 - (mv & 0xF) - mean_y;
+	src = cin->vid_pic[1] + (y0 * cin->width + x0) * 4; 
+	dst = cin->vid_pic[0] + (y * cin->width + x) * 4; 
 	
-	pa = cin->y[0] + y * cin->width + x;
-	pb = cin->y[1] + my * cin->width + mx;
-	for (i = 0; i < 8; i++)
-	{
-		*(int *)(pa+0) = *(int *)(pb+0);
-		*(int *)(pa+4) = *(int *)(pb+4);
-		pa += cin->width;
-		pb += cin->width;
+	for ( y = 0; y < 8; y++, src += cin->width * 4, dst += cin->width * 4 ) {
+		memcpy ( dst, src, 8 * 4 );
 	}
-	
-	pa = cin->u[0] + (y/2) * cin->width_2 + x/2;
-	pb = cin->u[1] + (my/2) * cin->width_2 + (mx + 1)/2;
-	for (i = 0; i < 4; i++)
-	{
-		*(int *)(pa+0) = *(int *)(pb+0);
-		pa += cin->width_2;
-		pb += cin->width_2;
-	}
-	
-	pa = cin->v[0] + (y/2) * cin->width_2 + x/2;
-	pb = cin->v[1] + (my/2) * cin->width_2 + (mx + 1)/2;
-	for (i = 0; i < 4; i++)
-	{
-		*(int *)(pa+0) = *(int *)(pb+0);
-		pa += cin->width_2;
-		pb += cin->width_2;
-	}
-}
-
-#define CLAMP(x) ((((x) > 0xFFFFFF) ? 0xFF0000 : (((x) <= 0xFFFF) ? 0 : (x) & 0xFF0000)) >> 16)
-
-/*
-==================
-RoQ_DecodeImage
-==================
-*/
-static byte *RoQ_DecodeImage (cinematics_t *cin)
-{
-	roq_chunk_t *chunk = &cin->chunk;
-	int i, x, y;
-	int rgb[3], rgbs[2], u, v;
-	byte *pa, *pb, *pc, *pic;
-
-	pic = cin->buf;
-	pa = cin->y[0];
-	pb = cin->u[0];
-	pc = cin->v[0];
-
-	for (y = 0; y < cin->height; y++)
-	{
-		for (x = 0; x < cin->width_2; x++)
-		{
-			u = pb[x] - 128;
-			v = pc[x] - 128;
-			rgbs[0] = (*pa++) << 16;
-			rgbs[1] = (*pa++) << 16;
-
-			rgb[0] = 91881 * v;
-			rgb[1] = -22554 * u + -46802 * v;
-			rgb[2] = 116130 * u;
-
-			for ( i = 0; i < 2; i++, pic += 4 ) {
-				pic[0] = (byte)CLAMP ( rgb[0] + rgbs[i] );
-				pic[1] = (byte)CLAMP ( rgb[1] + rgbs[i] );
-				pic[2] = (byte)CLAMP ( rgb[2] + rgbs[i] );
-				pic[3] = 255;
-			}
-		}
-
-		if (y & 0x01) 
-		{ 
-			pb += cin->width_2; 
-			pc += cin->width_2; 
-		}
-	}
-
-	return cin->buf;
 }
 
 /*
@@ -346,12 +269,12 @@ static byte *RoQ_DecodeImage (cinematics_t *cin)
 RoQ_ReadVideo
 ==================
 */
-byte *RoQ_ReadVideo (cinematics_t *cin)
+qbyte *RoQ_ReadVideo ( cinematics_t *cin )
 {
 	roq_chunk_t *chunk = &cin->chunk;
 	int i, vqflg_pos, vqid, bpos, xpos, ypos, x, y, xp, yp;
-	short vqflg, unused;
-	byte c[4], *tp;
+	short vqflg;
+	qbyte c[4], *tp;
 	roq_qcell_t *qcell;
 
 	vqflg = 0;
@@ -365,8 +288,7 @@ byte *RoQ_ReadVideo (cinematics_t *cin)
 		for (yp = ypos; yp < ypos + 16; yp += 8)
 			for (xp = xpos; xp < xpos + 16; xp += 8)
 			{
-				if (vqflg_pos < 0)
-				{
+				if ( vqflg_pos < 0 ) {
 					FS_Read ( &vqflg, sizeof(short), cin->file );
 					bpos -= sizeof(short);
 
@@ -411,8 +333,7 @@ byte *RoQ_ReadVideo (cinematics_t *cin)
 						if (i & 0x02) 
 							y += 4;
 						
-						if (vqflg_pos < 0)
-						{
+						if ( vqflg_pos < 0 ) {
 							FS_Read ( &vqflg, sizeof(short), cin->file );
 							bpos -= sizeof(short);
 
@@ -466,31 +387,26 @@ byte *RoQ_ReadVideo (cinematics_t *cin)
 			}
 			
 		xpos += 16;
-		if (xpos >= cin->width)
-		{
+		if ( xpos >= cin->width ) {
 			xpos -= cin->width;
 			ypos += 16;
 		}
-		if (ypos >= cin->height && bpos)
-		{
-			FS_Read ( &unused, sizeof(short), cin->file );
+
+		if ( ypos >= cin->height && bpos ) {	// skip the remaining trash
+			RoQ_SkipBlock ( cin, bpos );
 			break;
 		}
 	}
 
-	cin->remaining -= chunk->size;
+	cin->remaining -= (chunk->size - bpos);
 
-	if ( cin->frame++ == 0 ) {
-		memcpy (cin->y[1], cin->y[0], cin->width * cin->height);
-		memcpy (cin->u[1], cin->u[0], cin->width * cin->height/4);
-		memcpy (cin->v[1], cin->v[0], cin->width * cin->height/4);
-	} else {
-		tp = cin->y[0]; cin->y[0] = cin->y[1]; cin->y[1] = tp;
-		tp = cin->u[0]; cin->u[0] = cin->u[1]; cin->u[1] = tp;
-		tp = cin->v[0]; cin->v[0] = cin->v[1]; cin->v[1] = tp;
+	if ( cin->frame++ == 0 ) {		// copy initial values to back buffer for motion
+		memcpy ( cin->vid_pic[1], cin->vid_pic[0], cin->width * cin->height * 4 );
+	} else {	// swap buffers
+		tp = cin->vid_pic[0]; cin->vid_pic[0] = cin->vid_pic[1]; cin->vid_pic[1] = tp;
 	}
 
-	return RoQ_DecodeImage ( cin );
+	return cin->vid_pic[1];
 }
 
 /*
@@ -498,11 +414,12 @@ byte *RoQ_ReadVideo (cinematics_t *cin)
 RoQ_ReadAudio
 ==================
 */
-void RoQ_ReadAudio (cinematics_t *cin)
+void RoQ_ReadAudio ( cinematics_t *cin )
 {
 	int i;
-	int snd_left, snd_right;
-	byte compressed[0x20000], samples[0x40000];
+	short snd_left, snd_right;
+	short samples[0x20000];
+	qbyte compressed[0x20000];
 	roq_chunk_t *chunk = &cin->chunk;
 
 	FS_Read (compressed, chunk->size, cin->file);
@@ -514,12 +431,10 @@ void RoQ_ReadAudio (cinematics_t *cin)
 		for (i = 0; i < chunk->size; i++)
 		{
 			snd_left += snd_sqr_arr[compressed[i]];
-
-			samples[i * 2 + 0] = snd_left & 0xff;
-			samples[i * 2 + 1] = ((snd_left & 0xff00) >> 8) & 0xff;
+			samples[i] = snd_left;
 		}
 
-		S_RawSamples (chunk->size, cin->s_rate, 2, 1, samples);
+		S_RawSamples ( chunk->size, cin->s_rate, 2, 1, (qbyte *)samples );
 	} else if ( chunk->id == RoQ_SOUND_STEREO ) {
 		snd_left = chunk->argument & 0xff00;
 		snd_right = (chunk->argument & 0xff) << 8;
@@ -529,12 +444,10 @@ void RoQ_ReadAudio (cinematics_t *cin)
 			snd_left += snd_sqr_arr[compressed[i]];
 			snd_right += snd_sqr_arr[compressed[i+1]];
 
-			samples[i * 2 + 0] = snd_left & 0xff;
-			samples[i * 2 + 1] = ((snd_left & 0xff00) >> 8) & 0xff;
-			samples[i * 2 + 2] = snd_right & 0xff;
-			samples[i * 2 + 3] = ((snd_right & 0xff00) >> 8) & 0xff;
+			samples[i+0] = snd_left;
+			samples[i+1] = snd_right;
 		}
 
-		S_RawSamples (chunk->size / 2, cin->s_rate, 2, 2, samples);
+		S_RawSamples ( chunk->size / 2, cin->s_rate, 2, 2, (qbyte *)samples );
 	}
 }

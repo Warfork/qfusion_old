@@ -114,7 +114,7 @@ static void CancelChanges( void *unused )
 */
 static void Video_MenuInit( void )
 {
-	static const char *resolutions[] = 
+	static char *resolutions[] = 
 	{
 		"[320 240  ]",
 		"[400 300  ]",
@@ -129,7 +129,7 @@ static void Video_MenuInit( void )
 		"[2048 1536]",
 		0
 	};
-	static const char *refs[] =
+	static char *refs[] =
 	{
 		"[default OpenGL]",
 		"[3Dfx OpenGL   ]",
@@ -137,39 +137,39 @@ static void Video_MenuInit( void )
 //		"[Rendition OpenGL]",
 		0
 	};
-	static const char *yesno_names[] =
+	static char *noyes_names[] =
 	{
 		"no", "yes", 0
 	};
 
-	static const char *detailtextures_items[] =
+	static char *detailtextures_items[] =
 	{
 		"off", "on", 0
 	};
 
-	static const char *lighting_names[] =
+	static char *lighting_names[] =
 	{
 		"lightmap", "vertex", 0
 	};
 
-	static const char *filter_names[] =
+	static char *filter_names[] =
 	{
 		"bilinear", "trilinear", 0
 	};
 
-	static const char *colordepth_names[] =
+	static char *colordepth_names[] =
 	{
 		"desktop", "16 bits", "32 bits", 0
 	};
 
-	static const char *texturebits_names[] =
+	static char *texturebits_names[] =
 	{
 		"default", "16", "32", 0
 	};
 
 	char *gl_driver = trap_Cvar_VariableString( "gl_driver" );
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	s_mode_list.curvalue = trap_Cvar_VariableValue( "r_mode" );
 	s_screensize_slider.curvalue = trap_Cvar_VariableValue( "viewsize" )/10;
@@ -210,6 +210,7 @@ static void Video_MenuInit( void )
 	s_screensize_slider.generic.type	= MTYPE_SLIDER;
 	s_screensize_slider.generic.x		= 0;
 	s_screensize_slider.generic.y		= y+=y_offset;
+	s_screensize_slider.generic.flags 	= QMF_LEFT_JUSTIFY;
 	s_screensize_slider.generic.name	= "screen size";
 	s_screensize_slider.minvalue		= 3;
 	s_screensize_slider.maxvalue		= 12;
@@ -218,6 +219,7 @@ static void Video_MenuInit( void )
 	s_brightness_slider.generic.type	= MTYPE_SLIDER;
 	s_brightness_slider.generic.x		= 0;
 	s_brightness_slider.generic.y		= y+=y_offset;
+	s_brightness_slider.generic.flags 	= QMF_LEFT_JUSTIFY;
 	s_brightness_slider.generic.name	= "brightness";
 	s_brightness_slider.generic.callback = BrightnessCallback;
 	s_brightness_slider.minvalue		= 5;
@@ -228,7 +230,7 @@ static void Video_MenuInit( void )
 	s_fs_box.generic.x		= 0;
 	s_fs_box.generic.y		= y+=y_offset;
 	s_fs_box.generic.name	= "fullscreen";
-	s_fs_box.itemnames		= yesno_names;
+	s_fs_box.itemnames		= noyes_names;
 	s_fs_box.curvalue		= trap_Cvar_VariableValue( "vid_fullscreen" );
 
 	s_colordepth_box.generic.type	= MTYPE_SPINCONTROL;
@@ -270,6 +272,7 @@ static void Video_MenuInit( void )
 	s_tq_slider.generic.x		= 0;
 	s_tq_slider.generic.y		= y+=y_offset;
 	s_tq_slider.generic.name	= "texture quality";
+	s_tq_slider.generic.flags	= QMF_LEFT_JUSTIFY;
 	s_tq_slider.minvalue		= 0;
 	s_tq_slider.maxvalue		= 3;
 	s_tq_slider.curvalue		= 3-trap_Cvar_VariableValue( "r_picmip" );
@@ -277,6 +280,7 @@ static void Video_MenuInit( void )
 	s_sq_slider.generic.type	= MTYPE_SLIDER;
 	s_sq_slider.generic.x		= 0;
 	s_sq_slider.generic.y		= y+=y_offset;
+	s_sq_slider.generic.flags	= QMF_LEFT_JUSTIFY;
 	s_sq_slider.generic.name	= "sky quality";
 	s_sq_slider.minvalue		= 0;
 	s_sq_slider.maxvalue		= 3;

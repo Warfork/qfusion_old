@@ -102,15 +102,11 @@ static void QuitMenuFunc( void *unused )
 
 void M_MainInit( void )
 {
-	int w, h;
 	int y = 0;
-	int y_offset = PROP_BIG_HEIGHT - 3;
+	int y_offset = UI_StringHeightOffset ( QMF_GIANT );
 
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_main_menu.x = w / 2;
-	s_main_menu.y = h / 2 - 138;
+	s_main_menu.x = uis.vidWidth / 2;
+	s_main_menu.y = uis.vidHeight / 2 - 138;
 	s_main_menu.nitems = 0;
 
 	s_main_title.generic.type			= MTYPE_SEPARATOR;

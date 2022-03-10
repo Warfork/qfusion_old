@@ -84,6 +84,10 @@ typedef struct msurface_s
 	mfog_t			*fog;
 
     float			origin[3];
+	float			mins[3], maxs[3];
+
+	unsigned int	patchWidth;
+	unsigned int	patchHeight;
 
 	int				fragmentframe;		// for R_GetClippedFragments
 
@@ -129,9 +133,9 @@ typedef struct
 
 typedef struct
 {
-	byte			ambient[3];
-	byte			diffuse[3];
-	byte			direction[2];
+	qbyte			ambient[3];
+	qbyte			diffuse[3];
+	qbyte			direction[2];
 } mgridlight_t;
 
 typedef struct
@@ -185,7 +189,7 @@ typedef struct
 	dvis_t			*vis;
 
 	int				numlightmaps;
-	byte			*lightdata;
+	qbyte			*lightdata;
 } bmodel_t;
 
 /*
@@ -206,13 +210,14 @@ typedef struct maliascoord_s
 
 typedef struct maliasvertex_s
 {
-	vec3_t			point;
-	vec3_t			normal;
+	short			point[3];
+	qbyte			latlong[2];		// use bytes to keep 8-byte alignment
 } maliasvertex_t;
 
 typedef struct
 {
     vec3_t			mins, maxs;
+	vec3_t			scale;
     vec3_t			translate;
     float			radius;
 } maliasframe_t;
@@ -231,13 +236,18 @@ typedef struct
 
 typedef struct
 {
+    char			name[MD3_MAX_PATH];
+
     int				numverts;
 	maliasvertex_t	*vertexes;
 	maliascoord_t	*stcoords;
 
     int				numtris;
     index_t			*indexes;
+
+#ifdef SHADOW_VOLUMES
 	int				*trneighbors;
+#endif
 
     int				numskins;
 	maliasskin_t	*skins;
@@ -261,7 +271,7 @@ typedef struct maliasmodel_s
 /*
 ==============================================================================
 
-DARKPLACES MODELS
+SKELETAL MODELS
 
 ==============================================================================
 */
@@ -273,7 +283,7 @@ DARKPLACES MODELS
 typedef struct
 {
 	float			matrix[3][4];
-} dpmbonepose_t;
+} mskbonepose_t;
 
 typedef struct dpmbonevert_s
 {
@@ -281,68 +291,72 @@ typedef struct dpmbonevert_s
 	float			influence;
 	vec3_t			normal;
 	unsigned int	bonenum;
-} dpmbonevert_t;
+} mskbonevert_t;
 
 typedef struct
 {
 	unsigned int	numbones;
-	dpmbonevert_t	*verts;
-} dpmvertex_t;
+	mskbonevert_t	*verts;
+} mskvertex_t;
 
 typedef struct
 {
-	char			shadername[DPM_MAX_NAME];		// name of the shader to use
+	char			shadername[SKM_MAX_NAME];		// name of the shader to use
 	shader_t		*shader;
-} dpmskin_t;
+} mskskin_t;
 
 typedef struct
 {
 	float			st[2];
-} dpmcoord_t;
+} mskcoord_t;
 
 typedef struct
 {
+	char			name[SKM_MAX_NAME];
+
 	unsigned int	numverts;
-	dpmvertex_t		*vertexes;
-	dpmcoord_t		*stcoords;
+	mskvertex_t		*vertexes;
+	mskcoord_t		*stcoords;
 
 	unsigned int	numtris;
 	index_t			*indexes;
-	int				*trneighbors;
-	vec3_t			*trnormals;
 
-	dpmskin_t		skin;
-} dpmmesh_t;
+	unsigned int	numreferences;
+	unsigned int	*references;
+
+#ifdef SHADOW_VOLUMES
+	int				*trneighbors;
+#endif
+
+	mskskin_t		skin;
+} mskmesh_t;
 
 typedef struct
 {
-	char			name[DPM_MAX_NAME];
+	char			name[SKM_MAX_NAME];
 	signed int		parent;
 	unsigned int	flags;
-} dpmbone_t;
+} mskbone_t;
 
 typedef struct
 {
-	dpmbonepose_t	*boneposes;
+	mskbonepose_t	*boneposes;
 
 	float			mins[3], maxs[3];
-	float			yawradius, allradius;	// for clipping uses
-} dpmframe_t;
+	float			radius;					// for clipping uses
+} mskframe_t;
 
 typedef struct
 {
 	unsigned int	numbones;
-	dpmbone_t		*bones;
+	mskbone_t		*bones;
 
 	unsigned int	nummeshes;
-	dpmmesh_t		*meshes;
+	mskmesh_t		*meshes;
 
 	unsigned int	numframes;
-	dpmframe_t		*frames;
-
-	float			mins[3], maxs[3];
-	float			yawradius, allradius;	// for clipping uses
-} dpmmodel_t;
+	mskframe_t		*frames;
+} mskmodel_t;
 
 /*
 ==============================================================================
@@ -379,7 +393,9 @@ typedef struct
 // Whole model
 //
 
-typedef enum { mod_bad, mod_brush, mod_sprite, mod_alias, mod_dpm } modtype_t;
+typedef enum { mod_bad, mod_brush, mod_sprite, mod_alias, mod_skeletal } modtype_t;
+
+#define MOD_MAX_LODS	4
 
 typedef struct model_s
 {
@@ -413,9 +429,9 @@ typedef struct model_s
 	maliasmodel_t	*aliasmodel;
 
 //
-// dpm model
+// skeletal model
 //
-	dpmmodel_t		*dpmmodel;
+	mskmodel_t		*skmodel;
 
 //
 // sprite model
@@ -423,19 +439,17 @@ typedef struct model_s
 	smodel_t		*smodel;
 
 	int				numlods;
-	struct model_s	**lods;	
+	struct model_s	*lods[MOD_MAX_LODS];
 
-	int				extradatasize;
-	void			*extradata;
+	mempool_t		*extradata;
 } model_t;
 
 typedef struct
 {
 	const char		*header;
 	int				headerLen;
-	int				maxSize;
 	int				maxLods;
-	void			(*loader) ( model_t *mod, void *buffer );
+	void			(*loader) ( model_t *mod, model_t *parent, void *buffer );
 } modelformatdescriptor_t;
 
 //============================================================================
@@ -444,8 +458,13 @@ void	Mod_Init (void);
 void	Mod_ClearAll (void);
 model_t *Mod_ForName (char *name, qboolean crash);
 mleaf_t *Mod_PointInLeaf (float *p, bmodel_t *bmodel);
-byte	*Mod_ClusterPVS (int cluster, bmodel_t *bmodel);
+qbyte	*Mod_ClusterPVS (int cluster, bmodel_t *bmodel);
+
+#define Mod_Malloc(mod,size) Mem_Alloc((mod)->extradata,size)
+#define Mod_Free(data) Mem_Free(data)
+
+void	Mod_StripLODSuffix ( char *name );
 
 void	Mod_Modellist_f (void);
-void	Mod_FreeAll (void);
-void	Mod_Free (model_t *mod);
+void	Mod_FreeModel (model_t *mod);
+void	Mod_Shutdown (void);

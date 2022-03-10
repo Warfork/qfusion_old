@@ -41,8 +41,8 @@ qboolean M_CheckBottom (edict_t *ent)
 	int		x, y;
 	float	mid, bottom;
 	
-	VectorAdd (ent->s.origin, ent->mins, mins);
-	VectorAdd (ent->s.origin, ent->maxs, maxs);
+	VectorAdd (ent->s.origin, ent->r.mins, mins);
+	VectorAdd (ent->s.origin, ent->r.maxs, maxs);
 
 // if all of the points under the corners are solid world, don't bother
 // with the tougher checks
@@ -53,12 +53,12 @@ qboolean M_CheckBottom (edict_t *ent)
 		{
 			start[0] = x ? maxs[0] : mins[0];
 			start[1] = y ? maxs[1] : mins[1];
-			if (gi.pointcontents (start) != CONTENTS_SOLID)
+			if (trap_PointContents (start) != CONTENTS_SOLID)
 				goto realcheck;
 		}
 
 	c_yes++;
-	return true;		// we got out easy
+	return qtrue;		// we got out easy
 
 realcheck:
 	c_no++;
@@ -71,10 +71,10 @@ realcheck:
 	start[0] = stop[0] = (mins[0] + maxs[0])*0.5;
 	start[1] = stop[1] = (mins[1] + maxs[1])*0.5;
 	stop[2] = start[2] - 2*STEPSIZE;
-	trace = gi.trace (start, vec3_origin, vec3_origin, stop, ent, MASK_MONSTERSOLID);
+	trap_Trace (&trace, start, vec3_origin, vec3_origin, stop, ent, MASK_MONSTERSOLID);
 
 	if (trace.fraction == 1.0)
-		return false;
+		return qfalse;
 	mid = bottom = trace.endpos[2];
 	
 // the corners must be within 16 of the midpoint	
@@ -84,16 +84,16 @@ realcheck:
 			start[0] = stop[0] = x ? maxs[0] : mins[0];
 			start[1] = stop[1] = y ? maxs[1] : mins[1];
 			
-			trace = gi.trace (start, vec3_origin, vec3_origin, stop, ent, MASK_MONSTERSOLID);
+			trap_Trace (&trace, start, vec3_origin, vec3_origin, stop, ent, MASK_MONSTERSOLID);
 			
 			if (trace.fraction != 1.0 && trace.endpos[2] > bottom)
 				bottom = trace.endpos[2];
 			if (trace.fraction == 1.0 || mid - trace.endpos[2] > STEPSIZE)
-				return false;
+				return qfalse;
 		}
 
 	c_yes++;
-	return true;
+	return qtrue;
 }
 
 
@@ -135,7 +135,7 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 				if (!ent->goalentity)
 					ent->goalentity = ent->enemy;
 				dz = ent->s.origin[2] - ent->goalentity->s.origin[2];
-				if (ent->goalentity->client)
+				if (ent->goalentity->r.client)
 				{
 					if (dz > 40)
 						neworg[2] -= 8;
@@ -155,7 +155,7 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 						neworg[2] += dz;
 				}
 			}
-			trace = gi.trace (ent->s.origin, ent->mins, ent->maxs, neworg, ent, MASK_MONSTERSOLID);
+			trap_Trace (&trace, ent->s.origin, ent->r.mins, ent->r.maxs, neworg, ent, MASK_MONSTERSOLID);
 	
 			// fly monsters don't enter water voluntarily
 			if (ent->flags & FL_FLY)
@@ -164,10 +164,10 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 				{
 					test[0] = trace.endpos[0];
 					test[1] = trace.endpos[1];
-					test[2] = trace.endpos[2] + ent->mins[2] + 1;
-					contents = gi.pointcontents(test);
+					test[2] = trace.endpos[2] + ent->r.mins[2] + 1;
+					contents = trap_PointContents(test);
 					if (contents & MASK_WATER)
-						return false;
+						return qfalse;
 				}
 			}
 
@@ -178,10 +178,10 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 				{
 					test[0] = trace.endpos[0];
 					test[1] = trace.endpos[1];
-					test[2] = trace.endpos[2] + ent->mins[2] + 1;
-					contents = gi.pointcontents(test);
+					test[2] = trace.endpos[2] + ent->r.mins[2] + 1;
+					contents = trap_PointContents(test);
 					if (!(contents & MASK_WATER))
-						return false;
+						return qfalse;
 				}
 			}
 
@@ -190,17 +190,17 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 				VectorCopy (trace.endpos, ent->s.origin);
 				if (relink)
 				{
-					gi.linkentity (ent);
+					trap_LinkEntity (ent);
 					G_TouchTriggers (ent);
 				}
-				return true;
+				return qtrue;
 			}
 			
 			if (!ent->enemy)
 				break;
 		}
 		
-		return false;
+		return qfalse;
 	}
 
 // push down from a step height above the wished position
@@ -213,30 +213,29 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 	VectorCopy (neworg, end);
 	end[2] -= stepsize*2;
 
-	trace = gi.trace (neworg, ent->mins, ent->maxs, end, ent, MASK_MONSTERSOLID);
+	trap_Trace (&trace, neworg, ent->r.mins, ent->r.maxs, end, ent, MASK_MONSTERSOLID);
 
 	if (trace.allsolid)
-		return false;
+		return qfalse;
 
 	if (trace.startsolid)
 	{
 		neworg[2] -= stepsize;
-		trace = gi.trace (neworg, ent->mins, ent->maxs, end, ent, MASK_MONSTERSOLID);
+		trap_Trace (&trace, neworg, ent->r.mins, ent->r.maxs, end, ent, MASK_MONSTERSOLID);
 		if (trace.allsolid || trace.startsolid)
-			return false;
+			return qfalse;
 	}
-
 
 	// don't go in to water
 	if (ent->waterlevel == 0)
 	{
 		test[0] = trace.endpos[0];
 		test[1] = trace.endpos[1];
-		test[2] = trace.endpos[2] + ent->mins[2] + 1;	
-		contents = gi.pointcontents(test);
+		test[2] = trace.endpos[2] + ent->r.mins[2] + 1;	
+		contents = trap_PointContents(test);
 
 		if (contents & MASK_WATER)
-			return false;
+			return qfalse;
 	}
 
 	if (trace.fraction == 1)
@@ -247,14 +246,14 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 			VectorAdd (ent->s.origin, move, ent->s.origin);
 			if (relink)
 			{
-				gi.linkentity (ent);
+				trap_LinkEntity (ent);
 				G_TouchTriggers (ent);
 			}
 			ent->groundentity = NULL;
-			return true;
+			return qtrue;
 		}
 	
-		return false;		// walked off an edge
+		return qfalse;		// walked off an edge
 	}
 
 // check point traces down for dangling corners
@@ -267,29 +266,29 @@ qboolean SV_movestep (edict_t *ent, vec3_t move, qboolean relink)
 			// and is trying to correct
 			if (relink)
 			{
-				gi.linkentity (ent);
+				trap_LinkEntity (ent);
 				G_TouchTriggers (ent);
 			}
-			return true;
+			return qtrue;
 		}
 		VectorCopy (oldorg, ent->s.origin);
-		return false;
+		return qfalse;
 	}
 
 	if ( ent->flags & FL_PARTIALGROUND )
 	{
 		ent->flags &= ~FL_PARTIALGROUND;
 	}
-	ent->groundentity = trace.ent;
-	ent->groundentity_linkcount = trace.ent->linkcount;
+	ent->groundentity = &game.edicts[trace.ent];
+	ent->groundentity_linkcount = ent->groundentity->r.linkcount;
 
 // the move is ok
 	if (relink)
 	{
-		gi.linkentity (ent);
+		trap_LinkEntity (ent);
 		G_TouchTriggers (ent);
 	}
-	return true;
+	return qtrue;
 }
 
 
@@ -364,20 +363,20 @@ qboolean SV_StepDirection (edict_t *ent, float yaw, float dist)
 	move[2] = 0;
 
 	VectorCopy (ent->s.origin, oldorigin);
-	if (SV_movestep (ent, move, false))
+	if (SV_movestep (ent, move, qfalse))
 	{
 		delta = ent->s.angles[YAW] - ent->ideal_yaw;
 		if (delta > 45 && delta < 315)
 		{		// not turned far enough, so don't take the step
 			VectorCopy (oldorigin, ent->s.origin);
 		}
-		gi.linkentity (ent);
+		trap_LinkEntity (ent);
 		G_TouchTriggers (ent);
-		return true;
+		return qtrue;
 	}
-	gi.linkentity (ent);
+	trap_LinkEntity (ent);
 	G_TouchTriggers (ent);
-	return false;
+	return qfalse;
 }
 
 /*
@@ -498,12 +497,12 @@ qboolean SV_CloseEnough (edict_t *ent, edict_t *goal, float dist)
 	
 	for (i=0 ; i<3 ; i++)
 	{
-		if (goal->absmin[i] > ent->absmax[i] + dist)
-			return false;
-		if (goal->absmax[i] < ent->absmin[i] - dist)
-			return false;
+		if (goal->r.absmin[i] > ent->r.absmax[i] + dist)
+			return qfalse;
+		if (goal->r.absmax[i] < ent->r.absmin[i] - dist)
+			return qfalse;
 	}
-	return true;
+	return qtrue;
 }
 
 
@@ -528,7 +527,7 @@ void M_MoveToGoal (edict_t *ent, float dist)
 // bump around...
 	if ( (rand()&3)==1 || !SV_StepDirection (ent, ent->ideal_yaw, dist))
 	{
-		if (ent->inuse)
+		if (ent->r.inuse)
 			SV_NewChaseDir (ent, goal, dist);
 	}
 }
@@ -544,7 +543,7 @@ qboolean M_walkmove (edict_t *ent, float yaw, float dist)
 	vec3_t	move;
 	
 	if (!ent->groundentity && !(ent->flags & (FL_FLY|FL_SWIM)))
-		return false;
+		return qfalse;
 
 	yaw = DEG2RAD ( yaw );
 	
@@ -552,5 +551,5 @@ qboolean M_walkmove (edict_t *ent, float yaw, float dist)
 	move[1] = sin(yaw)*dist;
 	move[2] = 0;
 
-	return SV_movestep(ent, move, true);
+	return SV_movestep(ent, move, qtrue);
 }

@@ -69,15 +69,11 @@ static void StartNetworkServerFunc( void *unused )
 
 void Multiplayer_MenuInit( void )
 {
-	int w, h;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_multiplayer_menu.x = w / 2;
-	s_multiplayer_menu.y = h / 2 - 88;
+	s_multiplayer_menu.x = uis.vidWidth / 2;
+	s_multiplayer_menu.y = uis.vidHeight / 2 - 88;
 	s_multiplayer_menu.nitems = 0;
 
 	s_multiplayer_title.generic.type = MTYPE_SEPARATOR;

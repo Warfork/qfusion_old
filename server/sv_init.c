@@ -51,10 +51,9 @@ int SV_FindIndex (char *name, int start, int max, qboolean create)
 	if (sv.state != ss_loading)
 	{	// send the update to everyone
 		SZ_Clear (&sv.multicast);
-		MSG_WriteChar (&sv.multicast, svc_configstring);
-		MSG_WriteShort (&sv.multicast, start+i);
-		MSG_WriteString (&sv.multicast, name);
-		SV_Multicast (vec3_origin, MULTICAST_ALL_R);
+		MSG_WriteByte (&sv.multicast, svc_servercmd);
+		MSG_WriteString (&sv.multicast, va("cs %i \"%s\"", start+i, name));
+		SV_Multicast (NULL, MULTICAST_ALL_R);
 	}
 
 	return i;
@@ -63,17 +62,17 @@ int SV_FindIndex (char *name, int start, int max, qboolean create)
 
 int SV_ModelIndex (char *name)
 {
-	return SV_FindIndex (name, CS_MODELS, MAX_MODELS, true);
+	return SV_FindIndex (name, CS_MODELS, MAX_MODELS, qtrue);
 }
 
 int SV_SoundIndex (char *name)
 {
-	return SV_FindIndex (name, CS_SOUNDS, MAX_SOUNDS, true);
+	return SV_FindIndex (name, CS_SOUNDS, MAX_SOUNDS, qtrue);
 }
 
 int SV_ImageIndex (char *name)
 {
-	return SV_FindIndex (name, CS_IMAGES, MAX_IMAGES, true);
+	return SV_FindIndex (name, CS_IMAGES, MAX_IMAGES, qtrue);
 }
 
 
@@ -91,10 +90,10 @@ void SV_CreateBaseline (void)
 	edict_t			*svent;
 	int				entnum;	
 
-	for (entnum = 1; entnum < ge->num_edicts ; entnum++)
+	for (entnum = 1; entnum < sv.num_edicts ; entnum++)
 	{
 		svent = EDICT_NUM(entnum);
-		if (!svent->inuse)
+		if (!svent->r.inuse)
 			continue;
 		if (!svent->s.modelindex && !svent->s.sound && !svent->s.effects)
 			continue;
@@ -195,17 +194,9 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	sv.loadgame = loadgame;
 	sv.attractloop = attractloop;
 
-	// save name for levels that don't set message
-	strcpy (sv.configstrings[CS_MESSAGE], server);
-
-	Com_sprintf (sv.configstrings[CS_AIRACCEL], sizeof(sv.configstrings[0]),
-		"%g", sv_airaccelerate->value);
-	pm_airaccelerate = sv_airaccelerate->value;
-
 	SZ_Init (&sv.multicast, sv.multicast_buf, sizeof(sv.multicast_buf));
 
 	strcpy (sv.name, server);
-	strcpy (sv.configstrings[CS_MAPNAME], server);
 
 	// leave slots at start for clients only
 	for (i=0 ; i<sv_maxclients->value ; i++)
@@ -219,29 +210,21 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	sv.time = 1000;
 	
 	if (serverstate != ss_game)
-	{
-		sv.models[1] = CM_LoadMap ("", false, &checksum);	// no real map
-	}
+		CM_LoadMap ("", qfalse, &checksum);	// no real map
 	else
 	{
 		Com_sprintf (sv.configstrings[CS_MODELS+1],sizeof(sv.configstrings[CS_MODELS+1]),
 			"maps/%s.bsp", server);
-		sv.models[1] = CM_LoadMap (sv.configstrings[CS_MODELS+1], false, &checksum);
+		CM_LoadMap (sv.configstrings[CS_MODELS+1], qfalse, &checksum);
+
+		//
+		// clear physics interaction links
+		//
+		SV_ClearWorld ();
 	}
+
 	Com_sprintf (sv.configstrings[CS_MAPCHECKSUM],sizeof(sv.configstrings[CS_MAPCHECKSUM]),
 		"%i", checksum);
-
-	//
-	// clear physics interaction links
-	//
-	SV_ClearWorld ();
-	
-	for (i=1 ; i< CM_NumInlineModels() ; i++)
-	{
-		Com_sprintf (sv.configstrings[CS_MODELS+1+i], sizeof(sv.configstrings[CS_MODELS+1+i]),
-			"*%i", i);
-		sv.models[i+1] = CM_InlineModel (sv.configstrings[CS_MODELS+1+i]);
-	}
 
 	//
 	// spawn the rest of the entities on the map
@@ -286,12 +269,11 @@ void SV_InitGame (void)
 {
 	int		i;
 	edict_t	*ent;
-	char	idmaster[32];
 
 	if (svs.initialized)
 	{
 		// cause any connected clients to reconnect
-		SV_Shutdown ("Server restarted\n", true);
+		SV_Shutdown ("Server restarted\n", qtrue);
 
 		// SV_Shutdown will also call Cvar_GetLatchedVars
 	}
@@ -305,7 +287,7 @@ void SV_InitGame (void)
 		Cvar_GetLatchedVars (CVAR_LATCH);
 	}
 
-	svs.initialized = true;
+	svs.initialized = qtrue;
 
 	if (Cvar_VariableValue ("coop") && Cvar_VariableValue ("deathmatch"))
 	{
@@ -313,7 +295,7 @@ void SV_InitGame (void)
 		Cvar_FullSet ("coop", "0",  CVAR_SERVERINFO | CVAR_LATCH);
 	}
 
-	// dedicated servers are can't be single player and are usually DM
+	// dedicated servers can't be single player and are usually DM
 	// so unless they explicity set coop, force it to deathmatch
 	if (dedicated->value)
 	{
@@ -339,18 +321,15 @@ void SV_InitGame (void)
 		Cvar_FullSet ("sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
 	}
 
-	svs.spawncount = rand();
-	svs.clients = Z_Malloc (sizeof(client_t)*sv_maxclients->value);
+	svs.spawncount = rand ();
+	svs.clients = Mem_Alloc (sv_mempool, sizeof(client_t)*sv_maxclients->value);
 	svs.num_client_entities = sv_maxclients->value*UPDATE_BACKUP*64;
-	svs.client_entities = Z_Malloc (sizeof(entity_state_t)*svs.num_client_entities);
+	svs.client_entities = Mem_Alloc (sv_mempool, sizeof(entity_state_t)*svs.num_client_entities);
 
 	// init network stuff
 	NET_Config ( (sv_maxclients->value > 1) );
 
-	// heartbeats will always be sent to the id master
 	svs.last_heartbeat = -99999;		// send immediately
-	Com_sprintf(idmaster, sizeof(idmaster), "192.246.40.37:%i", PORT_MASTER);
-	NET_StringToAdr (idmaster, &master_adr[0]);
 
 	// init game
 	SV_InitGameProgs ();
@@ -427,23 +406,23 @@ void SV_Map (qboolean attractloop, char *levelstring, qboolean loadgame, qboolea
 	if (l > 4 && !Q_stricmp (level+l-4, ".roq") )
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing");
+		SV_BroadcastCommand ("changing\n");
 		SV_SpawnServer (level, spawnpoint, ss_cinematic, attractloop, loadgame, devmap);
 	}
 	else if (l > 4 && !Q_stricmp (level+l-4, ".dqf") )
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing");
+		SV_BroadcastCommand ("changing\n");
 		SV_SpawnServer (level, spawnpoint, ss_demo, attractloop, loadgame, devmap);
 	}
 	else
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing");
+		SV_BroadcastCommand ("changing\n");
 		SV_SendClientMessages ();
 		SV_SpawnServer (level, spawnpoint, ss_game, attractloop, loadgame, devmap);
 		Cbuf_CopyToDefer ();
 	}
 
-	SV_BroadcastCommand ("reconnect");
+	SV_BroadcastCommand ("reconnect\n");
 }

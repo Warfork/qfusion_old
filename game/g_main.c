@@ -22,15 +22,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 game_locals_t	game;
 level_locals_t	level;
-game_import_t	gi;
-game_export_t	globals;
 spawn_temp_t	st;
+
+struct mempool_s *gamepool;
+struct mempool_s *levelpool;
 
 int	sm_meat_index;
 int	snd_fry;
 int meansOfDeath;
-
-edict_t		*g_edicts;
 
 cvar_t	*deathmatch;
 cvar_t	*coop;
@@ -53,12 +52,10 @@ cvar_t	*filterban;
 
 cvar_t	*sv_maxvelocity;
 cvar_t	*sv_gravity;
+cvar_t	*sv_airaccelerate;
 
 cvar_t	*sv_rollspeed;
 cvar_t	*sv_rollangle;
-cvar_t	*gun_x;
-cvar_t	*gun_y;
-cvar_t	*gun_z;
 
 cvar_t	*run_pitch;
 cvar_t	*run_roll;
@@ -74,102 +71,177 @@ cvar_t	*flood_waitdelay;
 
 cvar_t	*sv_maplist;
 
-void SpawnEntities (char *mapname, char *entities, char *spawnpoint);
-void ClientThink (edict_t *ent, usercmd_t *cmd);
-qboolean ClientConnect (edict_t *ent, char *userinfo);
-void ClientUserinfoChanged (edict_t *ent, char *userinfo);
-void ClientDisconnect (edict_t *ent);
-void ClientBegin (edict_t *ent);
-void ClientCommand (edict_t *ent);
-void RunEntity (edict_t *ent);
-void WriteGame (char *filename, qboolean autosave);
-void ReadGame (char *filename);
-void WriteLevel (char *filename);
-void ReadLevel (char *filename);
-void InitGame (void);
-void G_RunFrame (void);
-
-
 //===================================================================
-
-
-void ShutdownGame (void)
-{
-	gi.dprintf ("==== ShutdownGame ====\n");
-
-	gi.FreeTags (TAG_LEVEL);
-	gi.FreeTags (TAG_GAME);
-}
-
 
 /*
 =================
-GetGameAPI
-
-Returns a pointer to the structure with all entry points
-and global variables
+G_API
 =================
 */
-game_export_t *GetGameAPI (game_import_t *import)
-{
-	gi = *import;
-
-	globals.apiversion = GAME_API_VERSION;
-	globals.Init = InitGame;
-	globals.Shutdown = ShutdownGame;
-	globals.SpawnEntities = SpawnEntities;
-
-	globals.WriteGame = WriteGame;
-	globals.ReadGame = ReadGame;
-	globals.WriteLevel = WriteLevel;
-	globals.ReadLevel = ReadLevel;
-
-	globals.ClientThink = ClientThink;
-	globals.ClientConnect = ClientConnect;
-	globals.ClientUserinfoChanged = ClientUserinfoChanged;
-	globals.ClientDisconnect = ClientDisconnect;
-	globals.ClientBegin = ClientBegin;
-	globals.ClientCommand = ClientCommand;
-
-	globals.RunFrame = G_RunFrame;
-
-	globals.ServerCommand = ServerCommand;
-
-	globals.edict_size = sizeof(edict_t);
-
-	return &globals;
+int G_API (void) {
+	return GAME_API_VERSION;
 }
 
-#ifndef GAME_HARD_LINKED
-// this is only here so the functions in q_shared.c and q_shwin.c can link
-void Sys_Error (char *error, ...)
-{
-	va_list		argptr;
-	char		text[1024];
+/*
+============
+G_Error
 
-	va_start (argptr, error);
-	vsnprintf (text, sizeof(text), error, argptr);
+Abort the server with a game error
+============
+*/
+void G_Error ( char *fmt, ... )
+{
+	char		msg[1024];
+	va_list		argptr;
+
+	va_start (argptr, fmt);
+	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+		trap_Error ( "G_Error: Buffer overflow" );
+	}
 	va_end (argptr);
 
-	gi.error (ERR_FATAL, "%s", text);
+	trap_Error ( msg );
 }
 
-void Com_Printf (char *msg, ...)
-{
-	va_list		argptr;
-	char		text[1024];
+/*
+============
+G_Printf
 
-	va_start (argptr, msg);
-	vsnprintf (text, sizeof(text), msg, argptr);
+Debug print to server console
+============
+*/
+void G_Printf ( char *fmt, ... )
+{
+	char		msg[1024];
+	va_list		argptr;
+
+	va_start (argptr, fmt);
+	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+		trap_Error ( "G_Print: Buffer overflow" );
+	}
 	va_end (argptr);
 
-	gi.dprintf ("%s", text);
+	trap_Print ( msg );
 }
 
+/*
+============
+G_Init
+
+This will be called when the dll is first loaded, which
+only happens when a new game is started or a save game is loaded.
+============
+*/
+void G_Init (unsigned int seed)
+{
+	G_Printf ("==== G_Init ====\n");
+
+	srand (seed);
+
+	gamepool = G_MemAllocPool ( "Game" );
+	levelpool = G_MemAllocPool ( "Level" );
+
+	//FIXME: sv_ prefix is wrong for these
+	sv_rollspeed = trap_Cvar_Get ("sv_rollspeed", "200", 0);
+	sv_rollangle = trap_Cvar_Get ("sv_rollangle", "2", 0);
+	sv_maxvelocity = trap_Cvar_Get ("sv_maxvelocity", "2000", 0);
+	sv_gravity = trap_Cvar_Get ("sv_gravity", "800", 0);
+	sv_airaccelerate = trap_Cvar_Get ("sv_airaccelerate", "0", CVAR_SERVERINFO|CVAR_LATCH);
+
+	developer = trap_Cvar_Get ( "developer", "0", 0 );
+
+	// noset vars
+	dedicated = trap_Cvar_Get ("dedicated", "0", CVAR_NOSET);
+
+	// latched vars
+	sv_cheats = trap_Cvar_Get ("sv_cheats", "0", CVAR_SERVERINFO|CVAR_LATCH);
+	trap_Cvar_Get ("gamename", GAMENAME , CVAR_SERVERINFO | CVAR_LATCH);
+	trap_Cvar_Get ("gamedate", __DATE__ , CVAR_SERVERINFO | CVAR_LATCH);
+
+	maxclients = trap_Cvar_Get ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
+	deathmatch = trap_Cvar_Get ("deathmatch", "1", CVAR_LATCH);
+	coop = trap_Cvar_Get ("coop", "0", CVAR_LATCH);
+	skill = trap_Cvar_Get ("skill", "1", CVAR_LATCH);
+	maxentities = trap_Cvar_Get ("maxentities", "1024", CVAR_LATCH);
+
+	if (!deathmatch->value) {
+		// force ctf off
+		trap_Cvar_Set ("ctf", "0");
+	}
+
+	// change anytime vars
+	dmflags = trap_Cvar_Get ("dmflags", va("%i", DF_INSTANT_ITEMS), CVAR_SERVERINFO);
+	fraglimit = trap_Cvar_Get ("fraglimit", "0", CVAR_SERVERINFO);
+	timelimit = trap_Cvar_Get ("timelimit", "0", CVAR_SERVERINFO);
+//ZOID
+	capturelimit = trap_Cvar_Get ("capturelimit", "0", CVAR_SERVERINFO);
+	instantweap = trap_Cvar_Get ("instantweap", "0", CVAR_SERVERINFO);
+//ZOID
+ 	password = trap_Cvar_Get ("password", "", CVAR_USERINFO);
+	filterban = trap_Cvar_Get ("filterban", "1", 0);
+
+	g_select_empty = trap_Cvar_Get ("g_select_empty", "0", CVAR_ARCHIVE);
+
+#if 0
+	run_pitch = trap_Cvar_Get ("run_pitch", "0.002", 0);
+	run_roll = trap_Cvar_Get ("run_roll", "0.005", 0);
+	bob_up  = trap_Cvar_Get ("bob_up", "0.005", 0);
+	bob_pitch = trap_Cvar_Get ("bob_pitch", "0.002", 0);
+	bob_roll = trap_Cvar_Get ("bob_roll", "0.002", 0);
+#else
+	run_pitch = trap_Cvar_Get ("run_pitch", "0", 0);
+	run_roll = trap_Cvar_Get ("run_roll", "0", 0);
+	bob_up  = trap_Cvar_Get ("bob_up", "0", 0);
+	bob_pitch = trap_Cvar_Get ("bob_pitch", "0", 0);
+	bob_roll = trap_Cvar_Get ("bob_roll", "0", 0);
 #endif
 
-//======================================================================
+	// flood control
+	flood_msgs = trap_Cvar_Get ("flood_msgs", "4", 0);
+	flood_persecond = trap_Cvar_Get ("flood_persecond", "4", 0);
+	flood_waitdelay = trap_Cvar_Get ("flood_waitdelay", "10", 0);
 
+	// dm map list
+	sv_maplist = trap_Cvar_Get ("sv_maplist", "", 0);
+
+	// items
+	InitItems ();
+
+	Com_sprintf (game.helpmessage1, sizeof(game.helpmessage1), "");
+
+	Com_sprintf (game.helpmessage2, sizeof(game.helpmessage2), "");
+
+	// initialize all entities for this game
+	game.maxentities = maxentities->value;
+	game.edicts = G_GameMalloc (game.maxentities * sizeof(game.edicts[0]));
+
+	// initialize all clients for this game
+	game.maxclients = maxclients->value;
+	game.clients = G_GameMalloc (game.maxclients * sizeof(game.clients[0]));
+
+	game.numentities = game.maxclients+1;
+
+	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
+
+//ZOID
+	CTFInit();
+//ZOID
+}
+
+/*
+=================
+G_Shutdown
+=================
+*/
+void G_Shutdown (void)
+{
+	G_Printf ("==== G_Shutdown ====\n");
+
+	G_MemFreePool (&gamepool);
+	G_MemFreePool (&levelpool);
+}
+
+//======================================================================
 
 /*
 =================
@@ -185,12 +257,11 @@ void ClientEndServerFrames (void)
 	// and damage has been added
 	for (i=0 ; i<maxclients->value ; i++)
 	{
-		ent = g_edicts + 1 + i;
-		if (!ent->inuse || !ent->client)
+		ent = game.edicts + 1 + i;
+		if (!ent->r.inuse || !ent->r.client)
 			continue;
 		ClientEndServerFrame (ent);
 	}
-
 }
 
 /*
@@ -213,12 +284,12 @@ edict_t *CreateTargetChangeLevel(char *map)
 
 /*
 =================
-EndDMLevel
+G_EndDMLevel
 
 The timelimit or fraglimit has been exceeded
 =================
 */
-void EndDMLevel (void)
+void G_EndDMLevel (void)
 {
 	edict_t		*ent;
 	char *s, *t, *f;
@@ -238,7 +309,7 @@ void EndDMLevel (void)
 
 	// see if it's in the map list
 	if (*sv_maplist->string) {
-		s = strdup(sv_maplist->string);
+		s = G_CopyString (sv_maplist->string);
 		f = NULL;
 		t = strtok(s, seps);
 		while (t != NULL) {
@@ -259,7 +330,7 @@ void EndDMLevel (void)
 				f = t;
 			t = strtok(NULL, seps);
 		}
-		free(s);
+		G_Free (s);
 	}
 
 	if (level.nextmap[0]) // go to a specific map
@@ -294,7 +365,7 @@ void CheckDMRules (void)
 
 //ZOID
 	if (ctf->value && CTFCheckRules()) {
-		EndDMLevel ();
+		G_EndDMLevel ();
 		return;
 	}
 	if (CTFInMatch())
@@ -305,8 +376,8 @@ void CheckDMRules (void)
 	{
 		if (level.time >= timelimit->value*60)
 		{
-			gi.bprintf (PRINT_HIGH, "Timelimit hit.\n");
-			EndDMLevel ();
+			G_PrintMsg (NULL, PRINT_HIGH, "Timelimit hit.\n");
+			G_EndDMLevel ();
 			return;
 		}
 	}
@@ -315,13 +386,13 @@ void CheckDMRules (void)
 		for (i=0 ; i<maxclients->value ; i++)
 		{
 			cl = game.clients + i;
-			if (!g_edicts[i+1].inuse)
+			if (!game.edicts[i+1].r.inuse)
 				continue;
 
 			if (cl->resp.score >= fraglimit->value)
 			{
-				gi.bprintf (PRINT_HIGH, "Fraglimit hit.\n");
-				EndDMLevel ();
+				G_PrintMsg (NULL, PRINT_HIGH, "Fraglimit hit.\n");
+				G_EndDMLevel ();
 				return;
 			}
 		}
@@ -346,7 +417,7 @@ void ExitLevel (void)
 		return;
 
 	Com_sprintf (command, sizeof(command), "gamemap \"%s\"\n", level.changemap);
-	gi.AddCommandString (command);
+	trap_AddCommandString (command);
 	ClientEndServerFrames ();
 
 	level.changemap = NULL;
@@ -354,11 +425,11 @@ void ExitLevel (void)
 	// clear some things before going to next level
 	for (i=0 ; i<maxclients->value ; i++)
 	{
-		ent = g_edicts + 1 + i;
-		if (!ent->inuse)
+		ent = game.edicts + 1 + i;
+		if (!ent->r.inuse)
 			continue;
-		if (ent->health > ent->client->pers.max_health)
-			ent->health = ent->client->pers.max_health;
+		if (ent->health > ent->r.client->pers.max_health)
+			ent->health = ent->r.client->pers.max_health;
 	}
 }
 
@@ -377,6 +448,27 @@ void G_RunFrame (void)
 	level.framenum++;
 	level.time = level.framenum*FRAMETIME;
 
+	//
+	// clear all events to free entity spots
+	//
+	ent = &game.edicts[0];
+	for (i=0 ; i<game.numentities ; i++, ent++)
+	{
+		if ( !ent->r.inuse ) {
+			continue;
+		}
+
+		// free if no events
+		if ( !ent->s.events[0] ) {
+			ent->numEvents = 0;
+			ent->eventPriority[0] = ent->eventPriority[1] = qfalse;
+
+			if ( ent->freeAfterEvent ) {
+				G_FreeEdict (ent);
+			}
+		}
+	}
+
 	// choose a client for monsters to target this frame
 	AI_SetSightClient ();
 
@@ -392,21 +484,24 @@ void G_RunFrame (void)
 	// treat each object in turn
 	// even the world gets a chance to think
 	//
-	ent = &g_edicts[0];
-	for (i=0 ; i<globals.num_edicts ; i++, ent++)
+	ent = &game.edicts[0];
+	for (i=0 ; i<game.numentities ; i++, ent++)
 	{
-		if (!ent->inuse)
+		if (!ent->r.inuse)
 			continue;
+		if (ent->freeAfterEvent)
+			continue;		// events do not think
 
 		level.current_entity = ent;
 
-		VectorCopy (ent->s.origin, ent->s.old_origin);
+		if (!(ent->r.svflags & SVF_FORCEOLDORIGIN))
+			VectorCopy (ent->s.origin, ent->s.old_origin);
 
 		// if the ground entity moved, make sure we are still on it
-		if ((ent->groundentity) && (ent->groundentity->linkcount != ent->groundentity_linkcount))
+		if ((ent->groundentity) && (ent->groundentity->r.linkcount != ent->groundentity_linkcount))
 		{
 			ent->groundentity = NULL;
-			if ( !(ent->flags & (FL_SWIM|FL_FLY)) && (ent->svflags & SVF_MONSTER) )
+			if ( !(ent->flags & (FL_SWIM|FL_FLY)) && (ent->r.svflags & SVF_MONSTER) )
 			{
 				M_CheckGround (ent);
 			}
@@ -426,5 +521,49 @@ void G_RunFrame (void)
 
 	// build the playerstate_t structures for all players
 	ClientEndServerFrames ();
+
+	// inverse entity type if it can take damage
+	ent = &game.edicts[0];
+	for (i=0 ; i<game.numentities ; i++, ent++)
+	{
+		if (!ent->r.inuse)
+			continue;
+		if (ent->freeAfterEvent)
+			continue;
+		if (ent->takedamage)
+			ent->s.type |= ET_INVERSE;
+		else
+			ent->s.type &= ~ET_INVERSE;
+	}
 }
+
+//======================================================================
+
+#ifndef GAME_HARD_LINKED
+// this is only here so the functions in q_shared.c and q_math.c can link
+void Sys_Error (char *error, ...)
+{
+	va_list		argptr;
+	char		text[1024];
+
+	va_start (argptr, error);
+	vsnprintf (text, sizeof(text), error, argptr);
+	va_end (argptr);
+
+	G_Error ("%s", text);
+}
+
+void Com_Printf (char *msg, ...)
+{
+	va_list		argptr;
+	char		text[1024];
+
+	va_start (argptr, msg);
+	vsnprintf (text, sizeof(text), msg, argptr);
+	va_end (argptr);
+
+	G_Printf ("%s", text);
+}
+
+#endif
 

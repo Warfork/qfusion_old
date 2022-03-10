@@ -26,13 +26,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "../qcommon/qcommon.h"
 
-#include "../client/ref.h"
 #include "../client/cin.h"
 #include "../client/vid.h"
 
 #include "qgl.h"
+#include "render.h"
 
 #define	REF_VERSION	"GL 0.01"
+
+typedef unsigned int index_t;
 
 extern	viddef_t	vid;
 
@@ -70,12 +72,14 @@ typedef struct image_s
 #define	TEXNUM_LIGHTMAPS	1024
 #define	TEXNUM_IMAGES		1280
 
-#define	MAX_GLTEXTURES		1024
+#define	MAX_GLTEXTURES		2048
 
 #define MAX_TEXTURE_UNITS	2
 
-#define FOG_TEXTURE_WIDTH	32
-#define FOG_TEXTURE_HEIGHT	32
+#define FOG_TEXTURE_WIDTH	256
+#define FOG_TEXTURE_HEIGHT	256
+
+//#define SHADOW_VOLUMES
 
 //===================================================================
 
@@ -94,6 +98,7 @@ enum
 #include "r_backend.h"
 #include "r_shadow.h"
 #include "r_model.h"
+#include "r_skin.h"
 
 void GL_BeginRendering (int *x, int *y, int *width, int *height);
 void GL_EndRendering (void);
@@ -156,7 +161,6 @@ extern	refdef_t	r_newrefdef;
 extern	int			r_viewcluster, r_oldviewcluster;
 
 extern	cvar_t	*r_norefresh;
-extern	cvar_t	*r_lefthand;
 extern	cvar_t	*r_drawentities;
 extern	cvar_t	*r_drawworld;
 extern	cvar_t	*r_speeds;
@@ -181,21 +185,25 @@ extern	cvar_t	*r_shownormals;
 extern	cvar_t	*r_ambientscale;
 extern	cvar_t	*r_directedscale;
 
-extern cvar_t	*gl_extensions;
-extern cvar_t	*gl_ext_swapinterval;
-extern cvar_t	*gl_ext_multitexture;
-extern cvar_t	*gl_ext_compiled_vertex_array;
-extern cvar_t	*gl_ext_sgis_mipmap;
-extern cvar_t	*gl_ext_texture_env_combine;
-extern cvar_t	*gl_ext_NV_texture_env_combine4;
-extern cvar_t	*gl_ext_compressed_textures;
-extern cvar_t	*gl_ext_bgra;
+extern	cvar_t	*gl_extensions;
+extern	cvar_t	*gl_ext_swapinterval;
+extern	cvar_t	*gl_ext_multitexture;
+extern	cvar_t	*gl_ext_compiled_vertex_array;
+extern	cvar_t	*gl_ext_sgis_mipmap;
+extern	cvar_t	*gl_ext_texture_env_combine;
+extern	cvar_t	*gl_ext_NV_texture_env_combine4;
+extern	cvar_t	*gl_ext_compressed_textures;
+extern	cvar_t	*gl_ext_bgra;
+extern	cvar_t	*gl_ext_texture_edge_clamp;
+extern	cvar_t	*gl_ext_texture_filter_anisotropic;
+extern	cvar_t	*gl_ext_max_texture_filter_anisotropic;
 
 extern	cvar_t	*r_shadows;
 extern	cvar_t	*r_shadows_alpha;
 extern	cvar_t	*r_shadows_nudge;
 
 extern	cvar_t	*r_lodbias;
+extern	cvar_t	*r_lodscale;
 
 extern	cvar_t	*r_colorbits;
 extern	cvar_t	*r_texturebits;
@@ -221,6 +229,7 @@ extern	cvar_t	*gl_swapinterval;
 extern	cvar_t	*vid_fullscreen;
 extern	cvar_t	*vid_gamma;
 
+extern	mat4_t	r_worldview_matrix;
 extern	mat4_t	r_modelview_matrix;
 extern	mat4_t	r_projection_matrix;
 
@@ -232,17 +241,30 @@ void GL_SelectTexture( GLenum );
 
 //====================================================================
 
+static inline qbyte R_FloatToByte ( float x )
+{
+	union {
+		float			f;
+		unsigned int	i;
+	} f2i;
+
+	// shift float to have 8bit fraction at base of number
+	f2i.f = x + 32768.0f;
+
+	// then read as integer and kill float bits...
+	return (qbyte) min(f2i.i & 0x7FFFFF, 255);
+}
+
+float R_FastSin ( float t );
+
+//====================================================================
+
 extern	model_t		*r_worldmodel;
 extern	bmodel_t	*r_worldbmodel;
 extern	entity_t	r_worldent;
 extern	entity_t	r_polyent;
 
 extern	unsigned	d_8to24table[256];
-
-extern	shader_t	*chars_shader;
-extern	shader_t	*propfont1_shader, *propfont1_glow_shader, *propfont2_shader;
-
-extern	shader_t	*particle_shader;
 
 extern	int			registration_sequence;
 extern	int			gl_maxtexsize;
@@ -256,26 +278,28 @@ void R_InitBubble (void);
 
 void R_InitAliasModels (void);
 void R_InitSpriteModels (void);
-void R_InitDarkPlacesModels (void);
+void R_InitSkeletalModels (void);
 
 void R_RenderView ( refdef_t *fd, meshlist_t *list );
 void R_ScreenShot_f (void);
 
-void R_PushFlare ( meshbuffer_t *mb );
+qboolean R_SpriteOverflow ( void );
+
+void R_PushFlareSurf ( meshbuffer_t *mb );
 
 void R_DrawAliasModel (meshbuffer_t *mb, qboolean shadow);
 void R_DrawSpriteModel (meshbuffer_t *mb);
-void R_DrawDarkPlacesModel (meshbuffer_t *mb, qboolean shadow);
+void R_DrawSkeletalModel (meshbuffer_t *mb, qboolean shadow);
 void R_DrawSpritePoly (meshbuffer_t *mb);
 
-void R_AliasModelLerpTag ( orientation_t *orient, maliasmodel_t *aliasmodel, int framenum, int oldframenum, 
+qboolean R_AliasModelLerpTag ( orientation_t *orient, maliasmodel_t *aliasmodel, int framenum, int oldframenum, 
 									  float backlerp, char *name );
-void R_DarkPlacesModelLerpAttachment ( orientation_t *orient, dpmmodel_t *dpmmodel, int framenum, int oldframenum, 
+qboolean R_SkeletalModelLerpAttachment ( orientation_t *orient, mskmodel_t *skmodel, int framenum, int oldframenum, 
 									  float backlerp, char *name );
 
 void R_AddAliasModelToList (entity_t *e);
 void R_AddSpriteModelToList (entity_t *e);
-void R_AddDarkPlacesModelToList (entity_t *e);
+void R_AddSkeletalModelToList (entity_t *e);
 void R_AddBrushModelToList (entity_t *e);
 void R_AddSpritePolyToList (entity_t *e);
 
@@ -290,8 +314,6 @@ mfog_t *R_FogForSphere (const vec3_t centre, const float radius);
 void R_RotateForEntity (entity_t *e);
 void R_TranslateForEntity (entity_t *e);
 
-float R_FastSin ( float t );
-
 void MYgluPerspective( GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble zFar );
 
 //
@@ -300,15 +322,17 @@ void MYgluPerspective( GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble 
 void R_RenderDlights (void);
 void R_MarkLights (void);
 void R_SurfMarkLight (dlight_t *light, int bit, msurface_t *surf);
-void R_AddDynamicLights (meshbuffer_t *mb);
-void R_LightForEntity (entity_t *e, byte *bArray);
+void R_AddDynamicLights (unsigned int dlightbits);
+void R_LightForEntity (entity_t *e, qbyte *bArray);
 void R_LightDirForOrigin ( vec3_t origin, vec3_t dir );
 
 //
 // r_poly.c
 //
 void R_InitPolys (void);
-void R_DrawPoly ( meshbuffer_t *mb );
+void R_PushPoly ( meshbuffer_t *mb );
+qboolean R_PolyOverflow ( meshbuffer_t *mb );
+void R_DrawPoly (void);
 void R_AddPolysToList (void);
 
 //
@@ -316,13 +340,15 @@ void R_AddPolysToList (void);
 //
 void R_MarkLeaves (void);
 void GL_CreateSurfaceLightmap (msurface_t *surf);
-mesh_t *GL_CreateMeshForPatch (model_t *mod, dface_t *surf);
+void GL_CreateMeshForPatch ( model_t *mod, dface_t *in, msurface_t *out );
+void GL_FixAutosprites (msurface_t *surf);
 
 //
 // r_warp.c
 //
 void R_InitSkydome (void);
-void R_CreateSkydome (shader_t *shader, float skyheight);
+void R_FreeSkydome ( skydome_t *skydome );
+void R_CreateSkydome ( skydome_t *skydome, float skyheight );
 void R_ClearSkyBox (void);
 void R_DrawSky (shader_t *shader);
 void R_AddSkySurface (msurface_t *fa);
@@ -337,8 +363,8 @@ void	GL_RunCinematic ( cinematics_t *cin );
 void	GL_StopCinematic ( cinematics_t *cin );
 image_t *GL_ResampleCinematicFrame ( shaderpass_t *pass );
 
-void LoadPCX (char *filename, byte **pic, byte **palette, int *width, int *height);
-image_t *GL_LoadPic (char *name, byte *pic, int width, int height, int flags, int bits);
+void LoadPCX (char *filename, qbyte **pic, qbyte **palette, int *width, int *height);
+image_t *GL_LoadPic (char *name, qbyte *pic, int width, int height, int flags, int bits);
 image_t	*GL_FindImage (char *name, int flags);
 image_t	*GL_LoadImage (char *name, int flags);
 void	GL_TextureMode( char *string );
@@ -413,6 +439,9 @@ typedef struct
 	qboolean	sgis_mipmap;
 	qboolean	compressed_textures;
 	qboolean	bgra;
+	qboolean	texture_edge_clamp;
+	qboolean	texture_filter_anisotropic;
+	float		max_texture_filter_anisotropic;
 } glconfig_t;
 
 typedef struct
@@ -425,6 +454,7 @@ typedef struct
 
 	int	currenttextures[MAX_TEXTURE_UNITS];
 	int currenttmu;
+	int	lasttmumodes[MAX_TEXTURE_UNITS];
 
 	float camera_separation;
 	qboolean stereo_enabled;
@@ -460,3 +490,4 @@ void		GLimp_UpdateGammaRamp( void );
 
 void		VID_NewWindow ( int width, int height);
 qboolean	VID_GetModeInfo( int *width, int *height, int mode );
+

@@ -39,6 +39,478 @@ static void	 SpinControl_DoSlide( menulist_s *s, int dir );
 #define RCOLUMN_OFFSET  BIG_CHAR_WIDTH
 #define LCOLUMN_OFFSET -BIG_CHAR_WIDTH
 
+/*
+===============================================================================
+
+STRINGS DRAWING
+
+===============================================================================
+*/
+
+/*
+================
+UI_DrawNonPropChar
+
+Draws one graphics character with 0 being transparent.
+================
+*/
+void UI_DrawNonPropChar ( int x, int y, int num, int fontstyle, vec4_t color )
+{
+	float	frow, fcol;
+	int		width, height;
+
+	num &= 255;
+	
+	if ( (num&127) == 32 )
+		return;		// space
+
+	if ( fontstyle & FONT_BIG ) {
+		width = BIG_CHAR_WIDTH;
+		height = BIG_CHAR_HEIGHT;
+	} else if ( fontstyle & FONT_GIANT ) {
+		width = GIANT_CHAR_WIDTH;
+		height = GIANT_CHAR_HEIGHT;
+	} else {	// FONT_SMALL is default
+		width = SMALL_CHAR_WIDTH;
+		height = SMALL_CHAR_HEIGHT;
+	}
+
+	if (y <= -height)
+		return;			// totally off screen
+
+	frow = (num>>4)*0.0625f;
+	fcol = (num&15)*0.0625f;
+
+	if ( fontstyle & FONT_SHADOWED ) {
+		trap_Draw_StretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, uis.charsetShader );
+	}
+	trap_Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, uis.charsetShader );
+}
+
+/*
+=============
+UI_DrawNonPropString
+=============
+*/
+void UI_DrawNonPropString ( int x, int y, char *str, int fontstyle, vec4_t color )
+{
+	int		num;
+	float	frow, fcol;
+	int		width, height;
+	vec4_t	scolor;
+
+	if ( fontstyle & FONT_BIG ) {
+		width = BIG_CHAR_WIDTH;
+		height = BIG_CHAR_HEIGHT;
+	} else if ( fontstyle & FONT_GIANT ) {
+		width = GIANT_CHAR_WIDTH;
+		height = GIANT_CHAR_HEIGHT;
+	} else {	// FONT_SMALL is default
+		width = SMALL_CHAR_WIDTH;
+		height = SMALL_CHAR_HEIGHT;
+	}
+
+	if ( y <= -height ) {
+		return;			// totally off screen
+	}
+
+	Vector4Copy ( color, scolor );
+
+	while (*str) {
+		if ( Q_IsColorString( str ) ) {
+			VectorCopy ( color_table[ColorIndex(str[1])], scolor );
+			str += 2;
+			continue;
+		}
+
+		num = *str++;
+		num &= 255;
+	
+		if ( (num&127) == 32 ) {
+			x += width;
+			continue;		// space
+		}
+
+		frow = (num>>4)*0.0625f;
+		fcol = (num&15)*0.0625f;
+
+		if ( fontstyle & FONT_SHADOWED ) {
+			trap_Draw_StretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, uis.charsetShader );
+		}
+		trap_Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, uis.charsetShader );
+
+		x += width;
+	}
+}
+
+//=============================================================================
+//
+//	Variable width (proportional) fonts
+//
+
+typedef struct {
+	qbyte x, y, width;
+} propchardesc_t;
+
+static propchardesc_t propfont1[] =
+{
+	{0, 0, 0},		// space
+	{10, 122, 9},	// !
+	{153, 181, 16},	// "
+	{55, 122, 17},	// #
+	{78, 122, 20},	// $
+	{100, 122, 24},	// %
+	{152, 122, 18},	// &
+	{133, 181, 7},	// '
+	{206, 122, 10},	// (
+	{230, 122, 10},	// )
+	{177, 122, 18},	// *
+	{30, 152, 18},	// +
+	{85, 181, 7},	// ,
+	{34, 94, 11},	// -
+	{110, 181, 7},	// .
+	{130, 152, 14},	// /
+
+	{21, 64, 19},	// 0
+	{41, 64, 13},	// 1
+	{57, 64, 19},	// 2
+	{77, 64, 20},	// 3
+	{97, 64, 21},	// 4
+	{119, 64, 20},	// 5
+	{140, 64, 20},	// 6
+	{204, 64, 16},	// 7
+	{161, 64, 19},	// 8
+	{182, 64, 19},	// 9
+	{59, 181, 7},	// :
+	{35, 181, 7},	// ;
+	{203, 152, 15},	// <
+	{57, 94, 14},	// =
+	{228, 152, 15},	// >
+	{177, 181, 19},	// ?
+
+	{28, 122, 23},	// @
+	{4, 4, 20},		// A
+	{26, 4, 20},	// B
+	{47, 4, 20},	// C
+	{68, 4, 20},	// D
+	{89, 4, 14},	// E
+	{105, 4, 14},	// F
+	{120, 4, 20},	// G
+	{142, 4, 19},	// H
+	{163, 4, 10},	// I
+	{174, 4, 18},	// J
+	{194, 4, 20},	// K
+	{215, 4, 13},	// L
+	{229, 4, 25},	// M
+	{5, 34, 20},	// N
+	{26, 34, 20},	// O
+
+	{47, 34, 19},	// P
+	{67, 34, 20},	// Q
+	{89, 34, 19},	// R
+	{110, 34, 19},	// S
+	{130, 34, 14},	// T
+	{145, 34, 20},	// U
+	{166, 34, 19},	// V
+	{186, 34, 28},	// W
+	{214, 34, 20},	// X
+	{234, 34, 19},	// Y
+	{4, 64, 15},	// Z
+	{59, 152, 9},	// [
+	{105, 152, 14},	// \ 
+	{82, 152, 9},	// ]
+	{128, 122, 17},	// ^
+	{4, 152, 21},	// _
+
+	{9, 94, 8},		// `
+	{153, 152, 14},	// {
+	{9, 181, 10},	// |
+	{179, 152, 14},	// }
+	{79, 94, 17},	// ~
+};
+
+
+/*
+=============
+UI_DrawPropString
+=============
+*/
+void UI_DrawPropString ( int x, int y, char *str, int fontstyle, vec4_t color )
+{
+	int		num;
+	vec4_t	scolor;
+	float	frow, fcol;
+	int		width, height;
+	float	scale, sheight, swidth, spacing;
+
+	height = PROP_CHAR_HEIGHT;
+
+	if ( y <= -height )
+		return;			// totally off screen
+
+	if ( fontstyle & FONT_SMALL ) {
+		scale = PROP_SMALL_SCALE;
+		spacing = PROP_SMALL_SPACING;
+	} else {
+		scale = PROP_BIG_SCALE;
+		spacing = PROP_BIG_SPACING;
+	}
+
+	sheight = height * scale;
+
+	Vector4Copy ( color, scolor );
+
+	while (*str) {
+		if ( Q_IsColorString( str ) ) {
+			VectorCopy ( color_table[ColorIndex(str[1])], scolor );
+			str += 2;
+			continue;
+		}
+
+		num = toupper(*str++);
+
+		if ( num == 32 ) {
+			x += 11 * scale;
+			continue;		// space
+		}
+
+		if (num >= '{' && num <= '~')
+			num -= '{' - 'a';
+
+		num -= 32;
+
+		if ((unsigned)num >= sizeof(propfont1)/sizeof(propfont1[0]))
+			continue;
+
+		fcol = propfont1[num].x * (1/256.0f);
+		frow = propfont1[num].y * (1/256.0f);
+		width = propfont1[num].width;
+		swidth = width * scale;
+
+		if ( fontstyle & FONT_SHADOWED ) {
+			trap_Draw_StretchPic ( x+2, y+2, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), colorBlack, uis.propfontShader );
+		}
+		trap_Draw_StretchPic ( x, y, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), scolor, uis.propfontShader );
+
+		x += swidth + spacing;
+	}
+}
+
+
+/*
+=============
+UI_PropStringLength
+
+Calculate total width of a string, for centering text on the screen
+=============
+*/
+int UI_PropStringLength ( char *str, int fontstyle )
+{
+	int		num;
+	float	scale, swidth, spacing;
+	int		x;
+
+	if ( fontstyle & FONT_SMALL ) {
+		scale = PROP_SMALL_SCALE;
+		spacing = PROP_SMALL_SPACING;
+	} else {
+		scale = PROP_BIG_SCALE;
+		spacing = PROP_BIG_SPACING;
+	}
+
+	x = 0;
+
+	while (*str) {
+		if ( Q_IsColorString( str ) ) {
+			str += 2;
+			continue;
+		}
+
+		num = toupper(*str++);
+
+		if ( num == 32 ) {
+			x += 11 * scale;
+			continue;		// space
+		}
+
+		if (num >= '{' && num <= '~')
+			num -= '{' - 'a';
+
+		num -= 32;
+
+		if ((unsigned)num >= sizeof(propfont1)/sizeof(propfont1[0]))
+			continue;
+
+		swidth = propfont1[num].width * scale;
+
+		x += swidth + spacing;
+	}
+
+	return x;
+}
+
+
+/*
+=============
+UI_FillRect
+=============
+*/
+void UI_FillRect ( int x, int y, int w, int h, vec4_t color ) {
+	trap_Draw_StretchPic ( x, y, w, h, 0, 0, 1, 1, color, uis.whiteShader );
+}
+
+/*
+=============
+UI_FontstyleForFlags
+=============
+*/
+int UI_FontstyleForFlags ( int flags )
+{
+	int fontStyle = 0;
+
+	if ( flags & QMF_GIANT ) {
+		fontStyle |= FONT_GIANT;
+	} else {
+		fontStyle |= FONT_SMALL;
+	}
+
+	return fontStyle;
+}
+
+/*
+=============
+UI_NonPropStringLength
+=============
+*/
+int UI_NonPropStringLength ( char *s )
+{
+	int len = 0;
+
+	while ( *s && *s != '\n' ) {
+		if ( Q_IsColorString (s) ) {
+			s += 2;
+		} else {
+			len++;
+			s++;
+		}
+	}
+
+	return len;
+}
+
+/*
+=============
+UI_StringWidth
+=============
+*/
+int UI_StringWidth ( int flags, char *s )
+{
+	int fontStyle = UI_FontstyleForFlags ( flags );
+
+	if ( flags & QMF_NONPROPOTIONAL ) {
+		if ( fontStyle & FONT_BIG ) {
+			return UI_NonPropStringLength (s) * BIG_CHAR_WIDTH;
+		} else if ( fontStyle & FONT_GIANT ) {
+			return UI_NonPropStringLength (s) * GIANT_CHAR_WIDTH;
+		}
+
+		// FONT_SMALL is default
+		return UI_NonPropStringLength (s) * SMALL_CHAR_WIDTH;
+	}
+
+	return UI_PropStringLength ( s, fontStyle );
+}
+
+/*
+=============
+UI_StringHeight
+=============
+*/
+int UI_StringHeight ( int flags )
+{
+	int fontStyle = UI_FontstyleForFlags ( flags );
+
+	if ( flags & QMF_NONPROPOTIONAL ) {
+		if ( fontStyle & FONT_BIG ) {
+			return BIG_CHAR_HEIGHT;
+		} else if ( fontStyle & FONT_GIANT ) {
+			return GIANT_CHAR_HEIGHT;
+		}
+
+		// FONT_SMALL is default
+		return SMALL_CHAR_HEIGHT;
+	}
+
+	if ( fontStyle & FONT_GIANT ) {
+		return PROP_CHAR_HEIGHT * PROP_BIG_SCALE;
+	}
+
+	return PROP_CHAR_HEIGHT * PROP_SMALL_SCALE;
+}
+
+/*
+=============
+UI_StringHeightOffset
+=============
+*/
+int UI_StringHeightOffset ( int flags )
+{
+	int fontStyle = UI_FontstyleForFlags ( flags );
+
+	if ( flags & QMF_NONPROPOTIONAL ) {
+		if ( fontStyle & FONT_BIG ) {
+			return BIG_CHAR_HEIGHT - 3;
+		} else if ( fontStyle & FONT_GIANT ) {
+			return GIANT_CHAR_HEIGHT - 4;
+		}
+
+		// FONT_SMALL is default
+		return SMALL_CHAR_HEIGHT;
+	}
+
+	if ( fontStyle & FONT_GIANT ) {
+		return PROP_CHAR_HEIGHT * PROP_BIG_SCALE - 3;
+	}
+
+	return PROP_CHAR_HEIGHT * PROP_SMALL_SCALE - 2;
+}
+
+/*
+=============
+UI_AdjustStringPosition
+=============
+*/
+int UI_AdjustStringPosition ( int flags, char *s )
+{
+	int dx = 0;
+
+	if ( flags & QMF_CENTERED ) {
+		dx -= UI_StringWidth ( flags, s ) / 2;
+	} else if ( !(flags & QMF_LEFT_JUSTIFY) ) {
+		dx -= UI_StringWidth ( flags, s );
+	}
+
+	return dx;
+}
+
+/*
+=============
+UI_DrawString
+=============
+*/
+void UI_DrawString ( int x, int y, char *str, int flags, int fsm, vec4_t color )
+{
+	x += UI_AdjustStringPosition ( flags, str );
+
+	if ( flags & QMF_NONPROPOTIONAL ) {
+		UI_DrawNonPropString ( x, y, str, UI_FontstyleForFlags (flags) | fsm, color );
+	} else {
+		UI_DrawPropString ( x, y, str, UI_FontstyleForFlags (flags) | fsm, color );
+	}
+}
+
+//=================================================================
+
 void Action_DoEnter( menuaction_s *a )
 {
 	if ( a->generic.callback )
@@ -48,39 +520,26 @@ void Action_DoEnter( menuaction_s *a )
 void Action_Draw( menuaction_s *a )
 {
 	int x, y;
-	int fontstyle;
 	float *color;
 
-	if ( a->generic.flags & QMF_GIANT ) {
-		fontstyle = FONT_GIANT;
-	} else {
-		fontstyle = FONT_SMALL;
-	}
+	x = a->generic.x + a->generic.parent->x;
+	y = a->generic.y + a->generic.parent->y;
 
 	if ( Menu_ItemAtCursor( a->generic.parent ) == a ) {
-		fontstyle |= FONT_SHADOWED;
-
 		color = colorRed;
 		if ( a->generic.flags & QMF_GRAYED ) {
 			color = colorBlue;
 		}
+
+		UI_DrawString ( x, y, ( char * )a->generic.name, a->generic.flags, FONT_SHADOWED, color );
 	} else {
 		color = colorWhite;
 		if ( a->generic.flags & QMF_GRAYED ) {
 			color = colorYellow;
 		}
+
+		UI_DrawString ( x, y, ( char * )a->generic.name, a->generic.flags, 0, color );
 	}
-
-	x = a->generic.x + a->generic.parent->x;
-	if ( a->generic.flags & QMF_CENTERED ) {
-		x -= trap_PropStringLength ( ( char * )a->generic.name, fontstyle ) / 2;
-	} else if ( !(a->generic.flags & QMF_LEFT_JUSTIFY) ) {
-		x -= trap_PropStringLength ( ( char * )a->generic.name, fontstyle );
-	}
-
-	y = a->generic.y + a->generic.parent->y;
-
-	trap_DrawPropString ( x, y, ( char * )a->generic.name, fontstyle, color );
 
 	if ( a->generic.ownerdraw )
 		a->generic.ownerdraw( a );
@@ -91,32 +550,34 @@ qboolean Field_DoEnter( menufield_s *f )
 	if ( f->generic.callback )
 	{
 		f->generic.callback( f );
-		return true;
+		return qtrue;
 	}
-	return false;
+	return qfalse;
 }
 
 void Field_Draw( menufield_s *f )
 {
+	int x, y;
 	char tempbuffer[128] = "";
-	int x, y, delta;
-	int fontstyle;
-
-	fontstyle = FONT_SMALL;
 
 	x = f->generic.x + f->generic.parent->x + LCOLUMN_OFFSET;
 	y = f->generic.y + f->generic.parent->y;
 
 	if ( f->generic.name ) {
-		delta = trap_PropStringLength ( ( char * )f->generic.name, fontstyle );
-		trap_DrawPropString ( x - delta, y, ( char * )f->generic.name, fontstyle, colorWhite );
+		UI_DrawString ( x, y, ( char * )f->generic.name, f->generic.flags, 0, colorWhite );
+	}
+
+	x = f->generic.x + f->generic.parent->x + 16;
+	y = f->generic.y + f->generic.parent->y;
+
+	{
+		float color[4] = { 0.5, 0.5, 0.5, 0.5 };
+		UI_FillRect ( x, y, SMALL_CHAR_WIDTH * f->visible_length, SMALL_CHAR_HEIGHT, color );
 	}
 
 	if ( Menu_ItemAtCursor( f->generic.parent ) == f )
 	{
 		int offset, len;
-
-		fontstyle |= FONT_SHADOWED;
 
 		if ( f->visible_offset )
 			offset = f->visible_length;
@@ -124,26 +585,26 @@ void Field_Draw( menufield_s *f )
 			offset = f->cursor;
 
 		len = 0;
-		x = f->generic.x + f->generic.parent->x + 16;
-		y = f->generic.y + f->generic.parent->y;
 
 		if ( offset > 0 ) {
 			strncpy( tempbuffer, f->buffer, offset - 1 );
-			trap_DrawPropString ( x + len, y, tempbuffer, fontstyle, colorWhite );
-			len += trap_PropStringLength ( tempbuffer, fontstyle );
+			len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
+			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
 
 			strncpy( tempbuffer, f->buffer + offset - 1, 1 );
 			tempbuffer[1] = 0;
-			trap_DrawPropString ( x + len, y, tempbuffer, fontstyle, colorRed );
-			len += trap_PropStringLength ( tempbuffer, fontstyle );
+			len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
+			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPOTIONAL, FONT_SHADOWED, colorWhite );
 	
 			if ( offset < f->visible_length ) {
 				strncpy( tempbuffer, f->buffer + offset, f->visible_length - offset );
-				trap_DrawPropString ( x + len, y, tempbuffer, fontstyle, colorWhite );
+				len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
+				UI_DrawString ( x, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
 			}
 		} else {
 			strncpy( tempbuffer, f->buffer + f->visible_offset, f->visible_length );
-			trap_DrawPropString ( x, y, tempbuffer, fontstyle, colorRed );
+			len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
+			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
 		}
 	}
 	else
@@ -152,7 +613,7 @@ void Field_Draw( menufield_s *f )
 		y = f->generic.y + f->generic.parent->y;
 
 		strncpy( tempbuffer, f->buffer + f->visible_offset, f->visible_length );
-		trap_DrawPropString ( x, y, tempbuffer, fontstyle, colorWhite );
+		UI_DrawString ( x + UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
 	}
 }
 
@@ -210,20 +671,21 @@ qboolean Field_Key( menufield_s *f, int key )
 		{
 		case K_DEL:
 		default:
-			return false;
+			return qfalse;
 		}
 	}
 
 	/*
 	** support pasting from the clipboard
 	*/
-/*
-	if ( ( toupper( key ) == 'V' && keydown[K_CTRL] ) ||
-		 ( ( ( key == K_INS ) || ( key == K_KP_INS ) ) && keydown[K_SHIFT] ) )
+	if ( ( toupper( key ) == 'V' && trap_Key_IsDown (K_CTRL) ) ||
+		 ( ( ( key == K_INS ) || ( key == K_KP_INS ) ) && trap_Key_IsDown (K_SHIFT) ) )
 	{
-		char *cbd;
-		
-		if ( ( cbd = Sys_GetClipboardData() ) != 0 )
+		char cbd[64];
+
+		trap_CL_GetClipboardData ( cbd, sizeof(cbd) );
+
+		if ( cbd[0] )
 		{
 			strtok( cbd, "\n\r\b" );
 
@@ -232,12 +694,10 @@ qboolean Field_Key( menufield_s *f, int key )
 			f->visible_offset = f->cursor - f->visible_length;
 			if ( f->visible_offset < 0 )
 				f->visible_offset = 0;
-
-			Q_free( cbd );
 		}
-		return true;
+		return qtrue;
 	}
-*/
+
 	switch ( key )
 	{
 	case K_KP_LEFTARROW:
@@ -266,12 +726,12 @@ qboolean Field_Key( menufield_s *f, int key )
 	case K_KP_ENTER:
 	case K_ENTER:
 	case K_TAB:
-		return false;
+		return qfalse;
 
 	case K_SPACE:
 	default:
 		if ( !isdigit( key ) && ( f->generic.flags & QMF_NUMBERSONLY ) )
-			return false;
+			return qfalse;
 
 		if ( f->cursor < f->length )
 		{
@@ -288,7 +748,7 @@ qboolean Field_Key( menufield_s *f, int key )
 		}
 	}
 
-	return true;
+	return qtrue;
 }
 
 void Menu_AddItem( menuframework_s *menu, void *item )
@@ -374,38 +834,24 @@ void Menu_Center( menuframework_s *menu )
 static void Field_Init( menufield_s *f )
 {
 	f->generic.mins[0] = f->generic.x + f->generic.parent->x + 16;
-	f->generic.mins[1] = f->generic.y + f->generic.parent->y;
+	f->generic.maxs[0] = f->generic.mins[0] + UI_StringWidth ( f->generic.flags, f->buffer );
 
-	f->generic.maxs[0] = f->generic.mins[0] + trap_PropStringLength ( f->buffer, FONT_SMALL );
-	f->generic.maxs[1] = f->generic.mins[1] + PROP_SMALL_HEIGHT;
+	f->generic.mins[1] = f->generic.y + f->generic.parent->y;
+	f->generic.maxs[1] = f->generic.mins[1] + UI_StringHeight ( f->generic.flags );
 }
 
 static void	Action_Init( menuaction_s *a )
 {
-	int fontstyle;
+	a->generic.mins[0] = a->generic.x + a->generic.parent->x + UI_AdjustStringPosition ( a->generic.flags, ( char * )a->generic.name );
+	a->generic.maxs[0] = a->generic.mins[0] + UI_StringWidth ( a->generic.flags, ( char * )a->generic.name );
 
-	if ( a->generic.flags & QMF_GIANT ) {
-		fontstyle = FONT_GIANT;
-	} else {
-		fontstyle = FONT_SMALL;
-	}
-
-	a->generic.mins[0] = a->generic.x + a->generic.parent->x;
-	if ( a->generic.flags & QMF_CENTERED ) {
-		a->generic.mins[0] -= trap_PropStringLength ( ( char * )a->generic.name, fontstyle ) / 2;
-	} else if ( !(a->generic.flags & QMF_LEFT_JUSTIFY) ) {
-		a->generic.mins[0] -= trap_PropStringLength ( ( char * )a->generic.name, fontstyle );
-	}
 	a->generic.mins[1] = a->generic.y + a->generic.parent->y;
-
-	a->generic.maxs[0] = a->generic.mins[0] + trap_PropStringLength ( ( char * )a->generic.name, fontstyle );
-	a->generic.maxs[1] = a->generic.mins[1] + ((fontstyle == FONT_SMALL) ? PROP_SMALL_HEIGHT : PROP_BIG_HEIGHT);
+	a->generic.maxs[1] = a->generic.mins[1] + UI_StringHeight ( a->generic.flags );
 }
 
 static void	MenuList_Init( menulist_s *l )
 {
 	const char **n;
-	int fontstyle;
 	int xsize, ysize, len, spacing;
 
 	n = l->itemnames;
@@ -413,24 +859,17 @@ static void	MenuList_Init( menulist_s *l )
 	if ( !n )
 		return;
 
-	fontstyle = FONT_SMALL;
-
-	if ( fontstyle & FONT_SMALL ) {
-		spacing = PROP_SMALL_HEIGHT + 2;
-	} else {
-		spacing = PROP_BIG_HEIGHT + 2;
-	}
-
 	l->generic.mins[0] = l->generic.x + l->generic.parent->x + LCOLUMN_OFFSET - 
-		trap_PropStringLength ( ( char * )l->generic.name, fontstyle );
+		UI_StringWidth ( l->generic.flags, ( char * )l->generic.name );
 	l->generic.mins[1] = l->generic.y + l->generic.parent->y;
 
 	ysize = 0;
 	xsize = 0;
+	spacing = UI_StringHeightOffset ( l->generic.flags );
 
 	while ( *n )
 	{
-		len = trap_PropStringLength ( ( char * )*n, fontstyle );
+		len = UI_StringWidth ( l->generic.flags, ( char * )*n  );
 		xsize = max ( xsize, len );
 		ysize += spacing;
 
@@ -448,27 +887,16 @@ static void Separator_Init( menuseparator_s *s )
 
 static void Slider_Init( menuslider_s *s )
 {
-	int delta;
-	int fontstyle;
-
-	fontstyle = FONT_SMALL;
-	delta = trap_PropStringLength ( ( char * )s->generic.name, fontstyle );
-
-	s->generic.mins[0] = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
-	if ( s->generic.flags & QMF_CENTERED ) {
-		s->generic.mins[0] += delta / 2;
-	}
+	s->generic.mins[0] = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET - UI_AdjustStringPosition ( s->generic.flags, ( char * )s->generic.name );
+	s->generic.maxs[0] = s->generic.mins[0] + SLIDER_RANGE * SMALL_CHAR_WIDTH + SMALL_CHAR_WIDTH;
 
 	s->generic.mins[1] = s->generic.y + s->generic.parent->y;
-
-	s->generic.maxs[0] = s->generic.mins[0] + SLIDER_RANGE * SMALL_CHAR_WIDTH + SMALL_CHAR_WIDTH;
 	s->generic.maxs[1] = s->generic.mins[1] + SMALL_CHAR_HEIGHT;
 }
 
 static void SpinControl_Init( menulist_s *s )
 {
 	char buffer[100] = { 0 };
-	int fontstyle;
 	int ysize, xsize, spacing, len;
 	const char **n;
 
@@ -477,17 +905,11 @@ static void SpinControl_Init( menulist_s *s )
 	if ( !n )
 		return;
 
-	fontstyle = FONT_SMALL;
-
 	s->generic.mins[0] = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
 	s->generic.mins[1] = s->generic.y + s->generic.parent->y;
 
-	if ( fontstyle == FONT_SMALL ) {
-		ysize = PROP_SMALL_HEIGHT;
-	} else {
-		ysize = PROP_BIG_HEIGHT;
-	}
-	spacing = ysize + 2;
+	ysize = UI_StringHeight ( s->generic.flags );
+	spacing = UI_StringHeightOffset ( s->generic.flags );
 
 	xsize = 0;
 
@@ -495,7 +917,7 @@ static void SpinControl_Init( menulist_s *s )
 	{
 		if ( !strchr( *n, '\n' ) )
 		{
-			len = trap_PropStringLength ( ( char * )*n, fontstyle );
+			len = UI_StringWidth ( s->generic.flags, ( ( char * )*n ) );
 			xsize = max ( xsize, len );
 		}
 		else
@@ -503,12 +925,12 @@ static void SpinControl_Init( menulist_s *s )
 
 			strcpy( buffer, *n );
 			*strchr( buffer, '\n' ) = 0;
-			len = trap_PropStringLength ( buffer, fontstyle );
+			len = UI_StringWidth ( s->generic.flags, buffer );
 			xsize = max ( xsize, len );
 
 			ysize = ysize + spacing;
 			strcpy( buffer, strchr( *n, '\n' ) + 1 );
-			len = trap_PropStringLength ( buffer, fontstyle );
+			len = UI_StringWidth ( s->generic.flags, buffer );
 			xsize = max ( xsize, len );
 		}
 
@@ -630,8 +1052,8 @@ void Menu_DrawStatusBar( const char *string )
 	maxcol = uis.vidWidth / SMALL_CHAR_WIDTH;
 	col = (maxcol >> 1) - l / 2;
 
-	trap_FillRect ( 0, uis.vidHeight-SMALL_CHAR_HEIGHT, uis.vidWidth, SMALL_CHAR_HEIGHT, colorDkGrey );
-	trap_DrawString ( col*SMALL_CHAR_WIDTH, uis.vidHeight - SMALL_CHAR_HEIGHT, ( char * )string, FONT_SMALL, colorWhite );
+	UI_FillRect ( 0, uis.vidHeight-SMALL_CHAR_HEIGHT, uis.vidWidth, SMALL_CHAR_HEIGHT, colorDkGrey );
+	UI_DrawNonPropString ( col*SMALL_CHAR_WIDTH, uis.vidHeight - SMALL_CHAR_HEIGHT, ( char * )string, FONT_SMALL, colorWhite );
 }
 
 void *Menu_ItemAtCursor( menuframework_s *m )
@@ -654,16 +1076,16 @@ qboolean Menu_SelectItem( menuframework_s *s )
 			return Field_DoEnter( ( menufield_s * ) item ) ;
 		case MTYPE_ACTION:
 			Action_DoEnter( ( menuaction_s * ) item );
-			return true;
+			return qtrue;
 		case MTYPE_LIST:
 //			Menulist_DoEnter( ( menulist_s * ) item );
-			return false;
+			return qfalse;
 		case MTYPE_SPINCONTROL:
 //			SpinControl_DoEnter( ( menulist_s * ) item );
-			return false;
+			return qfalse;
 		}
 	}
-	return false;
+	return qfalse;
 }
 
 void Menu_SetStatusBar( menuframework_s *m, const char *string )
@@ -681,14 +1103,14 @@ qboolean Menu_SlideItem( menuframework_s *s, int dir )
 		{
 		case MTYPE_SLIDER:
 			Slider_DoSlide( ( menuslider_s * ) item, dir );
-			return true;
+			return qtrue;
 		case MTYPE_SPINCONTROL:
 			SpinControl_DoSlide( ( menulist_s * ) item, dir );
-			return true;
+			return qtrue;
 		}
 	}
 
-	return false;
+	return qfalse;
 }
 
 int Menu_TallySlots( menuframework_s *menu )
@@ -732,58 +1154,35 @@ void Menulist_DoEnter( menulist_s *l )
 void MenuList_Draw( menulist_s *l )
 {
 	const char **n;
-	int fontstyle; 
-	int x, y, spacing;
-
-	fontstyle = FONT_SMALL;
-
-	if ( fontstyle & FONT_SMALL ) {
-		spacing = PROP_SMALL_HEIGHT + 2;
-	} else {
-		spacing = PROP_BIG_HEIGHT + 2;
-	}
+	int x, y;
 
 	x = l->generic.x + l->generic.parent->x + LCOLUMN_OFFSET - 
-		trap_PropStringLength ( ( char * )l->generic.name, fontstyle );
+		UI_StringWidth ( l->generic.flags, ( char * )l->generic.name );
 	y = l->generic.y + l->generic.parent->y;
 
-	trap_DrawPropString ( x, y, ( char * )l->generic.name, fontstyle, colorYellow );
+	UI_DrawString ( x, y, ( char * )l->generic.name, l->generic.flags, 0, colorYellow );
 
 	n = l->itemnames;
 
-  	trap_FillRect ( l->generic.x - 112 + l->generic.parent->x, l->generic.parent->y + l->generic.y + l->curvalue*10 + 10, 128, 10, colorDkGrey );
+  	UI_FillRect ( l->generic.x - 112 + l->generic.parent->x, l->generic.parent->y + l->generic.y + l->curvalue*10 + 10, 128, 10, colorDkGrey );
 	while ( *n )
 	{
-		trap_DrawPropString ( x, y + spacing, ( char * )*n++, fontstyle, colorYellow );
-		y += spacing;
+		UI_DrawPropString ( x, y +=  UI_StringHeightOffset (l->generic.flags), ( char * )*n++, 0, colorYellow );
 	}
 }
 
 void Separator_Draw( menuseparator_s *s )
 {
-	int x, y, delta;
-	int fontstyle;
+	int x, y;
 
 	if ( !s->generic.name ) {
 		return;
 	}
 
-	if ( s->generic.flags & QMF_GIANT ) {
-		fontstyle = FONT_GIANT;
-	} else {
-		fontstyle = FONT_SMALL;
-	}
-
-	delta = trap_PropStringLength ( ( char * )s->generic.name, fontstyle );
-
-	x = s->generic.x + s->generic.parent->x - delta;
-	if ( s->generic.flags & QMF_CENTERED ) {
-		x += delta / 2;
-	}
-
+	x = s->generic.x + s->generic.parent->x;
 	y = s->generic.y + s->generic.parent->y;
 
-	trap_DrawPropString ( x, y, ( char * )s->generic.name, fontstyle, colorYellow );
+	UI_DrawString ( x, y, ( char * )s->generic.name, s->generic.flags, 0, colorYellow );
 }
 
 void Slider_DoSlide( menuslider_s *s, int dir )
@@ -802,43 +1201,34 @@ void Slider_DoSlide( menuslider_s *s, int dir )
 void Slider_Draw( menuslider_s *s )
 {
 	int	i;
-	int x, y, delta;
-	int fontstyle;
+	int x, y, w;
+	int fontStyle;
 	float *color;
 
-	fontstyle = FONT_SMALL;
-	delta = trap_PropStringLength ( ( char * )s->generic.name, fontstyle );
-
-	x = s->generic.x + s->generic.parent->x + LCOLUMN_OFFSET;
-	if ( s->generic.flags & QMF_CENTERED ) {
-		x += delta / 2;
-	}
-
+	fontStyle = FONT_SMALL;
+	x = s->generic.x + s->generic.parent->x;
 	y = s->generic.y + s->generic.parent->y;
+	w = SMALL_CHAR_WIDTH;
 
-	trap_DrawPropString ( x - delta, y, ( char *)s->generic.name, fontstyle, colorYellow );
+	UI_DrawString ( x + LCOLUMN_OFFSET, y, ( char *)s->generic.name, 0, 0, colorYellow );
 
-	s->range = ( s->curvalue - s->minvalue ) / ( float ) ( s->maxvalue - s->minvalue );
+	s->range = ( s->curvalue - s->minvalue );
+	s->range /= ( float ) ( s->maxvalue - s->minvalue );
 	clamp ( s->range, 0, 1 );
 
+	color = colorWhite;
 	if ( Menu_ItemAtCursor( s->generic.parent ) == s )
 	{
-		fontstyle |= FONT_SHADOWED;
 		color = colorRed;
-	}
-	else
-	{
-		color = colorWhite;
+		fontStyle |= FONT_SHADOWED;
 	}
 
-	trap_DrawChar( s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET, s->generic.y + s->generic.parent->y, 128, FONT_SMALL, colorWhite);
+	x = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
+	UI_DrawNonPropChar( x, y, 128, fontStyle, colorWhite);
 	for ( i = 0; i < SLIDER_RANGE; i++ )
-		trap_DrawChar( RCOLUMN_OFFSET + s->generic.x + i*SMALL_CHAR_WIDTH + s->generic.parent->x + SMALL_CHAR_WIDTH, 
-		s->generic.y + s->generic.parent->y, 129, FONT_SMALL, colorWhite);
-	trap_DrawChar( RCOLUMN_OFFSET + s->generic.x + i*SMALL_CHAR_WIDTH + s->generic.parent->x + SMALL_CHAR_WIDTH, 
-		s->generic.y + s->generic.parent->y, 130, FONT_SMALL, colorWhite);
-	trap_DrawChar( ( int ) ( SMALL_CHAR_WIDTH + RCOLUMN_OFFSET + s->generic.parent->x + s->generic.x + (SLIDER_RANGE-1)*SMALL_CHAR_WIDTH * s->range ), 
-		s->generic.y + s->generic.parent->y, 131, FONT_SMALL, color);
+		UI_DrawNonPropChar( x + i * w + w, y, 129, fontStyle, colorWhite);
+	UI_DrawNonPropChar( x + i * w + w, y, 130, fontStyle, colorWhite);
+	UI_DrawNonPropChar( x + ( int )(SLIDER_RANGE-1) * w * s->range + w, y, 131, fontStyle, color);
 }
 
 void SpinControl_DoEnter( menulist_s *s )
@@ -867,72 +1257,45 @@ void SpinControl_DoSlide( menulist_s *s, int dir )
 void SpinControl_Draw( menulist_s *s )
 {
 	char buffer[100];
-	int x, y, delta;
-	int fontstyle;
+	int x, y;
+	int fsm;
 	float *color;
-
-	fontstyle = FONT_SMALL;
 
 	x = s->generic.x + s->generic.parent->x + LCOLUMN_OFFSET;
 	y = s->generic.y + s->generic.parent->y;
 
 	if ( s->generic.name )
 	{
-		delta = trap_PropStringLength ( ( char * )s->generic.name, fontstyle );
-
-		if ( s->generic.flags & QMF_CENTERED ) {
-			x += delta / 2;
-		}
-
-		trap_DrawPropString ( x - delta, y, ( char *)s->generic.name, fontstyle, colorYellow );
+		UI_DrawString ( x, y, ( char *)s->generic.name, s->generic.flags, 0, colorYellow );
 	}
 
 	if ( s->generic.flags & QMF_NOITEMNAMES )
 		return;
 
+	fsm = 0;
+	color = colorWhite;
 	if ( Menu_ItemAtCursor( s->generic.parent ) == s )
 	{
-		fontstyle |= FONT_SHADOWED;
 		color = colorRed;
-	}
-	else
-	{
-		color = colorWhite;
+		fsm = FONT_SHADOWED;
 	}
 
+	x = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
 	y = s->generic.y + s->generic.parent->y;
 
 	if ( !strchr( s->itemnames[s->curvalue], '\n' ) )
 	{
-		x = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
-
-		if ( s->generic.flags & QMF_CENTERED ) {
-			x -= trap_PropStringLength ( ( char * )s->itemnames[s->curvalue], fontstyle ) / 2;
-		}
-
-		trap_DrawPropString ( x, y, ( char *)s->itemnames[s->curvalue], fontstyle, color );
+		UI_DrawString ( x, y, ( char *)s->itemnames[s->curvalue], QMF_LEFT_JUSTIFY | (s->generic.flags & QMF_NONPROPOTIONAL), fsm, color );
 	}
 	else
 	{
 
 		strcpy( buffer, s->itemnames[s->curvalue] );
 		*strchr( buffer, '\n' ) = 0;
-
-		x = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
-		if ( s->generic.flags & QMF_CENTERED ) {
-			x -= trap_PropStringLength ( buffer, fontstyle ) / 2;
-		}
-
-		trap_DrawPropString ( x, y, buffer, fontstyle, color );
+		UI_DrawString ( x, y, buffer, s->generic.flags, fsm, color );
 
 		strcpy( buffer, strchr( s->itemnames[s->curvalue], '\n' ) + 1 );
-
-		x = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET;
-		if ( s->generic.flags & QMF_CENTERED ) {
-			x -= trap_PropStringLength ( buffer, fontstyle ) / 2;
-		}
-
-		trap_DrawPropString ( x, y + (fontstyle == FONT_SMALL) ? PROP_SMALL_HEIGHT + 2 : PROP_BIG_HEIGHT + 2, buffer, fontstyle, color );
+		UI_DrawString ( x, y + UI_StringHeightOffset (s->generic.flags), buffer, QMF_LEFT_JUSTIFY | (s->generic.flags & QMF_NONPROPOTIONAL), fsm, color );
 	}
 }
 

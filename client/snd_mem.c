@@ -27,7 +27,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 ResampleSfx
 ================
 */
-void ResampleSfx (sfxcache_t *sc, byte *data, char *name)
+void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 {
 	int i, outcount, srcsample, srclength, samplefrac, fracstep;
 
@@ -213,14 +213,13 @@ S_LoadSound
 sfxcache_t *S_LoadSound (sfx_t *s)
 {
     char	namebuffer[MAX_QPATH];
-	byte	*data;
+	qbyte	*data;
 	wavinfo_t	info;
 	int		len;
 	sfxcache_t	*sc;
 	int		size;
-	char	*name;
 
-	if (!s->name[0] || s->name[0] == '*')
+	if (!s->name[0])
 		return NULL;
 
 // see if still in memory
@@ -229,16 +228,7 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 		return sc;
 
 // load it in
-	if (s->truename)
-		name = s->truename;
-	else
-		name = s->name;
-
-	if (name[0] == '#')
-		Com_sprintf (namebuffer, sizeof(namebuffer), &name[1]);
-	else
-		Com_sprintf (namebuffer, sizeof(namebuffer), name);
-
+	Com_sprintf (namebuffer, sizeof(namebuffer), s->name);
 	size = FS_LoadFile (namebuffer, (void **)&data);
 
 	if (!data)
@@ -259,7 +249,7 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 	len = (int) ((double) info.samples * (double) dma.speed / (double) info.rate);
 	len = len * info.width * info.channels;
 
-	sc = s->cache = Z_Malloc (len + sizeof(sfxcache_t));
+	sc = s->cache = S_Malloc (len + sizeof(sfxcache_t));
 	if (!sc)
 	{
 		FS_FreeFile (data);
@@ -296,10 +286,10 @@ WAV loading
 */
 
 
-byte	*data_p;
-byte 	*iff_end;
-byte 	*last_chunk;
-byte 	*iff_data;
+qbyte	*data_p;
+qbyte 	*iff_end;
+qbyte 	*last_chunk;
+qbyte 	*iff_data;
 int 	iff_chunk_len;
 
 
@@ -378,7 +368,7 @@ void DumpChunks(void)
 GetWavinfo
 ============
 */
-wavinfo_t GetWavinfo (char *name, byte *wav, int wavlength)
+wavinfo_t GetWavinfo (char *name, qbyte *wav, int wavlength)
 {
 	wavinfo_t	info;
 	int     i;

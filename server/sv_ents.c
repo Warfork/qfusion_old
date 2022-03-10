@@ -76,7 +76,8 @@ void SV_EmitPacketEntities (client_frame_t *from, client_frame_t *to, sizebuf_t 
 			// in any bytes being emited if the entity has not changed at all
 			// note that players are always 'newentities', this updates their oldorigin always
 			// and prevents warping
-			MSG_WriteDeltaEntity (oldent, newent, msg, false, newent->number <= sv_maxclients->value);
+			MSG_WriteDeltaEntity (oldent, newent, msg, qfalse, newent->number <= sv_maxclients->value 
+				|| ((EDICT_NUM(newent->number))->r.svflags & SVF_FORCEOLDORIGIN));
 			oldindex++;
 			newindex++;
 			continue;
@@ -84,7 +85,7 @@ void SV_EmitPacketEntities (client_frame_t *from, client_frame_t *to, sizebuf_t 
 
 		if (newnum < oldnum)
 		{	// this is a new entity, send it from the baseline
-			MSG_WriteDeltaEntity (&sv.baselines[newnum], newent, msg, true, true);
+			MSG_WriteDeltaEntity (&sv.baselines[newnum], newent, msg, qtrue, !((EDICT_NUM(newent->number))->r.svflags & SVF_NOOLDORIGIN));
 			newindex++;
 			continue;
 		}
@@ -145,15 +146,19 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (ps->pmove.pm_type != ops->pmove.pm_type)
 		pflags |= PS_M_TYPE;
 
-	if (ps->pmove.origin[0] != ops->pmove.origin[0]
-		|| ps->pmove.origin[1] != ops->pmove.origin[1]
-		|| ps->pmove.origin[2] != ops->pmove.origin[2] )
-		pflags |= PS_M_ORIGIN;
+	if (ps->pmove.origin[0] != ops->pmove.origin[0])
+		pflags |= PS_M_ORIGIN0;
+	if (ps->pmove.origin[1] != ops->pmove.origin[1])
+		pflags |= PS_M_ORIGIN1;
+	if (ps->pmove.origin[2] != ops->pmove.origin[2])
+		pflags |= PS_M_ORIGIN2;
 
-	if (ps->pmove.velocity[0] != ops->pmove.velocity[0]
-		|| ps->pmove.velocity[1] != ops->pmove.velocity[1]
-		|| ps->pmove.velocity[2] != ops->pmove.velocity[2] )
-		pflags |= PS_M_VELOCITY;
+	if (ps->pmove.velocity[0] != ops->pmove.velocity[0])
+		pflags |= PS_M_VELOCITY0;
+	if (ps->pmove.velocity[1] != ops->pmove.velocity[1])
+		pflags |= PS_M_VELOCITY1;
+	if (ps->pmove.velocity[2] != ops->pmove.velocity[2])
+		pflags |= PS_M_VELOCITY2;
 
 	if (ps->pmove.pm_time != ops->pmove.pm_time)
 		pflags |= PS_M_TIME;
@@ -164,11 +169,12 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (ps->pmove.gravity != ops->pmove.gravity)
 		pflags |= PS_M_GRAVITY;
 
-	if (ps->pmove.delta_angles[0] != ops->pmove.delta_angles[0]
-		|| ps->pmove.delta_angles[1] != ops->pmove.delta_angles[1]
-		|| ps->pmove.delta_angles[2] != ops->pmove.delta_angles[2] )
-		pflags |= PS_M_DELTA_ANGLES;
-
+	if (ps->pmove.delta_angles[0] != ops->pmove.delta_angles[0])
+		pflags |= PS_M_DELTA_ANGLES0;
+	if (ps->pmove.delta_angles[1] != ops->pmove.delta_angles[1])
+		pflags |= PS_M_DELTA_ANGLES1;
+	if (ps->pmove.delta_angles[2] != ops->pmove.delta_angles[2])
+		pflags |= PS_M_DELTA_ANGLES2;
 
 	if (ps->viewoffset[0] != ops->viewoffset[0]
 		|| ps->viewoffset[1] != ops->viewoffset[1]
@@ -194,19 +200,46 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (ps->fov != ops->fov)
 		pflags |= PS_FOV;
 
-	if (ps->rdflags != ops->rdflags)
-		pflags |= PS_RDFLAGS;
-
 	if (ps->gunframe != ops->gunframe)
 		pflags |= PS_WEAPONFRAME;
 
-	pflags |= PS_WEAPONINDEX;
+	if (ps->gunindex != ops->gunindex)
+		pflags |= PS_WEAPONINDEX;
+
+	if (ps->gunangles[0] != ops->gunangles[0]
+		|| ps->gunangles[1] != ops->gunangles[1]
+		|| ps->gunangles[2] != ops->gunangles[2] )
+		pflags |= PS_WEAPONANGLES;
 
 	//
 	// write it
 	//
 	MSG_WriteByte (msg, svc_playerinfo);
-	MSG_WriteShort (msg, pflags);
+
+	if (pflags & 0xff000000)
+		pflags |= PS_MOREBITS3 | PS_MOREBITS2 | PS_MOREBITS1;
+	else if (pflags & 0x00ff0000)
+		pflags |= PS_MOREBITS2 | PS_MOREBITS1;
+	else if (pflags & 0x0000ff00)
+		pflags |= PS_MOREBITS1;
+
+	MSG_WriteByte (msg,	pflags&255 );
+
+	if (pflags & 0xff000000)
+	{
+		MSG_WriteByte (msg,	(pflags>>8)&255 );
+		MSG_WriteByte (msg,	(pflags>>16)&255 );
+		MSG_WriteByte (msg,	(pflags>>24)&255 );
+	}
+	else if (pflags & 0x00ff0000)
+	{
+		MSG_WriteByte (msg,	(pflags>>8)&255 );
+		MSG_WriteByte (msg,	(pflags>>16)&255 );
+	}
+	else if (pflags & 0x0000ff00)
+	{
+		MSG_WriteByte (msg,	(pflags>>8)&255 );
+	}
 
 	//
 	// write the pmove_state_t
@@ -214,19 +247,19 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (pflags & PS_M_TYPE)
 		MSG_WriteByte (msg, ps->pmove.pm_type);
 
-	if (pflags & PS_M_ORIGIN)
-	{
-		MSG_WriteInt3 (msg, ps->pmove.origin[0]);
-		MSG_WriteInt3 (msg, ps->pmove.origin[1]);
-		MSG_WriteInt3 (msg, ps->pmove.origin[2]);
-	}
+	if (pflags & PS_M_ORIGIN0)
+		MSG_WriteLong (msg, ps->pmove.origin[0]);
+	if (pflags & PS_M_ORIGIN1)
+		MSG_WriteLong (msg, ps->pmove.origin[1]);
+	if (pflags & PS_M_ORIGIN2)
+		MSG_WriteLong (msg, ps->pmove.origin[2]);
 
-	if (pflags & PS_M_VELOCITY)
-	{
-		MSG_WriteInt3 (msg, ps->pmove.velocity[0]);
-		MSG_WriteInt3 (msg, ps->pmove.velocity[1]);
-		MSG_WriteInt3 (msg, ps->pmove.velocity[2]);
-	}
+	if (pflags & PS_M_VELOCITY0)
+		MSG_WriteLong (msg, ps->pmove.velocity[0]);
+	if (pflags & PS_M_VELOCITY1)
+		MSG_WriteLong (msg, ps->pmove.velocity[1]);
+	if (pflags & PS_M_VELOCITY2)
+		MSG_WriteLong (msg, ps->pmove.velocity[2]);
 
 	if (pflags & PS_M_TIME)
 		MSG_WriteByte (msg, ps->pmove.pm_time);
@@ -237,12 +270,12 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (pflags & PS_M_GRAVITY)
 		MSG_WriteShort (msg, ps->pmove.gravity);
 
-	if (pflags & PS_M_DELTA_ANGLES)
-	{
+	if (pflags & PS_M_DELTA_ANGLES0)
 		MSG_WriteShort (msg, ps->pmove.delta_angles[0]);
+	if (pflags & PS_M_DELTA_ANGLES1)
 		MSG_WriteShort (msg, ps->pmove.delta_angles[1]);
+	if (pflags & PS_M_DELTA_ANGLES2)
 		MSG_WriteShort (msg, ps->pmove.delta_angles[2]);
-	}
 
 	//
 	// write the rest of the player_state_t
@@ -269,13 +302,13 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	}
 
 	if (pflags & PS_WEAPONINDEX)
-	{
 		MSG_WriteByte (msg, ps->gunindex);
-	}
 
 	if (pflags & PS_WEAPONFRAME)
+		MSG_WriteShort (msg, ps->gunframe);
+
+	if (pflags & PS_WEAPONANGLES)
 	{
-		MSG_WriteByte (msg, ps->gunframe);
 		MSG_WriteChar (msg, ps->gunangles[0]*4);
 		MSG_WriteChar (msg, ps->gunangles[1]*4);
 		MSG_WriteChar (msg, ps->gunangles[2]*4);
@@ -290,14 +323,13 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	}
 	if (pflags & PS_FOV)
 		MSG_WriteByte (msg, ps->fov);
-	if (pflags & PS_RDFLAGS)
-		MSG_WriteByte (msg, ps->rdflags);
 
 	// send stats
 	statbits = 0;
 	for (i=0 ; i<MAX_STATS ; i++)
 		if (ps->stats[i] != ops->stats[i])
 			statbits |= 1<<i;
+
 	MSG_WriteLong (msg, statbits);
 	for (i=0 ; i<MAX_STATS ; i++)
 		if (statbits & (1<<i) )
@@ -360,7 +392,11 @@ Build a client frame structure
 =============================================================================
 */
 
-byte		fatpvs[MAX_MAP_LEAFS/8];
+qbyte		fatpvs[MAX_MAP_LEAFS/8];
+qbyte		fatphs[MAX_MAP_LEAFS/8];
+
+qbyte		clientpvs[MAX_MAP_LEAFS/8];
+qbyte		clientphs[MAX_MAP_LEAFS/8];
 
 /*
 ============
@@ -375,7 +411,7 @@ void SV_FatPVS (vec3_t org)
 	int		leafs[128];
 	int		i, j, count;
 	int		longs;
-	byte	*src;
+	qbyte	*src;
 	vec3_t	mins, maxs;
 
 	for (i=0 ; i<3 ; i++)
@@ -411,9 +447,20 @@ void SV_FatPVS (vec3_t org)
 
 /*
 ============
+SV_FatPHS
+
+===========
+*/
+void SV_FatPHS (int cluster)
+{
+	memcpy (fatphs, CM_ClusterPHS (cluster), CM_ClusterSize());
+}
+
+/*
+============
 SV_MergePVS
 
-Portal entities merge a second PVS at old_origin into fatpvs 
+Portal entities add a second PVS at origin2 to fatpvs 
 ===========
 */
 void SV_MergePVS (vec3_t org)
@@ -421,13 +468,13 @@ void SV_MergePVS (vec3_t org)
 	int		leafs[128];
 	int		i, j, count;
 	int		longs;
-	byte	*src;
+	qbyte	*src;
 	vec3_t	mins, maxs;
 
 	for (i=0 ; i<3 ; i++)
 	{
-		mins[i] = org[i] - 8;
-		maxs[i] = org[i] + 8;
+		mins[i] = org[i] - 1;
+		maxs[i] = org[i] + 1;
 	}
 
 	count = CM_BoxLeafnums (mins, maxs, leafs, 128, NULL);
@@ -454,6 +501,53 @@ void SV_MergePVS (vec3_t org)
 }
 
 /*
+============
+SV_MergePHS
+
+===========
+*/
+void SV_MergePHS (int cluster)
+{
+	int		i, longs;
+	qbyte	*src;
+	longs = CM_ClusterSize()>>2;
+
+	// or in all the other leaf bits
+	src = CM_ClusterPHS (cluster);
+	for (i=0 ; i<longs ; i++)
+		((long *)fatphs)[i] |= ((long *)src)[i];
+}
+
+/*
+=============
+SV_CullEntity
+
+=============
+*/
+qboolean SV_CullEntity (edict_t *ent, qbyte *bitvector)
+{
+	int i, l;
+
+	if (ent->r.num_clusters == -1)
+	{	// too many leafs for individual check, go by headnode
+		if (!CM_HeadnodeVisible (ent->r.headnode, bitvector))
+			return qtrue;
+		return qfalse;
+	}
+
+	// check individual leafs
+	for (i=0 ; i < ent->r.num_clusters ; i++)
+	{
+		l = ent->r.clusternums[i];
+		if (bitvector[l >> 3] & (1 << (l&7) )) {
+			return qfalse;
+		}
+	}
+		
+	return qtrue;		// not visible
+}
+
+/*
 =============
 SV_BuildClientFrame
 
@@ -467,18 +561,19 @@ void SV_BuildClientFrame (client_t *client)
 	vec3_t	org;
 	edict_t	*ent;
 	edict_t	*clent;
+	edict_t *pedicts[MAX_EDICTS];
 	client_frame_t	*frame;
 	entity_state_t	*state;
 	int		l;
-	int		clientarea, clientcluster;
+	int		clientarea;
 	int		portalarea;
 	int		leafnum;
-	int		c_fullsend;
-	byte	*clientphs;
-	byte	*bitvector;
+	int		numedicts;
+	qboolean portalview;
+	qbyte	*bitvector;
 
 	clent = client->edict;
-	if (!clent->client)
+	if (!clent->r.client)
 		return;		// not in game yet
 
 	// this is the frame we are creating
@@ -488,197 +583,149 @@ void SV_BuildClientFrame (client_t *client)
 
 	// find the client's PVS
 	for (i=0 ; i<3 ; i++)
-		org[i] = clent->client->ps.pmove.origin[i]*0.125 + clent->client->ps.viewoffset[i];
+		org[i] = clent->r.client->ps.pmove.origin[i]*(1.0/16.0) + clent->r.client->ps.viewoffset[i];
 
 	leafnum = CM_PointLeafnum (org);
 	clientarea = CM_LeafArea (leafnum);
-	clientcluster = CM_LeafCluster (leafnum);
 
 	// calculate the visible areas
 	frame->areabytes = CM_WriteAreaBits (frame->areabits, clientarea);
 
 	// grab the current player_state_t
-	frame->ps = clent->client->ps;
+	frame->ps = clent->r.client->ps;
 
-
+	// save client's PVS so it can be later compared with fatpvs
 	SV_FatPVS (org);
-	clientphs = CM_ClusterPHS (clientcluster);
+	memcpy (clientpvs, fatpvs, CM_ClusterSize());
+
+	SV_FatPHS (CM_LeafCluster(leafnum));
+	memcpy (clientphs, fatphs, CM_ClusterSize());
+
+	portalview = qfalse;
 
 	// build up the list of visible entities
 	frame->num_entities = 0;
 	frame->first_entity = svs.next_client_entities;
 
-	c_fullsend = 0;
-
-	// portal entities are the first to be checked so we can merge PVS
-	for (e=1 ; e<ge->num_edicts ; e++)
+	// portal entities are the first to be checked so we can merge PV sets
+	for (e=1,numedicts=0 ; e<sv.num_edicts ; e++)
 	{
 		ent = EDICT_NUM(e);
 
 		// ignore ents without visible models
-		if (ent->svflags & SVF_NOCLIENT)
+		if (ent->r.svflags & SVF_NOCLIENT)
+			continue;
+		if (ent->r.visclent && (ent->r.visclent != clent))
 			continue;
 
 		// ignore ents without visible models unless they have an effect
 		if (!ent->s.modelindex && !ent->s.effects && !ent->s.sound
-			&& !ent->s.event)
+			&& !ent->s.events[0])
 			continue;
 
-		// ignore if not a portal
-		if (!(ent->s.renderfx & RF_PORTALSURFACE))
-			continue;
-
-		// ignore if not touching a PV leaf
-		if (ent != clent)
-		{
-			// check area
-			if (!CM_AreasConnected (clientarea, ent->areanum))
-			{	// doors can legally straddle two areas, so
-				// we may need to check another one
-				if (!ent->areanum2
-					|| !CM_AreasConnected (clientarea, ent->areanum2))
-					continue;		// blocked by a door
-			}
-
-			bitvector = fatpvs;
-
-			if (ent->num_clusters == -1)
-			{	// too many leafs for individual check, go by headnode
-				if (!CM_HeadnodeVisible (ent->headnode, bitvector))
-					continue;
-				c_fullsend++;
-			}
-			else
-			{	// check individual leafs
-				for (i=0 ; i < ent->num_clusters ; i++)
-				{
-					l = ent->clusternums[i];
-					if (bitvector[l >> 3] & (1 << (l&7) )) {
-						break;
-					}
-				}
-				if (i == ent->num_clusters)
-					continue;		// not visible
-			}
-
-			// merge PV sets if portal 
-			if ( !VectorCompare ( ent->s.origin, ent->s.old_origin ) ) {
-				portalarea = CM_PointLeafnum ( ent->s.old_origin );
-				portalarea = CM_LeafArea ( portalarea );
-
-				SV_MergePVS ( ent->s.old_origin );
-
-				CM_MergeAreaBits ( frame->areabits, portalarea );
-			}
-		}
-
-		// add it to the circular client_entities array
-		state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
+		// fix number if broken
 		if (ent->s.number != e)
 		{
 			Com_DPrintf ("FIXING ENT->S.NUMBER!!!\n");
 			ent->s.number = e;
 		}
+
+		// ignore if not touching a PV leaf
+		if (ent != clent)
+		{
+			if ( !(ent->r.svflags & SVF_PORTAL) ) {
+				if (!ent->s.modelindex && !ent->s.events[0])
+				{	// don't send sounds if they will be attenuated away
+					vec3_t	delta;
+					float	len;
+					
+					VectorSubtract (org, ent->s.origin, delta);
+					len = VectorLength (delta);
+					if (len > 400)
+						continue;
+				}
+
+				pedicts[numedicts++] = ent;
+				continue;
+			}
+
+			// check area
+			if (!CM_AreasConnected (clientarea, ent->r.areanum))
+				continue;
+			if (SV_CullEntity (ent, fatpvs))
+				continue;
+
+			// merge PV sets if portal 
+			if ( !VectorCompare ( ent->s.origin, ent->s.origin2 ) ) {
+				SV_MergePVS ( ent->s.old_origin );
+
+				portalarea = CM_PointLeafnum ( ent->s.origin2 );
+				SV_MergePHS ( CM_LeafCluster (portalarea) );
+
+				portalarea = CM_LeafArea ( portalarea );
+				CM_MergeAreaBits ( frame->areabits, portalarea );
+
+				portalview = qtrue;
+			}
+		}
+
+		// add it to the circular client_entities array
+		state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
 		*state = ent->s;
 
 		// don't mark players missiles as solid
-		if (ent->owner == client->edict)
+		if (ent->r.owner == client->edict)
 			state->solid = 0;
 
 		svs.next_client_entities++;
 		frame->num_entities++;
 	}
 
-	for (e=1 ; e<ge->num_edicts ; e++)
+	for (e=0 ; e<numedicts ; e++)
 	{
-		ent = EDICT_NUM(e);
+		ent = pedicts[e];
 
-		// ignore ents without visible models
-		if (ent->svflags & SVF_NOCLIENT)
-			continue;
-
-		// ignore ents without visible models unless they have an effect
-		if (!ent->s.modelindex && !ent->s.effects && !ent->s.sound
-			&& !ent->s.event)
-			continue;
-		if (ent->s.renderfx & RF_PORTALSURFACE)
-			continue;
-
-		// ignore if not touching a PV leaf
-		if (ent != clent)
-		{
-			// check area
-			if (! (frame->areabits[ent->areanum>>3] & (1<<(ent->areanum&7)) ) )
-			{	// doors can legally straddle two areas, so
-				// we may need to check another one
-				if (!ent->areanum2
-					|| !(frame->areabits[ent->areanum2>>3] & (1<<(ent->areanum2&7)) ))
-					continue;		// blocked by a door
-			}
-
-			// beams just check one point for PHS
-			if (ent->s.renderfx & RF_BEAM)
-			{
-				l = ent->clusternums[0];
-				if ( !(clientphs[l >> 3] & (1 << (l&7) )) )
-					continue;
-			}
-			else
-			{
-				// FIXME: if an ent has a model and a sound, but isn't
-				// in the PVS, only the PHS, clear the model
-				if (ent->s.sound)
-				{
-					bitvector = fatpvs;	//clientphs;
-				}
-				else
-					bitvector = fatpvs;
-
-				if (ent->num_clusters == -1)
-				{	// too many leafs for individual check, go by headnode
-					if (!CM_HeadnodeVisible (ent->headnode, bitvector))
-						continue;
-					c_fullsend++;
-				}
-				else
-				{	// check individual leafs
-					for (i=0 ; i < ent->num_clusters ; i++)
-					{
-						l = ent->clusternums[i];
-						if (bitvector[l >> 3] & (1 << (l&7) )) {
-							break;
-						}
-					}
-
-					if (i == ent->num_clusters)
-						continue;		// not visible
-				}
-
-				if (!ent->s.modelindex)
-				{	// don't send sounds if they will be attenuated away
-					vec3_t	delta;
-					float	len;
-
-					VectorSubtract (org, ent->s.origin, delta);
-					len = VectorLength (delta);
-					if (len > 400)
-						continue;
-				}
-			}
+		// check area
+		if (! (frame->areabits[ent->r.areanum>>3] & (1<<(ent->r.areanum&7)) ) )
+		{	// doors can legally straddle two areas, so
+			// we may need to check another one
+			if (!ent->r.areanum2
+				|| !(frame->areabits[ent->r.areanum2>>3] & (1<<(ent->r.areanum2&7)) ))
+				continue;		// blocked by a door
 		}
 
+		// just check one point for PHS
+		if (ent->r.svflags & SVF_FORCEOLDORIGIN)
+		{
+			l = ent->r.clusternums[0];
+			if ( !(fatphs[l >> 3] & (1 << (l&7) )) )
+				continue;
+		}
+		else
+		{
+			// FIXME: if an ent has a model and a sound, but isn't
+			// in the PVS, only the PHS, clear the model
+			if (ent->s.sound)
+				bitvector = fatpvs;
+			else
+				bitvector = fatpvs;
+
+			if (SV_CullEntity (ent, fatpvs))
+				continue;
+		}
+		
 		// add it to the circular client_entities array
 		state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
-		if (ent->s.number != e)
-		{
-			Com_DPrintf ("FIXING ENT->S.NUMBER!!!\n");
-			ent->s.number = e;
-		}
 		*state = ent->s;
 
 		// don't mark players missiles as solid
-		if (ent->owner == client->edict)
+		if (ent->r.owner == client->edict)
 			state->solid = 0;
+
+		// don't mark entities from portals as solid
+		if (portalview && state->solid && !(ent->r.svflags & SVF_FORCEOLDORIGIN) && SV_CullEntity (ent, clientpvs)) {
+			state->effects |= EF_PORTALENTITY;
+		}
 
 		svs.next_client_entities++;
 		frame->num_entities++;
@@ -700,7 +747,7 @@ void SV_RecordDemoMessage (void)
 	edict_t		*ent;
 	entity_state_t	nostate;
 	sizebuf_t	buf;
-	byte		buf_data[32768];
+	qbyte		buf_data[MAX_DEMO_MSGLEN];
 	int			len;
 
 	if (!svs.demofile)
@@ -717,14 +764,14 @@ void SV_RecordDemoMessage (void)
 
 	e = 1;
 	ent = EDICT_NUM(e);
-	while (e < ge->num_edicts) 
+	while (e < sv.num_edicts) 
 	{
 		// ignore ents without visible models unless they have an effect
-		if (ent->inuse &&
+		if (ent->r.inuse &&
 			ent->s.number && 
-			(ent->s.modelindex || ent->s.effects || ent->s.sound || ent->s.event) && 
-			!(ent->svflags & SVF_NOCLIENT))
-			MSG_WriteDeltaEntity (&nostate, &ent->s, &buf, false, true);
+			(ent->s.modelindex || ent->s.effects || ent->s.sound || ent->s.events[0]) && 
+			!(ent->r.svflags & SVF_NOCLIENT))
+			MSG_WriteDeltaEntity (&nostate, &ent->s, &buf, qfalse, qtrue);
 
 		e++;
 		ent = EDICT_NUM(e);

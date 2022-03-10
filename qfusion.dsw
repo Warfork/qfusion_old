@@ -3,7 +3,19 @@ Microsoft Developer Studio Workspace File, Format Version 6.00
 
 ###############################################################################
 
-Project: "ctf"=.\game\game.dsp - Package Owner=<4>
+Project: "cgame"=.\cgame\cgame.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+}}}
+
+###############################################################################
+
+Project: "game"=.\game\game.dsp - Package Owner=<4>
 
 Package=<5>
 {{{
@@ -24,10 +36,16 @@ Package=<5>
 Package=<4>
 {{{
     Begin Project Dependency
+    Project_Dep_Name ui
+    End Project Dependency
+    Begin Project Dependency
+    Project_Dep_Name cgame
+    End Project Dependency
+    Begin Project Dependency
     Project_Dep_Name ctf
     End Project Dependency
     Begin Project Dependency
-    Project_Dep_Name ui
+    Project_Dep_Name game
     End Project Dependency
 }}}
 

@@ -135,7 +135,6 @@ typedef enum {
 	K_MWHEELDOWN
 } keyNum_t;
 
-extern char		*keybindings[256];
 extern	int		key_repeats[256];
 
 extern	int	anykeydown;
@@ -149,4 +148,5 @@ void Key_WriteBindings (FILE *f);
 void Key_SetBinding (int keynum, char *binding);
 void Key_ClearStates (void);
 int Key_GetKey (void);
-
+char *Key_GetBindingBuf (int binding);
+qboolean Key_IsDown (int keynum);

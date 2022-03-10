@@ -48,17 +48,17 @@ void Con_ToggleConsole_f (void)
 
 	SCR_EndLoadingPlaque ();	// get rid of loading plaque
 
-/*	if (cl.attractloop)
+	if (cl.attractloop)
 	{
 		Cbuf_AddText ("killserver\n");
 		return;
-	} */
+	}
 
 	Key_ClearTyping ();
 	Con_ClearNotify ();
 
 	if ( cls.key_dest == key_console ) {
-		cls.key_dest = oldkeydest;
+		CL_SetKeyDest (oldkeydest);
 		Key_ClearStates ();
 		Cvar_Set ("paused", "0");
 	}
@@ -67,7 +67,7 @@ void Con_ToggleConsole_f (void)
 		Key_ClearStates ();
 
 		oldkeydest = cls.key_dest;
-		cls.key_dest = key_console;	
+		CL_SetKeyDest (key_console);
 
 		if (Cvar_VariableValue ("sv_maxclients") == 1 
 			&& Com_ServerState ())
@@ -174,9 +174,9 @@ Con_MessageMode_f
 */
 void Con_MessageMode_f (void)
 {
-	chat_team = false;
+	chat_team = qfalse;
 	if (cls.state == ca_active)
-		cls.key_dest = key_message;
+		CL_SetKeyDest (key_message);
 }
 
 /*
@@ -186,9 +186,9 @@ Con_MessageMode2_f
 */
 void Con_MessageMode2_f (void)
 {
-	chat_team = true;
+	chat_team = qtrue;
 	if (cls.state == ca_active)
-		cls.key_dest = key_message;
+		CL_SetKeyDest (key_message);
 }
 
 /*
@@ -275,7 +275,7 @@ void Con_Init (void)
 	Cmd_AddCommand ("messagemode2", Con_MessageMode2_f);
 	Cmd_AddCommand ("clear", Con_Clear_f);
 	Cmd_AddCommand ("condump", Con_Dump_f);
-	con.initialized = true;
+	con.initialized = qtrue;
 }
 
 
@@ -329,7 +329,7 @@ void Con_Print (char *txt)
 		if (cr)
 		{
 			con.current--;
-			cr = false;
+			cr = qfalse;
 		}
 
 		
@@ -493,11 +493,11 @@ void Con_DrawInput (void)
 
 	// draw it
 	bytelen = Q_ColorCharOffset (text, con.linewidth);
-	Draw_StringLen ( 8, con.vislines-SMALL_CHAR_HEIGHT-14, text, bytelen, FONT_SMALL, color_table[startcolor] );
+	Draw_StringLen ( 8, con.vislines-SMALL_CHAR_HEIGHT-14, text, bytelen, color_table[startcolor] );
 
 	// add the cursor frame
 	if ((int)(cls.realtime>>8)&1)
-		Draw_Char ( 8+colorlinepos*SMALL_CHAR_WIDTH, con.vislines-SMALL_CHAR_HEIGHT-14, key_insert ? '_' : 11, FONT_SMALL, colorWhite);
+		Draw_Char ( 8+colorlinepos*SMALL_CHAR_WIDTH, con.vislines-SMALL_CHAR_HEIGHT-14, key_insert ? '_' : 11, colorWhite);
 }
 
 
@@ -530,7 +530,7 @@ void Con_DrawNotify (void)
 			continue;
 		text = con.text + (i % con.totallines)*con.linewidth;
 		
-		Draw_StringLen (8, v, text, con.linewidth, FONT_SMALL, colorWhite);
+		Draw_StringLen (8, v, text, con.linewidth, colorWhite);
 
 		v += SMALL_CHAR_HEIGHT;
 	}
@@ -539,12 +539,12 @@ void Con_DrawNotify (void)
 	{
 		if (chat_team)
 		{
-			Draw_String ( 8, v, "say_team:", FONT_SMALL, colorWhite );
+			Draw_String ( 8, v, "say_team:", colorWhite );
 			skip = 11;
 		}
 		else
 		{
-			Draw_String ( 8, v, "say:", FONT_SMALL, colorWhite );
+			Draw_String ( 8, v, "say:", colorWhite );
 			skip = 5;
 		}
 
@@ -552,15 +552,9 @@ void Con_DrawNotify (void)
 		if (chat_bufferlen >viddef.width/SMALL_CHAR_WIDTH-(skip+1))
 			s += chat_bufferlen - (viddef.width/SMALL_CHAR_WIDTH-(skip+1));
 
-		Draw_String ( skip*SMALL_CHAR_WIDTH, v, s, FONT_SMALL, colorWhite );
-		Draw_Char ( (strlen(s)+skip)*SMALL_CHAR_WIDTH, v, 10+((cls.realtime>>8)&1), FONT_SMALL, colorWhite );
+		Draw_String ( skip*SMALL_CHAR_WIDTH, v, s, colorWhite );
+		Draw_Char ( (strlen(s)+skip)*SMALL_CHAR_WIDTH, v, 10+((cls.realtime>>8)&1), colorWhite );
 		v += SMALL_CHAR_HEIGHT;
-	}
-	
-	if (v)
-	{
-		SCR_AddDirtyPoint (0,0);
-		SCR_AddDirtyPoint (viddef.width-1, v);
 	}
 }
 
@@ -587,16 +581,13 @@ void Con_DrawConsole (float frac)
 	if (lines > viddef.height)
 		lines = viddef.height;
 
-	SCR_AddDirtyPoint (0, 0);
-	SCR_AddDirtyPoint (viddef.width-1, lines-1);
-
 // draw the background
 	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, 
-		0, 0, 1, 1, colorWhite, R_RegisterPic( "console" ) );
-	Draw_FillRect ( 0, -(int)viddef.height+lines+viddef.height, viddef.width, 3, colorRed );
+		0, 0, 1, 1, colorWhite, cls.consoleShader );
+	Draw_FillRect ( 0, -(int)viddef.height+lines+viddef.height, viddef.width, 2, colorRed );
 
 	Com_sprintf (version, sizeof(version), APPLICATION " v%4.2f", VERSION);
-	Draw_String (viddef.width-strlen(version)*SMALL_CHAR_WIDTH-4, lines-20, version, FONT_SMALL, colorRed );
+	Draw_String (viddef.width-strlen(version)*SMALL_CHAR_WIDTH-4, lines-20, version, colorRed );
 
 // draw the text
 	con.vislines = lines;
@@ -610,7 +601,7 @@ void Con_DrawConsole (float frac)
 	{
 	// draw arrows to show the buffer is backscrolled
 		for (x=0 ; x<con.linewidth ; x+=4)
-			Draw_Char ( (x+1)*SMALL_CHAR_WIDTH, y, '^', FONT_SMALL, colorRed );
+			Draw_Char ( (x+1)*SMALL_CHAR_WIDTH, y, '^', colorRed );
 	
 		y -= SMALL_CHAR_HEIGHT;
 		rows--;
@@ -626,7 +617,7 @@ void Con_DrawConsole (float frac)
 			
 		text = con.text + (row % con.totallines)*con.linewidth;
 
-		Draw_StringLen ( 8, y, text, con.linewidth, FONT_SMALL, colorWhite );
+		Draw_StringLen (8, y, text, con.linewidth, colorWhite);
 	}
 
 // draw the input prompt, user text, and cursor if desired
@@ -774,6 +765,6 @@ void Con_CompleteCommandLine (void)
 
 	for (i = 0; i < 3; i++)
 		if (list[i])
-			free (list[i]);
+			Mem_TempFree (list[i]);
 }
 

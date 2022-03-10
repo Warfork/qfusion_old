@@ -68,7 +68,6 @@ void Sys_Error (char *error, ...)
 	char		text[1024];
 
 	CL_Shutdown ();
-	Qcommon_Shutdown ();
 
 	va_start (argptr, error);
 	vsnprintf (text, sizeof(text), error, argptr);
@@ -82,6 +81,8 @@ void Sys_Error (char *error, ...)
 // shut down QHOST hooks if necessary
 	DeinitConProc ();
 
+	Qcommon_Shutdown ();
+
 	exit (1);
 }
 
@@ -90,13 +91,15 @@ void Sys_Quit (void)
 	timeEndPeriod( 1 );
 
 	CL_Shutdown();
-	Qcommon_Shutdown ();
+
 	CloseHandle (qwclsemaphore);
 	if (dedicated && dedicated->value)
 		FreeConsole ();
 
 // shut down QHOST hooks if necessary
 	DeinitConProc ();
+
+	Qcommon_Shutdown ();
 
 	exit (0);
 }
@@ -148,7 +151,7 @@ void Sys_Init (void)
 	if (vinfo.dwPlatformId == VER_PLATFORM_WIN32s)
 		Sys_Error ("%s doesn't run on Win32s", APPLICATION);
 	else if ( vinfo.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS )
-		s_win95 = true;
+		s_win95 = qtrue;
 
 	if (dedicated->value)
 	{
@@ -346,8 +349,10 @@ Sys_AppActivate
 */
 void Sys_AppActivate (void)
 {
+#ifndef DEDICATED_ONLY
 	ShowWindow ( cl_hwnd, SW_RESTORE);
 	SetForegroundWindow ( cl_hwnd );
+#endif
 }
 
 /*
@@ -373,7 +378,7 @@ void Sys_UnloadLibrary ( gamelib_t gamelib )
 		case LIB_GAME: lib = &game_library; break;
 		case LIB_CGAME: lib = &cgame_library; break;
 		case LIB_UI: lib = &ui_library; break;
-		default: assert( false );
+		default: assert( qfalse );
 	}
 
 	if (!FreeLibrary (*lib))
@@ -430,7 +435,7 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 			libname = "ui_" ARCH ".dll";
 			apifuncname = "GetUIAPI";
 			break;
-		default: assert( false );
+		default: assert( qfalse );
 	}
 
 	if (*lib)
@@ -486,6 +491,17 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 	return APIfunc (parms);
 }
 
+/*
+=================
+Sys_GetHomeDirectory
+
+=================
+*/
+char *Sys_GetHomeDirectory (void)
+{
+	return NULL;
+}
+
 //=======================================================================
 
 
@@ -531,7 +547,7 @@ WinMain
 ==================
 */
 HINSTANCE	global_hInstance;
-qboolean	hwtimer = false;
+qboolean	hwtimer = qfalse;
 double		pfreq;
 
 int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow)
@@ -548,8 +564,6 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	ParseCommandLine (lpCmdLine);
 
 	Qcommon_Init (argc, argv);
-
-	Sys_InitTimer ();
 
 	oldtime = Sys_Milliseconds ();
 

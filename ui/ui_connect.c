@@ -20,8 +20,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "ui_local.h"
 
-void M_Menu_AddressBook_f (void);
-
 /*
 =============================================================================
 
@@ -30,31 +28,30 @@ JOIN SERVER MENU
 =============================================================================
 */
 
-#define MAX_LOCAL_SERVERS 9
+#define MAX_MENU_SERVERS 12
 
 static menuframework_s	s_joinserver_menu;
 
-static menuseparator_s	s_joinserver_title;
-
-static menuseparator_s	s_joinserver_server_title;
-static menuaction_s		s_joinserver_search_action;
-static menuaction_s		s_joinserver_address_book_action;
-static menuaction_s		s_joinserver_server_actions[MAX_LOCAL_SERVERS];
+static menuaction_s		s_joinserver_search_local_action;
+static menuaction_s		s_joinserver_search_global_action;
+static menulist_s		s_joinserver_ignore_full_box;
+static menulist_s		s_joinserver_ignore_empty_box;
+static menuaction_s		s_joinserver_server_actions[MAX_MENU_SERVERS];
 
 int		m_num_servers;
 #define	NO_SERVER_STRING	"<no server>"
 
 // user readable information
-static char local_server_names[MAX_LOCAL_SERVERS][80];
+static char local_server_names[MAX_MENU_SERVERS][80];
 
 // network address
-static char local_server_netadr[MAX_LOCAL_SERVERS][64];
+static char local_server_netadr[MAX_MENU_SERVERS][64];
 
 void M_AddToServerList (char *adr, char *info)
 {
 	int		i;
 
-	if (m_num_servers == MAX_LOCAL_SERVERS)
+	if (m_num_servers == MAX_MENU_SERVERS)
 		return;
 	while ( *info == ' ' )
 		info++;
@@ -88,102 +85,116 @@ void JoinServerFunc( void *self )
 	M_ForceMenuOff ();
 }
 
-void AddressBookFunc( void *self )
-{
-	M_Menu_AddressBook_f();
-}
-
-void NullCursorDraw( void *self )
-{
-}
-
-void SearchLocalGames( void )
+void SearchGames( char *s )
 {
 	int		i;
 
 	m_num_servers = 0;
-	for (i=0 ; i<MAX_LOCAL_SERVERS ; i++)
+	for (i=0 ; i<MAX_MENU_SERVERS ; i++)
 		strcpy (local_server_names[i], NO_SERVER_STRING);
 
 	M_DrawTextBox( 8, 120 - 48, 36, 3 );
-	M_Print( 16 + 16, 120 - 48 + 8,  "Searching for local servers, this" );
-	M_Print( 16 + 16, 120 - 48 + 16, "could take up to a minute, so" );
-	M_Print( 16 + 16, 120 - 48 + 24, "please be patient." );
+	M_Print( 16 + 16, 120 - 48 + 8,  va ("Searching for %s servers, this", s) );
+	M_Print( 16 + 16, 120 - 48 + 24, "could take up to a minute, so" );
+	M_Print( 16 + 16, 120 - 48 + 40, "please be patient." );
 
 	// send out info packets
-	trap_Cmd_ExecuteText (EXEC_APPEND, "pingservers\n");
+	trap_Cmd_ExecuteText (EXEC_APPEND, va("pingservers %s %s %s\n", s, 
+		s_joinserver_ignore_full_box.curvalue ? "" : "full",
+		s_joinserver_ignore_empty_box.curvalue ? "" : "empty"));
 }
 
 void SearchLocalGamesFunc( void *self )
 {
-	SearchLocalGames();
+	SearchGames ( "local" );
 }
+
+void SearchGlobalGamesFunc( void *self )
+{
+	SearchGames ( "global" );
+}
+
 
 void JoinServer_MenuInit( void )
 {
 	int i;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
+	static char sbar[64];
 
-	s_joinserver_menu.x = uis.vidWidth / 2 - 120;
+	static char *noyes_names[] =
+	{
+		"no", "yes", 0
+	};
+
+	s_joinserver_menu.x = uis.vidWidth / 2;
 	s_joinserver_menu.nitems = 0;
 
-	s_joinserver_title.generic.type = MTYPE_SEPARATOR;
-	s_joinserver_title.generic.name = "Options";
-	s_joinserver_title.generic.x    = 48;
-	s_joinserver_title.generic.y	= y;
-	y+=y_offset;
+	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );
+	s_joinserver_ignore_full_box.generic.type	= MTYPE_SPINCONTROL;
+	s_joinserver_ignore_full_box.generic.x		= 65;
+	s_joinserver_ignore_full_box.generic.y		= y += y_offset;
+	s_joinserver_ignore_full_box.generic.flags	= QMF_NONPROPOTIONAL;
+	s_joinserver_ignore_full_box.generic.name	= "Ignore full servers";
+	s_joinserver_ignore_full_box.itemnames		= noyes_names;
 
-	s_joinserver_address_book_action.generic.type	= MTYPE_ACTION;
-	s_joinserver_address_book_action.generic.name	= "address book";
-	s_joinserver_address_book_action.generic.flags	= QMF_LEFT_JUSTIFY;
-	s_joinserver_address_book_action.generic.x		= 0;
-	s_joinserver_address_book_action.generic.y		= y+=y_offset;
-	s_joinserver_address_book_action.generic.callback = AddressBookFunc;
+	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );
+	s_joinserver_ignore_empty_box.generic.type	= MTYPE_SPINCONTROL;
+	s_joinserver_ignore_empty_box.generic.x		= 65;
+	s_joinserver_ignore_empty_box.generic.y		= y+=y_offset;
+	s_joinserver_ignore_empty_box.generic.flags	= QMF_NONPROPOTIONAL;
+	s_joinserver_ignore_empty_box.generic.name	= "Ignore empty servers";
+	s_joinserver_ignore_empty_box.itemnames		= noyes_names;
 
-	s_joinserver_search_action.generic.type = MTYPE_ACTION;
-	s_joinserver_search_action.generic.name	= "refresh server list";
-	s_joinserver_search_action.generic.flags	= QMF_LEFT_JUSTIFY;
-	s_joinserver_search_action.generic.x	= 0;
-	s_joinserver_search_action.generic.y	= y+=y_offset;
-	s_joinserver_search_action.generic.callback = SearchLocalGamesFunc;
-	s_joinserver_search_action.generic.statusbar = "search for servers";
+	y_offset = UI_StringHeightOffset ( 0 );
+	y += y_offset;
+	s_joinserver_search_local_action.generic.type = MTYPE_ACTION;
+	s_joinserver_search_local_action.generic.name	= "search for local servers";
+	s_joinserver_search_local_action.generic.flags	= QMF_CENTERED;
+	s_joinserver_search_local_action.generic.x	= 0;
+	s_joinserver_search_local_action.generic.y	= y+=y_offset;
+	s_joinserver_search_local_action.generic.callback = SearchLocalGamesFunc;
 
-	s_joinserver_server_title.generic.type = MTYPE_SEPARATOR;
-	s_joinserver_server_title.generic.name = "connect to...";
-	s_joinserver_server_title.generic.x    = 80;
-	s_joinserver_server_title.generic.y	   = y+=y_offset;
+	s_joinserver_search_global_action.generic.type = MTYPE_ACTION;
+	s_joinserver_search_global_action.generic.name	= "search for global servers";
+	s_joinserver_search_global_action.generic.flags	= QMF_CENTERED;
+	s_joinserver_search_global_action.generic.x	= 0;
+	s_joinserver_search_global_action.generic.y	= y+=y_offset;
+	s_joinserver_search_global_action.generic.callback = SearchGlobalGamesFunc;
 
-	for ( i = 0; i < MAX_LOCAL_SERVERS; i++ )
+	Com_sprintf ( sbar, sizeof(sbar), "Master server at %s", trap_Cvar_VariableString("cl_masterServer") );
+	s_joinserver_search_global_action.generic.statusbar = sbar;
+
+	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );
+	y += y_offset;
+	for ( i = 0; i < MAX_MENU_SERVERS; i++ )
 	{
 		s_joinserver_server_actions[i].generic.type	= MTYPE_ACTION;
 		strcpy (local_server_names[i], NO_SERVER_STRING);
 		s_joinserver_server_actions[i].generic.name	= local_server_names[i];
-		s_joinserver_server_actions[i].generic.flags	= QMF_LEFT_JUSTIFY;
+		s_joinserver_server_actions[i].generic.flags	= QMF_CENTERED|QMF_NONPROPOTIONAL;
 		s_joinserver_server_actions[i].generic.x		= 0;
 		s_joinserver_server_actions[i].generic.y		= y+=y_offset;
 		s_joinserver_server_actions[i].generic.callback = JoinServerFunc;
 		s_joinserver_server_actions[i].generic.statusbar = "press ENTER to connect";
 	}
 
-	Menu_AddItem( &s_joinserver_menu, &s_joinserver_title );
-	Menu_AddItem( &s_joinserver_menu, &s_joinserver_address_book_action );
-	Menu_AddItem( &s_joinserver_menu, &s_joinserver_server_title );
-	Menu_AddItem( &s_joinserver_menu, &s_joinserver_search_action );
+	Menu_AddItem( &s_joinserver_menu, &s_joinserver_ignore_full_box );
+	Menu_AddItem( &s_joinserver_menu, &s_joinserver_ignore_empty_box );
 
-	for ( i = 0; i < MAX_LOCAL_SERVERS; i++ )
+	Menu_AddItem( &s_joinserver_menu, &s_joinserver_search_local_action );
+	Menu_AddItem( &s_joinserver_menu, &s_joinserver_search_global_action );
+
+	for ( i = 0; i < MAX_MENU_SERVERS; i++ )
 		Menu_AddItem( &s_joinserver_menu, &s_joinserver_server_actions[i] );
 
 	Menu_Center( &s_joinserver_menu );
 
 	Menu_Init ( &s_joinserver_menu );
-
-	SearchLocalGames();
 }
 
 void JoinServer_MenuDraw(void)
 {
-	Menu_AdjustCursor( &s_joinserver_menu, 1 );
 	Menu_Draw( &s_joinserver_menu );
 }
 

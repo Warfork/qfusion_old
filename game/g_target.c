@@ -25,10 +25,7 @@ Fire an origin based temp entity event to the clients.
 */
 void Use_Target_Tent (edict_t *ent, edict_t *other, edict_t *activator)
 {
-	gi.WriteByte (svc_temp_entity);
-	gi.WriteByte (ent->style);
-	gi.WritePosition (ent->s.origin);
-	gi.multicast (ent->s.origin, MULTICAST_PVS);
+	G_SpawnEvent ( ent->style, 0, ent->s.origin );
 }
 
 void SP_target_temp_entity (edict_t *ent)
@@ -72,9 +69,10 @@ void Use_Target_Speaker (edict_t *ent, edict_t *other, edict_t *activator)
 			chan = CHAN_VOICE|CHAN_RELIABLE;
 		else
 			chan = CHAN_VOICE;
-		// use a positioned_sound, because this entity won't normally be
+
+		// use a G_PositionedSound, because this entity won't normally be
 		// sent to any clients because it is invisible
-		gi.positioned_sound (ent->s.origin, ent, chan, ent->noise_index, ent->volume, ent->attenuation, 0);
+		G_PositionedSound (ent->s.origin, ent, chan, ent->noise_index, ent->volume, ent->attenuation);
 	}
 }
 
@@ -84,8 +82,8 @@ void SP_target_speaker (edict_t *ent)
 
 	if (!st.noise)
 	{
-		if ( developer->value )
-			gi.dprintf("target_speaker with no noise set at %s\n", vtos(ent->s.origin));
+		if (developer->value)
+			G_Printf ("target_speaker with no noise set at %s\n", vtos(ent->s.origin));
 		return;
 	}
 
@@ -93,15 +91,10 @@ void SP_target_speaker (edict_t *ent)
 		Com_sprintf (buffer, sizeof(buffer), "%s.wav", st.noise);
 	else
 		Q_strncpyz (buffer, st.noise, sizeof(buffer));
-	ent->noise_index = gi.soundindex (buffer);
+	ent->noise_index = trap_SoundIndex (buffer);
 
 	if (!ent->volume)
 		ent->volume = 1.0;
-
-	if (!ent->attenuation)
-		ent->attenuation = 1.0;
-	else if (ent->attenuation == -1)	// use -1 so 0 defaults to 1
-		ent->attenuation = 0;
 
 	// check for prestarted looping sound
 	if (ent->spawnflags & 1)
@@ -111,7 +104,7 @@ void SP_target_speaker (edict_t *ent)
 
 	// must link the entity so we get areas and clusters so
 	// the server can determine who to send updates to
-	gi.linkentity (ent);
+	trap_LinkEntity (ent);
 }
 
 
@@ -140,9 +133,8 @@ void SP_target_help(edict_t *ent)
 
 	if (!ent->message)
 	{
-		if ( developer->value )
-			gi.dprintf ("%s with no message at %s\n", ent->classname, vtos(ent->s.origin));
-
+		if (developer->value)
+			G_Printf ("%s with no message at %s\n", ent->classname, vtos(ent->s.origin));
 		G_FreeEdict (ent);
 		return;
 	}
@@ -157,7 +149,7 @@ These are single use targets.
 */
 void use_target_secret (edict_t *ent, edict_t *other, edict_t *activator)
 {
-	gi.sound (ent, CHAN_VOICE, ent->noise_index, 1, ATTN_NORM, 0);
+	G_Sound (ent, CHAN_VOICE, ent->noise_index, 1, ATTN_NORM);
 
 	level.found_secrets++;
 
@@ -176,8 +168,8 @@ void SP_target_secret (edict_t *ent)
 	ent->use = use_target_secret;
 	if (!st.noise)
 		st.noise = "sound/misc/secret.wav";
-	ent->noise_index = gi.soundindex (st.noise);
-	ent->svflags = SVF_NOCLIENT;
+	ent->noise_index = trap_SoundIndex (st.noise);
+	ent->r.svflags = SVF_NOCLIENT;
 	level.total_secrets++;
 }
 
@@ -189,7 +181,7 @@ These are single use targets.
 */
 void use_target_goal (edict_t *ent, edict_t *other, edict_t *activator)
 {
-	gi.sound (ent, CHAN_VOICE, ent->noise_index, 1, ATTN_NORM, 0);
+	G_Sound (ent, CHAN_VOICE, ent->noise_index, 1, ATTN_NORM);
 
 	level.found_goals++;
 
@@ -208,8 +200,8 @@ void SP_target_goal (edict_t *ent)
 	ent->use = use_target_goal;
 	if (!st.noise)
 		st.noise = "sound/misc/secret.wav";
-	ent->noise_index = gi.soundindex (st.noise);
-	ent->svflags = SVF_NOCLIENT;
+	ent->noise_index = trap_SoundIndex (st.noise);
+	ent->r.svflags = SVF_NOCLIENT;
 	level.total_goals++;
 }
 
@@ -225,12 +217,8 @@ Spawns an explosion temporary entity when used.
 void target_explosion_explode (edict_t *self)
 {
 	float		save;
-
-	gi.WriteByte (svc_temp_entity);
-	gi.WriteByte (TE_EXPLOSION1);
-	gi.WritePosition (self->s.origin);
-	gi.multicast (self->s.origin, MULTICAST_PHS);
-
+	
+	G_SpawnEvent ( EV_EXPLOSION1, 0, self->s.origin );
 	T_RadiusDamage (self, self->activator, self->dmg, NULL, self->dmg+40, MOD_EXPLOSIVE);
 
 	save = self->delay;
@@ -256,7 +244,7 @@ void use_target_explosion (edict_t *self, edict_t *other, edict_t *activator)
 void SP_target_explosion (edict_t *ent)
 {
 	ent->use = use_target_explosion;
-	ent->svflags = SVF_NOCLIENT;
+	ent->r.svflags = SVF_NOCLIENT;
 }
 
 
@@ -272,7 +260,7 @@ void use_target_changelevel (edict_t *self, edict_t *other, edict_t *activator)
 
 	if (!deathmatch->value && !coop->value)
 	{
-		if (g_edicts[1].health <= 0)
+		if (game.edicts[1].health <= 0)
 			return;
 	}
 
@@ -286,8 +274,8 @@ void use_target_changelevel (edict_t *self, edict_t *other, edict_t *activator)
 	// if multiplayer, let everyone know who hit the exit
 	if (deathmatch->value)
 	{
-		if (activator && activator->client)
-			gi.bprintf (PRINT_HIGH, "%s exited the level.\n", activator->client->pers.netname);
+		if (activator && activator->r.client)
+			G_PrintMsg (NULL, PRINT_HIGH, "%s exited the level.\n", activator->r.client->pers.netname);
 	}
 
 	// if going to a new unit, clear cross triggers
@@ -301,15 +289,14 @@ void SP_target_changelevel (edict_t *ent)
 {
 	if (!ent->map)
 	{
-		if ( developer->value )
-			gi.dprintf("target_changelevel with no map at %s\n", vtos(ent->s.origin));
-
+		if (developer->value)
+			G_Printf ("target_changelevel with no map at %s\n", vtos(ent->s.origin));
 		G_FreeEdict (ent);
 		return;
 	}
 
 	ent->use = use_target_changelevel;
-	ent->svflags = SVF_NOCLIENT;
+	ent->r.svflags = SVF_NOCLIENT;
 }
 
 
@@ -318,33 +305,28 @@ void SP_target_changelevel (edict_t *ent)
 /*QUAKED target_splash (1 0 0) (-8 -8 -8) (8 8 8)
 Creates a particle splash effect when used.
 
-Set "sounds" to one of the following:
-  1) sparks
-  2) blue water
-  3) brown water
-  4) slime
-  5) lava
-  6) blood
-
 "count"	how many pixels in the splash
 "dmg"	if set, does a radius damage at this location when it splashes
 		useful for lava/sparks
+"color" color in r g b floating point format
 */
 
 void use_target_splash (edict_t *self, edict_t *other, edict_t *activator)
 {
-	gi.WriteByte (svc_temp_entity);
-	gi.WriteByte (TE_SPLASH);
-	gi.WriteByte (self->count);
-	gi.WritePosition (self->s.origin);
-	gi.WriteDir (self->movedir);
+	edict_t *event;
 
-	if (self->sounds && self->sounds[0])
-		gi.WriteByte (self->sounds[0]);
-	else
-		gi.WriteByte (0);
+	event = G_SpawnEvent ( EV_LASER_SPARKS, DirToByte (self->movedir), self->s.origin );
+	event->s.eventCount = self->count;
 
-	gi.multicast (self->s.origin, MULTICAST_PVS);
+	// default to none
+	if (VectorCompare (self->color, vec3_origin))
+		event->s.colorRGBA = 0;
+	else 
+		event->s.colorRGBA = COLOR_RGBA (
+		(int)(self->color[0]*255)&255,
+		(int)(self->color[1]*255)&255,
+		(int)(self->color[2]*255)&255, 
+		255);
 
 	if (self->dmg)
 		T_RadiusDamage (self, activator, self->dmg, NULL, self->dmg+40, MOD_SPLASH);
@@ -358,7 +340,7 @@ void SP_target_splash (edict_t *self)
 	if (!self->count)
 		self->count = 32;
 
-	self->svflags = SVF_NOCLIENT;
+	self->r.svflags = SVF_NOCLIENT;
 }
 
 
@@ -387,9 +369,9 @@ void use_target_spawner (edict_t *self, edict_t *other, edict_t *activator)
 	VectorCopy (self->s.origin, ent->s.origin);
 	VectorCopy (self->s.angles, ent->s.angles);
 	ED_CallSpawn (ent);
-	gi.unlinkentity (ent);
+	trap_UnlinkEntity (ent);
 	KillBox (ent);
-	gi.linkentity (ent);
+	trap_LinkEntity (ent);
 	if (self->speed)
 		VectorCopy (self->movedir, ent->velocity);
 }
@@ -397,7 +379,7 @@ void use_target_spawner (edict_t *self, edict_t *other, edict_t *activator)
 void SP_target_spawner (edict_t *self)
 {
 	self->use = use_target_spawner;
-	self->svflags = SVF_NOCLIENT;
+	self->r.svflags = SVF_NOCLIENT;
 	if (self->speed)
 	{
 		G_SetMovedir (self->s.angles, self->movedir);
@@ -425,22 +407,22 @@ void use_target_blaster (edict_t *self, edict_t *other, edict_t *activator)
 	else
 		effect = EF_BLASTER;
 
-	fire_blaster (self, self->s.origin, self->movedir, self->dmg, self->speed, EF_BLASTER, MOD_TARGET_BLASTER);
-	gi.sound (self, CHAN_VOICE, self->noise_index, 1, ATTN_NORM, 0);
+	fire_blaster (self, self->s.origin, self->movedir, self->dmg, self->speed, effect, MOD_TARGET_BLASTER);
+	G_Sound (self, CHAN_VOICE, self->noise_index, 1, ATTN_NORM);
 }
 
 void SP_target_blaster (edict_t *self)
 {
 	self->use = use_target_blaster;
 	G_SetMovedir (self->s.angles, self->movedir);
-	self->noise_index = gi.soundindex ("sound/weapons/laser2.wav");
+	self->noise_index = trap_SoundIndex ("sound/weapons/laser2.wav");
 
 	if (!self->dmg)
 		self->dmg = 15;
 	if (!self->speed)
 		self->speed = 1000;
 
-	self->svflags = SVF_NOCLIENT;
+	self->r.svflags = SVF_NOCLIENT;
 }
 
 
@@ -457,7 +439,7 @@ void trigger_crosslevel_trigger_use (edict_t *self, edict_t *other, edict_t *act
 
 void SP_target_crosslevel_trigger (edict_t *self)
 {
-	self->svflags = SVF_NOCLIENT;
+	self->r.svflags = SVF_NOCLIENT;
 	self->use = trigger_crosslevel_trigger_use;
 }
 
@@ -480,7 +462,7 @@ void SP_target_crosslevel_target (edict_t *self)
 {
 	if (! self->delay)
 		self->delay = 1;
-	self->svflags = SVF_NOCLIENT;
+	self->r.svflags = SVF_NOCLIENT;
 
 	self->think = target_crosslevel_target_think;
 	self->nextthink = level.time + self->delay;
@@ -506,8 +488,8 @@ void target_laser_think (edict_t *self)
 	// our lifetime has expired
 	if (self->delay && (self->wait < level.time))
 	{
-		if ( self->owner && self->owner->use ) {
-			self->owner->use ( self->owner, self, self->activator );
+		if ( self->r.owner && self->r.owner->use ) {
+			self->r.owner->use ( self->r.owner, self, self->activator );
 		}
 
 		G_FreeEdict (self);
@@ -522,7 +504,7 @@ void target_laser_think (edict_t *self)
 	if (self->enemy)
 	{
 		VectorCopy (self->movedir, last_movedir);
-		VectorMA (self->enemy->absmin, 0.5, self->enemy->size, point);
+		VectorMA (self->enemy->r.absmin, 0.5, self->enemy->r.size, point);
 		VectorSubtract (point, self->s.origin, self->movedir);
 		VectorNormalize (self->movedir);
 		if (!VectorCompare(self->movedir, last_movedir))
@@ -534,47 +516,45 @@ void target_laser_think (edict_t *self)
 	VectorMA (start, 2048, self->movedir, end);
 	while (1)
 	{
-		tr = gi.trace (start, NULL, NULL, end, ignore, MASK_SHOT);
-
-		if (!tr.ent)
+		trap_Trace (&tr, start, NULL, NULL, end, ignore, MASK_SHOT);
+		if (tr.fraction == 1)
 			break;
 
 		// hurt it if we can
-		if ((tr.ent->takedamage) && !(tr.ent->flags & FL_IMMUNE_LASER))
+		if ((game.edicts[tr.ent].takedamage) && !(game.edicts[tr.ent].flags & FL_IMMUNE_LASER))
 		{
-			if (tr.ent->client && self->activator->client)
+			if (game.edicts[tr.ent].r.client && self->activator->r.client)
 			{
-				if (!ctf->value || tr.ent->client->resp.ctf_team != self->activator->client->resp.ctf_team)
-					T_Damage (tr.ent, self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
+				if (!ctf->value || game.edicts[tr.ent].r.client->resp.ctf_team != self->activator->r.client->resp.ctf_team)
+					T_Damage (&game.edicts[tr.ent], self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
 			}
 			else
 			{
-				T_Damage (tr.ent, self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
+				T_Damage (&game.edicts[tr.ent], self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
 			}
 		}
 
 		// if we hit something that's not a monster or player or is immune to lasers, we're done
-		if (!(tr.ent->svflags & SVF_MONSTER) && (!tr.ent->client))
+		if (!(game.edicts[tr.ent].r.svflags & SVF_MONSTER) && (!game.edicts[tr.ent].r.client))
 		{
 			if (self->spawnflags & 0x80000000)
 			{
+				edict_t *event;
+
 				self->spawnflags &= ~0x80000000;
-				gi.WriteByte (svc_temp_entity);
-				gi.WriteByte (TE_LASER_SPARKS);
-				gi.WriteByte (count);
-				gi.WritePosition (tr.endpos);
-				gi.WriteDir (tr.plane.normal);
-				gi.WriteLong (self->s.skinnum);
-				gi.multicast (tr.endpos, MULTICAST_PVS);
+
+				event = G_SpawnEvent ( EV_LASER_SPARKS, DirToByte (tr.plane.normal), tr.endpos );
+				event->s.eventCount = count;
+				event->s.colorRGBA = self->s.colorRGBA;
 			}
 			break;
 		}
 
-		ignore = tr.ent;
+		ignore = &game.edicts[tr.ent];
 		VectorCopy (tr.endpos, start);
 	}
 
-	VectorCopy (tr.endpos, self->s.old_origin);
+	VectorCopy (tr.endpos, self->s.origin2);
 
 	self->nextthink = level.time + FRAMETIME;
 }
@@ -584,7 +564,7 @@ void target_laser_on (edict_t *self)
 	if (!self->activator)
 		self->activator = self;
 	self->spawnflags |= 0x80000001;
-	self->svflags &= ~SVF_NOCLIENT;
+	self->r.svflags &= ~SVF_NOCLIENT;
 	self->wait = level.time + self->delay;
 	target_laser_think (self);
 }
@@ -592,7 +572,7 @@ void target_laser_on (edict_t *self)
 void target_laser_off (edict_t *self)
 {
 	self->spawnflags &= ~1;
-	self->svflags |= SVF_NOCLIENT;
+	self->r.svflags |= SVF_NOCLIENT;
 	self->nextthink = 0;
 }
 
@@ -610,9 +590,10 @@ void target_laser_start (edict_t *self)
 	edict_t *ent;
 
 	self->movetype = MOVETYPE_NONE;
-	self->solid = SOLID_NOT;
-	self->s.renderfx |= RF_BEAM;
+	self->r.solid = SOLID_NOT;
+	self->s.type = ET_BEAM;
 	self->s.modelindex = 1;			// must be non-zero
+	self->r.svflags = SVF_FORCEOLDORIGIN;
 
 	// set the beam diameter
 	if (self->spawnflags & 64)
@@ -622,15 +603,15 @@ void target_laser_start (edict_t *self)
 
 	// set the color
 	if (self->spawnflags & 2)
-		self->s.skinnum = (220 << 0) | (76 << 24);
+		self->s.colorRGBA = COLOR_RGBA (220, 0, 0, 76);
 	else if (self->spawnflags & 4)
-		self->s.skinnum = (220 << 8) | (76 << 24);
+		self->s.colorRGBA = COLOR_RGBA (0, 220, 0, 76);
 	else if (self->spawnflags & 8)
-		self->s.skinnum = (220 << 16) | (76 << 24);
+		self->s.colorRGBA = COLOR_RGBA (0, 0, 220, 76);
 	else if (self->spawnflags & 16)
-		self->s.skinnum = (220 << 0) | (220 << 8) | (76 << 24);
+		self->s.colorRGBA = COLOR_RGBA (220, 220, 0, 76);
 	else if (self->spawnflags & 32)
-		self->s.skinnum = (255 << 0) | (255 << 8) | (76 << 24);
+		self->s.colorRGBA = COLOR_RGBA (255, 255, 0, 76);
 
 	if (!self->enemy)
 	{
@@ -638,9 +619,8 @@ void target_laser_start (edict_t *self)
 		{
 			ent = G_Find (NULL, FOFS(targetname), self->target);
 			if (!ent)
-				if ( developer->value )
-					gi.dprintf ("%s at %s: %s is a bad target\n", self->classname, vtos(self->s.origin), self->target);
-
+				if (developer->value)
+					G_Printf ("%s at %s: %s is a bad target\n", self->classname, vtos(self->s.origin), self->target);
 			self->enemy = ent;
 		}
 		else
@@ -654,9 +634,9 @@ void target_laser_start (edict_t *self)
 	if (!self->dmg)
 		self->dmg = 1;
 
-	VectorSet (self->mins, -8, -8, -8);
-	VectorSet (self->maxs, 8, 8, 8);
-	gi.linkentity (self);
+	VectorSet (self->r.mins, -8, -8, -8);
+	VectorSet (self->r.maxs, 8, 8, 8);
+	trap_LinkEntity (self);
 
 	if (self->spawnflags & 1)
 		target_laser_on (self);
@@ -688,15 +668,15 @@ void target_earthquake_think (edict_t *self)
 
 	if (self->last_move_time < level.time)
 	{
-		gi.positioned_sound (self->s.origin, self, CHAN_AUTO, self->noise_index, 1.0, ATTN_NONE, 0);
+		G_Sound (self, CHAN_AUTO, self->noise_index, 1.0, ATTN_NONE);
 		self->last_move_time = level.time + 0.5;
 	}
 
-	for (i=1, e=g_edicts+i; i < globals.num_edicts; i++,e++)
+	for (i=1, e=game.edicts+i; i < game.numentities; i++,e++)
 	{
-		if (!e->inuse)
+		if (!e->r.inuse)
 			continue;
-		if (!e->client)
+		if (!e->r.client)
 			continue;
 		if (!e->groundentity)
 			continue;
@@ -722,8 +702,8 @@ void target_earthquake_use (edict_t *self, edict_t *other, edict_t *activator)
 void SP_target_earthquake (edict_t *self)
 {
 	if (!self->targetname)
-		if ( developer->value )
-			gi.dprintf("untargeted %s at %s\n", self->classname, vtos(self->s.origin));
+		if (developer->value)
+			G_Printf ("untargeted %s at %s\n", self->classname, vtos(self->s.origin));
 
 	if (!self->count)
 		self->count = 5;
@@ -731,11 +711,11 @@ void SP_target_earthquake (edict_t *self)
 	if (!self->speed)
 		self->speed = 200;
 
-	self->svflags |= SVF_NOCLIENT;
+	self->r.svflags |= SVF_NOCLIENT;
 	self->think = target_earthquake_think;
 	self->use = target_earthquake_use;
 
-	self->noise_index = gi.soundindex ("sound/world/quake.wav");
+	self->noise_index = trap_SoundIndex ("sound/world/quake.wav");
 }
 
 //==========================================================
@@ -745,14 +725,14 @@ Used as a positional target for calculations in the utilities (spotlights, etc),
 */
 void SP_target_position (edict_t *self) 
 {
-	self->svflags |= SVF_NOCLIENT;
+	self->r.svflags |= SVF_NOCLIENT;
 }
 
 /*QUAKED target_location (1 0 0) (-8 -8 -8) (8 8 8)
 */
 void SP_target_location (edict_t *self)
 {
-	self->svflags |= SVF_NOCLIENT;
+	self->r.svflags |= SVF_NOCLIENT;
 
 	if ( self->count ) {
 		if ( self->count < 0 ) {
@@ -768,9 +748,9 @@ void SP_target_print_use (edict_t *self, edict_t *other, edict_t *activator)
 	int n;
 	edict_t *player;
 
-	if (activator->client && (self->spawnflags & 4)) 
+	if (activator->r.client && (self->spawnflags & 4)) 
 	{
-		gi.centerprintf ( activator, self->message );
+		G_CenterPrintMsg ( activator, self->message );
 		return;
 	}
 
@@ -781,12 +761,11 @@ void SP_target_print_use (edict_t *self, edict_t *other, edict_t *activator)
 		
 	for (n = 1; n <= maxclients->value; n++)
 	{
-		player = &g_edicts[n];
-
-		if (!player->inuse)
+		player = &game.edicts[n];
+		if (!player->r.inuse)
 			continue;
 		
-		gi.centerprintf ( player, self->message );
+		G_CenterPrintMsg ( player, self->message );
 	}
 }
 

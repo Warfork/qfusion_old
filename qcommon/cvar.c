@@ -31,14 +31,14 @@ Cvar_InfoValidate
 static qboolean Cvar_InfoValidate (char *s, qboolean name)
 {
 	if (strstr (s, "\\"))
-		return false;
+		return qfalse;
 	if (strstr (s, "\""))
-		return false;
+		return qfalse;
 	if (strstr (s, ";"))
-		return false;
+		return qfalse;
 	if (name && strstr (s, "^"))
-		return false;
-	return true;
+		return qfalse;
+	return qtrue;
 }
 
 /*
@@ -132,7 +132,7 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 	
 	if (flags & (CVAR_USERINFO | CVAR_SERVERINFO))
 	{
-		if (!Cvar_InfoValidate (var_name, true))
+		if (!Cvar_InfoValidate (var_name, qtrue))
 		{
 			Com_Printf("invalid info cvar name\n");
 			return NULL;
@@ -143,9 +143,12 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 	if (var)
 	{
 		if ( var_value ) {
-			Z_Free (var->dvalue);	// free the old default value string
+			Mem_ZoneFree (var->dvalue);	// free the old default value string
 			var->dvalue = CopyString (var_value);
 		}
+
+		if ( (flags &CVAR_USERINFO) && !(var->flags & CVAR_USERINFO) )
+			userinfo_modified = qtrue;	// transmit at next oportunity
 
 		var->flags |= flags;
 		return var;
@@ -156,18 +159,18 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 
 	if (flags & (CVAR_USERINFO | CVAR_SERVERINFO))
 	{
-		if (!Cvar_InfoValidate (var_value, false))
+		if (!Cvar_InfoValidate (var_value, qfalse))
 		{
 			Com_Printf("invalid info cvar value\n");
 			return NULL;
 		}
 	}
 
-	var = Z_Malloc (sizeof(*var));
+	var = Mem_ZoneMalloc (sizeof(*var));
 	var->name = CopyString (var_name);
 	var->dvalue = CopyString (var_value);
 	var->string = CopyString (var_value);
-	var->modified = true;
+	var->modified = qtrue;
 	var->value = atof (var->string);
 
 	// link the variable in
@@ -196,7 +199,7 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 
 	if (var->flags & (CVAR_USERINFO | CVAR_SERVERINFO))
 	{
-		if (!Cvar_InfoValidate (value, false))
+		if (!Cvar_InfoValidate (value, qfalse))
 		{
 			Com_Printf("invalid info cvar value\n");
 			return var;
@@ -221,16 +224,13 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 			}
 		}
 
-		if ((var->flags & CVAR_LATCH) && !Com_ServerState())
-			goto setit;		// server is not active, so don't latch
-
 		if (var->flags & (CVAR_LATCH|CVAR_LATCH_VIDEO))
 		{
 			if (var->latched_string)
 			{
 				if (strcmp(value, var->latched_string) == 0)
 					return var;
-				Z_Free (var->latched_string);
+				Mem_ZoneFree (var->latched_string);
 			}
 			else
 			{
@@ -238,16 +238,30 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 					return var;
 			}
 
-			Com_Printf ("%s will be changed upon restarting%s.\n", var_name,
-				var->flags & CVAR_LATCH_VIDEO ? " video" : "");
-			var->latched_string = CopyString(value);
-
-			if (!Com_ServerState())
+			if (Com_ServerState())
 			{
-				if (!strcmp(var->name, "fs_game"))
+				Com_Printf ("%s will be changed upon restarting.\n", var->name);
+				var->latched_string = CopyString(value);
+			}
+			else
+			{
+				if (var->flags & CVAR_LATCH_VIDEO)
 				{
-					FS_SetGamedir (var->string);
-					FS_ExecAutoexec ();
+					Com_Printf ("%s will be changed upon restarting video.\n", var->name);
+					var->latched_string = CopyString(value);
+				}
+				else
+				{
+					Mem_ZoneFree (var->string);	// free the old value string
+					var->string = CopyString(value);
+					var->value = atof (var->string);
+					var->modified = qtrue;
+
+					if (!strcmp (var->name, "fs_game"))
+					{
+						FS_SetGamedir (var->string);
+						FS_ExecAutoexec ();
+					}
 				}
 			}
 
@@ -256,10 +270,9 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 	}
 	else
 	{
-setit:
 		if (var->latched_string)
 		{
-			Z_Free (var->latched_string);
+			Mem_ZoneFree (var->latched_string);
 			var->latched_string = NULL;
 		}
 	}
@@ -267,12 +280,12 @@ setit:
 	if (!strcmp(value, var->string))
 		return var;		// not changed
 
-	var->modified = true;
+	var->modified = qtrue;
 
 	if (var->flags & CVAR_USERINFO)
-		userinfo_modified = true;	// transmit at next oportunity
+		userinfo_modified = qtrue;	// transmit at next oportunity
 	
-	Z_Free (var->string);	// free the old value string
+	Mem_ZoneFree (var->string);	// free the old value string
 	
 	var->string = CopyString(value);
 	var->value = atof (var->string);
@@ -287,7 +300,7 @@ Cvar_ForceSet
 */
 cvar_t *Cvar_ForceSet (char *var_name, char *value)
 {
-	return Cvar_Set2 (var_name, value, true);
+	return Cvar_Set2 (var_name, value, qtrue);
 }
 
 /*
@@ -297,7 +310,7 @@ Cvar_Set
 */
 cvar_t *Cvar_Set (char *var_name, char *value)
 {
-	return Cvar_Set2 (var_name, value, false);
+	return Cvar_Set2 (var_name, value, qfalse);
 }
 
 /*
@@ -315,12 +328,12 @@ cvar_t *Cvar_FullSet (char *var_name, char *value, int flags)
 		return Cvar_Get (var_name, value, flags);
 	}
 
-	var->modified = true;
+	var->modified = qtrue;
 
 	if (var->flags & CVAR_USERINFO)
-		userinfo_modified = true;	// transmit at next oportunity
+		userinfo_modified = qtrue;	// transmit at next oportunity
 	
-	Z_Free (var->string);	// free the old value string
+	Mem_ZoneFree (var->string);	// free the old value string
 	
 	var->string = CopyString(value);
 	var->value = atof (var->string);
@@ -367,7 +380,7 @@ void Cvar_GetLatchedVars (int flags)
 			continue;
 		if (!var->latched_string)
 			continue;
-		Z_Free (var->string);
+		Mem_ZoneFree (var->string);
 		var->string = var->latched_string;
 		var->latched_string = NULL;
 		var->value = atof(var->string);
@@ -400,7 +413,7 @@ void Cvar_FixCheatVars (void)
 	{
 		if (!(var->flags & CVAR_CHEAT))
 			continue;
-		Z_Free (var->string);
+		Mem_ZoneFree (var->string);
 		var->string = CopyString(var->dvalue);
 		var->value = atof(var->string);
 	}
@@ -421,7 +434,7 @@ qboolean Cvar_Command (void)
 // check variables
 	v = Cvar_FindVar (Cmd_Argv(0));
 	if (!v)
-		return false;
+		return qfalse;
 		
 // perform a variable print or set
 	if (Cmd_Argc() == 1)
@@ -429,12 +442,12 @@ qboolean Cvar_Command (void)
 		Com_Printf ("\"%s\" is \"%s%s\" default: \"%s%s\"\n", v->name, 
 			v->string, S_COLOR_WHITE, v->dvalue, S_COLOR_WHITE);
 		if (v->latched_string)
-			Com_Printf ("latched: \"%s\"\n", v->latched_string);
-		return true;
+			Com_Printf ("latched: \"%s%s\"\n", v->latched_string, S_COLOR_WHITE);
+		return qtrue;
 	}
 
 	Cvar_Set (v->name, Cmd_Argv(1));
-	return true;
+	return qtrue;
 }
 
 
@@ -661,7 +674,7 @@ char **Cvar_CompleteBuildList (char *partial)
 	char		**buf;
 
 	len = strlen (partial);
-	buf = Q_malloc (sizeofbuf + sizeof (char *));
+	buf = (char **)Mem_TempMalloc (sizeofbuf + sizeof (char *));
 
 	// Loop through the alias list and print all matches
 	for (v = cvar_vars; v; v = v->next)

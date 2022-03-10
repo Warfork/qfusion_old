@@ -37,50 +37,49 @@ qboolean CanDamage (edict_t *targ, edict_t *inflictor)
 // bmodels need special checking because their origin is 0,0,0
 	if (targ->movetype == MOVETYPE_PUSH)
 	{
-		VectorAdd (targ->absmin, targ->absmax, dest);
+		VectorAdd (targ->r.absmin, targ->r.absmax, dest);
 		VectorScale (dest, 0.5, dest);
-		trace = gi.trace (inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
+		trap_Trace (&trace, inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
 		if (trace.fraction == 1.0)
-			return true;
-		if (trace.ent == targ)
-			return true;
-		return false;
+			return qtrue;
+		if (&game.edicts[trace.ent] == targ)
+			return qtrue;
+		return qfalse;
 	}
 	
-	trace = gi.trace (inflictor->s.origin, vec3_origin, vec3_origin, targ->s.origin, inflictor, MASK_SOLID);
+	trap_Trace (&trace, inflictor->s.origin, vec3_origin, vec3_origin, targ->s.origin, inflictor, MASK_SOLID);
 	if (trace.fraction == 1.0)
-		return true;
+		return qtrue;
 
 	VectorCopy (targ->s.origin, dest);
 	dest[0] += 15.0;
 	dest[1] += 15.0;
-	trace = gi.trace (inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
+	trap_Trace (&trace, inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
 	if (trace.fraction == 1.0)
-		return true;
+		return qtrue;
 
 	VectorCopy (targ->s.origin, dest);
 	dest[0] += 15.0;
 	dest[1] -= 15.0;
-	trace = gi.trace (inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
+	trap_Trace (&trace, inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
 	if (trace.fraction == 1.0)
-		return true;
+		return qtrue;
 
 	VectorCopy (targ->s.origin, dest);
 	dest[0] -= 15.0;
 	dest[1] += 15.0;
-	trace = gi.trace (inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
+	trap_Trace (&trace, inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
 	if (trace.fraction == 1.0)
-		return true;
+		return qtrue;
 
 	VectorCopy (targ->s.origin, dest);
 	dest[0] -= 15.0;
 	dest[1] -= 15.0;
-	trace = gi.trace (inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
+	trap_Trace (&trace, inflictor->s.origin, vec3_origin, vec3_origin, dest, inflictor, MASK_SOLID);
 	if (trace.fraction == 1.0)
-		return true;
+		return qtrue;
 
-
-	return false;
+	return qfalse;
 }
 
 
@@ -96,17 +95,17 @@ void Killed (edict_t *targ, edict_t *inflictor, edict_t *attacker, int damage, v
 
 	targ->enemy = attacker;
 
-	if ((targ->svflags & SVF_MONSTER) && (targ->deadflag != DEAD_DEAD))
+	if ((targ->r.svflags & SVF_MONSTER) && (targ->deadflag != DEAD_DEAD))
 	{
-//		targ->svflags |= SVF_CORPSE;	// now treat as a different content type
+//		targ->effects |= EF_CORPSE;		// now treat as a different content type
 		if (!(targ->monsterinfo.aiflags & AI_GOOD_GUY))
 		{
 			level.killed_monsters++;
-			if (coop->value && attacker->client)
-				attacker->client->resp.score++;
+			if (coop->value && attacker->r.client)
+				attacker->r.client->resp.score++;
 			// medics won't heal monsters that they kill themselves
 			if (strcmp(attacker->classname, "monster_medic") == 0)
-				targ->owner = attacker;
+				targ->r.owner = attacker;
 		}
 	}
 
@@ -116,7 +115,7 @@ void Killed (edict_t *targ, edict_t *inflictor, edict_t *attacker, int damage, v
 		return;
 	}
 
-	if ((targ->svflags & SVF_MONSTER) && (targ->deadflag != DEAD_DEAD))
+	if ((targ->r.svflags & SVF_MONSTER) && (targ->deadflag != DEAD_DEAD))
 	{
 		targ->touch = NULL;
 		monster_death_use (targ);
@@ -133,14 +132,9 @@ SpawnDamage
 */
 void SpawnDamage (int type, vec3_t origin, vec3_t normal, int damage)
 {
-	if (damage > 255)
-		damage = 255;
-	gi.WriteByte (svc_temp_entity);
-	gi.WriteByte (type);
-//	gi.WriteByte (damage);
-	gi.WritePosition (origin);
-	gi.WriteDir (normal);
-	gi.multicast (origin, MULTICAST_PVS);
+	edict_t *event;
+	event = G_SpawnEvent ( type, DirToByte (normal), origin );
+	event->r.svflags = SVF_NOOLDORIGIN;
 }
 
 
@@ -175,14 +169,14 @@ static int CheckPowerArmor (edict_t *ent, vec3_t point, vec3_t normal, int damag
 	int			power_armor_type;
 	int			index;
 	int			damagePerCell;
-	int			pa_te_type;
+	int			pa_ev_type;
 	int			power;
 	int			power_used;
 
 	if (!damage)
 		return 0;
 
-	client = ent->client;
+	client = ent->r.client;
 
 	if (dflags & DAMAGE_NO_ARMOR)
 		return 0;
@@ -196,7 +190,7 @@ static int CheckPowerArmor (edict_t *ent, vec3_t point, vec3_t normal, int damag
 			power = client->pers.inventory[index];
 		}
 	}
-	else if (ent->svflags & SVF_MONSTER)
+	else if (ent->r.svflags & SVF_MONSTER)
 	{
 		power_armor_type = ent->monsterinfo.power_armor_type;
 		power = ent->monsterinfo.power_armor_power;
@@ -224,13 +218,13 @@ static int CheckPowerArmor (edict_t *ent, vec3_t point, vec3_t normal, int damag
 			return 0;
 
 		damagePerCell = 1;
-		pa_te_type = TE_SCREEN_SPARKS;
+		pa_ev_type = EV_SCREEN_SPARKS;
 		damage = damage / 3;
 	}
 	else
 	{
 		damagePerCell = 1; // power armor is weaker in CTF
-		pa_te_type = TE_SHIELD_SPARKS;
+		pa_ev_type = EV_SHIELD_SPARKS;
 		damage = (2 * damage) / 3;
 	}
 
@@ -240,7 +234,7 @@ static int CheckPowerArmor (edict_t *ent, vec3_t point, vec3_t normal, int damag
 	if (save > damage)
 		save = damage;
 
-	SpawnDamage (pa_te_type, point, normal, save);
+	SpawnDamage (pa_ev_type, point, normal, save);
 	ent->powerarmor_time = level.time + 0.2;
 
 	power_used = save / damagePerCell;
@@ -262,7 +256,7 @@ static int CheckArmor (edict_t *ent, vec3_t point, vec3_t normal, int damage, in
 	if (!damage)
 		return 0;
 
-	client = ent->client;
+	client = ent->r.client;
 
 	if (!client)
 		return 0;
@@ -294,7 +288,7 @@ static int CheckArmor (edict_t *ent, vec3_t point, vec3_t normal, int damage, in
 
 void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 {
-	if (!(attacker->client) && !(attacker->svflags & SVF_MONSTER))
+	if (!(attacker->r.client) && !(attacker->r.svflags & SVF_MONSTER))
 		return;
 
 	if (attacker == targ || attacker == targ->enemy)
@@ -304,18 +298,18 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 	// or another good guy, do not get mad at them
 	if (targ->monsterinfo.aiflags & AI_GOOD_GUY)
 	{
-		if (attacker->client || (attacker->monsterinfo.aiflags & AI_GOOD_GUY))
+		if (attacker->r.client || (attacker->monsterinfo.aiflags & AI_GOOD_GUY))
 			return;
 	}
 
 	// we now know that we are not both good guys
 
 	// if attacker is a client, get mad at them because he's good and we're not
-	if (attacker->client)
+	if (attacker->r.client)
 	{
 		// this can only happen in coop (both new and old enemies are clients)
 		// only switch if can't see the current enemy
-		if (targ->enemy && targ->enemy->client)
+		if (targ->enemy && targ->enemy->r.client)
 		{
 			if (visible(targ, targ->enemy))
 			{
@@ -340,7 +334,7 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 		 (strcmp(attacker->classname, "monster_jorg") != 0) )
 	{
 		if (targ->enemy)
-			if (targ->enemy->client)
+			if (targ->enemy->r.client)
 				targ->oldenemy = targ->enemy;
 		targ->enemy = attacker;
 		if (!(targ->monsterinfo.aiflags & AI_DUCKED))
@@ -350,7 +344,7 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 	// otherwise get mad at whoever they are mad at (help our buddy)
 	{
 		if (targ->enemy)
-			if (targ->enemy->client)
+			if (targ->enemy->r.client)
 				targ->oldenemy = targ->enemy;
 		targ->enemy = attacker->enemy;
 		FoundTarget (targ);
@@ -360,15 +354,15 @@ void M_ReactToDamage (edict_t *targ, edict_t *attacker)
 qboolean CheckTeamDamage (edict_t *targ, edict_t *attacker)
 {
 //ZOID
-	if (ctf->value && targ->client && attacker->client)
-		if (targ->client->resp.ctf_team == attacker->client->resp.ctf_team &&
+	if (ctf->value && targ->r.client && attacker->r.client)
+		if (targ->r.client->resp.ctf_team == attacker->r.client->resp.ctf_team &&
 			targ != attacker)
-			return true;
+			return qtrue;
 //ZOID
 
 		//FIXME make the next line real and uncomment this block
 		// if ((ability to damage a teammate == OFF) && (targ's team == attacker's team))
-	return false;
+	return qfalse;
 }
 
 void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir, vec3_t point, vec3_t normal, int damage, int knockback, int dflags, int mod)
@@ -378,7 +372,7 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	int			save;
 	int			asave;
 	int			psave;
-	int			te_sparks;
+	int			ev_sparks;
 
 	if (!targ->takedamage)
 		return;
@@ -399,24 +393,24 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	meansOfDeath = mod;
 
 	// easy mode takes half damage
-	if (skill->value == 0 && deathmatch->value == 0 && targ->client)
+	if (skill->value == 0 && deathmatch->value == 0 && targ->r.client)
 	{
 		damage *= 0.5;
 		if (!damage)
 			damage = 1;
 	}
 
-	client = targ->client;
+	client = targ->r.client;
 
 	if (dflags & DAMAGE_BULLET)
-		te_sparks = TE_BULLET_SPARKS;
+		ev_sparks = EV_BULLET_SPARKS;
 	else
-		te_sparks = TE_SPARKS;
+		ev_sparks = EV_SPARKS;
 
 	VectorNormalize(dir);
 
 // bonus damage for suprising a monster
-	if (!(dflags & DAMAGE_RADIUS) && (targ->svflags & SVF_MONSTER) && (attacker->client) && (!targ->enemy) && (targ->health > 0))
+	if (!(dflags & DAMAGE_RADIUS) && (targ->r.svflags & SVF_MONSTER) && (attacker->r.client) && (!targ->enemy) && (targ->health > 0))
 		damage *= 2;
 
 //ZOID
@@ -432,20 +426,19 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	{
 		if ((knockback) && (targ->movetype != MOVETYPE_NONE) && (targ->movetype != MOVETYPE_BOUNCE) && (targ->movetype != MOVETYPE_PUSH) && (targ->movetype != MOVETYPE_STOP))
 		{
-			vec3_t	kvel;
-			float	mass;
+			float	scale;
 
 			if (targ->mass < 50)
-				mass = 50;
+				scale = (float)knockback / 50;
 			else
-				mass = targ->mass;
+				scale = (float)knockback / targ->mass;
 
-			if (targ->client  && attacker == targ)
-				VectorScale (dir, 1600.0 * (float)knockback / mass, kvel);	// the rocket jump hack...
+			if (targ->r.client && attacker == targ)
+				scale *= 1600.0;	// the rocket jump hack...
 			else
-				VectorScale (dir, 500.0 * (float)knockback / mass, kvel);
+				scale *= 500.0;
 
-			VectorAdd (targ->velocity, kvel, targ->velocity);
+			VectorMA (targ->velocity, scale, dir, targ->velocity);
 		}
 	}
 
@@ -457,7 +450,7 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	{
 		take = 0;
 		save = damage;
-		SpawnDamage (te_sparks, point, normal, save);
+		SpawnDamage (ev_sparks, point, normal, save);
 	}
 
 	// check for invincibility
@@ -465,7 +458,7 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 	{
 		if (targ->pain_debounce_time < level.time)
 		{
-			gi.sound(targ, CHAN_ITEM, gi.soundindex("sound/items/protect4.wav"), 1, ATTN_NORM, 0);
+			G_Sound (targ, CHAN_ITEM, trap_SoundIndex("sound/items/protect4.wav"), 1, ATTN_NORM);
 			targ->pain_debounce_time = level.time + 2;
 		}
 		take = 0;
@@ -474,8 +467,8 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 
 //ZOID
 //team armor protect
-	if (ctf->value && targ->client && attacker->client &&
-		targ->client->resp.ctf_team == attacker->client->resp.ctf_team &&
+	if (ctf->value && targ->r.client && attacker->r.client &&
+		targ->r.client->resp.ctf_team == attacker->r.client->resp.ctf_team &&
 		targ != attacker && ((int)dmflags->value & DF_ARMOR_PROTECT)) {
 		psave = asave = 0;
 	} else {
@@ -483,7 +476,7 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 		psave = CheckPowerArmor (targ, point, normal, take, dflags);
 		take -= psave;
 	
-		asave = CheckArmor (targ, point, normal, take, te_sparks, dflags);
+		asave = CheckArmor (targ, point, normal, take, ev_sparks, dflags);
 		take -= asave;
 	}
 
@@ -506,24 +499,24 @@ void T_Damage (edict_t *targ, edict_t *inflictor, edict_t *attacker, vec3_t dir,
 // do the damage
 	if (take)
 	{
-		if ((targ->svflags & SVF_MONSTER) || (client))
-			SpawnDamage (TE_BLOOD, point, normal, take);
+		if ((targ->r.svflags & SVF_MONSTER) || (client))
+			SpawnDamage (EV_BLOOD, point, normal, take);
 		else
-			SpawnDamage (te_sparks, point, normal, take);
+			SpawnDamage (ev_sparks, point, normal, take);
 
 		if (!CTFMatchSetup())
 			targ->health = targ->health - take;
 			
 		if (targ->health <= 0)
 		{
-			if ((targ->svflags & SVF_MONSTER) || (client))
+			if ((targ->r.svflags & SVF_MONSTER) || (client))
 				targ->flags |= FL_NO_KNOCKBACK;
 			Killed (targ, inflictor, attacker, take, point);
 			return;
 		}
 	}
 
-	if (targ->svflags & SVF_MONSTER)
+	if (targ->r.svflags & SVF_MONSTER)
 	{
 		M_ReactToDamage (targ, attacker);
 		if (!(targ->monsterinfo.aiflags & AI_DUCKED) && (take))
@@ -578,7 +571,7 @@ void T_RadiusDamage (edict_t *inflictor, edict_t *attacker, float damage, edict_
 		if (!ent->takedamage)
 			continue;
 
-		VectorAdd (ent->mins, ent->maxs, v);
+		VectorAdd (ent->r.mins, ent->r.maxs, v);
 		VectorMA (ent->s.origin, 0.5, v, v);
 		VectorSubtract (inflictor->s.origin, v, v);
 		points = damage - 0.5 * VectorLength (v);

@@ -20,26 +20,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // g_local.h -- local definitions for game module
 
 #include "q_shared.h"
-
-// define GAME_INCLUDE so that game.h does not define the
-// short, server-visible gclient_t and edict_t structures,
-// because we define the full size ones in this file
-#define	GAME_INCLUDE
-#include "game.h"
+#include "gs_public.h"
+#include "g_public.h"
+#include "g_syscalls.h"
 
 //ZOID
 #include "p_menu.h"
 //ZOID
 
-// the "gameversion" client command will print this plus compile date
-#define	GAMEVERSION	"baseq3"
-
-// protocol bytes that can be directly added to messages
-#define	svc_muzzleflash		1
-#define	svc_muzzleflash2	2
-#define	svc_temp_entity		3
-#define	svc_layout			4
-#define	svc_inventory		5
+// the "gamename" cvar will print this plus compile date
+#define	GAMENAME	"qfusion"
 
 //==================================================================
 
@@ -109,24 +99,23 @@ typedef enum
 	AMMO_SLUGS
 } ammo_t;
 
-
-//deadflag
+// deadflag
 #define DEAD_NO					0
 #define DEAD_DYING				1
 #define DEAD_DEAD				2
 #define DEAD_RESPAWNABLE		3
 
-//range
+// range
 #define RANGE_MELEE				0
 #define RANGE_NEAR				1
 #define RANGE_MID				2
 #define RANGE_FAR				3
 
-//gib types
+// gib types
 #define GIB_ORGANIC				0
 #define GIB_METALLIC			1
 
-//monster ai flags
+// monster ai flags
 #define AI_STAND_GROUND			0x00000001
 #define AI_TEMP_STAND_GROUND	0x00000002
 #define AI_SOUND_TARGET			0x00000004
@@ -143,7 +132,7 @@ typedef enum
 #define AI_MEDIC				0x00002000
 #define AI_RESURRECTING			0x00004000
 
-//monster attack state
+// monster attack state
 #define AS_STRAIGHT				1
 #define AS_SLIDING				2
 #define	AS_MELEE				3
@@ -161,12 +150,6 @@ typedef enum
 #define POWER_ARMOR_SCREEN		1
 #define POWER_ARMOR_SHIELD		2
 
-// handedness values
-#define RIGHT_HANDED			0
-#define LEFT_HANDED				1
-#define CENTER_HANDED			2
-
-
 // game.serverflags values
 #define SFL_CROSS_TRIGGER_1		0x00000001
 #define SFL_CROSS_TRIGGER_2		0x00000002
@@ -178,6 +161,11 @@ typedef enum
 #define SFL_CROSS_TRIGGER_8		0x00000080
 #define SFL_CROSS_TRIGGER_MASK	0x000000ff
 
+
+// handedness values
+#define RIGHT_HANDED			0
+#define LEFT_HANDED				1
+#define CENTER_HANDED			2
 
 // noise types for PlayerNoise
 #define PNOISE_SELF				0
@@ -226,35 +214,7 @@ typedef struct
 //ZOID
 #define IT_HEALTH		256
 
-// gitem_t->weapmodel for weapons indicates model index
-#define WEAP_BLASTER			1 
-#define WEAP_SHOTGUN			2 
-#define WEAP_SUPERSHOTGUN		3 
-#define WEAP_MACHINEGUN			4 
-#define WEAP_CHAINGUN			5 
-#define WEAP_GRENADES			6 
-#define WEAP_GRENADELAUNCHER	7 
-#define WEAP_ROCKETLAUNCHER		8 
-#define WEAP_HYPERBLASTER		9 
-#define WEAP_RAILGUN			10
-#define WEAP_BFG				11
-#define WEAP_GRAPPLE			12
-
-// gitem_t->tag for "weapon x" command
-#define WP_BLASTER				101
-#define WP_MACHINEGUN			102
-#define WP_SHOTGUN				103
-#define WP_GRENADELAUNCHER		104
-#define WP_ROCKETLAUNCHER		105
-#define WP_CHAINGUN				106
-#define WP_RAILGUN				107
-#define WP_PLASMAGUN			108
-#define WP_BFG					109
-#define WP_GRAPPLE				110
-#define WP_SUPERSHOTGUN			111
-//#define WP_GRENADES				112
-
-#define MAX_ITEM_MODELS 4
+#define MAX_ITEM_MODELS 3
 
 typedef struct gitem_s
 {
@@ -284,8 +244,6 @@ typedef struct gitem_s
 	char		*precaches;		// string of all models, sounds, and images this item will use
 } gitem_t;
 
-
-
 //
 // this structure is left intact through an entire game
 // it should be initialized at dll load time, and read/written to
@@ -298,6 +256,7 @@ typedef struct
 	int			helpchanged;	// flash F1 icon if non 0, play sound
 								// and increment only if 1, 2, or 3
 
+	edict_t		*edicts;		// [maxentities]
 	gclient_t	*clients;		// [maxclients]
 
 	// can't store spawnpoint in level, because
@@ -307,6 +266,7 @@ typedef struct
 	// store latched cvars here that we want to get at often
 	int			maxclients;
 	int			maxentities;
+	int			numentities;
 
 	// cross level triggers
 	int			serverflags;
@@ -485,8 +445,6 @@ typedef struct
 
 extern	game_locals_t	game;
 extern	level_locals_t	level;
-extern	game_import_t	gi;
-extern	game_export_t	globals;
 extern	spawn_temp_t	st;
 
 extern	int	sm_meat_index;
@@ -495,15 +453,10 @@ extern	int	snd_fry;
 extern	int	meansOfDeath;
 
 
-extern	edict_t			*g_edicts;
-
 #define	FOFS(x) (int)&(((edict_t *)0)->x)
 #define	STOFS(x) (int)&(((spawn_temp_t *)0)->x)
 #define	LLOFS(x) (int)&(((level_locals_t *)0)->x)
 #define	CLOFS(x) (int)&(((gclient_t *)0)->x)
-
-#define random()	((rand () & 0x7fff) / ((float)0x7fff))
-#define crandom()	(2.0 * (random() - 0.5))
 
 extern	cvar_t	*maxentities;
 extern	cvar_t	*deathmatch;
@@ -525,8 +478,8 @@ extern	cvar_t	*filterban;
 
 extern	cvar_t	*sv_gravity;
 extern	cvar_t	*sv_maxvelocity;
+extern	cvar_t	*sv_airaccelerate;
 
-extern	cvar_t	*gun_x, *gun_y, *gun_z;
 extern	cvar_t	*sv_rollspeed;
 extern	cvar_t	*sv_rollangle;
 
@@ -545,7 +498,7 @@ extern	cvar_t	*flood_waitdelay;
 
 extern	cvar_t	*sv_maplist;
 
-#define world	(&g_edicts[0])
+#define world	(game.edicts)
 
 // item spawnflags
 #define ITEM_TRIGGER_SPAWN		0x00000001
@@ -572,6 +525,8 @@ typedef enum {
 	F_EDICT,			// index on disk, pointer in memory
 	F_ITEM,				// index on disk, pointer in memory
 	F_CLIENT,			// index on disk, pointer in memory
+	F_FUNCTION,
+	F_MMOVE,
 	F_IGNORE
 } fieldtype_t;
 
@@ -613,19 +568,17 @@ int ArmorIndex (edict_t *ent);
 int PowerArmorType (edict_t *ent);
 gitem_t	*GetItemByIndex (int index);
 qboolean Add_Ammo (edict_t *ent, gitem_t *item, int count);
-void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf);
+void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags);
 
 //
 // g_utils.c
 //
 qboolean	KillBox (edict_t *ent);
-void	G_ProjectSource (vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result);
 edict_t *G_Find (edict_t *from, int fieldofs, char *match);
 edict_t *findradius (edict_t *from, vec3_t org, float rad);
 edict_t *G_PickTarget (char *targetname);
 void	G_UseTargets (edict_t *ent, edict_t *activator);
 void	G_SetMovedir (vec3_t angles, vec3_t movedir);
-void	G_AimAtTarget (edict_t *self);
 void	G_InitMover ( edict_t *ent );
 
 void	G_InitEdict (edict_t *e);
@@ -637,18 +590,24 @@ void	G_TouchSolids (edict_t *ent);
 
 char	*G_CopyString (char *in);
 
-int		G_DirToByte (vec3_t dir);
+void	G_ProjectSource ( vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result );
+void	P_ProjectSource ( gclient_t *client, vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result );
+
+void	G_AddEvent ( edict_t *ent, int event, int parm, qboolean highPriority );
+edict_t *G_SpawnEvent ( int event, int parm, vec3_t origin );
+void	G_TurnEntityIntoEvent ( edict_t *ent, int event, int parm );
 
 int		G_PlayerGender (edict_t *player);
 
-void	*G_malloc (int cnt);
-void	G_free (void *buf);
+void	G_PrintMsg ( edict_t *ent, int level, char *fmt, ... );
+void	G_CenterPrintMsg ( edict_t *ent, char *fmt, ... );
+void	G_Obituary ( edict_t *victim, edict_t *attacker, int mod );
 
-float	*tv (float x, float y, float z);
-char	*vtos (vec3_t v);
+void	G_Sound ( edict_t *ent, int channel, int soundindex, float volume, float attenuation );
+void	G_PositionedSound ( vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation );
+void	G_GlobalSound ( int channel, int soundindex );
 
 float vectoyaw (vec3_t vec);
-void vectoangles (vec3_t vec, vec3_t angles);
 
 //
 // g_combat.c
@@ -669,24 +628,17 @@ void T_RadiusDamage (edict_t *inflictor, edict_t *attacker, float damage, edict_
 
 #define	GIB_HEALTH				-40
 
-#define DEFAULT_BULLET_HSPREAD	300
-#define DEFAULT_BULLET_VSPREAD	500
-#define DEFAULT_SHOTGUN_HSPREAD	1000
-#define DEFAULT_SHOTGUN_VSPREAD	500
-#define DEFAULT_DEATHMATCH_SHOTGUN_COUNT	12
-#define DEFAULT_SHOTGUN_COUNT	12
-#define DEFAULT_SSHOTGUN_COUNT	20
-
 //
 // g_monster.c
 //
-void monster_fire_bullet (edict_t *self, vec3_t start, vec3_t dir, int damage, int kick, int hspread, int vspread, int flashtype);
-void monster_fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int hspread, int vspread, int count, int flashtype);
+void monster_fire_bullet (edict_t *self, vec3_t start, vec3_t dir, int damage, int kick, int flashtype);
+void monster_fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int flashtype);
 void monster_fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype, int effect);
 void monster_fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int flashtype);
 void monster_fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype);
 void monster_fire_railgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int flashtype);
 void monster_fire_bfg (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int kick, float damage_radius, int flashtype);
+
 void M_droptofloor (edict_t *ent);
 void monster_think (edict_t *self);
 void walkmonster_start (edict_t *self);
@@ -730,9 +682,9 @@ qboolean FacingIdeal(edict_t *self);
 //
 void ThrowDebris (edict_t *self, char *modelname, float speed, vec3_t origin);
 qboolean fire_hit (edict_t *self, vec3_t aim, int damage, int kick);
-void fire_bullet (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int hspread, int vspread, int mod);
-void fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int hspread, int vspread, int count, int mod);
-void fire_blaster (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int effect, qboolean hyper);
+void fire_bullet (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int mod);
+void fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int count, int mod);
+void fire_blaster (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int effect, int mod);
 void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius);
 void fire_grenade2 (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius, qboolean held);
 void fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, float damage_radius, int radius_damage);
@@ -761,6 +713,13 @@ void InitClientResp (gclient_t *client);
 void InitBodyQue (void);
 void ClientBeginServerFrame (edict_t *ent);
 void ClientUserinfoChanged (edict_t *ent, char *userinfo);
+void ClientThink (edict_t *ent, usercmd_t *cmd);
+qboolean ClientConnect (edict_t *ent, char *userinfo);
+void ClientDisconnect (edict_t *ent);
+void ClientBegin (edict_t *ent);
+void ClientCommand (edict_t *ent);
+void SaveClientData (void);
+void FetchClientEntData (edict_t *ent);
 
 //
 // g_player.c
@@ -789,13 +748,12 @@ void ClientEndServerFrame (edict_t *ent);
 void MoveClientToIntermission (edict_t *client);
 void G_SetStats (edict_t *ent);
 void ValidateSelectedItem (edict_t *ent);
-void DeathmatchScoreboardMessage (edict_t *client, edict_t *killer);
+char *DeathmatchScoreboardMessage (edict_t *client, edict_t *killer);
 
 //
-// g_pweapon.c
+// p_weapon.c
 //
 void PlayerNoise(edict_t *who, vec3_t where, int type);
-void P_ProjectSource (gclient_t *client, vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result);
 void Weapon_Generic (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST, int FRAME_IDLE_LAST, int FRAME_DEACTIVATE_LAST, int *pause_frames, int *fire_frames, void (*fire)(edict_t *ent));
 
 //
@@ -814,14 +772,56 @@ void G_RunEntity (edict_t *ent);
 //
 // g_main.c
 //
-void SaveClientData (void);
-void FetchClientEntData (edict_t *ent);
-void EndDMLevel (void);
+
+// memory management
+// G_GameMalloc and G_LevelMalloc are only used during loadtime
+// note that G_Malloc and G_Free exist for simplified temporary memory allocation\freeing
+// the coder should not care about G_Malloc actually using levelpool
+extern struct mempool_s *gamepool;
+extern struct mempool_s *levelpool;
+
+#define G_MemAlloc(pool,size) trap_MemAlloc(pool, size, __FILE__, __LINE__)
+#define G_MemFree(mem) trap_MemFree(mem, __FILE__, __LINE__)
+#define G_MemAllocPool(name) trap_MemAllocPool(name, __FILE__, __LINE__)
+#define G_MemFreePool(pool) trap_MemFreePool(pool, __FILE__, __LINE__)
+#define G_MemEmptyPool(pool) trap_MemEmptyPool(pool, __FILE__, __LINE__)
+
+#define G_GameMalloc(size) G_MemAlloc(gamepool,size)
+#define G_EmptyGamePool() G_MemEmptyPool(gamepool)
+#define G_GameFree(data) G_MemFree(data)
+
+#define G_LevelMalloc(size) G_MemAlloc(levelpool,size)
+#define G_EmptyLevelPool() G_MemEmptyPool(levelpool)
+#define G_LevelFree(data) G_MemFree(data)
+
+#define G_Malloc(size) G_MemAlloc(levelpool,size)
+#define G_Free(data) G_MemFree(data)
+
+int G_API (void);
+void G_Error ( char *fmt, ... );
+void G_Printf ( char *fmt, ... );
+void G_Init (unsigned int seed);
+void G_Shutdown (void);
+void G_RunFrame (void);
+void G_EndDMLevel (void);
 
 //
 // g_svcmds.c
 //
 qboolean SV_FilterPacket (char *from);
+
+//
+// g_save.c
+//
+void WriteGame (char *filename, qboolean autosave);
+void ReadGame (char *filename);
+void WriteLevel (char *filename);
+void ReadLevel (char *filename);
+
+//
+// g_spawn.c
+//
+void SpawnEntities (char *mapname, char *entities, char *spawnpoint);
 
 //============================================================================
 
@@ -841,6 +841,7 @@ typedef struct
 	char		userinfo[MAX_INFO_STRING];
 	char		netname[16];
 	int			hand;
+	int			messagelevel;		// for filtering printed messages
 
 	qboolean	connected;			// a loadgame will leave valid entities that
 									// just don't have a connection yet
@@ -898,7 +899,12 @@ struct gclient_s
 {
 	// known to server
 	player_state_t	ps;				// communicated by server to clients
-	int				ping;
+	client_shared_t	r;
+
+	// DO NOT MODIFY ANYTHING ABOVE THIS, THE SERVER
+	// EXPECTS THE FIELDS IN THAT ORDER!
+
+	//================================
 
 	// private to game
 	client_persistant_t	pers;
@@ -919,6 +925,7 @@ struct gclient_s
 	int			buttons;
 	int			oldbuttons;
 	int			latched_buttons;
+	qboolean	backmove;
 
 	qboolean	weapon_thunk;
 
@@ -969,6 +976,7 @@ struct gclient_s
 	float		grenade_time;
 	int			silencer_shots;
 	int			weapon_sound;
+	qboolean	weapon_missed;
 
 	float		pickup_msg_time;
 
@@ -999,31 +1007,7 @@ struct gclient_s
 struct edict_s
 {
 	entity_state_t	s;
-	struct gclient_s	*client;	// NULL if not a player
-									// the server expects the first part
-									// of gclient_s to be a player_state_t
-									// but the rest of it is opaque
-
-	qboolean	inuse;
-	int			linkcount;
-
-	// FIXME: move these fields to a server private sv_entity_t
-	link_t		area;				// linked to a division node or leaf
-	
-	int			num_clusters;		// if -1, use headnode instead
-	int			clusternums[MAX_ENT_CLUSTERS];
-	int			headnode;			// unused if num_clusters != -1
-	int			areanum, areanum2;
-
-	//================================
-
-	int			svflags;
-	vec3_t		mins, maxs;
-	vec3_t		absmin, absmax, size;
-	solid_t		solid;
-	int			clipmask;
-	edict_t		*owner;
-
+	entity_shared_t	r;
 
 	// DO NOT MODIFY ANYTHING ABOVE THIS, THE SERVER
 	// EXPECTS THE FIELDS IN THAT ORDER!
@@ -1035,7 +1019,11 @@ struct edict_s
 	char		*model;
 	char		*model2;
 	float		freetime;			// sv.time when the object was freed
-	
+
+	int			numEvents;
+	qboolean	eventPriority[2];
+	qboolean	freeAfterEvent;
+
 	//
 	// only used locally in game, not by server
 	//
@@ -1075,7 +1063,7 @@ struct edict_s
 	void		(*prethink) (edict_t *ent);
 	void		(*think)(edict_t *self);
 	void		(*blocked)(edict_t *self, edict_t *other);	//move to moveinfo?
-	void		(*touch)(edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf);
+	void		(*touch)(edict_t *self, edict_t *other, cplane_t *plane, int surfFlags);
 	void		(*use)(edict_t *self, edict_t *other, edict_t *activator);
 	void		(*pain)(edict_t *self, edict_t *other, float kick, int damage);
 	void		(*die)(edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point);

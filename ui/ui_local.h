@@ -19,33 +19,73 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "../game/q_shared.h"
-#include "../client/ref.h"
+#include "../game/gs_public.h"
+#include "ui_public.h"
+#include "../cgame/ref.h"
 #include "ui_syscalls.h"
 #include "ui_atoms.h"
 #include "ui_keycodes.h"
+
+#define SMALL_CHAR_WIDTH	8
+#define SMALL_CHAR_HEIGHT	16
+
+#define BIG_CHAR_WIDTH		16
+#define BIG_CHAR_HEIGHT		16
+
+#define GIANT_CHAR_WIDTH	32
+#define GIANT_CHAR_HEIGHT	48
+
+#define PROP_CHAR_HEIGHT	27
+#define PROP_SMALL_SCALE	0.75
+#define PROP_BIG_SCALE		1
+#define PROP_SMALL_SPACING	1.5
+#define PROP_BIG_SPACING	1
+
+#define PROP_SMALL_HEIGHT	PROP_CHAR_HEIGHT*PROP_SMALL_SCALE
+#define PROP_BIG_HEIGHT		PROP_CHAR_HEIGHT*PROP_BIG_SCALE
 
 #define MENU_DEFAULT_WIDTH		640
 #define MENU_DEFAULT_HEIGHT		480
 
 typedef struct
 {
-	int vidWidth;
-	int vidHeight;
+	int		vidWidth;
+	int		vidHeight;
 
-	float scaleX;
-	float scaleY;
+	int		time;
 
-	int cursorX;
-	int cursorY;
+	float	scaleX;
+	float	scaleY;
 
-	int	clientState;
-	int	serverState;
+	int		cursorX;
+	int		cursorY;
+
+	int		clientState;
+	int		serverState;
+
+	struct shader_s *whiteShader;
+	struct shader_s *charsetShader;
+	struct shader_s *propfontShader;
 } ui_local_t;
 
 extern ui_local_t uis;
 
-void *UI_malloc (int cnt);
-void UI_free (void *buf);
+extern struct mempool_s *uipool;
+
+void UI_Error ( char *fmt, ... );
+void UI_Printf ( char *fmt, ... );
+void UI_FillRect ( int x, int y, int w, int h, vec4_t color );
+
+#define UI_MemAlloc(pool,size) trap_Mem_Alloc(pool, size, __FILE__, __LINE__)
+#define UI_MemFree(mem) trap_Mem_Free(mem, __FILE__, __LINE__)
+#define UI_MemAllocPool(name) trap_Mem_AllocPool(name, __FILE__, __LINE__)
+#define UI_MemFreePool(pool) trap_Mem_FreePool(pool, __FILE__, __LINE__)
+#define UI_MemEmptyPool(pool) trap_Mem_EmptyPool(pool, __FILE__, __LINE__)
+
+#define UI_Malloc(size) UI_MemAlloc(uipool,size)
+#define UI_Free(data) UI_MemFree(data)
+
+char *UI_CopyString (char *in);
 
 #define NUM_CURSOR_FRAMES 15
 
@@ -65,3 +105,16 @@ void M_ForceMenuOff (void);
 void M_DrawTextBox ( int x, int y, int width, int lines );
 void M_DrawCursor ( int x, int y, int f );
 void M_Print ( int cx, int cy, char *str );
+
+void M_Menu_Main_f (void);
+void M_AddToServerList (char *adr, char *info);
+void M_ForceMenuOff (void);
+
+int UI_API (void);
+void UI_Init ( int vidWidth, int vidHeight );
+void UI_Shutdown (void);
+void UI_Refresh ( int time, int clientState, int serverState, qboolean backGround );
+void UI_DrawConnectScreen ( char *serverName, int connectCount, qboolean backGround );
+void UI_Keydown ( int key );
+void UI_MouseMove (int dx, int dy);
+

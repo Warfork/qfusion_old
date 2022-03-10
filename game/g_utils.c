@@ -21,42 +21,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "g_local.h"
 
-#define NUMVERTEXNORMALS	162
-vec3_t	bytedirs[NUMVERTEXNORMALS] =
-{
-#include "anorms.h"
-};
-
-int G_DirToByte (vec3_t dir)
-{
-	int		i, best;
-	float	d, bestd;
-	
-	if (!dir)
-		return 0;
-
-	bestd = 0;
-	best = 0;
-	for (i=0 ; i<NUMVERTEXNORMALS ; i++)
-	{
-		d = DotProduct (dir, bytedirs[i]);
-		if (d > bestd)
-		{
-			bestd = d;
-			best = i;
-		}
-	}
-
-	return best;
-}
-
-void G_ProjectSource (vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result)
+void G_ProjectSource ( vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result )
 {
 	result[0] = point[0] + forward[0] * distance[0] + right[0] * distance[1];
 	result[1] = point[1] + forward[1] * distance[0] + right[1] * distance[1];
 	result[2] = point[2] + forward[2] * distance[0] + right[2] * distance[1] + distance[2];
 }
-
 
 /*
 =============
@@ -75,15 +45,15 @@ edict_t *G_Find (edict_t *from, int fieldofs, char *match)
 	char	*s;
 
 	if (!from)
-		from = g_edicts;
+		from = world;
 	else
 		from++;
 
-	for ( ; from < &g_edicts[globals.num_edicts] ; from++)
+	for ( ; from < &game.edicts[game.numentities] ; from++)
 	{
-		if (!from->inuse)
+		if (!from->r.inuse)
 			continue;
-		s = *(char **) ((byte *)from + fieldofs);
+		s = *(char **) ((qbyte *)from + fieldofs);
 		if (!s)
 			continue;
 		if (!Q_stricmp (s, match))
@@ -109,17 +79,18 @@ edict_t *findradius (edict_t *from, vec3_t org, float rad)
 	int		j;
 
 	if (!from)
-		from = g_edicts;
+		from = world;
 	else
 		from++;
-	for ( ; from < &g_edicts[globals.num_edicts]; from++)
+
+	for ( ; from < &game.edicts[game.numentities]; from++)
 	{
-		if (!from->inuse)
+		if (!from->r.inuse)
 			continue;
-		if (from->solid == SOLID_NOT)
+		if (from->r.solid == SOLID_NOT)
 			continue;
 		for (j=0 ; j<3 ; j++)
-			eorg[j] = org[j] - (from->s.origin[j] + (from->mins[j] + from->maxs[j])*0.5);
+			eorg[j] = org[j] - (from->s.origin[j] + (from->r.mins[j] + from->r.maxs[j])*0.5);
 		if (VectorLength(eorg) > rad)
 			continue;
 		return from;
@@ -151,7 +122,7 @@ edict_t *G_PickTarget (char *targetname)
 
 	if (!targetname)
 	{
-		gi.dprintf("G_PickTarget called with NULL targetname\n");
+		G_Printf ("G_PickTarget called with NULL targetname\n");
 		return NULL;
 	}
 
@@ -167,7 +138,7 @@ edict_t *G_PickTarget (char *targetname)
 
 	if (!num_choices)
 	{
-		gi.dprintf("G_PickTarget: target %s not found\n", targetname);
+		G_Printf ("G_PickTarget: target %s not found\n", targetname);
 		return NULL;
 	}
 
@@ -214,7 +185,7 @@ void G_UseTargets (edict_t *ent, edict_t *activator)
 		t->think = Think_Delay;
 		t->activator = activator;
 		if (!activator)
-			gi.dprintf ("Think_Delay with no activator\n");
+			G_Printf ("Think_Delay with no activator\n");
 		t->message = ent->message;
 		t->target = ent->target;
 		t->killtarget = ent->killtarget;
@@ -225,13 +196,13 @@ void G_UseTargets (edict_t *ent, edict_t *activator)
 //
 // print the message
 //
-	if ((ent->message) && !(activator->svflags & SVF_MONSTER))
+	if ((ent->message) && !(activator->r.svflags & SVF_MONSTER))
 	{
-		gi.centerprintf (activator, "%s", ent->message);
+		G_CenterPrintMsg (activator, "%s", ent->message);
 		if (ent->noise_index)
-			gi.sound (activator, CHAN_AUTO, ent->noise_index, 1, ATTN_NORM, 0);
+			G_Sound (activator, CHAN_AUTO, ent->noise_index, 1, ATTN_NORM);
 		else
-			gi.sound (activator, CHAN_AUTO, gi.soundindex ("sound/misc/talk1.wav"), 1, ATTN_NORM, 0);
+			G_Sound (activator, CHAN_AUTO, trap_SoundIndex ("sound/misc/talk1.wav"), 1, ATTN_NORM);
 	}
 
 //
@@ -243,15 +214,15 @@ void G_UseTargets (edict_t *ent, edict_t *activator)
 		while ((t = G_Find (t, FOFS(targetname), ent->killtarget)))
 		{
 			G_FreeEdict (t);
-			if (!ent->inuse)
+			if (!ent->r.inuse)
 			{
-				gi.dprintf("entity was removed while using killtargets\n");
+				G_Printf ("entity was removed while using killtargets\n");
 				return;
 			}
 		}
 	}
 
-//	gi.dprintf("TARGET: activating %s\n", ent->target);
+//	G_Printf ("TARGET: activating %s\n", ent->target);
 
 //
 // fire targets
@@ -263,147 +234,20 @@ void G_UseTargets (edict_t *ent, edict_t *activator)
 		{
 			if (t == ent)
 			{
-				gi.dprintf ("WARNING: Entity used itself.\n");
+				G_Printf ("WARNING: Entity used itself.\n");
 			}
 			else
 			{
 				if (t->use)
 					t->use (t, ent, activator);
 			}
-			if (!ent->inuse)
+			if (!ent->r.inuse)
 			{
-				gi.dprintf("entity was removed while using targets\n");
+				G_Printf ("entity was removed while using targets\n");
 				return;
 			}
 		}
 	}
-}
-
-/*
-=================
-G_AimAtTarget
-
-=================
-*/
-void G_AimAtTarget (edict_t *self)
-{
-	edict_t		*ent;
-	vec3_t		origin;
-	float		height, gravity, time, forward;
-	float		dist;
-
-	VectorAdd( self->absmin, self->absmax, origin );
-	VectorScale ( origin, 0.5, origin );
-
-	ent = G_PickTarget (self->target);
-
-	if (!ent) 
-	{
-		G_FreeEdict (self);
-		return;
-	}
-
-	height = ent->s.origin[2] - origin[2];
-	gravity = sv_gravity->value;
-	time = sqrt (2.0f * (height / gravity));
-
-	if (!time)
-	{
-		G_FreeEdict (self);
-		return;
-	}
-
-	// set s.origin2 to the push velocity
-	VectorSubtract ( ent->s.origin, origin, self->movedir );
-	self->movedir[2] = 0;
-	dist = VectorNormalize (self->movedir);
-
-	forward = dist / time;
-	VectorScale (self->movedir, forward, self->movedir);
-
-	self->movedir[2] = time * gravity;
-}
-
-/*
-=================
-G_malloc
-=================
-*/
-void *G_malloc (int cnt)
-{
-	void *buf = (void *)malloc (cnt);
-
-	if (!buf) {
-		gi.dprintf ("G_malloc: failed on allocation of %i bytes.\n", cnt);
-		return NULL;
-	}
-
-	memset (buf, 0, cnt);
-	return buf;
-}
-
-/*
-=================
-G_free
-=================
-*/
-void G_free (void *buf)
-{
-	if (!buf) {
-		return;
-	}
-
-	free (buf);
-}
-
-/*
-=============
-TempVector
-
-This is just a convenience function
-for making temporary vectors for function calls
-=============
-*/
-float	*tv (float x, float y, float z)
-{
-	static	int		index;
-	static	vec3_t	vecs[8];
-	float	*v;
-
-	// use an array so that multiple tempvectors won't collide
-	// for a while
-	v = vecs[index];
-	index = (index + 1)&7;
-
-	v[0] = x;
-	v[1] = y;
-	v[2] = z;
-
-	return v;
-}
-
-
-/*
-=============
-VectorToString
-
-This is just a convenience function
-for printing vectors
-=============
-*/
-char	*vtos (vec3_t v)
-{
-	static	int		index;
-	static	char	str[8][32];
-	char	*s;
-
-	// use an array so that multiple vtos won't collide
-	s = str[index];
-	index = (index + 1)&7;
-
-	Com_sprintf (s, 32, "(%i %i %i)", (int)v[0], (int)v[1], (int)v[2]);
-
-	return s;
 }
 
 
@@ -454,46 +298,11 @@ float vectoyaw (vec3_t vec)
 }
 
 
-void vectoangles (vec3_t value1, vec3_t angles)
-{
-	float	forward;
-	float	yaw, pitch;
-	
-	if (value1[1] == 0 && value1[0] == 0)
-	{
-		yaw = 0;
-		if (value1[2] > 0)
-			pitch = 90;
-		else
-			pitch = 270;
-	}
-	else
-	{
-		if (value1[0])
-			yaw = RAD2DEG ( atan2(value1[1], value1[0]) );
-		else if (value1[1] > 0)
-			yaw = 90;
-		else
-			yaw = -90;
-		if (yaw < 0)
-			yaw += 360;
-
-		forward = sqrt (value1[0]*value1[0] + value1[1]*value1[1]);
-		pitch = RAD2DEG ( atan2(value1[2], forward) );
-		if (pitch < 0)
-			pitch += 360;
-	}
-
-	angles[PITCH] = -pitch;
-	angles[YAW] = yaw;
-	angles[ROLL] = 0;
-}
-
 char *G_CopyString (char *in)
 {
 	char	*out;
 	
-	out = gi.TagMalloc (strlen(in)+1, TAG_LEVEL);
+	out = G_Malloc (strlen(in)+1);
 	strcpy (out, in);
 	return out;
 }
@@ -501,10 +310,10 @@ char *G_CopyString (char *in)
 
 void G_InitEdict (edict_t *e)
 {
-	e->inuse = true;
+	e->r.inuse = qtrue;
 	e->classname = "noclass";
 	e->gravity = 1.0;
-	e->s.number = e - g_edicts;
+	e->s.number = e - game.edicts;
 }
 
 /*
@@ -523,12 +332,12 @@ edict_t *G_Spawn (void)
 	int			i;
 	edict_t		*e;
 
-	e = &g_edicts[(int)maxclients->value+1];
-	for ( i=maxclients->value+1 ; i<globals.num_edicts ; i++, e++)
+	e = &game.edicts[(int)maxclients->value+1];
+	for ( i=maxclients->value+1 ; i<game.numentities ; i++, e++)
 	{
 		// the first couple seconds of server time can involve a lot of
 		// freeing and allocating, so relax the replacement policy
-		if (!e->inuse && ( e->freetime < 2 || level.time - e->freetime > 0.5 ) )
+		if (!e->r.inuse && ( e->freetime < 2 || level.time - e->freetime > 0.5 ) )
 		{
 			G_InitEdict (e);
 			return e;
@@ -536,10 +345,14 @@ edict_t *G_Spawn (void)
 	}
 	
 	if (i == game.maxentities)
-		gi.error ("ED_Alloc: no free edicts");
+		G_Error ("ED_Alloc: no free edicts");
 		
-	globals.num_edicts++;
+	game.numentities++;
+
+	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
+
 	G_InitEdict (e);
+
 	return e;
 }
 
@@ -552,20 +365,99 @@ Marks the edict as free
 */
 void G_FreeEdict (edict_t *ed)
 {
-	gi.unlinkentity (ed);		// unlink from world
+	trap_UnlinkEntity (ed);		// unlink from world
 
-	if ((ed - g_edicts) <= (maxclients->value + BODY_QUEUE_SIZE))
+	if ((ed - game.edicts) <= (maxclients->value + BODY_QUEUE_SIZE))
 	{
-//		gi.dprintf("tried to free special edict\n");
+//		G_Printf ("tried to free special edict\n");
 		return;
 	}
 
 	memset (ed, 0, sizeof(*ed));
 	ed->classname = "freed";
 	ed->freetime = level.time;
-	ed->inuse = false;
+	ed->r.inuse = qfalse;
 }
 
+/*
+============
+G_AddEvent
+
+============
+*/
+void G_AddEvent ( edict_t *ent, int event, int parm, qboolean highPriority )
+{
+	if ( !ent || ent == world || !ent->r.inuse ) {
+		return;
+	}
+	if ( !event ) {
+		return;
+	}
+	// replace the most outdated low-priority event
+	if ( !highPriority ) {
+		int oldEventNum = -1;
+
+		if ( !ent->eventPriority[0] && !ent->eventPriority[1] ) {
+			oldEventNum = (ent->numEvents + 1) & 2;
+		} else if ( !ent->eventPriority[0] ) {
+			oldEventNum = 0;
+		} else if ( !ent->eventPriority[1] ) {
+			oldEventNum = 1;
+		}
+
+		// no luck
+		if ( oldEventNum == -1 ) {
+			return;
+		}
+
+		ent->s.events[oldEventNum] = event;
+		ent->s.eventParms[oldEventNum] = parm;
+		ent->eventPriority[oldEventNum] = qfalse;
+		return;
+	}
+
+	ent->s.events[ent->numEvents & 1] = event;
+	ent->s.eventParms[ent->numEvents & 1] = parm;
+	ent->eventPriority[ent->numEvents & 1] = highPriority;
+	ent->numEvents++;
+}
+
+/*
+============
+G_SpawnEvent
+
+============
+*/
+edict_t *G_SpawnEvent ( int event, int parm, vec3_t origin )
+{
+	edict_t *ent;
+
+	ent = G_Spawn ();
+	ent->s.type = ET_EVENT;
+	ent->freeAfterEvent = qtrue;
+	VectorCopy ( origin, ent->s.origin );
+	G_AddEvent ( ent, event, parm, qtrue );
+
+	trap_LinkEntity (ent);
+
+	return ent;
+}
+
+/*
+============
+G_TurnEntityIntoEvent
+
+============
+*/
+void G_TurnEntityIntoEvent ( edict_t *ent, int event, int parm )
+{
+	ent->s.type = ET_EVENT;
+	ent->r.solid = SOLID_NOT;
+	ent->freeAfterEvent = qtrue;
+	G_AddEvent ( ent, event, parm, qtrue );
+
+	trap_LinkEntity (ent);
+}
 
 /*
 ============
@@ -579,10 +471,10 @@ void	G_TouchTriggers (edict_t *ent)
 	edict_t		*touch[MAX_EDICTS], *hit;
 
 	// dead things don't activate triggers!
-	if ((ent->client || (ent->svflags & SVF_MONSTER)) && (ent->health <= 0))
+	if ((ent->r.client || (ent->r.svflags & SVF_MONSTER)) && (ent->health <= 0))
 		return;
 
-	num = gi.BoxEdicts (ent->absmin, ent->absmax, touch
+	num = trap_BoxEdicts (ent->r.absmin, ent->r.absmax, touch
 		, MAX_EDICTS, AREA_TRIGGERS);
 
 	// be careful, it is possible to have an entity in this
@@ -590,11 +482,11 @@ void	G_TouchTriggers (edict_t *ent)
 	for (i=0 ; i<num ; i++)
 	{
 		hit = touch[i];
-		if (!hit->inuse)
+		if (!hit->r.inuse)
 			continue;
 		if (!hit->touch)
 			continue;
-		hit->touch (hit, ent, NULL, NULL);
+		hit->touch (hit, ent, NULL, 0);
 	}
 }
 
@@ -611,7 +503,7 @@ void	G_TouchSolids (edict_t *ent)
 	int			i, num;
 	edict_t		*touch[MAX_EDICTS], *hit;
 
-	num = gi.BoxEdicts (ent->absmin, ent->absmax, touch
+	num = trap_BoxEdicts (ent->r.absmin, ent->r.absmax, touch
 		, MAX_EDICTS, AREA_SOLID);
 
 	// be careful, it is possible to have an entity in this
@@ -619,11 +511,11 @@ void	G_TouchSolids (edict_t *ent)
 	for (i=0 ; i<num ; i++)
 	{
 		hit = touch[i];
-		if (!hit->inuse)
+		if (!hit->r.inuse)
 			continue;
 		if (ent->touch)
-			ent->touch (hit, ent, NULL, NULL);
-		if (!ent->inuse)
+			ent->touch (hit, ent, NULL, 0);
+		if (!ent->r.inuse)
 			break;
 	}
 }
@@ -636,13 +528,13 @@ G_InitMover
 */
 void G_InitMover ( edict_t *ent )
 {
-	ent->solid = SOLID_BSP;
+	ent->r.solid = SOLID_BSP;
 	ent->movetype = MOVETYPE_PUSH;
 
-	gi.setmodel ( ent, ent->model );
+	trap_SetBrushModel ( ent, ent->model );
 
 	if ( ent->model2 ) {
-		ent->s.modelindex2 = gi.modelindex( ent->model2 );
+		ent->s.modelindex2 = trap_ModelIndex( ent->model2 );
 	}
 
 	if (ent->light || !VectorCompare(ent->color, vec3_origin))
@@ -661,22 +553,171 @@ void G_InitMover ( edict_t *ent )
 		if ( r <= 1.0 ) {
 			r *= 255;
 		}
-		r = bound ( 0, r, 255 );
+		clamp (r, 0, 255);
 
-		g = ent->color[0];
+		g = ent->color[1];
 		if ( g <= 1.0 ) {
 			g *= 255;
 		}
-		g = bound ( 0, g, 255 );
+		clamp (g, 0, 255);
 
-		b = ent->color[0];
+		b = ent->color[2];
 		if ( b <= 1.0 ) {
 			b *= 255;
 		}
-		b = bound ( 0, b, 255 );
+		clamp (b, 0, 255);
 
 		ent->s.light = COLOR_RGBA ( r, g, b, i );
 	}
+}
+
+/*
+============
+G_PlayerGender
+
+============
+*/
+int G_PlayerGender ( edict_t *player )
+{
+	char		*info;
+
+	if ( !player->r.client ) {
+		return GENDER_NEUTRAL;
+	}
+
+	info = Info_ValueForKey ( player->r.client->pers.userinfo, "skin" );
+
+	if ( info[0] == 'm' || info[0] == 'M' ) {
+		return GENDER_MALE;
+	} else if ( info[0] == 'f' || info[0] == 'F' ) {
+		return GENDER_FEMALE;
+	}
+
+	return GENDER_NEUTRAL;
+}
+
+/*
+============
+G_PrintMsg
+
+NULL sends to all the message to all clients 
+============
+*/
+void G_PrintMsg ( edict_t *ent, int level, char *fmt, ... )
+{
+	char		msg[1024];
+	va_list		argptr;
+	char		*s, *p;
+
+	va_start (argptr, fmt);
+	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+		G_Error ( "G_PrintMsg: Buffer overflow" );
+	}
+	va_end (argptr);
+
+	// double quotes are bad
+	while ((p = strchr(msg, '\"')) != NULL)
+		*p = '\'';
+
+	s = va ( "pr %i \"%s\"", level, msg );
+
+	if ( !ent ) {
+		int i;	
+
+		for ( i=0; i<game.maxclients; i++)
+		{
+			ent = game.edicts + 1 + i;
+			if (!ent->r.inuse)
+				continue;
+			if (!ent->r.client || level < ent->r.client->pers.messagelevel)
+				continue;
+			trap_ServerCmd ( ent, s );
+		}
+
+		// mirror at server console
+		if ( dedicated->value ) {
+			G_Printf ( "%s", msg );
+		}
+		return;
+	}
+
+	if ( ent->r.inuse && ent->r.client && (level >= ent->r.client->pers.messagelevel) ) {
+		trap_ServerCmd ( ent, s );
+	}
+}
+
+/*
+============
+G_CenterPrintMsg
+
+NULL sends to all the message to all clients 
+============
+*/
+void G_CenterPrintMsg ( edict_t *ent, char *fmt, ... )
+{
+	char		msg[1024];
+	va_list		argptr;
+	char		*p;
+
+	va_start (argptr, fmt);
+	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+		G_Error ( "G_CenterPrintMsg: Buffer overflow" );
+	}
+	va_end (argptr);
+
+	// double quotes are bad
+	while ((p = strchr(msg, '\"')) != NULL)
+		*p = '\'';
+
+	trap_ServerCmd ( ent, va ( "cp \"%s\"", msg ) );
+}
+
+/*
+============
+G_Obituary
+
+Prints death message to all clients
+============
+*/
+void G_Obituary ( edict_t *victim, edict_t *attacker, int mod )
+{
+	if ( victim && attacker ) {
+		trap_ServerCmd ( victim, va ( "obry %i %i %i", victim - game.edicts, attacker - game.edicts, mod ) );
+	}
+}
+
+/*
+=================
+G_Sound
+=================
+*/
+void G_Sound ( edict_t *ent, int channel, int soundindex, float volume, float attenuation )
+{
+	if ( ent ) {
+		trap_Sound ( NULL, ent, channel, soundindex, volume, attenuation );
+	}
+}
+
+/*
+=================
+G_PositionedSound
+=================
+*/
+void G_PositionedSound ( vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation )
+{
+	if ( origin || ent ) {
+		trap_Sound ( origin, ent, channel, soundindex, volume, attenuation );
+	}
+}
+
+/*
+=================
+G_GlobalSound
+=================
+*/
+void G_GlobalSound ( int channel, int soundindex )
+{
+	trap_Sound ( vec3_origin, game.edicts, channel | CHAN_NO_PHS_ADD | CHAN_RELIABLE, soundindex, 1.0, ATTN_NONE );
 }
 
 /*
@@ -701,43 +742,17 @@ qboolean KillBox (edict_t *ent)
 
 	while (1)
 	{
-		tr = gi.trace (ent->s.origin, ent->mins, ent->maxs, ent->s.origin, NULL, MASK_PLAYERSOLID);
-		if (!tr.ent)
+		trap_Trace (&tr, ent->s.origin, ent->r.mins, ent->r.maxs, ent->s.origin, NULL, MASK_PLAYERSOLID);
+		if (tr.fraction == 1)
 			break;
 
 		// nail it
-		T_Damage (tr.ent, ent, ent, vec3_origin, ent->s.origin, vec3_origin, 100000, 0, DAMAGE_NO_PROTECTION, MOD_TELEFRAG);
+		T_Damage (&game.edicts[tr.ent], ent, ent, vec3_origin, ent->s.origin, vec3_origin, 100000, 0, DAMAGE_NO_PROTECTION, MOD_TELEFRAG);
 
 		// if we didn't kill it, fail
-		if (tr.ent->solid)
-			return false;
+		if (game.edicts[tr.ent].r.solid)
+			return qfalse;
 	}
 
-	return true;		// all clear
+	return qtrue;		// all clear
 }
-
-/*
-============
-G_PlayerGender
-
-============
-*/
-int G_PlayerGender ( edict_t *player )
-{
-	char		*info;
-
-	if ( !player->client ) {
-		return GENDER_NEUTRAL;
-	}
-
-	info = Info_ValueForKey ( player->client->pers.userinfo, "skin" );
-
-	if ( info[0] == 'm' || info[0] == 'M' ) {
-		return GENDER_MALE;
-	} else if ( info[0] == 'f' || info[0] == 'F' ) {
-		return GENDER_FEMALE;
-	}
-
-	return GENDER_NEUTRAL;
-}
-

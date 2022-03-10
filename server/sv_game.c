@@ -23,20 +23,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 game_export_t	*ge;
 
+mempool_t		*sv_gameprogspool;
 
 /*
 ===============
-PF_Unicast
+PF_Layout
 
-Sends the contents of the mutlicast buffer to a single client
+Sends the layout to a single client
 ===============
 */
-void PF_Unicast (edict_t *ent, qboolean reliable)
+static void PF_Layout (edict_t *ent, char *string)
 {
-	int		p;
+	int			p;
 	client_t	*client;
 
-	if (!ent)
+	if (!ent || !string || !string[0])
+		return;
+	if (ent->r.svflags & SVF_FAKECLIENT)
 		return;
 
 	p = NUM_FOR_EDICT(ent);
@@ -44,36 +47,66 @@ void PF_Unicast (edict_t *ent, qboolean reliable)
 		return;
 
 	client = svs.clients + (p-1);
-
-	if (reliable)
-		SZ_Write (&client->netchan.message, sv.multicast.data, sv.multicast.cursize);
-	else
-		SZ_Write (&client->datagram, sv.multicast.data, sv.multicast.cursize);
-
-	SZ_Clear (&sv.multicast);
+	MSG_WriteByte (&client->datagram, svc_layout);
+	MSG_WriteString (&client->datagram, string);
 }
-
 
 /*
 ===============
-PF_dprintf
+PF_ServerCmd
+
+Sends the server command to clients. 
+if ent is NULL the command will be sent to all connected clients
+===============
+*/
+static void PF_ServerCmd (edict_t *ent, char *cmd)
+{
+	if (!cmd || !cmd[0])
+		return;
+
+	if (!ent)
+	{
+		SZ_Clear (&sv.multicast);
+		MSG_WriteByte (&sv.multicast, svc_servercmd);
+		MSG_WriteString (&sv.multicast, cmd);
+		SV_Multicast (NULL, MULTICAST_ALL_R);
+	}
+	else
+	{
+		int		p;
+		client_t	*client;
+
+		if (ent->r.svflags & SVF_FAKECLIENT)
+			return;
+
+		p = NUM_FOR_EDICT(ent);
+		if (p < 1 || p > sv_maxclients->value)
+			return;
+
+		client = svs.clients + (p-1);
+
+		MSG_WriteByte (&client->netchan.message, svc_servercmd);
+		MSG_WriteString (&client->netchan.message, cmd);
+	}
+}
+
+/*
+===============
+PF_dprint
 
 Debug print to server console
 ===============
 */
-void PF_dprintf (char *fmt, ...)
+static void PF_dprint (char *msg)
 {
-	char		msg[1024];
-	va_list		argptr;
-	int			i, j;
-	char		copy[1024];
+	int		i, j;
+	char	copy[1024];
 
-	va_start (argptr,fmt);
-	vsnprintf (msg, sizeof(msg), fmt, argptr);
-	va_end (argptr);
+	if (!msg)
+		return;
 
 	// mask off high bits and colored strings
-	for (i=0, j=0 ; j<1023 && msg[j] ; ) {
+	for (i=0, j=0 ; i<sizeof(copy)-1 && msg[j] ; ) {
 		if ( Q_IsColorString( &msg[j] ) ) {
 			j += 2;
 			continue;
@@ -86,65 +119,6 @@ void PF_dprintf (char *fmt, ...)
 	Com_Printf ("%s", copy);
 }
 
-
-/*
-===============
-PF_cprintf
-
-Print to a single client
-===============
-*/
-void PF_cprintf (edict_t *ent, int level, char *fmt, ...)
-{
-	char		msg[1024];
-	va_list		argptr;
-	int			n;
-
-	if (ent)
-	{
-		n = NUM_FOR_EDICT(ent);
-		if (n < 1 || n > sv_maxclients->value)
-			Com_Error (ERR_DROP, "cprintf to a non-client");
-	}
-
-	va_start (argptr,fmt);
-	vsnprintf (msg, sizeof(msg), fmt, argptr);
-	va_end (argptr);
-
-	if (ent)
-		SV_ClientPrintf (svs.clients+(n-1), level, "%s", msg);
-	else
-		Com_Printf ("%s", msg);
-}
-
-
-/*
-===============
-PF_centerprintf
-
-centerprint to a single client
-===============
-*/
-void PF_centerprintf (edict_t *ent, char *fmt, ...)
-{
-	char		msg[1024];
-	va_list		argptr;
-	int			n;
-	
-	n = NUM_FOR_EDICT(ent);
-	if (n < 1 || n > sv_maxclients->value)
-		return;	// Com_Error (ERR_DROP, "centerprintf to a non-client");
-
-	va_start (argptr,fmt);
-	vsnprintf (msg, sizeof(msg), fmt, argptr);
-	va_end (argptr);
-
-	MSG_WriteByte (&sv.multicast,svc_centerprint);
-	MSG_WriteString (&sv.multicast,msg);
-	PF_Unicast (ent, true);
-}
-
-
 /*
 ===============
 PF_error
@@ -152,76 +126,86 @@ PF_error
 Abort the server with a game error
 ===============
 */
-void PF_error (char *fmt, ...)
+static void PF_error (char *msg)
 {
-	char		msg[1024];
-	va_list		argptr;
-	
-	va_start (argptr,fmt);
-	vsnprintf (msg, sizeof(msg), fmt, argptr);
-	va_end (argptr);
+	int		i, j;
+	char	copy[1024];
 
-	Com_Error (ERR_DROP, "Game Error: %s", msg);
+	if (!msg)
+	{
+		Com_Error (ERR_DROP, "Game Error: unknown error");
+		return;
+	}
+
+	// mask off high bits and colored strings
+	for (i=0, j=0 ; i<sizeof(copy)-1 && msg[j] ; ) {
+		if ( Q_IsColorString( &msg[j] ) ) {
+			j += 2;
+			continue;
+		}
+		
+		copy[i++] = msg[j++]&127;
+	}
+	copy[i] = 0;
+
+	Com_Error (ERR_DROP, "Game Error: %s", copy);
 }
 
+/*
+===============
+PF_StuffCmd
+
+===============
+*/
+static void PF_StuffCmd (edict_t *ent, char *string)
+{
+	int			p;
+	client_t	*client;
+
+	if (!ent || !string || !string[0])
+		return;
+	if (ent->r.svflags & SVF_FAKECLIENT)
+		return;
+
+	p = NUM_FOR_EDICT(ent);
+	if (p < 1 || p > sv_maxclients->value)
+		return;
+
+	client = svs.clients + (p-1);
+	MSG_WriteByte (&client->netchan.message, svc_stufftext);
+	MSG_WriteString (&client->netchan.message, string);
+}
 
 /*
 =================
-PF_setmodel
+PF_SetBrushModel
 
 Also sets mins and maxs for inline bmodels
 =================
 */
-void PF_setmodel (edict_t *ent, char *name)
+static void PF_SetBrushModel (edict_t *ent, char *name)
 {
-	int		i;
-	cmodel_t	*mod;
+	struct cmodel_s *cmodel;
 
-	if ( !name )
+	if (!name)
 		Com_Error (ERR_DROP, "PF_setmodel: NULL");
-	if ( !name[0] ) {
+	if (!name[0])
+	{
 		 ent->s.modelindex = 0;
 		 return;
 	}
 
-	i = SV_ModelIndex (name);
-		
-//	ent->model = name;
-	ent->s.modelindex = i;
-
 // if it is an inline model, get the size information for it
-	if (name[0] == '*')
+	if (name[0] != '*')
 	{
-		mod = CM_InlineModel (name);
-		VectorCopy (mod->mins, ent->mins);
-		VectorCopy (mod->maxs, ent->maxs);
-		SV_LinkEdict (ent);
+		ent->s.modelindex = SV_ModelIndex (name);
+		return;
 	}
-}
 
-/*
-===============
-PF_Obituary
-
-===============
-*/
-void PF_Obituary (int victim, int attacker, int mod, int level)
-{
-	client_t	*cl;
-	int			i;
-
-	for (i=0, cl = svs.clients ; i<sv_maxclients->value; i++, cl++)
-	{
-		if (level < cl->messagelevel)
-			continue;
-		if (cl->state != cs_spawned)
-			continue;
-
-		MSG_WriteByte ( &cl->netchan.message,  svc_obituary );
-		MSG_WriteShort ( &cl->netchan.message, victim );
-		MSG_WriteShort ( &cl->netchan.message, attacker );
-		MSG_WriteByte ( &cl->netchan.message, mod );
-	}
+	ent->s.modelindex = atoi (name+1);
+	cmodel = CM_InlineModel (ent->s.modelindex);
+	CM_InlineModelBounds (cmodel, ent->r.mins, ent->r.maxs);
+	SV_LinkEdict (ent);
 }
 
 /*
@@ -230,7 +214,7 @@ PF_Configstring
 
 ===============
 */
-void PF_Configstring (int index, char *val)
+static void PF_Configstring (int index, char *val)
 {
 	if (index < 0 || index >= MAX_CONFIGSTRINGS)
 		Com_Error (ERR_DROP, "configstring: bad index %i", index);
@@ -244,25 +228,11 @@ void PF_Configstring (int index, char *val)
 	if (sv.state != ss_loading)
 	{	// send the update to everyone
 		SZ_Clear (&sv.multicast);
-		MSG_WriteChar (&sv.multicast, svc_configstring);
-		MSG_WriteShort (&sv.multicast, index);
-		MSG_WriteString (&sv.multicast, val);
-
-		SV_Multicast (vec3_origin, MULTICAST_ALL_R);
+		MSG_WriteByte (&sv.multicast, svc_servercmd);
+		MSG_WriteString (&sv.multicast, va("cs %i \"%s\"", index, val));
+		SV_Multicast (NULL, MULTICAST_ALL_R);
 	}
 }
-
-
-
-void PF_WriteChar (int c) {MSG_WriteChar (&sv.multicast, c);}
-void PF_WriteByte (int c) {MSG_WriteByte (&sv.multicast, c);}
-void PF_WriteShort (int c) {MSG_WriteShort (&sv.multicast, c);}
-void PF_WriteLong (int c) {MSG_WriteLong (&sv.multicast, c);}
-void PF_WriteFloat (float f) {MSG_WriteFloat (&sv.multicast, f);}
-void PF_WriteString (char *s) {MSG_WriteString (&sv.multicast, s);}
-void PF_WritePos (vec3_t pos) {MSG_WritePos (&sv.multicast, pos);}
-void PF_WriteDir (vec3_t dir) {MSG_WriteDir (&sv.multicast, dir);}
-void PF_WriteAngle (float f) {MSG_WriteAngle (&sv.multicast, f);}
 
 
 /*
@@ -272,12 +242,12 @@ PF_inPVS
 Also checks portalareas so that doors block sight
 =================
 */
-qboolean PF_inPVS (vec3_t p1, vec3_t p2)
+static qboolean PF_inPVS (vec3_t p1, vec3_t p2)
 {
 	int		leafnum;
 	int		cluster;
 	int		area1, area2;
-	byte	*mask;
+	qbyte	*mask;
 
 	leafnum = CM_PointLeafnum (p1);
 	cluster = CM_LeafCluster (leafnum);
@@ -288,10 +258,10 @@ qboolean PF_inPVS (vec3_t p1, vec3_t p2)
 	cluster = CM_LeafCluster (leafnum);
 	area2 = CM_LeafArea (leafnum);
 	if ( mask && (!(mask[cluster>>3] & (1<<(cluster&7)) ) ) )
-		return false;
+		return qfalse;
 	if (!CM_AreasConnected (area1, area2))
-		return false;		// a door blocks sight
-	return true;
+		return qfalse;		// a door blocks sight
+	return qtrue;
 }
 
 
@@ -302,12 +272,12 @@ PF_inPHS
 Also checks portalareas so that doors block sound
 =================
 */
-qboolean PF_inPHS (vec3_t p1, vec3_t p2)
+static qboolean PF_inPHS (vec3_t p1, vec3_t p2)
 {
 	int		leafnum;
 	int		cluster;
 	int		area1, area2;
-	byte	*mask;
+	qbyte	*mask;
 
 	leafnum = CM_PointLeafnum (p1);
 	cluster = CM_LeafCluster (leafnum);
@@ -318,19 +288,56 @@ qboolean PF_inPHS (vec3_t p1, vec3_t p2)
 	cluster = CM_LeafCluster (leafnum);
 	area2 = CM_LeafArea (leafnum);
 	if ( mask && (!(mask[cluster>>3] & (1<<(cluster&7)) ) ) )
-		return false;		// more than one bounce away
+		return qfalse;		// more than one bounce away
 	if (!CM_AreasConnected (area1, area2))
-		return false;		// a door blocks hearing
+		return qfalse;		// a door blocks hearing
 
-	return true;
+	return qtrue;
 }
 
-void PF_StartSound (edict_t *entity, int channel, int sound_num, float volume,
-    float attenuation, float timeofs)
-{
-	if (!entity)
-		return;
-	SV_StartSound (NULL, entity, channel, sound_num, volume, attenuation, timeofs);
+/*
+===============
+PF_MemAlloc
+===============
+*/
+static void *PF_MemAlloc ( mempool_t *pool, int size, const char *filename, int fileline ) {
+	return _Mem_Alloc ( pool, size, MEMPOOL_GAMEPROGS, 0, filename, fileline );
+}
+
+/*
+===============
+PF_MemFree
+===============
+*/
+static void PF_MemFree ( void *data, const char *filename, int fileline ) {
+	_Mem_Free ( data, MEMPOOL_GAMEPROGS, 0, filename, fileline );
+}
+
+/*
+===============
+PF_MemAllocPool
+===============
+*/
+static mempool_t *PF_MemAllocPool ( const char *name, const char *filename, int fileline ) {
+	return _Mem_AllocPool ( sv_gameprogspool, name, MEMPOOL_GAMEPROGS, filename, fileline );
+}
+
+/*
+===============
+PF_MemFreePool
+===============
+*/
+static void PF_MemFreePool ( mempool_t **pool, const char *filename, int fileline ) {
+	_Mem_FreePool ( pool, MEMPOOL_GAMEPROGS, 0, filename, fileline );
+}
+
+/*
+===============
+PF_MemEmptyPool
+===============
+*/
+static void PF_MemEmptyPool ( mempool_t *pool, const char *filename, int fileline ) {
+	_Mem_EmptyPool ( pool, MEMPOOL_GAMEPROGS, 0, filename, fileline );
 }
 
 //==============================================
@@ -348,8 +355,26 @@ void SV_ShutdownGameProgs (void)
 	if (!ge)
 		return;
 	ge->Shutdown ();
+	Mem_FreePool (&sv_gameprogspool);
 	Sys_UnloadLibrary (LIB_GAME);
 	ge = NULL;
+}
+
+/*
+=================
+SV_LocateEntities
+=================
+*/
+void SV_LocateEntities (struct edict_s *edicts, int edict_size, int num_edicts, int max_edicts)
+{
+	if (!edicts || edict_size < sizeof(entity_shared_t) ) {
+		Com_Error (ERR_DROP, "SV_LocateEntities: bad edicts");
+	}
+
+	sv.edicts = edicts;
+	sv.edict_size = edict_size;
+	sv.num_edicts = num_edicts;
+	sv.max_edicts = max_edicts;
 }
 
 /*
@@ -361,75 +386,67 @@ Init the game subsystem for a new map
 */
 void SV_InitGameProgs (void)
 {
-	game_import_t	import;
+	int	apiversion;
+	game_import_t import;
 
 	// unload anything we have now
 	if (ge)
 		SV_ShutdownGameProgs ();
 
+	sv_gameprogspool = Mem_AllocPool ( NULL, "Game Progs" );
 
 	// load a new game dll
-	import.multicast = SV_Multicast;
-	import.unicast = PF_Unicast;
-	import.bprintf = SV_BroadcastPrintf;
-	import.dprintf = PF_dprintf;
-	import.cprintf = PF_cprintf;
-	import.centerprintf = PF_centerprintf;
-	import.error = PF_error;
-	import.obituary = PF_Obituary;
+	import.Print = PF_dprint;
+	import.Error = PF_error;
+	import.ServerCmd = PF_ServerCmd;
 
-	import.linkentity = SV_LinkEdict;
-	import.unlinkentity = SV_UnlinkEdict;
+	import.LinkEntity = SV_LinkEdict;
+	import.UnlinkEntity = SV_UnlinkEdict;
 	import.BoxEdicts = SV_AreaEdicts;
-	import.trace = SV_Trace;
-	import.pointcontents = SV_PointContents;
-	import.setmodel = PF_setmodel;
+	import.Trace = SV_Trace;
+	import.PointContents = SV_PointContents;
+	import.SetBrushModel = PF_SetBrushModel;
 	import.inPVS = PF_inPVS;
 	import.inPHS = PF_inPHS;
-	import.Pmove = Pmove;
 
-	import.modelindex = SV_ModelIndex;
-	import.soundindex = SV_SoundIndex;
-	import.imageindex = SV_ImageIndex;
+	import.ModelIndex = SV_ModelIndex;
+	import.SoundIndex = SV_SoundIndex;
+	import.ImageIndex = SV_ImageIndex;
 
-	import.configstring = PF_Configstring;
-	import.sound = PF_StartSound;
-	import.positioned_sound = SV_StartSound;
+	import.ConfigString = PF_Configstring;
+	import.Layout = PF_Layout;
+	import.StuffCmd = PF_StuffCmd;
+	import.Sound = SV_StartSound;
 
-	import.WriteChar = PF_WriteChar;
-	import.WriteByte = PF_WriteByte;
-	import.WriteShort = PF_WriteShort;
-	import.WriteLong = PF_WriteLong;
-	import.WriteFloat = PF_WriteFloat;
-	import.WriteString = PF_WriteString;
-	import.WritePosition = PF_WritePos;
-	import.WriteDir = PF_WriteDir;
-	import.WriteAngle = PF_WriteAngle;
+	import.Mem_Alloc = PF_MemAlloc;
+	import.Mem_Free = PF_MemFree;
+	import.Mem_AllocPool = PF_MemAllocPool;
+	import.Mem_FreePool = PF_MemFreePool;
+	import.Mem_EmptyPool = PF_MemEmptyPool;
 
-	import.TagMalloc = Z_TagMalloc;
-	import.TagFree = Z_Free;
-	import.FreeTags = Z_FreeTags;
+	import.Cvar_Get = Cvar_Get;
+	import.Cvar_Set = Cvar_Set;
+	import.Cvar_ForceSet = Cvar_ForceSet;
 
-	import.cvar = Cvar_Get;
-	import.cvar_set = Cvar_Set;
-	import.cvar_forceset = Cvar_ForceSet;
-
-	import.argc = Cmd_Argc;
-	import.argv = Cmd_Argv;
-	import.args = Cmd_Args;
+	import.Cmd_Argc = Cmd_Argc;
+	import.Cmd_Argv = Cmd_Argv;
+	import.Cmd_Args = Cmd_Args;
 	import.AddCommandString = Cbuf_AddText;
 
 	import.SetAreaPortalState = SV_SetAreaPortalState;
 	import.AreasConnected = CM_AreasConnected;
 
+	import.LocateEntities = SV_LocateEntities;
+
 	ge = (game_export_t *)Sys_LoadLibrary (LIB_GAME, &import);
 
 	if (!ge)
 		Com_Error (ERR_DROP, "failed to load game DLL");
-	if (ge->apiversion != GAME_API_VERSION)
-		Com_Error (ERR_DROP, "game is version %i, not %i", ge->apiversion,
-		GAME_API_VERSION);
 
-	ge->Init ();
+	apiversion = ge->API ();
+	if (apiversion != GAME_API_VERSION)
+		Com_Error (ERR_DROP, "game is version %i, not %i", apiversion, GAME_API_VERSION);
+
+	ge->Init ( time(NULL) );
 }
 

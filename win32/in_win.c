@@ -21,7 +21,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // 02/21/97 JCB Added extended DirectInput code to support external controllers.
 
 #include "../client/client.h"
+#include <dinput.h>
 #include "winquake.h"
+
+#define DINPUT_BUFFERSIZE           16
+#define iDirectInputCreate(a,b,c,d)	pDirectInputCreate(a,b,c,d)
+
+HRESULT (WINAPI *pDirectInputCreate)(HINSTANCE hinst, DWORD dwVersion,
+	LPDIRECTINPUT * lplpDirectInput, LPUNKNOWN punkOuter);
 
 extern	unsigned	sys_msg_time;
 
@@ -94,6 +101,7 @@ qboolean	in_appactive;
 void IN_StartupJoystick (void);
 void Joy_AdvancedUpdate_f (void);
 void IN_JoyMove (usercmd_t *cmd);
+void IN_Restart_f (void);
 
 /*
 ============================================================
@@ -108,9 +116,9 @@ cvar_t	*m_filter;
 
 qboolean	mlooking;
 
-void IN_MLookDown (void) { mlooking = true; }
+void IN_MLookDown (void) { mlooking = qtrue; }
 void IN_MLookUp (void) {
-mlooking = false;
+mlooking = qfalse;
 if (!cl_freelook->value && lookspring->value)
 		IN_CenterView ();
 }
@@ -118,20 +126,59 @@ if (!cl_freelook->value && lookspring->value)
 int			mouse_buttons;
 int			mouse_oldbuttonstate;
 POINT		current_pos;
-int			mouse_x, mouse_y, old_mouse_x, old_mouse_y, mx_accum, my_accum;
+int			mx, my, mouse_x, mouse_y, old_mouse_x, old_mouse_y, mx_accum, my_accum;
 
 int			old_x, old_y;
 
-qboolean	mouseactive;	// false when not focus app
+qboolean	mouseactive;	// qfalse when not focus app
 
 qboolean	restore_spi;
 qboolean	mouseinitialized;
 int		originalmouseparms[3], newmouseparms[3] = {0, 0, 1};
+qboolean	dinput_acquired;
 qboolean	mouseparmsvalid;
+static unsigned int		mstate_di;
 
 int			window_center_x, window_center_y;
 RECT		window_rect;
 
+static LPDIRECTINPUT		g_pdi;
+static LPDIRECTINPUTDEVICE	g_pMouse;
+
+static HINSTANCE hInstDI;
+
+static qboolean	dinput;
+
+typedef struct MYDATA {
+	LONG  lX;                   // X axis goes here
+	LONG  lY;                   // Y axis goes here
+	LONG  lZ;                   // Z axis goes here
+	BYTE  bButtonA;             // One button goes here
+	BYTE  bButtonB;             // Another button goes here
+	BYTE  bButtonC;             // Another button goes here
+	BYTE  bButtonD;             // Another button goes here
+} MYDATA;
+
+static DIOBJECTDATAFORMAT rgodf[] = {
+  { &GUID_XAxis,    FIELD_OFFSET(MYDATA, lX),       DIDFT_AXIS | DIDFT_ANYINSTANCE,   0,},
+  { &GUID_YAxis,    FIELD_OFFSET(MYDATA, lY),       DIDFT_AXIS | DIDFT_ANYINSTANCE,   0,},
+  { &GUID_ZAxis,    FIELD_OFFSET(MYDATA, lZ),       0x80000000 | DIDFT_AXIS | DIDFT_ANYINSTANCE,   0,},
+  { 0,              FIELD_OFFSET(MYDATA, bButtonA), DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
+  { 0,              FIELD_OFFSET(MYDATA, bButtonB), DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
+  { 0,              FIELD_OFFSET(MYDATA, bButtonC), 0x80000000 | DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
+  { 0,              FIELD_OFFSET(MYDATA, bButtonD), 0x80000000 | DIDFT_BUTTON | DIDFT_ANYINSTANCE, 0,},
+};
+
+#define NUM_OBJECTS (sizeof(rgodf) / sizeof(rgodf[0]))
+
+static DIDATAFORMAT	df = {
+	sizeof(DIDATAFORMAT),       // this structure
+	sizeof(DIOBJECTDATAFORMAT), // size of object data format
+	DIDF_RELAXIS,               // absolute axis coordinates
+	sizeof(MYDATA),             // device data size
+	NUM_OBJECTS,                // number of objects
+	rgodf,                      // and here they are
+};
 
 /*
 ===========
@@ -148,13 +195,33 @@ void IN_ActivateMouse (void)
 		return;
 	if (!in_mouse->value)
 	{
-		mouseactive = false;
+		mouseactive = qfalse;
 		return;
 	}
 	if (mouseactive)
 		return;
 
-	mouseactive = true;
+	mouseactive = qtrue;
+
+	if (dinput)
+	{
+		if (g_pMouse)
+		{
+			if (cl_hwnd)
+				if (FAILED(IDirectInputDevice_SetCooperativeLevel(g_pMouse, cl_hwnd, DISCL_EXCLUSIVE | DISCL_FOREGROUND)))
+				{
+					Com_Printf ("Couldn't set DI coop level\n");
+					return;
+				}
+
+			if (!dinput_acquired)
+			{
+				IDirectInputDevice_Acquire(g_pMouse);
+				dinput_acquired = qtrue;
+			}
+		}
+		return;
+	}
 
 	if (mouseparmsvalid)
 		restore_spi = SystemParametersInfo (SPI_SETMOUSE, 0, newmouseparms, 0);
@@ -201,10 +268,30 @@ void IN_DeactivateMouse (void)
 	if (!mouseactive)
 		return;
 
+	mouseactive = qfalse;
+
+	if (dinput)
+	{
+		if (g_pMouse)
+		{
+			if (dinput_acquired)
+			{
+				IDirectInputDevice_Unacquire(g_pMouse);
+				dinput_acquired = qfalse;
+			}
+
+			if (cl_hwnd)
+				if (FAILED(IDirectInputDevice_SetCooperativeLevel(g_pMouse, cl_hwnd, DISCL_EXCLUSIVE | DISCL_BACKGROUND)))
+				{
+					Com_Printf ("Couldn't set DI coop level\n");
+					return;
+				}
+		}
+		return;
+	}
+
 	if (restore_spi)
 		SystemParametersInfo (SPI_SETMOUSE, 0, originalmouseparms, 0);
-
-	mouseactive = false;
 
 	ClipCursor (NULL);
 	ReleaseCapture ();
@@ -213,6 +300,120 @@ void IN_DeactivateMouse (void)
 }
 
 
+/*
+===========
+IN_InitDInput
+===========
+*/
+qboolean IN_InitDInput (void)
+{
+    HRESULT		hr;
+	DIPROPDWORD	dipdw = {
+		{
+			sizeof(DIPROPDWORD),        // diph.dwSize
+			sizeof(DIPROPHEADER),       // diph.dwHeaderSize
+			0,                          // diph.dwObj
+			DIPH_DEVICE,                // diph.dwHow
+		},
+		DINPUT_BUFFERSIZE,              // dwData
+	};
+
+	if (!hInstDI)
+	{
+		hInstDI = LoadLibrary("dinput.dll");
+		
+		if (hInstDI == NULL)
+		{
+			Com_Printf ("Couldn't load dinput.dll\n");
+			return qfalse;
+		}
+	}
+
+	if (!pDirectInputCreate)
+	{
+		pDirectInputCreate = (void *)GetProcAddress(hInstDI, "DirectInputCreateA");
+
+		if (!pDirectInputCreate)
+		{
+			Com_Printf ("Couldn't get DI proc addr\n");
+			return qfalse;
+		}
+	}
+
+// register with DirectInput and get an IDirectInput to play with.
+	hr = iDirectInputCreate(global_hInstance, DIRECTINPUT_VERSION, &g_pdi, NULL);
+
+	if (FAILED(hr))
+	{
+		return qfalse;
+	}
+
+// obtain an interface to the system mouse device.
+	hr = IDirectInput_CreateDevice(g_pdi, &GUID_SysMouse, &g_pMouse, NULL);
+
+	if (FAILED(hr))
+	{
+		Com_Printf ("Couldn't open DI mouse device\n");
+		return qfalse;
+	}
+
+// set the data format to "mouse format".
+	hr = IDirectInputDevice_SetDataFormat(g_pMouse, &df);
+
+	if (FAILED(hr))
+	{
+		Com_Printf ("Couldn't set DI mouse format\n");
+		return qfalse;
+	}
+
+// set the cooperativity level.
+	hr = IDirectInputDevice_SetCooperativeLevel(g_pMouse, cl_hwnd,
+			DISCL_EXCLUSIVE | DISCL_FOREGROUND);
+
+	if (FAILED(hr))
+	{
+		Com_Printf ("Couldn't set DI coop level\n");
+		return qfalse;
+	}
+
+
+// set the buffer size to DINPUT_BUFFERSIZE elements.
+// the buffer size is a DWORD property associated with the device
+	hr = IDirectInputDevice_SetProperty(g_pMouse, DIPROP_BUFFERSIZE, &dipdw.diph);
+
+	if (FAILED(hr))
+	{
+		Com_Printf ("Couldn't set DI buffersize\n");
+		return qfalse;
+	}
+
+	return qtrue;
+}
+
+/*
+===========
+IN_ShutdownDInput
+===========
+*/
+void IN_ShutdownDInput (void)
+{
+	if ( g_pMouse ) {
+		IDirectInputDevice_SetCooperativeLevel ( g_pMouse, cl_hwnd, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND );
+		IDirectInputDevice_Release ( g_pMouse );
+	}
+
+	if ( g_pdi ) {
+		IDirectInput_Release ( g_pdi );
+	}
+
+	if ( hInstDI ) {
+		FreeLibrary ( hInstDI );
+	}
+
+	g_pMouse = NULL;
+	g_pdi = NULL;
+	hInstDI = NULL;
+}
 
 /*
 ===========
@@ -224,10 +425,21 @@ void IN_StartupMouse (void)
 	cvar_t		*cv;
 
 	cv = Cvar_Get ("in_initmouse", "1", CVAR_NOSET);
-	if ( !cv->value ) 
-		return; 
+	if ( !cv->value )
+		return;
 
-	mouseinitialized = true;
+	dinput = qfalse;
+
+	cv = Cvar_Get ("in_dinput", "1", CVAR_ARCHIVE);
+	if ( cv->value )
+		dinput = IN_InitDInput ();
+
+	if (dinput)
+		Com_Printf ("DirectInput initialized\n");
+	else
+		Com_Printf ("DirectInput not initialized, using standart input\n");
+
+	mouseinitialized = qtrue;
 	mouseparmsvalid = SystemParametersInfo (SPI_GETMOUSE, 0, originalmouseparms, 0);
 	mouse_buttons = 3;
 }
@@ -241,7 +453,7 @@ void IN_MouseEvent (int mstate)
 {
 	int		i;
 
-	if (!mouseinitialized)
+	if (!mouseinitialized || dinput)
 		return;
 
 // perform button actions
@@ -250,19 +462,18 @@ void IN_MouseEvent (int mstate)
 		if ( (mstate & (1<<i)) &&
 			!(mouse_oldbuttonstate & (1<<i)) )
 		{
-			Key_Event (K_MOUSE1 + i, true, sys_msg_time);
+			Key_Event (K_MOUSE1 + i, qtrue, sys_msg_time);
 		}
 
 		if ( !(mstate & (1<<i)) &&
 			(mouse_oldbuttonstate & (1<<i)) )
 		{
-				Key_Event (K_MOUSE1 + i, false, sys_msg_time);
+				Key_Event (K_MOUSE1 + i, qfalse, sys_msg_time);
 		}
 	}	
 		
 	mouse_oldbuttonstate = mstate;
 }
-
 
 /*
 ===========
@@ -271,22 +482,111 @@ IN_MouseMove
 */
 void IN_MouseMove (usercmd_t *cmd)
 {
-	int		mx, my;
+	int					i;
+	DIDEVICEOBJECTDATA	od;
+	DWORD				dwElements;
+	HRESULT				hr;
 
 	if (!mouseactive)
 		return;
 
-	// find mouse movement
-	if (!GetCursorPos (&current_pos))
-		return;
+	if (dinput)
+	{
+		mx = 0;
+		my = 0;
 
-	if ( cls.key_dest == key_menu ) {
-		UI_MouseMove ( current_pos.x - window_center_x, current_pos.y - window_center_y );
-		goto done;
+		for (;;)
+		{
+			dwElements = 1;
+
+			hr = IDirectInputDevice_GetDeviceData(g_pMouse,
+				sizeof(DIDEVICEOBJECTDATA), &od, &dwElements, 0);
+
+			if ((hr == DIERR_INPUTLOST) || (hr == DIERR_NOTACQUIRED))
+			{
+				dinput_acquired = qtrue;
+				IDirectInputDevice_Acquire(g_pMouse);
+				break;
+			}
+
+			/* Unable to read data or no data available */
+			if (FAILED(hr) || dwElements == 0)
+			{
+				break;
+			}
+
+			sys_msg_time = od.dwTimeStamp;		
+
+			/* Look at the element to see what happened */
+			switch (od.dwOfs)
+			{
+			case DIMOFS_X:
+				mx += od.dwData;
+				break;
+				
+			case DIMOFS_Y:
+				my += od.dwData;
+				break;
+				
+			case DIMOFS_BUTTON0:
+				if (od.dwData & 0x80)
+					mstate_di |= 1;
+				else
+					mstate_di &= ~1;
+				break;
+				
+			case DIMOFS_BUTTON1:
+				if (od.dwData & 0x80)
+					mstate_di |= (1<<1);
+				else
+					mstate_di &= ~(1<<1);
+				break;
+				
+			case DIMOFS_BUTTON2:
+				if (od.dwData & 0x80)
+					mstate_di |= (1<<2);
+				else
+					mstate_di &= ~(1<<2);
+				break;
+			}
+		}
+
+		// perform button actions
+		for (i=0 ; i<mouse_buttons ; i++)
+		{
+			if ( (mstate_di & (1<<i)) &&
+				!(mouse_oldbuttonstate & (1<<i)) )
+			{
+				Key_Event (K_MOUSE1 + i, qtrue, sys_msg_time);
+			}
+
+			if ( !(mstate_di & (1<<i)) &&
+				(mouse_oldbuttonstate & (1<<i)) )
+			{
+				Key_Event (K_MOUSE1 + i, qfalse, sys_msg_time);
+			}
+		}	
+
+		mouse_oldbuttonstate = mstate_di;
+	}
+	else
+	{
+		// find mouse movement
+		if (!GetCursorPos (&current_pos))
+			return;
+
+		mx = current_pos.x - window_center_x;
+		my = current_pos.y - window_center_y;
+
+		// force the mouse to the center, so there's room to move
+		if (mx || my)
+			SetCursorPos (window_center_x, window_center_y);
 	}
 
-	mx = current_pos.x - window_center_x;
-	my = current_pos.y - window_center_y;
+	if ( cls.key_dest == key_menu ) {
+		CL_UIModule_MouseMove ( mx, my );
+		return;
+	}
 
 #if 0
 	if (!mx && !my)
@@ -324,11 +624,6 @@ void IN_MouseMove (usercmd_t *cmd)
 	{
 		cmd->forwardmove -= m_forward->value * mouse_y;
 	}
-
-done:
-	// force the mouse to the center, so there's room to move
-	if (mx || my)
-		SetCursorPos (window_center_x, window_center_y);
 }
 
 
@@ -351,6 +646,8 @@ IN_Init
 */
 void IN_Init (void)
 {
+	Com_Printf ("\n------- input initialization -------\n");
+
 	// mouse variables
 	m_filter				= Cvar_Get ("m_filter",					"0",		0);
     in_mouse				= Cvar_Get ("in_mouse",					"1",		CVAR_ARCHIVE);
@@ -385,8 +682,12 @@ void IN_Init (void)
 
 	Cmd_AddCommand ("joy_advancedupdate", Joy_AdvancedUpdate_f);
 
+	Cmd_AddCommand ("in_restart", IN_Restart_f);
+
 	IN_StartupMouse ();
 	IN_StartupJoystick ();
+
+	Com_Printf ("------------------------------------\n");
 }
 
 /*
@@ -397,8 +698,25 @@ IN_Shutdown
 void IN_Shutdown (void)
 {
 	IN_DeactivateMouse ();
+	if (dinput)
+		IN_ShutdownDInput ();
+
+	Cmd_RemoveCommand ("+mlook");
+	Cmd_RemoveCommand ("-mlook");
+	Cmd_RemoveCommand ("joy_advancedupdate");
+	Cmd_RemoveCommand ("in_restart");
 }
 
+/*
+===========
+IN_Restart_f
+===========
+*/
+void IN_Restart_f (void)
+{
+	IN_Shutdown ();
+	IN_Init ();
+}
 
 /*
 ===========
@@ -485,7 +803,7 @@ void IN_StartupJoystick (void)
 	cvar_t		*cv;
 
  	// assume no joystick
-	joy_avail = false; 
+	joy_avail = qfalse; 
 
 	// abort startup if user requests no joystick
 	cv = Cvar_Get ("in_initjoy", "1", CVAR_NOSET);
@@ -495,7 +813,7 @@ void IN_StartupJoystick (void)
 	// verify joystick driver is present
 	if ((numdevs = joyGetNumDevs ()) == 0)
 	{
-//		Com_Printf ("\njoystick not found -- driver not present\n\n");
+//		Com_Printf ("joystick not found -- driver not present\n");
 		return;
 	}
 
@@ -513,7 +831,7 @@ void IN_StartupJoystick (void)
 	// abort startup if we didn't find a valid joystick
 	if (mmr != JOYERR_NOERROR)
 	{
-		Com_Printf ("\njoystick not found -- no valid joysticks (%x)\n\n", mmr);
+		Com_Printf ("joystick not found -- no valid joysticks (%x)\n", mmr);
 		return;
 	}
 
@@ -522,7 +840,7 @@ void IN_StartupJoystick (void)
 	memset (&jc, 0, sizeof(jc));
 	if ((mmr = joyGetDevCaps (joy_id, &jc, sizeof(jc))) != JOYERR_NOERROR)
 	{
-		Com_Printf ("\njoystick not found -- invalid joystick capabilities (%x)\n\n", mmr); 
+		Com_Printf ("joystick not found -- invalid joystick capabilities (%x)\n", mmr); 
 		return;
 	}
 
@@ -536,10 +854,10 @@ void IN_StartupJoystick (void)
 	// mark the joystick as available and advanced initialization not completed
 	// this is needed as cvars are not available during initialization
 
-	joy_avail = true; 
-	joy_advancedinit = false;
+	joy_avail = qtrue; 
+	joy_advancedinit = qfalse;
 
-	Com_Printf ("\njoystick detected\n\n"); 
+	Com_Printf ("joystick detected\n"); 
 }
 
 
@@ -656,7 +974,6 @@ void IN_Commands (void)
 	{
 		return;
 	}
-
 	
 	// loop through the joystick buttons
 	// key a joystick event or auxillary event for higher number buttons for each state change
@@ -666,13 +983,13 @@ void IN_Commands (void)
 		if ( (buttonstate & (1<<i)) && !(joy_oldbuttonstate & (1<<i)) )
 		{
 			key_index = (i < 4) ? K_JOY1 : K_AUX1;
-			Key_Event (key_index + i, true, 0);
+			Key_Event (key_index + i, qtrue, 0);
 		}
 
 		if ( !(buttonstate & (1<<i)) && (joy_oldbuttonstate & (1<<i)) )
 		{
 			key_index = (i < 4) ? K_JOY1 : K_AUX1;
-			Key_Event (key_index + i, false, 0);
+			Key_Event (key_index + i, qfalse, 0);
 		}
 	}
 	joy_oldbuttonstate = buttonstate;
@@ -699,12 +1016,12 @@ void IN_Commands (void)
 		{
 			if ( (povstate & (1<<i)) && !(joy_oldpovstate & (1<<i)) )
 			{
-				Key_Event (K_AUX29 + i, true, 0);
+				Key_Event (K_AUX29 + i, qtrue, 0);
 			}
 
 			if ( !(povstate & (1<<i)) && (joy_oldpovstate & (1<<i)) )
 			{
-				Key_Event (K_AUX29 + i, false, 0);
+				Key_Event (K_AUX29 + i, qfalse, 0);
 			}
 		}
 		joy_oldpovstate = povstate;
@@ -726,7 +1043,7 @@ qboolean IN_ReadJoystick (void)
 
 	if (joyGetPosEx (joy_id, &ji) == JOYERR_NOERROR)
 	{
-		return true;
+		return qtrue;
 	}
 	else
 	{
@@ -734,8 +1051,8 @@ qboolean IN_ReadJoystick (void)
 		// turning off the joystick seems too harsh for 1 read error,\
 		// but what should be done?
 		// Com_Printf ("IN_ReadJoystick: no response\n");
-		// joy_avail = false;
-		return false;
+		// joy_avail = qfalse;
+		return qfalse;
 	}
 }
 
@@ -753,10 +1070,10 @@ void IN_JoyMove (usercmd_t *cmd)
 
 	// complete initialization if first time in
 	// this is needed as cvars are not available at initialization time
-	if( joy_advancedinit != true )
+	if( joy_advancedinit != qtrue )
 	{
 		Joy_AdvancedUpdate_f();
-		joy_advancedinit = true;
+		joy_advancedinit = qtrue;
 	}
 
 	// verify joystick is available and that the user wants to use it
@@ -766,7 +1083,7 @@ void IN_JoyMove (usercmd_t *cmd)
 	}
  
 	// collect the joystick data, if possible
-	if (IN_ReadJoystick () != true)
+	if (IN_ReadJoystick () != qtrue)
 	{
 		return;
 	}
@@ -797,7 +1114,7 @@ void IN_JoyMove (usercmd_t *cmd)
 				if (fabs(fAxisValue) > joy_pitchthreshold->value)
 				{		
 					// if mouse invert is on, invert the joystick pitch value
-					// only absolute control support here (joy_advanced is false)
+					// only absolute control support here (joy_advanced is qfalse)
 					if (m_pitch->value < 0.0)
 					{
 						cl.viewangles[PITCH] -= (fAxisValue * joy_pitchsensitivity->value) * aspeed * cl_pitchspeed->value;

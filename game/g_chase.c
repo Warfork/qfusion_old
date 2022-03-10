@@ -31,19 +31,19 @@ void UpdateChaseCam(edict_t *ent)
 	vec3_t angles;
 
 	// is our chase target gone?
-	if (!ent->client->chase_target->inuse) {
-		ent->client->chase_target = NULL;
+	if (!ent->r.client->chase_target->r.inuse) {
+		ent->r.client->chase_target = NULL;
 		return;
 	}
 
-	targ = ent->client->chase_target;
+	targ = ent->r.client->chase_target;
 
 	VectorCopy(targ->s.origin, ownerv);
 	VectorCopy(ent->s.origin, oldgoal);
 
 	ownerv[2] += targ->viewheight;
 
-	VectorCopy(targ->client->v_angle, angles);
+	VectorCopy(targ->r.client->v_angle, angles);
 	if (angles[PITCH] > 56)
 		angles[PITCH] = 56;
 	AngleVectors (angles, forward, right, NULL);
@@ -57,16 +57,16 @@ void UpdateChaseCam(edict_t *ent)
 	if (!targ->groundentity)
 		o[2] += 16;
 
-	trace = gi.trace(ownerv, vec3_origin, vec3_origin, o, targ, MASK_SOLID);
+	trap_Trace (&trace, ownerv, vec3_origin, vec3_origin, o, targ, MASK_SOLID);
 
-	VectorCopy(trace.endpos, goal);
+	VectorCopy (trace.endpos, goal);
 
-	VectorMA(goal, 2, forward, goal);
+	VectorMA (goal, 2, forward, goal);
 
 	// pad for floors and ceilings
 	VectorCopy(goal, o);
 	o[2] += 6;
-	trace = gi.trace(goal, vec3_origin, vec3_origin, o, targ, MASK_SOLID);
+	trap_Trace (&trace, goal, vec3_origin, vec3_origin, o, targ, MASK_SOLID);
 	if (trace.fraction < 1) {
 		VectorCopy(trace.endpos, goal);
 		goal[2] -= 6;
@@ -74,38 +74,35 @@ void UpdateChaseCam(edict_t *ent)
 
 	VectorCopy(goal, o);
 	o[2] -= 6;
-	trace = gi.trace(goal, vec3_origin, vec3_origin, o, targ, MASK_SOLID);
+	trap_Trace (&trace, goal, vec3_origin, vec3_origin, o, targ, MASK_SOLID);
 	if (trace.fraction < 1) {
 		VectorCopy(trace.endpos, goal);
 		goal[2] += 6;
 	}
 
-	ent->client->ps.pmove.pm_type = PM_FREEZE;
+	ent->r.client->ps.pmove.pm_type = PM_FREEZE;
 
 	VectorCopy(goal, ent->s.origin);
 	for (i=0 ; i<3 ; i++)
-		ent->client->ps.pmove.delta_angles[i] = ANGLE2SHORT(targ->client->v_angle[i] - ent->client->resp.cmd_angles[i]);
+		ent->r.client->ps.pmove.delta_angles[i] = ANGLE2SHORT(targ->r.client->v_angle[i] - ent->r.client->resp.cmd_angles[i]);
 
-	VectorCopy(targ->client->v_angle, ent->client->ps.viewangles);
-	VectorCopy(targ->client->v_angle, ent->client->v_angle);
+	VectorCopy(targ->r.client->v_angle, ent->r.client->ps.viewangles);
+	VectorCopy(targ->r.client->v_angle, ent->r.client->v_angle);
 
 	ent->viewheight = 0;
-	ent->client->ps.pmove.pm_flags |= PMF_NO_PREDICTION;
-	gi.linkentity(ent);
+	ent->r.client->ps.pmove.pm_flags |= PMF_NO_PREDICTION;
+	trap_LinkEntity (ent);
 
-	if ((!ent->client->showscores && !ent->client->menu &&
-		!ent->client->showinventory && !ent->client->showhelp &&
-		!(level.framenum & 31)) || ent->client->update_chase) {
-		char s[1024];
+	if ((!ent->r.client->showscores && !ent->r.client->menu &&
+		!ent->r.client->showinventory && !ent->r.client->showhelp &&
+		!(level.framenum & 31)) || ent->r.client->update_chase) {
+		char s[MAX_STRING_CHARS];
 
-		ent->client->update_chase = false;
+		ent->r.client->update_chase = qfalse;
 		sprintf(s, "xv 0 yb -68 string \"%sChasing %s\"",
-			S_COLOR_YELLOW, targ->client->pers.netname);
-		gi.WriteByte (svc_layout);
-		gi.WriteString (s);
-		gi.unicast(ent, false);
+			S_COLOR_YELLOW, targ->r.client->pers.netname);
+		trap_Layout (ent, s);
 	}
-
 }
 
 void ChaseNext(edict_t *ent)
@@ -113,23 +110,23 @@ void ChaseNext(edict_t *ent)
 	int i;
 	edict_t *e;
 
-	if (!ent->client->chase_target)
+	if (!ent->r.client->chase_target)
 		return;
 
-	i = ent->client->chase_target - g_edicts;
+	i = ent->r.client->chase_target - game.edicts;
 	do {
 		i++;
 		if (i > maxclients->value)
 			i = 1;
-		e = g_edicts + i;
-		if (!e->inuse)
+		e = game.edicts + i;
+		if (!e->r.inuse)
 			continue;
-		if (e->solid != SOLID_NOT)
+		if (e->r.solid != SOLID_NOT)
 			break;
-	} while (e != ent->client->chase_target);
+	} while (e != ent->r.client->chase_target);
 
-	ent->client->chase_target = e;
-	ent->client->update_chase = true;
+	ent->r.client->chase_target = e;
+	ent->r.client->update_chase = qtrue;
 }
 
 void ChasePrev(edict_t *ent)
@@ -137,21 +134,21 @@ void ChasePrev(edict_t *ent)
 	int i;
 	edict_t *e;
 
-	if (!ent->client->chase_target)
+	if (!ent->r.client->chase_target)
 		return;
 
-	i = ent->client->chase_target - g_edicts;
+	i = ent->r.client->chase_target - game.edicts;
 	do {
 		i--;
 		if (i < 1)
 			i = maxclients->value;
-		e = g_edicts + i;
-		if (!e->inuse)
+		e = game.edicts + i;
+		if (!e->r.inuse)
 			continue;
-		if (e->solid != SOLID_NOT)
+		if (e->r.solid != SOLID_NOT)
 			break;
-	} while (e != ent->client->chase_target);
+	} while (e != ent->r.client->chase_target);
 
-	ent->client->chase_target = e;
-	ent->client->update_chase = true;
+	ent->r.client->chase_target = e;
+	ent->r.client->update_chase = qtrue;
 }

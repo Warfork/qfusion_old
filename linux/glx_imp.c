@@ -68,9 +68,9 @@ int win_x, win_y;
 
 qboolean	mlooking;
 
-qboolean mouse_active = false;
-static qboolean dgamouse = false;
-static qboolean vidmode_ext = false;
+qboolean mouse_active = qfalse;
+static qboolean dgamouse = qfalse;
+static qboolean vidmode_ext = qfalse;
 
 cvar_t	*m_filter;
 cvar_t	*in_mouse;
@@ -275,7 +275,7 @@ void install_grabs (void)
 		{ 
 			XF86DGADirectVideo (x11display.dpy, x11display.scr, XF86DGADirectMouse);
 			XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, 0, 0);
-			dgamouse = true;
+			dgamouse = qtrue;
 
 		} else
 		#endif
@@ -283,7 +283,7 @@ void install_grabs (void)
 			// unable to query, probalby not supported
 			Com_Printf( PRINT_ALL, "Failed to detect XF86DGA Mouse\n" );
 			Cvar_Set( "in_dgamouse", "0" );
-			dgamouse = false;
+			dgamouse = qfalse;
 		}
 	} else {
 		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, x11display.win_width / 2, x11display.win_height / 2);
@@ -291,7 +291,7 @@ void install_grabs (void)
 
 	XGrabKeyboard (x11display.dpy, x11display.win, False, GrabModeAsync, GrabModeAsync, CurrentTime);
 
-	mouse_active = true;
+	mouse_active = qtrue;
 }
 
 void uninstall_grabs (void)
@@ -301,7 +301,7 @@ void uninstall_grabs (void)
 
 	if (dgamouse)
 	{
-		dgamouse = false;
+		dgamouse = qfalse;
 		#ifdef XF86
 		XF86DGADirectVideo (x11display.dpy, x11display.scr, 0);
 		#endif
@@ -313,7 +313,7 @@ void uninstall_grabs (void)
 	// inviso cursor
 	XUndefineCursor (x11display.dpy, x11display.win);
 
-	mouse_active =false;
+	mouse_active = qfalse;
 }
 
 /*****************************************************************************/
@@ -455,7 +455,7 @@ static int XLateKey(XKeyEvent *ev)
 void HandleEvents(void)
 {
 	XEvent event;
-	qboolean dowarp = false;
+	qboolean dowarp = qfalse;
 	int mwx = x11display.win_width / 2;
 	int mwy = x11display.win_height / 2;
 
@@ -492,7 +492,7 @@ void HandleEvents(void)
 						//mwy = event.xmotion.y;
 
 						if (mx || my) 
-							dowarp = true;
+							dowarp = qtrue;
 					}
 				}
 				break;
@@ -590,7 +590,7 @@ char *Sys_GetClipboardData(void)
 
 /*****************************************************************************/
 
-qboolean GLimp_InitGL (void);
+int GLimp_InitGL (void);
 
 static void signal_handler (int sig)
 {
@@ -739,12 +739,12 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen ){
 void GLimp_Shutdown (void)
 {
 	uninstall_grabs ();
-	mouse_active = false;
-	dgamouse = false;
+	mouse_active = qfalse;
+	dgamouse = qfalse;
 
 	if (x11display.dpy)
 	{
-		IN_Activate (false);
+		IN_Activate (qfalse);
 #ifdef XF86
 		_xf86_VidmodesSwitchBack();
 		_xf86_VidmodesFree();
@@ -893,14 +893,15 @@ void GLimp_EndFrame (void)
 void GLimp_UpdateGammaRamp( void ){
 /*
 	XF86VidModeGamma gamma;
-	float g;
+	double div, g;
 
-
-	g = (1.3 - vid_gamma->value + 1);
-	g = (g>1 ? g : 1);
-	gamma.red = oldgamma.red * g;
-	gamma.green = oldgamma.green * g;
-	gamma.blue = oldgamma.blue * g;
+	div = (double) (1 << ((int)floor(r_overbrightbits->value)) + 0.5;
+	g = pow ( div + 0.5, vid_gamma->value ) + 0.5;
+	
+	gamma.red = oldgamma.red * g; if (gamma.red < 0) gamma.red = 0; else if (gamma.red > 255) gamma.red = 255;
+	gamma.green = oldgamma.green * g; if (gamma.green < 0) gamma.green = 0; else if (gamma.green > 255) gamma.green = 255;
+	gamma.blue = oldgamma.blue * g; if (gamma.blue < 0) gamma.blue = 0; else if (gamma.blue > 255) gamma.blue = 255;
+	
 	XF86VidModeSetGamma(x11display.dpy, x11display.scr, &gamma);
 */
 }

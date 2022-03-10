@@ -80,25 +80,6 @@ char *Sys_GetClipboardData( void )
 	return NULL;
 }
 
-void	*Hunk_Begin (int maxsize)
-{
-	return NULL;
-}
-
-void	*Hunk_AllocName (int size, char *name)
-{
-	return NULL;
-}
-
-void	Hunk_Free (void *buf)
-{
-}
-
-int		Hunk_End (void)
-{
-	return 0;
-}
-
 int		Sys_Milliseconds (void)
 {
 	return 0;

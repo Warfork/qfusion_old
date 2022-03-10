@@ -53,11 +53,11 @@ typedef struct cacheelem_s {
 #endif
 
 #ifndef TRYALLOC
-# define TRYALLOC(size) Z_Malloc(size)
+# define TRYALLOC(size) Mem_ZoneMalloc(size)
 #endif
 
 #ifndef TRYFREE
-# define TRYFREE(p) Z_Free(p)
+# define TRYFREE(p) Mem_ZoneFree(p)
 #endif
 
 #define SIZECENTRALDIRITEM (0x2e)
@@ -782,15 +782,17 @@ extern int ZEXPORT unzGoToNextFile (unzFile file)
 	return err;
 }
 
-int unzGetStringForDir (unzFile *pak, const char *dir, const char *extension, char *buf, int bufsize, int *len)
+int unzGetStringForDir (unzFile pak, const char *dir, const char *extension, searchfile_t **files, int size)
 {
 	unz_s *s = (unz_s *)pak;
 	char *token;
-	int i, found = 0, sumlen;
+	int i, found = 0;
 	int dirlen, extlen, tokenlen;
 	cacheelem_t *cache;
 
-	sumlen = 0;
+	if (!size)
+		return 0;
+
 	dirlen = strlen (dir);
 	extlen = strlen (extension);
 	
@@ -805,49 +807,32 @@ int unzGetStringForDir (unzFile *pak, const char *dir, const char *extension, ch
 			{
 				if (tokenlen <= dirlen + extlen)
 					continue;
-#ifdef _WIN32
-				if (strnicmp (token, dir, dirlen))
-#else
-				if (strncasecmp (token, dir, dirlen))
-#endif
+				if (Q_strnicmp (token, dir, dirlen))
 					continue;
 			}
 
-			if (tokenlen > extlen) 
+			if (tokenlen > extlen)
 			{
-#ifdef _WIN32
-				if (!strnicmp (extension, token + tokenlen - extlen, extlen))
-#else
-				if (!strncasecmp (extension, token + tokenlen - extlen, extlen))
-#endif
+				if (!Q_strnicmp (extension, token + tokenlen - extlen, extlen))
 				{
-					found++;
-
 					if (dirlen)
 						token += dirlen + 1;
-					tokenlen = strlen (token);
 
-					if (tokenlen + 1 > bufsize - sumlen)
-						goto done;
+					files[found] = Mem_ZoneMalloc (sizeof(searchfile_t));
+					files[found]->name = Mem_ZoneMalloc (strlen (token)+1);
+					strcpy (files[found]->name, token);
 
-					strcpy (buf, token);
-
-					buf += tokenlen;
-					*buf++ = 0;
-					sumlen += tokenlen + 1;
+					if (++found == size)
+						return found;
 				}
 			}
 		}
 	}
 
-done:
-	if ( len )
-		*len = sumlen;
-
 	return found;
 }
 
-int unzFileExists (unzFile *pak, const char *file, int iCaseSensitivity)
+int unzFileExists (unzFile pak, const char *file, int iCaseSensitivity)
 {
 	unz_s *s = (unz_s *)pak;
 	uInt key = unzlocal_hashstring (file);
@@ -862,7 +847,7 @@ int unzFileExists (unzFile *pak, const char *file, int iCaseSensitivity)
 	return 0;
 }
 
-int unzNumEntries (unzFile *pak)
+int unzNumEntries (unzFile pak)
 {
 	return ((unz_s *)pak)->numentries;
 }

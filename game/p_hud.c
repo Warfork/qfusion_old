@@ -31,25 +31,27 @@ INTERMISSION
 
 void MoveClientToIntermission (edict_t *ent)
 {
+	gclient_t *client;
+
+	client = ent->r.client;
 	if (deathmatch->value || coop->value)
-		ent->client->showscores = true;
+		ent->r.client->showscores = qtrue;
 	VectorCopy (level.intermission_origin, ent->s.origin);
-	ent->client->ps.pmove.origin[0] = level.intermission_origin[0]*8;
-	ent->client->ps.pmove.origin[1] = level.intermission_origin[1]*8;
-	ent->client->ps.pmove.origin[2] = level.intermission_origin[2]*8;
-	VectorCopy (level.intermission_angle, ent->client->ps.viewangles);
-	ent->client->ps.pmove.pm_type = PM_FREEZE;
-	ent->client->ps.gunindex = 0;
-	ent->client->ps.blend[3] = 0;
-	ent->client->ps.rdflags &= ~RDF_UNDERWATER;
+	client->ps.pmove.origin[0] = level.intermission_origin[0]*16;
+	client->ps.pmove.origin[1] = level.intermission_origin[1]*16;
+	client->ps.pmove.origin[2] = level.intermission_origin[2]*16;
+	VectorCopy (level.intermission_angle, client->ps.viewangles);
+	client->ps.pmove.pm_type = PM_FREEZE;
+	client->ps.gunindex = 0;
+	client->ps.blend[3] = 0;
 
 	// clean up powerup info
-	ent->client->quad_framenum = 0;
-	ent->client->invincible_framenum = 0;
-	ent->client->breather_framenum = 0;
-	ent->client->enviro_framenum = 0;
-	ent->client->grenade_blew_up = false;
-	ent->client->grenade_time = 0;
+	client->quad_framenum = 0;
+	client->invincible_framenum = 0;
+	client->breather_framenum = 0;
+	client->enviro_framenum = 0;
+	client->grenade_blew_up = qfalse;
+	client->grenade_time = 0;
 
 	ent->viewheight = 0;
 	ent->s.modelindex = 0;
@@ -58,16 +60,12 @@ void MoveClientToIntermission (edict_t *ent)
 	ent->s.modelindex = 0;
 	ent->s.effects = 0;
 	ent->s.sound = 0;
-	ent->solid = SOLID_NOT;
+	ent->s.light = 0;
+	ent->r.solid = SOLID_NOT;
 
 	// add the layout
-
 	if (deathmatch->value || coop->value)
-	{
 		DeathmatchScoreboardMessage (ent, NULL);
-		gi.unicast (ent, true);
-	}
-
 }
 
 void BeginIntermission (edict_t *targ)
@@ -83,13 +81,13 @@ void BeginIntermission (edict_t *targ)
 		CTFCalcScores();
 //ZOID
 
-	game.autosaved = false;
+	game.autosaved = qfalse;
 
 	// respawn any dead clients
 	for (i=0 ; i<maxclients->value ; i++)
 	{
-		client = g_edicts + 1 + i;
-		if (!client->inuse)
+		client = game.edicts + 1 + i;
+		if (!client->r.inuse)
 			continue;
 		if (client->health <= 0)
 			respawn(client);
@@ -134,8 +132,8 @@ void BeginIntermission (edict_t *targ)
 	// move all clients to the intermission point
 	for (i=0 ; i<maxclients->value ; i++)
 	{
-		client = g_edicts + 1 + i;
-		if (!client->inuse)
+		client = game.edicts + 1 + i;
+		if (!client->r.inuse)
 			continue;
 		MoveClientToIntermission (client);
 	}
@@ -148,10 +146,10 @@ DeathmatchScoreboardMessage
 
 ==================
 */
-void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
+char *DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 {
-	char	entry[1024];
-	char	string[1400];
+	char	entry[MAX_TOKEN_CHARS];
+	static char	string[MAX_STRING_CHARS];
 	int		stringlength;
 	int		i, j, k;
 	int		sorted[MAX_CLIENTS];
@@ -165,8 +163,7 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 
 //ZOID
 	if (ctf->value) {
-		CTFScoreboardMessage (ent, killer);
-		return;
+		return CTFScoreboardMessage (ent, killer);
 	}
 //ZOID
 
@@ -174,8 +171,8 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 	total = 0;
 	for (i=0 ; i<game.maxclients ; i++)
 	{
-		cl_ent = g_edicts + 1 + i;
-		if (!cl_ent->inuse)
+		cl_ent = game.edicts + 1 + i;
+		if (!cl_ent->r.inuse)
 			continue;
 		score = game.clients[i].resp.score;
 		for (j=0 ; j<total ; j++)
@@ -205,9 +202,9 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 	for (i=0 ; i<total ; i++)
 	{
 		cl = &game.clients[sorted[i]];
-		cl_ent = g_edicts + 1 + sorted[i];
+		cl_ent = game.edicts + 1 + sorted[i];
 
-		picnum = gi.imageindex ("pics/i_fixme");
+		picnum = trap_ImageIndex ("pics/i_fixme");
 		x = (i>=6) ? 160 : 0;
 		y = 32 + 64 * (i%6);
 
@@ -222,7 +219,7 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 		// send the layout
 		Com_sprintf (entry, sizeof(entry),
 			"client %i %i %i %i %i %i %i ",
-			x, y, tag, sorted[i], cl->resp.score, cl->ping, (level.framenum - cl->resp.enterframe)/600);
+			x, y, tag, sorted[i], cl->resp.score, cl->r.ping, (level.framenum - cl->resp.enterframe)/600);
 		j = strlen(entry);
 		if (stringlength + j > 1024)
 			break;
@@ -230,8 +227,7 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 		stringlength += j;
 	}
 
-	gi.WriteByte (svc_layout);
-	gi.WriteString (string);
+	return string;
 }
 
 
@@ -243,10 +239,8 @@ Draw instead of help message.
 Note that it isn't that hard to overflow the 1400 byte message limit!
 ==================
 */
-void DeathmatchScoreboard (edict_t *ent)
-{
-	DeathmatchScoreboardMessage (ent, ent->enemy);
-	gi.unicast (ent, true);
+void DeathmatchScoreboard (edict_t *ent) {
+	trap_Layout (ent, DeathmatchScoreboardMessage (ent, ent->enemy));
 }
 
 
@@ -259,24 +253,24 @@ Display the scoreboard
 */
 void Cmd_Score_f (edict_t *ent)
 {
-	ent->client->showinventory = false;
-	ent->client->showhelp = false;
+	ent->r.client->showinventory = qfalse;
+	ent->r.client->showhelp = qfalse;
 //ZOID
-	if (ent->client->menu)
+	if (ent->r.client->menu)
 		PMenu_Close(ent);
 //ZOID
 
 	if (!deathmatch->value && !coop->value)
 		return;
 
-	if (ent->client->showscores)
+	if (ent->r.client->showscores)
 	{
-		ent->client->showscores = false;
-		ent->client->update_chase = true;
+		ent->r.client->showscores = qfalse;
+		ent->r.client->update_chase = qtrue;
 		return;
 	}
 
-	ent->client->showscores = true;
+	ent->r.client->showscores = qtrue;
 
 	DeathmatchScoreboard (ent);
 }
@@ -291,7 +285,7 @@ Draw help computer.
 */
 void HelpComputer (edict_t *ent)
 {
-	char	string[1024];
+	char	string[MAX_STRING_CHARS];
 	char	*sk;
 
 	if (skill->value == 0)
@@ -305,7 +299,8 @@ void HelpComputer (edict_t *ent)
 
 	// send the layout
 	Com_sprintf (string, sizeof(string),
-		"xv 32 yv 8 picn 32 32 pics/help "			// background
+		"size 32 32 "
+		"xv 32 yv 8 picn pics/help "	// background
 		"xv 202 yv 12 string \"%s%s\" "		// skill
 		"xv 0 yv 24 cstring \"%s%s\" "		// level name
 		"xv 0 yv 54 cstring \"%s%s\" "		// help 1
@@ -320,9 +315,7 @@ void HelpComputer (edict_t *ent)
 		level.found_goals, level.total_goals,
 		level.found_secrets, level.total_secrets);
 
-	gi.WriteByte (svc_layout);
-	gi.WriteString (string);
-	gi.unicast (ent, true);
+	trap_Layout (ent, string);
 }
 
 
@@ -342,17 +335,17 @@ void Cmd_Help_f (edict_t *ent)
 		return;
 	}
 
-	ent->client->showinventory = false;
-	ent->client->showscores = false;
+	ent->r.client->showinventory = qfalse;
+	ent->r.client->showscores = qfalse;
 
-	if (ent->client->showhelp && (ent->client->resp.game_helpchanged == game.helpchanged))
+	if (ent->r.client->showhelp && (ent->r.client->resp.game_helpchanged == game.helpchanged))
 	{
-		ent->client->showhelp = false;
+		ent->r.client->showhelp = qfalse;
 		return;
 	}
 
-	ent->client->showhelp = true;
-	ent->client->resp.helpchanged = 0;
+	ent->r.client->showhelp = qtrue;
+	ent->r.client->resp.helpchanged = 0;
 	HelpComputer (ent);
 }
 
@@ -369,25 +362,28 @@ void G_SetStats (edict_t *ent)
 	gitem_t		*item;
 	int			index, cells;
 	int			power_armor_type;
+	gclient_t	*client = ent->r.client;
 
 	//
 	// health
 	//
-	ent->client->ps.stats[STAT_HEALTH] = ent->health;
+	client->ps.stats[STAT_HEALTH] = ent->health;
+	client->r.health = client->ps.stats[STAT_HEALTH];
+	client->r.frags = client->ps.stats[STAT_FRAGS];
 
 	//
 	// ammo
 	//
-	if (!ent->client->ammo_index /* || !ent->client->pers.inventory[ent->client->ammo_index] */)
+	if (!client->ammo_index /* || !client->pers.inventory[client->ammo_index] */)
 	{
-		ent->client->ps.stats[STAT_AMMO_ICON] = 0;
-		ent->client->ps.stats[STAT_AMMO] = 0;
+		client->ps.stats[STAT_AMMO_ICON] = 0;
+		client->ps.stats[STAT_AMMO] = 0;
 	}
 	else
 	{
-		item = &itemlist[ent->client->ammo_index];
-		ent->client->ps.stats[STAT_AMMO_ICON] = gi.imageindex (item->icon);
-		ent->client->ps.stats[STAT_AMMO] = ent->client->pers.inventory[ent->client->ammo_index];
+		item = &itemlist[client->ammo_index];
+		client->ps.stats[STAT_AMMO_ICON] = trap_ImageIndex (item->icon);
+		client->ps.stats[STAT_AMMO] = client->pers.inventory[client->ammo_index];
 	}
 	
 	//
@@ -396,11 +392,11 @@ void G_SetStats (edict_t *ent)
 	power_armor_type = PowerArmorType (ent);
 	if (power_armor_type)
 	{
-		cells = ent->client->pers.inventory[ITEM_INDEX(FindItem ("cells"))];
+		cells = client->pers.inventory[ITEM_INDEX(FindItem ("cells"))];
 		if (cells == 0)
 		{	// ran out of cells for power armor
 			ent->flags &= ~FL_POWER_ARMOR;
-			gi.sound(ent, CHAN_ITEM, gi.soundindex("sound/misc/power2.wav"), 1, ATTN_NORM, 0);
+			G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/misc/power2.wav"), 1, ATTN_NORM);
 			power_armor_type = 0;
 		}
 	}
@@ -408,105 +404,106 @@ void G_SetStats (edict_t *ent)
 	index = ArmorIndex (ent);
 	if (power_armor_type && (!index || (level.framenum & 8) ) )
 	{	// flash between power armor and other armor icon
-		ent->client->ps.stats[STAT_ARMOR_ICON] = gi.imageindex ("pics/i_powershield");
-		ent->client->ps.stats[STAT_ARMOR] = cells;
+		item = FindItem ("Power Shield");
+		client->ps.stats[STAT_ARMOR_ICON] = trap_ModelIndex (item->world_model[0]);
+		client->ps.stats[STAT_ARMOR] = cells;
 	}
 	else if (index)
 	{
 		item = GetItemByIndex (index);
-		ent->client->ps.stats[STAT_ARMOR_ICON] = gi.imageindex (item->icon);
-		ent->client->ps.stats[STAT_ARMOR] = ent->client->pers.inventory[index];
+		client->ps.stats[STAT_ARMOR_ICON] = trap_ModelIndex (item->world_model[0]);
+		client->ps.stats[STAT_ARMOR] = client->pers.inventory[index];
 	}
 	else
 	{
-		ent->client->ps.stats[STAT_ARMOR_ICON] = 0;
-		ent->client->ps.stats[STAT_ARMOR] = 0;
+		client->ps.stats[STAT_ARMOR_ICON] = 0;
+		client->ps.stats[STAT_ARMOR] = 0;
 	}
 
 	//
 	// pickup message
 	//
-	if (level.time > ent->client->pickup_msg_time)
+	if (level.time > client->pickup_msg_time)
 	{
-		ent->client->ps.stats[STAT_PICKUP_ICON] = 0;
-		ent->client->ps.stats[STAT_PICKUP_STRING] = 0;
+		client->ps.stats[STAT_PICKUP_ICON] = 0;
+		client->ps.stats[STAT_PICKUP_STRING] = 0;
 	}
 
 	//
 	// timers
 	//
-	if (ent->client->quad_framenum > level.framenum)
+	if (client->quad_framenum > level.framenum)
 	{
-		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("icons/quad");
-		ent->client->ps.stats[STAT_TIMER] = (ent->client->quad_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("icons/quad");
+		client->ps.stats[STAT_TIMER] = (client->quad_framenum - level.framenum)/10;
 	}
-	else if (ent->client->invincible_framenum > level.framenum)
+	else if (client->invincible_framenum > level.framenum)
 	{
-		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("pics/p_invulnerability");
-		ent->client->ps.stats[STAT_TIMER] = (ent->client->invincible_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("pics/p_invulnerability");
+		client->ps.stats[STAT_TIMER] = (client->invincible_framenum - level.framenum)/10;
 	}
-	else if (ent->client->enviro_framenum > level.framenum)
+	else if (client->enviro_framenum > level.framenum)
 	{
-		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("icons/envirosuit");
-		ent->client->ps.stats[STAT_TIMER] = (ent->client->enviro_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("icons/envirosuit");
+		client->ps.stats[STAT_TIMER] = (client->enviro_framenum - level.framenum)/10;
 	}
-	else if (ent->client->breather_framenum > level.framenum)
+	else if (client->breather_framenum > level.framenum)
 	{
-		ent->client->ps.stats[STAT_TIMER_ICON] = gi.imageindex ("pics/p_rebreather");
-		ent->client->ps.stats[STAT_TIMER] = (ent->client->breather_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("pics/p_rebreather");
+		client->ps.stats[STAT_TIMER] = (client->breather_framenum - level.framenum)/10;
 	}
 	else
 	{
-		ent->client->ps.stats[STAT_TIMER_ICON] = 0;
-		ent->client->ps.stats[STAT_TIMER] = 0;
+		client->ps.stats[STAT_TIMER_ICON] = 0;
+		client->ps.stats[STAT_TIMER] = 0;
 	}
 
 	//
 	// selected item
 	//
-	if (ent->client->pers.selected_item == -1)
-		ent->client->ps.stats[STAT_SELECTED_ICON] = 0;
+	if (client->pers.selected_item == -1)
+		client->ps.stats[STAT_SELECTED_ICON] = 0;
 	else
-		ent->client->ps.stats[STAT_SELECTED_ICON] = gi.imageindex (itemlist[ent->client->pers.selected_item].icon);
+		client->ps.stats[STAT_SELECTED_ICON] = trap_ImageIndex (itemlist[client->pers.selected_item].icon);
 
-	ent->client->ps.stats[STAT_SELECTED_ITEM] = ent->client->pers.selected_item;
+	client->ps.stats[STAT_SELECTED_ITEM] = client->pers.selected_item;
 
 	//
 	// layouts
 	//
-	ent->client->ps.stats[STAT_LAYOUTS] = 0;
+	client->ps.stats[STAT_LAYOUTS] = 0;
 
 	if (deathmatch->value)
 	{
-		if (ent->client->pers.health <= 0 || level.intermissiontime
-			|| ent->client->showscores)
-			ent->client->ps.stats[STAT_LAYOUTS] |= 1;
-		if (ent->client->showinventory && ent->client->pers.health > 0)
-			ent->client->ps.stats[STAT_LAYOUTS] |= 2;
+		if (client->pers.health <= 0 || level.intermissiontime
+			|| client->showscores)
+			client->ps.stats[STAT_LAYOUTS] |= 1;
+		if (client->showinventory && client->pers.health > 0)
+			client->ps.stats[STAT_LAYOUTS] |= 2;
 	}
 	else
 	{
-		if (ent->client->showscores || ent->client->showhelp)
-			ent->client->ps.stats[STAT_LAYOUTS] |= 1;
-		if (ent->client->showinventory && ent->client->pers.health > 0)
-			ent->client->ps.stats[STAT_LAYOUTS] |= 2;
+		if (client->showscores || client->showhelp)
+			client->ps.stats[STAT_LAYOUTS] |= 1;
+		if (client->showinventory && client->pers.health > 0)
+			client->ps.stats[STAT_LAYOUTS] |= 2;
 	}
 
 	//
 	// frags
 	//
-	ent->client->ps.stats[STAT_FRAGS] = ent->client->resp.score;
+	client->ps.stats[STAT_FRAGS] = client->resp.score;
 
 	//
 	// help icon / current weapon if not shown
 	//
-	if (ent->client->resp.helpchanged && (level.framenum&8) )
-		ent->client->ps.stats[STAT_HELPICON] = gi.imageindex ("pics/i_help");
-	else if ( (ent->client->pers.hand == CENTER_HANDED || ent->client->ps.fov > 91)
-		&& ent->client->pers.weapon)
-		ent->client->ps.stats[STAT_HELPICON] = gi.imageindex (ent->client->pers.weapon->icon);
+	if (client->resp.helpchanged && (level.framenum&8) )
+		client->ps.stats[STAT_HELPICON] = trap_ImageIndex ("pics/i_help");
+	else if ( (client->pers.hand == CENTER_HANDED || client->ps.fov > 91)
+		&& client->pers.weapon)
+		client->ps.stats[STAT_HELPICON] = trap_ImageIndex (client->pers.weapon->icon);
 	else
-		ent->client->ps.stats[STAT_HELPICON] = 0;
+		client->ps.stats[STAT_HELPICON] = 0;
 
 //ZOID
 	SetCTFStats(ent);

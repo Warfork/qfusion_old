@@ -66,7 +66,7 @@ void MapChangeFunc ( void *self )
 	if ( !trap_FS_FileExists ( path ) ) 
 		Com_sprintf ( path, sizeof(path), "menu/art/unknownmap", mapnames[s_startmap_list.curvalue] );
 	
-	s_levelshot = trap_RegisterPic ( path );
+	s_levelshot = trap_R_RegisterPic ( path );
 }
 
 void RulesChangeFunc ( void *self )
@@ -129,7 +129,7 @@ void StartServerActionFunc( void *self )
 
 	if (spot)
 	{
-		if (trap_GetServerState())
+		if (uis.serverState)
 			trap_Cmd_ExecuteText (EXEC_APPEND, "disconnect\n");
 		trap_Cmd_ExecuteText (EXEC_APPEND, va("gamemap \"*%s$%s\"\n", startmap, spot));
 	}
@@ -143,7 +143,7 @@ void StartServerActionFunc( void *self )
 
 qboolean StartServer_MenuInit( void )
 {
-	static const char *dm_coop_ctf_names[] =
+	static char *dm_coop_ctf_names[] =
 	{
 		"deathmatch",
 		"cooperative",
@@ -151,7 +151,7 @@ qboolean StartServer_MenuInit( void )
 		0
 	};
 
-	static const char *cheats_items[] =
+	static char *cheats_items[] =
 	{
 		"off", "on", 0
 	};
@@ -162,7 +162,7 @@ qboolean StartServer_MenuInit( void )
 	int length;
 	int i;
 	int y = 40;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 	char path[MAX_QPATH];
 
 	/*
@@ -170,10 +170,10 @@ qboolean StartServer_MenuInit( void )
 	*/
 	if ( (nummaps = trap_FS_ListFiles( "maps", ".bsp", buffer, sizeof(buffer) )) == 0 ) {
 		M_SetMultiplayerStatusBar( "No maps found" );
-		return false;
+		return qfalse;
 	}
 
-	mapnames = UI_malloc( sizeof( char * ) * ( nummaps + 1 ) );
+	mapnames = UI_Malloc( sizeof( char * ) * ( nummaps + 1 ) );
 
 	s = buffer;
 	length = 0;
@@ -191,11 +191,10 @@ qboolean StartServer_MenuInit( void )
 
 		Com_sprintf( scratch, sizeof( scratch ), shortname );
 
-		mapnames[i] = UI_malloc( strlen( scratch ) + 1 );
-		strcpy( mapnames[i], scratch );
+		mapnames[i] = UI_CopyString( scratch );
 
 		Com_sprintf ( path, sizeof(path), "levelshots/%s", mapnames[i] );
-		trap_RegisterPic ( path );
+		trap_R_RegisterPic ( path );
 	}
 
 	mapnames[nummaps] = 0;
@@ -332,12 +331,12 @@ qboolean StartServer_MenuInit( void )
 	// call this now to set proper inital state
 	RulesChangeFunc ( NULL );
 
-	return true;
+	return qtrue;
 }
 
 void StartServer_MenuDraw(void)
 {
-	trap_DrawStretchPic ( s_startserver_menu.x - 80, s_startserver_menu.y - 90, 160, 120, 0, 0, 1, 1, colorWhite, s_levelshot );
+	trap_Draw_StretchPic ( s_startserver_menu.x - 80, s_startserver_menu.y - 90, 160, 120, 0, 0, 1, 1, colorWhite, s_levelshot );
 
 	Menu_Draw( &s_startserver_menu );
 }
@@ -356,8 +355,8 @@ const char *StartServer_MenuKey( int key )
 			int i;
 
 			for ( i = 0; i < nummaps; i++ )
-				UI_free( mapnames[i] );
-			UI_free( mapnames );
+				UI_Free( mapnames[i] );
+			UI_Free( mapnames );
 		}
 		mapnames = 0;
 		nummaps = 0;

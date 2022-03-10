@@ -137,9 +137,9 @@ static void KeyCursorDrawFunc( menuframework_s *menu )
 	item = Menu_ItemAtCursor( menu );
 
 	if ( bind_grab )
-		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, '=', FONT_BIG, colorWhite );
+		UI_DrawNonPropChar( menu->x + item->cursor_offset, menu->y + item->y, '=', FONT_BIG, colorWhite );
 	else
-		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, 12 + ( ( int ) ( trap_CL_GetTime() / 250 ) & 1 ), FONT_BIG, colorWhite );
+		UI_DrawNonPropChar( menu->x + item->cursor_offset, menu->y + item->y, 12 + ( ( int ) ( uis.time / 250 ) & 1 ), FONT_BIG, colorWhite );
 }
 
 static void DrawKeyBindingFunc( void *self )
@@ -151,7 +151,7 @@ static void DrawKeyBindingFunc( void *self )
 		
 	if (keys[0] == -1)
 	{
-		trap_DrawPropString ( a->generic.x + a->generic.parent->x + 16, 
+		UI_DrawPropString ( a->generic.x + a->generic.parent->x + 16, 
 			a->generic.y + a->generic.parent->y, "???", FONT_SMALL, colorWhite );
 	}
 	else
@@ -161,17 +161,17 @@ static void DrawKeyBindingFunc( void *self )
 
 		name = trap_Key_KeynumToString (keys[0]);
 
-		trap_DrawPropString ( a->generic.x + a->generic.parent->x + 16, 
+		UI_DrawPropString ( a->generic.x + a->generic.parent->x + 16, 
 			a->generic.y + a->generic.parent->y, name, FONT_SMALL, colorWhite );
 
-		x = trap_PropStringLength ( name, FONT_SMALL );
+		x = UI_PropStringLength ( name, FONT_SMALL );
 
 		if (keys[1] != -1)
 		{
-			trap_DrawString ( a->generic.x + a->generic.parent->x + 16 + 8 + x, 
+			UI_DrawNonPropString ( a->generic.x + a->generic.parent->x + 16 + 8 + x, 
 				a->generic.y + a->generic.parent->y, "or", FONT_SMALL, colorWhite );
 
-			trap_DrawPropString ( a->generic.x + a->generic.parent->x + 16 + 8 + x + 8*3,
+			UI_DrawPropString ( a->generic.x + a->generic.parent->x + 16 + 8 + x + 8*3,
 				a->generic.y + a->generic.parent->y, trap_Key_KeynumToString (keys[1]), FONT_SMALL, colorWhite );
 		}
 	}
@@ -187,7 +187,7 @@ static void KeyBindingFunc( void *self )
 	if (keys[1] != -1)
 		M_UnbindCommand( bindnames[a->generic.localdata[0]][0]);
 
-	bind_grab = true;
+	bind_grab = qtrue;
 
 	Menu_SetStatusBar( &s_keys_menu, "press a key or button for this action" );
 }
@@ -197,7 +197,7 @@ static void Keys_MenuInit( void )
 	int w, h;
 	int y = 0;
 	int i = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	w = uis.vidWidth;
 	h = uis.vidHeight;
@@ -444,7 +444,7 @@ static const char *Keys_MenuKey( int key )
 		}
 		
 		Menu_SetStatusBar( &s_keys_menu, "enter to change, backspace to clear" );
-		bind_grab = false;
+		bind_grab = qfalse;
 		return menu_out_sound;
 	}
 

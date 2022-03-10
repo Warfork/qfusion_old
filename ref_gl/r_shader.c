@@ -22,7 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #define HASH_SIZE	128
 
-typedef struct shaderkey_s
+typedef struct
 {
     char			*keyword;
     void			(*func)( shader_t *shader, shaderpass_t *pass, char **ptr );
@@ -31,24 +31,26 @@ typedef struct shaderkey_s
 typedef struct shadercache_s {
 	char name[MAX_QPATH];
 	char *path;
+	qboolean basedir;
 	unsigned int offset;
 	struct shadercache_s *hash_next;
 } shadercache_t;
 
 static shadercache_t *shader_hash[HASH_SIZE];
-static char shaderbuf[MAX_QPATH * 256];
 
-shader_t	r_shaders[MAX_SHADERS];
+shader_t		r_shaders[MAX_SHADERS];
 
 static char		r_skyboxname[MAX_QPATH];
 static float	r_skyheight;
+
+mempool_t		*r_shadersmempool;
 
 char *Shader_Skip( char *ptr );
 static qboolean Shader_Parsetok( shader_t *shader, shaderpass_t *pass, shaderkey_t *keys,
 		char *token, char **ptr );
 static void Shader_ParseFunc( char **args, shaderfunc_t *func );
-static void Shader_MakeCache( char *path );
-static void Shader_GetPathAndOffset( char *name, char **path, unsigned int *offset );
+static void Shader_MakeCache( char *name, char *path );
+static unsigned int Shader_GetCache( char *name, shadercache_t **cache );
 
 //===========================================================================
 
@@ -63,7 +65,7 @@ static char *Shader_ParseString ( char **ptr )
 		return "";
 	}
 
-	token = COM_ParseExt ( ptr, false );
+	token = COM_ParseExt ( ptr, qfalse );
 	strlwr ( token );
 	
 	return token;
@@ -78,57 +80,79 @@ static float Shader_ParseFloat ( char **ptr )
 		return 0;
 	}
 
-	return atof ( COM_ParseExt ( ptr, false ) );
+	return atof ( COM_ParseExt ( ptr, qfalse ) );
 }
 
-static void Shader_ParseVector ( char **ptr, vec3_t v )
+static void Shader_ParseVector ( char **ptr, float *v, unsigned int size )
 {
+	int i;
 	char *token;
 	qboolean bracket;
 
+	if ( !size ) {
+		return;
+	} else if ( size == 1 ) {
+		Shader_ParseFloat ( ptr );
+		return;
+	}
+
 	token = Shader_ParseString ( ptr );
 	if ( !Q_stricmp (token, "(") ) {
-		bracket = true;
+		bracket = qtrue;
 		token = Shader_ParseString ( ptr );
 	} else if ( token[0] == '(' ) {
-		bracket = true;
+		bracket = qtrue;
 		token = &token[1];
 	} else {
-		bracket = false;
+		bracket = qfalse;
 	}
 
 	v[0] = atof ( token );
-	v[1] = Shader_ParseFloat ( ptr );
+	for ( i = 1; i < size-1; i++ ) {
+		v[i] = Shader_ParseFloat ( ptr );
+	}
 
 	token = Shader_ParseString ( ptr );
 	if ( !token[0] ) {
-		v[2] = 0;
+		v[i] = 0;
 	} else if ( token[strlen(token)-1] == ')' ) {
 		token[strlen(token)-1] = 0;
-		v[2] = atof ( token );
+		v[i] = atof ( token );
 	} else {
-		v[2] = atof ( token );
+		v[i] = atof ( token );
 		if ( bracket ) {
 			Shader_ParseString ( ptr );
 		}
 	}
 }
 
-static void Shader_ParseSkySides ( char **ptr, image_t **images )
+static void Shader_ParseSkySides ( char **ptr, shader_t **shaders, qboolean farbox )
 {
 	int i;
 	char *token;
 	char path[MAX_QPATH];
+	qboolean noskybox = qfalse;
 	static char	*suf[6] = { "rt", "bk", "lf", "ft", "up", "dn" };
 
 	token = Shader_ParseString ( ptr );
-	for ( i = 0; i < 6; i++ )
-	{
-		if ( token[0] == '-' ) {
-			images[i] = NULL;
-		} else {
+	if ( token[0] == '-' ) { 
+		noskybox = qtrue;
+	} else {
+		for ( i = 0; i < 6; i++ ) {
 			Com_sprintf ( path, sizeof(path), "%s_%s", token, suf[i] );
-			images[i] = GL_FindImage ( path, IT_NOMIPMAP|IT_SKY );
+			shaders[i] = R_Shader_Load ( path, farbox ? SHADER_FARBOX : SHADER_NEARBOX, qtrue );
+			shaders[i]->registration_sequence = registration_sequence;
+
+			if ( !shaders[i]->passes[0].anim_frames[0] ) {
+				noskybox = qtrue;
+				break;
+			}
+		}
+	}
+
+	if ( noskybox ) {
+		for ( i = 0; i < 6; i++ ) {
+			shaders[i] = NULL;
 		}
 	}
 }
@@ -179,9 +203,9 @@ static int Shader_SetImageFlags ( shader_t *shader )
 
 static image_t *Shader_FindImage ( char *name, int flags )
 {
-	if ( !Q_stricmp (name, "$whiteimage") ) {
+	if ( !Q_stricmp (name, "$whiteimage") || !Q_stricmp (name, "*white") ) {
 		return r_whitetexture;
-	} else if ( !Q_stricmp (name, "$particleimage") ) {
+	} else if ( !Q_stricmp (name, "$particleimage") || !Q_stricmp (name, "*particle") ) {
 		return r_particletexture;
 	} else {
 		return GL_FindImage ( name, flags );
@@ -235,7 +259,6 @@ static void Shader_DeformVertexes ( shader_t *shader, shaderpass_t *pass, char *
 		if ( deformv->args[0] ) {
 			deformv->args[0] = 1.0f / deformv->args[0];
 		}
-
 		Shader_ParseFunc ( ptr, &deformv->func );
 	} else if ( !Q_stricmp (token, "normal") ) {
 		deformv->type = DEFORMV_NORMAL;
@@ -243,13 +266,11 @@ static void Shader_DeformVertexes ( shader_t *shader, shaderpass_t *pass, char *
 		deformv->args[1] = Shader_ParseFloat ( ptr );
 	} else if ( !Q_stricmp (token, "bulge") ) {
 		deformv->type = DEFORMV_BULGE;
-
-		Shader_ParseVector ( ptr, deformv->args );
+		Shader_ParseVector ( ptr, deformv->args, 3 );
 		shader->flags |= SHADER_DEFORMV_BULGE;
 	} else if ( !Q_stricmp (token, "move") ) {
 		deformv->type = DEFORMV_MOVE;
-
-		Shader_ParseVector ( ptr, deformv->args );
+		Shader_ParseVector ( ptr, deformv->args, 3 );
 		Shader_ParseFunc ( ptr, &deformv->func );
 	} else if ( !Q_stricmp (token, "autosprite") ) {
 		deformv->type = DEFORMV_AUTOSPRITE;
@@ -259,6 +280,8 @@ static void Shader_DeformVertexes ( shader_t *shader, shaderpass_t *pass, char *
 		shader->flags |= SHADER_AUTOSPRITE;
 	} else if ( !Q_stricmp (token, "projectionShadow") ) {
 		deformv->type = DEFORMV_PROJECTION_SHADOW;
+	} else if ( !Q_stricmp (token, "autoparticle") ) {
+		deformv->type = DEFORMV_AUTOPARTICLE;
 	} else {
 		return;
 	}
@@ -269,33 +292,26 @@ static void Shader_DeformVertexes ( shader_t *shader, shaderpass_t *pass, char *
 
 static void Shader_SkyParms ( shader_t *shader, shaderpass_t *pass, char **ptr )
 {
-	int	i;
-	skydome_t *skydome;
 	float skyheight;
+	skydome_t *skydome;
 
 	if ( shader->skydome ) {
-		for ( i = 0; i < 5; i++ ) {
-			Z_Free ( shader->skydome->meshes[i].xyz_array );
-			Z_Free ( shader->skydome->meshes[i].normals_array );
-			Z_Free ( shader->skydome->meshes[i].st_array );
-		}
-
-		Z_Free ( shader->skydome );
+		R_FreeSkydome ( shader->skydome );
 	}
 
-	skydome = (skydome_t *)Z_Malloc ( sizeof(skydome_t) );
+	skydome = (skydome_t *)Shader_Malloc ( sizeof(skydome_t) );
 	shader->skydome = skydome;
 
-	Shader_ParseSkySides ( ptr, skydome->farbox_textures );
+	Shader_ParseSkySides ( ptr, skydome->farbox_shaders, qtrue );
 
 	skyheight = Shader_ParseFloat ( ptr );
 	if ( !skyheight ) {
 		skyheight = 512.0f;
 	}
 
-	Shader_ParseSkySides ( ptr, skydome->nearbox_textures );
+	Shader_ParseSkySides ( ptr, skydome->nearbox_shaders, qfalse );
 
-	R_CreateSkydome ( shader, skyheight );
+	R_CreateSkydome ( skydome, skyheight );
 
 	shader->flags |= SHADER_SKY;
 	shader->sort = SHADER_SORT_SKY;
@@ -311,13 +327,13 @@ static void Shader_FogParms ( shader_t *shader, shaderpass_t *pass, char **ptr )
 	else
 		div = 1.0f;
 
-	Shader_ParseVector ( ptr, color );
+	Shader_ParseVector ( ptr, color, 3 );
 	VectorScale ( color, div, color );
 	ColorNormalize ( color, fcolor );
 
-	shader->fog_color[0] = FloatToByte ( fcolor[0] );
-	shader->fog_color[1] = FloatToByte ( fcolor[1] );
-	shader->fog_color[2] = FloatToByte ( fcolor[2] );
+	shader->fog_color[0] = R_FloatToByte ( fcolor[0] );
+	shader->fog_color[1] = R_FloatToByte ( fcolor[1] );
+	shader->fog_color[2] = R_FloatToByte ( fcolor[2] );
 	shader->fog_color[3] = 255;	
 	shader->fog_dist = Shader_ParseFloat ( ptr );
 
@@ -384,7 +400,7 @@ static shaderkey_t shaderkeys[] =
 
 // ===============================================================
 
-static void Shaderpass_Map ( shader_t *shader, shaderpass_t *pass, char **ptr )
+static void Shaderpass_MapExt ( shader_t *shader, shaderpass_t *pass, int addFlags, char **ptr )
 {
 	int flags;
 	char *token;
@@ -395,8 +411,7 @@ static void Shaderpass_Map ( shader_t *shader, shaderpass_t *pass, char **ptr )
 		pass->flags |= SHADER_PASS_LIGHTMAP;
 		pass->anim_frames[0] = NULL;
 	} else {
-		flags = Shader_SetImageFlags ( shader );
-
+		flags = Shader_SetImageFlags ( shader ) | addFlags;
 		pass->tcgen = TC_GEN_BASE;
 		pass->anim_frames[0] = Shader_FindImage ( token, flags );
 
@@ -407,13 +422,13 @@ static void Shaderpass_Map ( shader_t *shader, shaderpass_t *pass, char **ptr )
     }
 }
 
-static void Shaderpass_AnimMap ( shader_t *shader, shaderpass_t *pass, char **ptr )
+static void Shaderpass_AnimMapExt ( shader_t *shader, shaderpass_t *pass, int addFlags, char **ptr )
 {
     int flags;
 	char *token;
 	image_t *image;
 
-	flags = Shader_SetImageFlags ( shader );
+	flags = Shader_SetImageFlags ( shader ) | addFlags;
 
 	pass->tcgen = TC_GEN_BASE;
     pass->flags |= SHADER_PASS_ANIMMAP;
@@ -439,21 +454,20 @@ static void Shaderpass_AnimMap ( shader_t *shader, shaderpass_t *pass, char **pt
 	}
 }
 
-static void Shaderpass_ClampMap ( shader_t *shader, shaderpass_t *pass, char **ptr )
-{
-	int flags;
-	char *token;
+static void Shaderpass_Map ( shader_t *shader, shaderpass_t *pass, char **ptr ) {
+	Shaderpass_MapExt ( shader, pass, 0, ptr );
+}
 
-	token = Shader_ParseString ( ptr );
-	flags = Shader_SetImageFlags ( shader );
+static void Shaderpass_ClampMap ( shader_t *shader, shaderpass_t *pass, char **ptr ) {
+	Shaderpass_MapExt ( shader, pass, IT_CLAMP, ptr );
+}
 
-	pass->tcgen = TC_GEN_BASE;
-	pass->anim_frames[0] = Shader_FindImage ( token, flags | IT_CLAMP );
+static void Shaderpass_AnimMap ( shader_t *shader, shaderpass_t *pass, char **ptr ) {
+	Shaderpass_AnimMapExt ( shader, pass, 0, ptr );
+}
 
-	if ( !pass->anim_frames[0] ) {
-		pass->anim_frames[0] = r_notexture;
-		Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", shader->name, token );
-    }
+static void Shaderpass_AnimClampMap ( shader_t *shader, shaderpass_t *pass, char **ptr ) {
+	Shaderpass_AnimMapExt ( shader, pass, IT_CLAMP, ptr );
 }
 
 static void Shaderpass_VideoMap ( shader_t *shader, shaderpass_t *pass, char **ptr )
@@ -465,9 +479,9 @@ static void Shaderpass_VideoMap ( shader_t *shader, shaderpass_t *pass, char **p
 	COM_StripExtension ( token, name );
 
 	if ( pass->cin )
-		Z_Free ( pass->cin );
+		Shader_Free ( pass->cin );
 
-	pass->cin = (cinematics_t *)Z_Malloc ( sizeof(cinematics_t) );
+	pass->cin = (cinematics_t *)Shader_Malloc ( sizeof(cinematics_t) );
 	pass->cin->frame = -1;
 	Com_sprintf ( pass->cin->name, sizeof(pass->cin->name), "video/%s.RoQ", name );
 
@@ -481,30 +495,34 @@ static void Shaderpass_RGBGen ( shader_t *shader, shaderpass_t *pass, char **ptr
 
 	token = Shader_ParseString ( ptr );
 	if ( !Q_stricmp (token, "identitylighting") ) {
-		pass->rgbgen = RGB_GEN_IDENTITY_LIGHTING;
+		pass->rgbgen.type = RGB_GEN_IDENTITY_LIGHTING;
 	} else if ( !Q_stricmp (token, "identity") ) {
-		pass->rgbgen = RGB_GEN_IDENTITY;
+		pass->rgbgen.type = RGB_GEN_IDENTITY;
 	} else if ( !Q_stricmp (token, "wave") ) {
-		pass->rgbgen = RGB_GEN_WAVE;
-
-		Shader_ParseFunc ( ptr, &pass->rgbgen_func );
+		pass->rgbgen.type = RGB_GEN_COLORWAVE;
+		pass->rgbgen.args[0] = 1.0f;
+		pass->rgbgen.args[1] = 1.0f;
+		pass->rgbgen.args[2] = 1.0f;
+		Shader_ParseFunc ( ptr, &pass->rgbgen.func );
+	} else if ( !Q_stricmp (token, "colorwave") ) {
+		pass->rgbgen.type = RGB_GEN_COLORWAVE;
+		Shader_ParseVector ( ptr, pass->rgbgen.args, 3 );
+		Shader_ParseFunc ( ptr, &pass->rgbgen.func );
 	} else if ( !Q_stricmp(token, "entity") ) {
-		pass->rgbgen = RGB_GEN_ENTITY;
+		pass->rgbgen.type = RGB_GEN_ENTITY;
 	} else if ( !Q_stricmp (token, "oneMinusEntity") ) {
-		pass->rgbgen = RGB_GEN_ONE_MINUS_ENTITY;
+		pass->rgbgen.type = RGB_GEN_ONE_MINUS_ENTITY;
 	} else if ( !Q_stricmp (token, "vertex")) {
-		pass->rgbgen = RGB_GEN_VERTEX;
+		pass->rgbgen.type = RGB_GEN_VERTEX;
 	} else if ( !Q_stricmp (token, "oneMinusVertex") ) {
-		pass->rgbgen = RGB_GEN_ONE_MINUS_VERTEX;
+		pass->rgbgen.type = RGB_GEN_ONE_MINUS_VERTEX;
 	} else if ( !Q_stricmp (token, "lightingDiffuse") ) {
-		pass->rgbgen = RGB_GEN_LIGHTING_DIFFUSE;
+		pass->rgbgen.type = RGB_GEN_LIGHTING_DIFFUSE;
 	} else if ( !Q_stricmp (token, "exactvertex") ) {
-		pass->rgbgen = RGB_GEN_EXACT_VERTEX;
+		pass->rgbgen.type = RGB_GEN_EXACT_VERTEX;
 	} else if ( !Q_stricmp (token, "const") || !Q_stricmp (token, "constant") ) {
-		pass->rgbgen = RGB_GEN_CONST;
-		pass->rgbgen_func.type = SHADER_FUNC_CONSTANT;
-
-		Shader_ParseVector ( ptr, pass->rgbgen_func.args );
+		pass->rgbgen.type = RGB_GEN_CONST;
+		Shader_ParseVector ( ptr, pass->rgbgen.args, 3 );
 	}
 }
 
@@ -514,22 +532,39 @@ static void Shaderpass_AlphaGen ( shader_t *shader, shaderpass_t *pass, char **p
 
 	token = Shader_ParseString ( ptr );
 	if ( !Q_stricmp (token, "portal") ) {
-		pass->alphagen = ALPHA_GEN_PORTAL;
+		pass->alphagen.type = ALPHA_GEN_PORTAL;
+		pass->alphagen.args[0] = fabs( Shader_ParseFloat (ptr) );
+		if ( !pass->alphagen.args[0] ) {
+			pass->alphagen.args[0] = 256;
+		}
+		pass->alphagen.args[0] = 1.0f / pass->alphagen.args[0];
 		shader->flags |= SHADER_AGEN_PORTAL;
 	} else if ( !Q_stricmp (token, "vertex") ) {
-		pass->alphagen = ALPHA_GEN_VERTEX;
+		pass->alphagen.type = ALPHA_GEN_VERTEX;
 	} else if ( !Q_stricmp (token, "entity") ) {
-		pass->alphagen = ALPHA_GEN_ENTITY;
+		pass->alphagen.type = ALPHA_GEN_ENTITY;
 	} else if ( !Q_stricmp (token, "wave") ) {
-		pass->alphagen = ALPHA_GEN_WAVE;
-
-		Shader_ParseFunc ( ptr, &pass->alphagen_func );
+		pass->alphagen.type = ALPHA_GEN_WAVE;
+		Shader_ParseFunc ( ptr, &pass->alphagen.func );
 	} else if ( !Q_stricmp (token, "lightingspecular") ) {
-		pass->alphagen = ALPHA_GEN_SPECULAR;
+		pass->alphagen.type = ALPHA_GEN_SPECULAR;
 	} else if ( !Q_stricmp (token, "const") || !Q_stricmp (token, "constant") ) {
-		pass->alphagen = ALPHA_GEN_CONST;
-		pass->alphagen_func.type = SHADER_FUNC_CONSTANT;
-		pass->alphagen_func.args[0] = fabs( Shader_ParseFloat (ptr) );
+		pass->alphagen.type = ALPHA_GEN_CONST;
+		pass->alphagen.args[0] = fabs( Shader_ParseFloat (ptr) );
+	} else if ( !Q_stricmp (token, "dot") ) {
+		pass->alphagen.type = ALPHA_GEN_DOT;
+		pass->alphagen.args[0] = fabs( Shader_ParseFloat (ptr) );
+		pass->alphagen.args[1] = fabs( Shader_ParseFloat (ptr) );
+		if ( !pass->alphagen.args[1] ) {
+			pass->alphagen.args[1] = 1.0f;
+		}
+	} else if ( !Q_stricmp (token, "oneMinusDot") ) {
+		pass->alphagen.type = ALPHA_GEN_ONE_MINUS_DOT;
+		pass->alphagen.args[0] = fabs( Shader_ParseFloat (ptr) );
+		pass->alphagen.args[1] = fabs( Shader_ParseFloat (ptr) );
+		if ( !pass->alphagen.args[1] ) {
+			pass->alphagen.args[1] = 1.0f;
+		}
 	}
 }
 
@@ -641,7 +676,6 @@ static void Shaderpass_TcMod ( shader_t *shader, shaderpass_t *pass, char **ptr 
 		if ( !tcmod->args[0] ) {
 			return;
 		}
-
 		tcmod->type = SHADER_TCMOD_ROTATE;
 	} else if ( !Q_stricmp (token, "scale") ) {
 		tcmod->args[0] = Shader_ParseFloat ( ptr );
@@ -688,7 +722,9 @@ static void Shaderpass_TcGen ( shader_t *shader, shaderpass_t *pass, char **ptr 
 	} else if ( !Q_stricmp (token, "environment") ) {
 		pass->tcgen = TC_GEN_ENVIRONMENT;
 	} else if ( !Q_stricmp (token, "vector") ) {
-		pass->tcgen = TC_GEN_BASE;
+		pass->tcgen = TC_GEN_VECTOR;
+		Shader_ParseVector ( ptr, pass->tcgenVec[0], 4 );
+		Shader_ParseVector ( ptr, pass->tcgenVec[1], 4 );
 	}
 }
 
@@ -708,6 +744,7 @@ static shaderkey_t shaderpasskeys[] =
     {"map",			Shaderpass_Map },
     {"animmap",		Shaderpass_AnimMap },
     {"clampmap",	Shaderpass_ClampMap },
+    {"animclampmap",Shaderpass_AnimClampMap },
 	{"videomap",	Shaderpass_VideoMap },
     {"tcgen",		Shaderpass_TcGen },
 	{"alphagen",	Shaderpass_AlphaGen },
@@ -719,42 +756,64 @@ static shaderkey_t shaderpasskeys[] =
 
 qboolean Shader_Init (void)
 {
-	char *dirptr;
-	int i, dirlen, numdirs;
+	char *dirptr, *fileptr;
+	int i, filelen, dirlen, numfiles;
+	char *shaderbuf, *shaderbuf2;
 
 	Com_Printf ( "Initializing Shaders:\n" );
 
-	numdirs = FS_GetFileList ( "scripts", "shader", shaderbuf, sizeof(shaderbuf) );
-	if ( !numdirs ) {
+	r_shadersmempool = Mem_AllocPool ( NULL, "Shaders" );
+
+	shaderbuf = Mem_TempMalloc (MAX_QPATH * 256);
+	shaderbuf2 = Mem_TempMalloc (MAX_QPATH * 256);
+
+	numfiles = FS_GetFileListExt ( "scripts", "shader", shaderbuf, MAX_QPATH * 256, shaderbuf2, MAX_QPATH * 256 );
+	if ( !numfiles ) {
+		Mem_TempFree (shaderbuf);
+		Mem_TempFree (shaderbuf2);
 		Com_Error ( ERR_DROP, "Could not find any shaders!");
-		return false;
+		return qfalse;
 	}
 
 	// now load all the scripts
-	dirptr = shaderbuf;
+	fileptr = shaderbuf;
+	dirptr = shaderbuf2;
 	memset ( shader_hash, 0, sizeof(shadercache_t *)*HASH_SIZE );
 
-	for (i=0; i<numdirs; i++, dirptr += dirlen+1) {
-		dirlen = strlen(dirptr);
-		if ( !dirlen ) {
+	for (i=0; i<numfiles; i++, fileptr += filelen+1, dirptr += dirlen+1) {
+		filelen = strlen (fileptr);
+		dirlen = strlen (dirptr);
+
+		if ( !fileptr ) {
 			continue;
 		}
 
-		Shader_MakeCache ( dirptr );
+		Shader_MakeCache ( fileptr, dirptr );
 	}
 
-	return true;
+	Mem_TempFree (shaderbuf);
+	Mem_TempFree (shaderbuf2);
+
+	return qtrue;
 }
 
-static void Shader_MakeCache ( char *path )
+static void Shader_MakeCache ( char *name, char *path )
 {
-	unsigned int key, i;
+	unsigned int key;
 	char filename[MAX_QPATH];
 	char *buf, *ptr, *token, *t;
 	shadercache_t *cache;
 	int size;
+	char basepath[MAX_OSPATH];
+	qboolean basedir = qfalse;
+	extern cvar_t *fs_basepath, *fs_basedir;
 
-	Com_sprintf( filename, sizeof(filename), "scripts/%s", path );
+	Com_sprintf ( basepath, sizeof(basepath), "%s/%s", fs_basepath->string, fs_basedir->string );
+	if ( !Q_strnicmp (path, basepath, strlen (basepath)) ) {
+		basedir = qtrue;
+	}
+
+	Com_sprintf( filename, sizeof(filename), "scripts/%s", name );
 	Com_Printf ( "...loading '%s'\n", filename );
 
 	size = FS_LoadFile ( filename, (void **)&buf );
@@ -765,25 +824,33 @@ static void Shader_MakeCache ( char *path )
 	ptr = buf;
 	do
 	{
-		if ( ptr - buf >= size )
+		if ( !ptr || ptr - buf >= size )
 			break;
 
-		token = COM_ParseExt ( &ptr, true );
-		if ( !token[0] || ptr - buf >= size )
+		token = COM_ParseExt ( &ptr, qtrue );
+		if ( !token[0] || !ptr || ptr - buf >= size )
 			break;
 
 		t = NULL;
-		Shader_GetPathAndOffset ( token, &t, &i );
-		if ( t ) {
+		key = Shader_GetCache ( token, &cache );
+		if ( cache ) {
+			// replace only if original file is in the basedir
+			if ( cache->basedir ) {
+				Shader_Free (cache->path);
+				cache->path = Shader_Malloc ( strlen(name)+1 );
+				strcpy ( cache->path, name );
+				cache->offset = ptr - buf;
+			}
+
 			ptr = Shader_Skip ( ptr );
 			continue;
 		}
 
-		key = Com_HashKey ( token, HASH_SIZE );
-
-		cache = ( shadercache_t * )Z_Malloc ( sizeof(shadercache_t) );
+		cache = ( shadercache_t * )Shader_Malloc ( sizeof(shadercache_t) );
 		cache->hash_next = shader_hash[key];
-		cache->path = path;
+		cache->path = Shader_Malloc ( strlen(name)+1 );
+		strcpy ( cache->path, name );
+		cache->basedir = basedir;
 		cache->offset = ptr - buf;
 		Com_sprintf ( cache->name, MAX_QPATH, token );
 		shader_hash[key] = cache;
@@ -800,21 +867,21 @@ char *Shader_Skip ( char *ptr )
     int brace_count;
 
     // Opening brace
-    tok = COM_ParseExt ( &ptr, true );
+    tok = COM_ParseExt ( &ptr, qtrue );
 
 	if (!ptr)
 		return NULL;
     
 	if ( tok[0] != '{' ) {
-		tok = COM_ParseExt ( &ptr, true );
+		tok = COM_ParseExt ( &ptr, qtrue );
 	}
 
-    for (brace_count = 1; brace_count > 0 ; ptr++)
+    for (brace_count = 1; brace_count > 0 && ptr; )
     {
-		tok = COM_ParseExt ( &ptr, true );
-
-		if ( !tok[0] )
+		tok = COM_ParseExt ( &ptr, qtrue );
+		if ( !tok[0] ) {
 			return NULL;
+		}
 
 		if (tok[0] == '{') {
 			brace_count++;
@@ -826,47 +893,43 @@ char *Shader_Skip ( char *ptr )
 	return ptr;
 }
 
-static void Shader_GetPathAndOffset ( char *name, char **path, unsigned int *offset )
+static unsigned int Shader_GetCache ( char *name, shadercache_t **cache )
 {
 	unsigned int key;
-	shadercache_t *cache;
+	shadercache_t *c;
+
+	*cache = NULL;
 
 	key = Com_HashKey ( name, HASH_SIZE );
-	cache = shader_hash[key];
+	c = shader_hash[key];
 
-	for ( ; cache; cache = cache->hash_next ) {
-		if ( !Q_stricmp (cache->name, name) ) {
-			*path = cache->path;
-			*offset = cache->offset;
-			return;
+	for ( ; c; c = c->hash_next ) {
+		if ( !Q_stricmp (c->name, name) ) {
+			*cache = c;
+			return key;
 		}
 	}
 
-	path = NULL;
+	return key;
 }
 
 void Shader_FreePass (shaderpass_t *pass)
 {
 	if ( pass->flags & SHADER_PASS_VIDEOMAP ) {
 		GL_StopCinematic ( pass->cin );
-		Z_Free ( pass->cin );
+		Shader_Free ( pass->cin );
 		pass->cin = NULL;
 	}
 }
 
-void Shader_Free (shader_t *shader)
+void Shader_FreeShader (shader_t *shader)
 {
 	int i;
 	shaderpass_t *pass;
 
-	if ( shader->flags & SHADER_SKY ) {
-		for ( i = 0; i < 5; i++ ) {
-			Z_Free ( shader->skydome->meshes[i].xyz_array );
-			Z_Free ( shader->skydome->meshes[i].normals_array );
-			Z_Free ( shader->skydome->meshes[i].st_array );
-		}
-
-		Z_Free ( shader->skydome );
+	if ( (shader->flags & SHADER_SKY) && shader->skydome ) {
+		R_FreeSkydome ( shader->skydome );
+		shader->skydome = NULL;
 	}
 
 	pass = shader->passes;
@@ -879,28 +942,20 @@ void Shader_Shutdown (void)
 {
 	int i;
 	shader_t *shader;
-	shadercache_t *cache, *cache_next;
 
 	shader = r_shaders;
 	for (i = 0; i < MAX_SHADERS; i++, shader++)
 	{
-		if ( !shader->registration_sequence )
+		if ( !shader->name[0] )
 			continue;
 		
-		Shader_Free ( shader );
+		Shader_FreeShader ( shader );
 	}
 
-	for ( i = 0; i < HASH_SIZE; i++ ) {
-		cache = shader_hash[i];
+	Mem_FreePool ( &r_shadersmempool );
 
-		for ( ; cache; cache = cache_next ) {
-			cache_next = cache->hash_next;
-			cache->hash_next = NULL;
-			Z_Free ( cache );
-		}
-	}
-
-	memset (r_shaders, 0, sizeof(shader_t)*MAX_SHADERS);
+	memset (r_shaders, 0, sizeof(r_shaders));
+	memset (shader_hash, 0, sizeof(shader_hash));
 }
 
 void Shader_SetBlendmode ( shaderpass_t *pass )
@@ -911,7 +966,7 @@ void Shader_SetBlendmode ( shaderpass_t *pass )
 	}
 
 	if ( !(pass->flags & SHADER_PASS_BLEND) && qglMTexCoord2fSGIS ) {
-		if ( (pass->rgbgen == RGB_GEN_IDENTITY) && (pass->alphagen == ALPHA_GEN_IDENTITY) ) {
+		if ( (pass->rgbgen.type == RGB_GEN_IDENTITY) && (pass->alphagen.type == ALPHA_GEN_IDENTITY) ) {
 			pass->blendmode = GL_REPLACE;
 		} else {
 			pass->blendsrc = GL_ONE;
@@ -940,12 +995,12 @@ void Shader_Readpass (shader_t *shader, char **ptr)
 	static shader_t dummy;
 
 	if ( shader->numpasses >= SHADER_PASS_MAX ) {
-		ignore = true;
+		ignore = qtrue;
 		shader = &dummy;
 		shader->numpasses = 1;
 		pass = shader->passes;
 	} else {
-		ignore = false;
+		ignore = qfalse;
 		pass = &shader->passes[shader->numpasses++];
 	}
 	
@@ -954,8 +1009,8 @@ void Shader_Readpass (shader_t *shader, char **ptr)
     pass->anim_frames[0] = NULL;
 	pass->anim_numframes = 0;
     pass->depthfunc = GL_LEQUAL;
-    pass->rgbgen = RGB_GEN_UNKNOWN;
-	pass->alphagen = ALPHA_GEN_IDENTITY;
+    pass->rgbgen.type = RGB_GEN_UNKNOWN;
+	pass->alphagen.type = ALPHA_GEN_UNKNOWN;
 	pass->tcgen = TC_GEN_BASE;
 	pass->numtcmods = 0;
 
@@ -965,7 +1020,7 @@ void Shader_Readpass (shader_t *shader, char **ptr)
 
 	while ( ptr )
 	{
-		token = COM_ParseExt (ptr, true);
+		token = COM_ParseExt (ptr, qtrue);
 
 		if ( !token[0] ) {
 			continue;
@@ -978,7 +1033,7 @@ void Shader_Readpass (shader_t *shader, char **ptr)
 
 	// check some things 
 	if ( ignore ) {
-		Shader_Free ( shader );
+		Shader_FreeShader ( shader );
 		return;
 	}
 
@@ -987,18 +1042,19 @@ void Shader_Readpass (shader_t *shader, char **ptr)
 		shader->flags |= SHADER_DEPTHWRITE;
 	}
 
-	switch (pass->rgbgen)
+	switch (pass->rgbgen.type)
 	{
 		case RGB_GEN_IDENTITY_LIGHTING:
 		case RGB_GEN_IDENTITY:
 		case RGB_GEN_CONST:
-		case RGB_GEN_WAVE:
+		case RGB_GEN_COLORWAVE:
 		case RGB_GEN_ENTITY:
 		case RGB_GEN_ONE_MINUS_ENTITY:
 		case RGB_GEN_UNKNOWN:	// assume RGB_GEN_IDENTITY or RGB_GEN_IDENTITY_LIGHTING
 
-			switch (pass->alphagen)
+			switch (pass->alphagen.type)
 			{
+				case ALPHA_GEN_UNKNOWN:
 				case ALPHA_GEN_IDENTITY:
 				case ALPHA_GEN_CONST:
 				case ALPHA_GEN_WAVE:
@@ -1041,13 +1097,13 @@ static qboolean Shader_Parsetok (shader_t *shader, shaderpass_t *pass, shaderkey
 	// Next Line
 	while (ptr)
 	{
-		token = COM_ParseExt ( ptr, false );
+		token = COM_ParseExt ( ptr, qfalse );
 		if ( !token[0] ) {
 			break;
 		}
 	}
 
-	return false;
+	return qfalse;
 }
 
 void Shader_SetPassFlush ( shaderpass_t *pass, shaderpass_t *pass2 )
@@ -1058,8 +1114,10 @@ void Shader_SetPassFlush ( shaderpass_t *pass, shaderpass_t *pass2 )
 		 ((pass->flags & SHADER_PASS_ALPHAFUNC) && (pass2->depthfunc != GL_EQUAL)) ) {
 		return;
 	}
-
-	if ( pass2->rgbgen != RGB_GEN_IDENTITY || pass2->alphagen != ALPHA_GEN_IDENTITY ) {
+	if ( (pass->depthfunc != pass2->depthfunc) || (pass2->flags & SHADER_PASS_ALPHAFUNC) ) {
+		return;
+	}
+	if ( pass2->rgbgen.type != RGB_GEN_IDENTITY || pass2->alphagen.type != ALPHA_GEN_IDENTITY ) {
 		return;
 	}
 
@@ -1111,18 +1169,18 @@ void Shader_SetFeatures ( shader_t *s )
 
 	s->features = MF_NONE;
 	
-	for ( i = 0, trnormals = true; i < s->numdeforms; i++ ) {
+	for ( i = 0, trnormals = qtrue; i < s->numdeforms; i++ ) {
 		switch ( s->deforms[i].type ) {
 			case DEFORMV_BULGE:
 			case DEFORMV_WAVE:
-				trnormals = false;
+				trnormals = qfalse;
 			case DEFORMV_NORMAL:
 				s->features |= MF_NORMALS;
 				break;
 			case DEFORMV_MOVE:
 				break;
 			default:
-				trnormals = false;
+				trnormals = qfalse;
 				break;
 		}
 	}
@@ -1132,7 +1190,7 @@ void Shader_SetFeatures ( shader_t *s )
 	}
 
 	for ( i = 0, pass = s->passes; i < s->numpasses; i++, pass++ ) {
-		switch ( pass->rgbgen ) {
+		switch ( pass->rgbgen.type ) {
 			case RGB_GEN_LIGHTING_DIFFUSE:
 				s->features |= MF_NORMALS;
 				break;
@@ -1143,8 +1201,10 @@ void Shader_SetFeatures ( shader_t *s )
 				break;
 		}
 
-		switch ( pass->alphagen ) {
+		switch ( pass->alphagen.type ) {
 			case ALPHA_GEN_SPECULAR:
+			case ALPHA_GEN_DOT:
+			case ALPHA_GEN_ONE_MINUS_DOT:
 				s->features |= MF_NORMALS;
 				break;
 			case ALPHA_GEN_VERTEX:
@@ -1181,7 +1241,7 @@ void Shader_Finish ( shader_t *s )
 	}
 
 	if ( (s->flags & SHADER_POLYGONOFFSET) && !s->sort ) {
-		s->sort = SHADER_SORT_ADDITIVE - 1;
+		s->sort = SHADER_SORT_OPAQUE + 1;
 	}
 
 	if ( r_vertexlight->value ) {
@@ -1199,7 +1259,7 @@ void Shader_Finish ( shader_t *s )
 		// try to find pass with rgbgen set to RGB_GEN_VERTEX
 		pass = s->passes;
 		for ( i = 0; i < s->numpasses; i++, pass++ ) {
-			if ( pass->rgbgen == RGB_GEN_VERTEX )
+			if ( pass->rgbgen.type == RGB_GEN_VERTEX )
 				break;
 		}
 
@@ -1208,7 +1268,7 @@ void Shader_Finish ( shader_t *s )
 			pass->flags &= ~(SHADER_PASS_BLEND|SHADER_PASS_ANIMMAP);
 			pass->blendmode = 0;
 			pass->flags |= SHADER_PASS_DEPTHWRITE;
-			pass->alphagen = ALPHA_GEN_IDENTITY;
+			pass->alphagen.type = ALPHA_GEN_IDENTITY;
 			pass->numMergedPasses = 1;
 			pass->flush = R_RenderMeshGeneric;
 			s->flags |= SHADER_DEPTHWRITE;
@@ -1241,8 +1301,8 @@ void Shader_Finish ( shader_t *s )
 				memcpy ( &s->passes[0], pass, sizeof(shaderpass_t) );
 			}
 			
-			s->passes[0].rgbgen = RGB_GEN_VERTEX;
-			s->passes[0].alphagen = ALPHA_GEN_IDENTITY;
+			s->passes[0].rgbgen.type = RGB_GEN_VERTEX;
+			s->passes[0].alphagen.type = ALPHA_GEN_IDENTITY;
 			s->passes[0].blendmode = 0;
 			s->passes[0].flags &= ~(SHADER_PASS_BLEND|SHADER_PASS_ANIMMAP|SHADER_PASS_NOCOLORARRAY);
 			s->passes[0].flags |= SHADER_PASS_DEPTHWRITE;
@@ -1272,11 +1332,18 @@ done:;
 				opaque = i;
 			}
 
-			if ( pass->rgbgen == RGB_GEN_UNKNOWN ) { 
+			if ( pass->rgbgen.type == RGB_GEN_UNKNOWN ) { 
 				if ( !s->fog_dist && !(pass->flags & SHADER_PASS_LIGHTMAP) ) 
-					pass->rgbgen = RGB_GEN_IDENTITY_LIGHTING;
+					pass->rgbgen.type = RGB_GEN_IDENTITY_LIGHTING;
 				else
-					pass->rgbgen = RGB_GEN_IDENTITY;
+					pass->rgbgen.type = RGB_GEN_IDENTITY;
+			}
+			if ( pass->alphagen.type == ALPHA_GEN_UNKNOWN ) {
+				if ( pass->rgbgen.type == RGB_GEN_VERTEX || pass->rgbgen.type == RGB_GEN_EXACT_VERTEX ) {
+					pass->alphagen.type = ALPHA_GEN_VERTEX;
+				} else {
+					pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				}
 			}
 		}
 
@@ -1294,8 +1361,15 @@ done:;
 
 		sp = s->passes;
 		for ( j = 0; j < s->numpasses; j++, sp++ ) {
-			if ( sp->rgbgen == RGB_GEN_UNKNOWN ) { 
-				sp->rgbgen = RGB_GEN_IDENTITY;
+			if ( sp->rgbgen.type == RGB_GEN_UNKNOWN ) { 
+				sp->rgbgen.type = RGB_GEN_IDENTITY;
+			}
+			if ( sp->alphagen.type == ALPHA_GEN_UNKNOWN ) {
+				if ( sp->rgbgen.type == RGB_GEN_VERTEX || sp->rgbgen.type == RGB_GEN_EXACT_VERTEX ) {
+					sp->alphagen.type = ALPHA_GEN_VERTEX;
+				} else {
+					sp->alphagen.type = ALPHA_GEN_IDENTITY;
+				}
 			}
 		}
 
@@ -1304,8 +1378,7 @@ done:;
 				s->sort = SHADER_SORT_OPAQUE + 1;
 		}
 
-		if ( !( s->flags & SHADER_DEPTHWRITE ) &&
-			!( s->flags & SHADER_SKY ) )
+		if ( !(pass->flags & SHADER_PASS_DEPTHWRITE) && !(s->flags & SHADER_SKY) )
 		{
 			pass->flags |= SHADER_PASS_DEPTHWRITE;
 			s->flags |= SHADER_DEPTHWRITE;
@@ -1344,46 +1417,13 @@ void Shader_UpdateRegistration (void)
 	shader_t *shader;
 	shaderpass_t *pass;
 
-	if ( chars_shader )
-		chars_shader->registration_sequence = registration_sequence;
-
-	if ( propfont1_shader )
-		propfont1_shader->registration_sequence = registration_sequence;
-
-	if ( propfont1_glow_shader )
-		propfont1_glow_shader->registration_sequence = registration_sequence;
-
-	if ( propfont2_shader )
-		propfont2_shader->registration_sequence = registration_sequence;
-
-	if ( particle_shader )
-		particle_shader->registration_sequence = registration_sequence;
-
 	shader = r_shaders;
 	for (i = 0; i < MAX_SHADERS; i++, shader++)
 	{
-		if ( !shader->registration_sequence )
-			continue;
 		if ( shader->registration_sequence != registration_sequence ) {
-			Shader_Free ( shader );
-			shader->registration_sequence = 0;
+			Shader_FreeShader ( shader );
+			memset ( shader, 0, sizeof(shader_t) );
 			continue;
-		}
-
-		if ( shader->flags & SHADER_SKY && shader->skydome ) {
-			if ( shader->skydome->farbox_textures[0] ) {
-				for ( j = 0; j < 6; j++ ) {
-					if ( shader->skydome->farbox_textures[j] )
-						shader->skydome->farbox_textures[j]->registration_sequence = registration_sequence;
-				}
-			}
-
-			if ( shader->skydome->nearbox_textures[0] ) {
-				for ( j = 0; j < 6; j++ ) {
-					if ( shader->skydome->nearbox_textures[j] )
-						shader->skydome->nearbox_textures[j]->registration_sequence = registration_sequence;
-				}
-			}
 		}
 
 		pass = shader->passes;
@@ -1445,7 +1485,7 @@ void Shader_RunCinematic (void)
 
 				if ( pass->cin->time == 0 ) {		// not found
 					pass->flags &= ~SHADER_PASS_VIDEOMAP;
-					Z_Free ( pass->cin );
+					Shader_Free ( pass->cin );
 				}
 
 				continue;
@@ -1456,13 +1496,14 @@ void Shader_RunCinematic (void)
 	}
 }
 
-int R_LoadShader ( char *name, int type )
+shader_t *R_Shader_Load ( char *name, int type, qboolean forceDefault )
 {
 	int i, f = -1;
-	unsigned int offset, length = 0;
+	unsigned int length = 0;
 	char shortname[MAX_QPATH], path[MAX_QPATH];
-	char *buf = NULL, *ts = NULL;
+	char *buf = NULL;
 	shader_t *s;
+	shadercache_t *cache;
 	shaderpass_t *pass;
 
 	COM_StripExtension ( name, shortname );
@@ -1470,24 +1511,22 @@ int R_LoadShader ( char *name, int type )
 	// test if already loaded
 	for (i = 0; i < MAX_SHADERS; i++)
 	{
-		if (!r_shaders[i].registration_sequence)
+		if (!r_shaders[i].name[0])
 		{
 			if ( f == -1 )	// free shader
 				f = i;
 			continue;
 		}
 
-		if (!Q_stricmp (shortname, r_shaders[i].name) )
-		{
-			r_shaders[i].registration_sequence = registration_sequence;
-			return i;
+		if ( !Q_stricmp (shortname, r_shaders[i].name) ) {
+			return &r_shaders[i];
 		}
 	}
 
 	if ( f == -1 )
 	{
-		Com_Error (ERR_FATAL, "R_LoadShader: Shader limit exceeded.");
-		return f;
+		Com_Error (ERR_FATAL, "R_Shader_Load: Shader limit exceeded.");
+		return NULL;
 	}
 
 	s = &r_shaders[f];
@@ -1495,32 +1534,31 @@ int R_LoadShader ( char *name, int type )
 
 	Com_sprintf ( s->name, MAX_QPATH, shortname );
 
-	Shader_GetPathAndOffset( shortname, &ts, &offset );
+	Shader_GetCache ( shortname, &cache );
 
-	if ( ts ) {
-		Com_sprintf ( path, sizeof(path), "scripts/%s", ts );
+	if ( cache ) {
+		Com_sprintf ( path, sizeof(path), "scripts/%s", cache->path );
 		length = FS_LoadFile ( path, (void **)&buf );
 	}
 
 	// the shader is in the shader scripts
-	if ( ts && buf && (offset < length) )
+	if ( !forceDefault && cache && buf && (cache->offset < length) )
 	{
 		char *ptr, *token;
 
 		// set defaults
 		s->flags = SHADER_CULL_FRONT;
-		s->registration_sequence = registration_sequence;
 
-		ptr = buf + offset;
-		token = COM_ParseExt (&ptr, true);
+		ptr = buf + cache->offset;
+		token = COM_ParseExt (&ptr, qtrue);
 
 		if ( !ptr || token[0] != '{' ) {
-			return -1;
+			goto create_default;
 		}
 
 		while ( ptr )
 		{
-			token = COM_ParseExt (&ptr, true);
+			token = COM_ParseExt (&ptr, qtrue);
 
 			if ( !token[0] ) {
 				continue;
@@ -1540,15 +1578,165 @@ int R_LoadShader ( char *name, int type )
 	{
 		switch (type)
 		{
+			case SHADER_BSP_VERTEX:
+				pass = &s->passes[0];
+				pass->tcgen = TC_GEN_BASE;
+				pass->anim_frames[0] = GL_FindImage (shortname, 0);
+				pass->depthfunc = GL_LEQUAL;
+				pass->flags = SHADER_PASS_DEPTHWRITE;
+				pass->rgbgen.type = RGB_GEN_VERTEX;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				pass->blendmode = GL_MODULATE;
+				pass->numMergedPasses = 1;
+				pass->flush = R_RenderMeshGeneric;
+
+				if ( !pass->anim_frames[0] ) {
+					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
+					pass->anim_frames[0] = r_notexture;
+				}
+
+				s->numpasses = 1;
+				s->numdeforms = 0;
+				s->flags = SHADER_DEPTHWRITE|SHADER_CULL_FRONT;
+				s->features = MF_STCOORDS|MF_COLORS|MF_TRNORMALS;
+				s->sort = SHADER_SORT_OPAQUE;
+				break;
+
+			case SHADER_BSP_FLARE:
+				pass = &s->passes[0];
+				pass->flags = SHADER_PASS_BLEND | SHADER_PASS_NOCOLORARRAY;
+				pass->blendsrc = GL_ONE;
+				pass->blenddst = GL_ONE;
+				pass->blendmode = GL_MODULATE;
+				pass->anim_frames[0] = GL_FindImage (shortname, 0);
+				pass->depthfunc = GL_LEQUAL;
+				pass->rgbgen.type = RGB_GEN_VERTEX;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				pass->numtcmods = 0;
+				pass->tcgen = TC_GEN_BASE;
+				pass->numMergedPasses = 1;
+				pass->flush = R_RenderMeshGeneric;
+
+				if ( !pass->anim_frames[0] ) {
+					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
+					pass->anim_frames[0] = r_notexture;
+				}
+
+				s->numpasses = 1;
+				s->numdeforms = 0;
+				s->flags = SHADER_FLARE;
+				s->features = MF_STCOORDS|MF_COLORS;
+				s->sort = SHADER_SORT_ADDITIVE;
+				break;
+
+			case SHADER_MD3:
+				pass = &s->passes[0];
+				pass->flags = SHADER_PASS_DEPTHWRITE;
+				pass->anim_frames[0] = GL_FindImage (shortname, 0);
+				pass->depthfunc = GL_LEQUAL;
+				pass->rgbgen.type = RGB_GEN_LIGHTING_DIFFUSE;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				pass->numtcmods = 0;
+				pass->tcgen = TC_GEN_BASE;
+				pass->blendmode = GL_MODULATE;
+				pass->numMergedPasses = 1;
+				pass->flush = R_RenderMeshGeneric;
+
+				if ( !pass->anim_frames[0] ) {
+					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
+					pass->anim_frames[0] = r_notexture;
+				}
+
+				s->numpasses = 1;
+				s->numdeforms = 0;
+				s->flags = SHADER_DEPTHWRITE|SHADER_CULL_FRONT;
+				s->features = MF_STCOORDS|MF_NORMALS;
+				s->sort = SHADER_SORT_OPAQUE;
+				break;
+
+			case SHADER_2D:
+				pass = &s->passes[0];
+				pass->flags = SHADER_PASS_BLEND | SHADER_PASS_NOCOLORARRAY;
+				pass->blendsrc = GL_SRC_ALPHA;
+				pass->blenddst = GL_ONE_MINUS_SRC_ALPHA;
+				pass->blendmode = GL_MODULATE;
+				pass->anim_frames[0] = GL_FindImage (shortname, IT_NOPICMIP|IT_NOMIPMAP);
+				pass->depthfunc = GL_LEQUAL;
+				pass->rgbgen.type = RGB_GEN_VERTEX;
+				pass->alphagen.type = ALPHA_GEN_VERTEX;
+				pass->numtcmods = 0;
+				pass->tcgen = TC_GEN_BASE;
+				pass->numMergedPasses = 1;
+				pass->flush = R_RenderMeshGeneric;
+
+				s->numpasses = 1;
+				s->numdeforms = 0;
+				s->flags = SHADER_NOPICMIP|SHADER_NOMIPMAPS;
+				s->features = MF_STCOORDS|MF_COLORS;
+				s->sort = SHADER_SORT_ADDITIVE;
+				break;
+
+			case SHADER_FARBOX:
+				pass = &s->passes[0];
+				pass->flags = SHADER_PASS_NOCOLORARRAY;
+				pass->blendsrc = GL_ONE;
+				pass->blenddst = GL_ZERO;
+				pass->blendmode = GL_REPLACE;
+				pass->anim_frames[0] = GL_FindImage (shortname, IT_NOMIPMAP|IT_CLAMP);
+				pass->depthfunc = GL_LEQUAL;
+				pass->rgbgen.type = RGB_GEN_IDENTITY;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				pass->numtcmods = 0;
+				pass->tcgen = TC_GEN_BASE;
+				pass->numMergedPasses = 1;
+				pass->flush = R_RenderMeshGeneric;
+
+				s->numpasses = 1;
+				s->numdeforms = 0;
+				s->flags = 0;
+				s->features = MF_STCOORDS;
+				s->sort = SHADER_SORT_SKY;
+				break;
+
+			case SHADER_NEARBOX:
+				pass = &s->passes[0];
+				pass->flags = SHADER_PASS_ALPHAFUNC|SHADER_PASS_NOCOLORARRAY;
+				pass->blendsrc = GL_ONE;
+				pass->blenddst = GL_ZERO;
+				pass->blendmode = GL_MODULATE;
+				pass->alphafunc = SHADER_ALPHA_LT128;
+				pass->anim_frames[0] = GL_FindImage (shortname, IT_NOMIPMAP|IT_CLAMP);
+				pass->depthfunc = GL_LEQUAL;
+				pass->rgbgen.type = RGB_GEN_IDENTITY;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				pass->numtcmods = 0;
+				pass->tcgen = TC_GEN_BASE;
+				pass->numMergedPasses = 1;
+				pass->flush = R_RenderMeshGeneric;
+
+				if ( !pass->anim_frames[0] ) {
+					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
+					pass->anim_frames[0] = r_notexture;
+				}
+
+				s->numpasses = 1;
+				s->numdeforms = 0;
+				s->flags = 0;
+				s->features = MF_STCOORDS;
+				s->sort = SHADER_SORT_SKY;
+				break;
+
 			case SHADER_BSP:
+			default:
+create_default:
 				pass = &s->passes[0];
 				pass->flags = SHADER_PASS_LIGHTMAP | SHADER_PASS_DEPTHWRITE | SHADER_PASS_NOCOLORARRAY;
 				pass->tcgen = TC_GEN_LIGHTMAP;
 				pass->anim_frames[0] = NULL;
 				pass->depthfunc = GL_LEQUAL;
 				pass->blendmode = GL_REPLACE;
-				pass->alphagen = ALPHA_GEN_IDENTITY;
-				pass->rgbgen = RGB_GEN_IDENTITY;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
+				pass->rgbgen.type = RGB_GEN_IDENTITY;
 				pass->numMergedPasses = 2;
 
 				if ( qglMTexCoord2fSGIS ) {
@@ -1567,8 +1755,8 @@ int R_LoadShader ( char *name, int type )
 				pass->blenddst = GL_SRC_COLOR;
 				pass->blendmode = GL_MODULATE;
 				pass->depthfunc = GL_LEQUAL;
-				pass->rgbgen = RGB_GEN_IDENTITY;
-				pass->alphagen = ALPHA_GEN_IDENTITY;
+				pass->rgbgen.type = RGB_GEN_IDENTITY;
+				pass->alphagen.type = ALPHA_GEN_IDENTITY;
 
 				if ( !qglMTexCoord2fSGIS ) {
 					pass->numMergedPasses = 1;
@@ -1585,134 +1773,39 @@ int R_LoadShader ( char *name, int type )
 				s->flags = SHADER_DEPTHWRITE|SHADER_CULL_FRONT;
 				s->features = MF_STCOORDS|MF_LMCOORDS|MF_TRNORMALS;
 				s->sort = SHADER_SORT_OPAQUE;
-				s->registration_sequence = registration_sequence;
 				break;
-
-			case SHADER_BSP_VERTEX:
-				pass = &s->passes[0];
-				pass->tcgen = TC_GEN_BASE;
-				pass->anim_frames[0] = GL_FindImage (shortname, 0);
-				pass->depthfunc = GL_LEQUAL;
-				pass->flags = SHADER_PASS_DEPTHWRITE;
-				pass->rgbgen = RGB_GEN_VERTEX;
-				pass->alphagen = ALPHA_GEN_IDENTITY;
-				pass->blendmode = GL_MODULATE;
-				pass->numMergedPasses = 1;
-				pass->flush = R_RenderMeshGeneric;
-
-				if ( !pass->anim_frames[0] ) {
-					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
-					pass->anim_frames[0] = r_notexture;
-				}
-
-				s->numpasses = 1;
-				s->numdeforms = 0;
-				s->flags = SHADER_DEPTHWRITE|SHADER_CULL_FRONT;
-				s->features = MF_STCOORDS|MF_COLORS|MF_TRNORMALS;
-				s->sort = SHADER_SORT_OPAQUE;
-				s->registration_sequence = registration_sequence;
-				break;
-
-			case SHADER_BSP_FLARE:
-				pass = &s->passes[0];
-				pass->flags = SHADER_PASS_BLEND | SHADER_PASS_NOCOLORARRAY;
-				pass->blendsrc = GL_ONE;
-				pass->blenddst = GL_ONE;
-				pass->blendmode = GL_MODULATE;
-				pass->anim_frames[0] = GL_FindImage (shortname, 0);
-				pass->depthfunc = GL_LEQUAL;
-				pass->rgbgen = RGB_GEN_VERTEX;
-				pass->alphagen = ALPHA_GEN_IDENTITY;
-				pass->numtcmods = 0;
-				pass->tcgen = TC_GEN_BASE;
-				pass->numMergedPasses = 1;
-				pass->flush = R_RenderMeshGeneric;
-
-				if ( !pass->anim_frames[0] ) {
-					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
-					pass->anim_frames[0] = r_notexture;
-				}
-
-				s->numpasses = 1;
-				s->numdeforms = 0;
-				s->flags = SHADER_FLARE;
-				s->features = MF_STCOORDS|MF_COLORS;
-				s->sort = SHADER_SORT_ADDITIVE;
-				s->registration_sequence = registration_sequence;
-				break;
-
-			case SHADER_MD3:
-				pass = &s->passes[0];
-				pass->flags = SHADER_PASS_DEPTHWRITE;
-				pass->anim_frames[0] = GL_FindImage (shortname, 0);
-				pass->depthfunc = GL_LEQUAL;
-				pass->rgbgen = RGB_GEN_LIGHTING_DIFFUSE;
-				pass->numtcmods = 0;
-				pass->tcgen = TC_GEN_BASE;
-				pass->blendmode = GL_MODULATE;
-				pass->numMergedPasses = 1;
-				pass->flush = R_RenderMeshGeneric;
-
-				if ( !pass->anim_frames[0] ) {
-					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
-					pass->anim_frames[0] = r_notexture;
-				}
-
-				s->numpasses = 1;
-				s->numdeforms = 0;
-				s->flags = SHADER_DEPTHWRITE|SHADER_CULL_FRONT;
-				s->features = MF_STCOORDS|MF_NORMALS;
-				s->sort = SHADER_SORT_OPAQUE;
-				s->registration_sequence = registration_sequence;
-				break;
-
-			case SHADER_2D:
-				pass = &s->passes[0];
-				pass->flags = SHADER_PASS_BLEND | SHADER_PASS_NOCOLORARRAY;
-				pass->blendsrc = GL_SRC_ALPHA;
-				pass->blenddst = GL_ONE_MINUS_SRC_ALPHA;
-				pass->blendmode = GL_MODULATE;
-				pass->anim_frames[0] = GL_FindImage (shortname, IT_NOPICMIP|IT_NOMIPMAP);
-				pass->depthfunc = GL_LEQUAL;
-				pass->rgbgen = RGB_GEN_VERTEX;
-				pass->alphagen = ALPHA_GEN_VERTEX;
-				pass->numtcmods = 0;
-				pass->tcgen = TC_GEN_BASE;
-				pass->numMergedPasses = 1;
-				pass->flush = R_RenderMeshGeneric;
-
-				if ( !pass->anim_frames[0] ) {
-					Com_DPrintf ( S_COLOR_YELLOW "Shader %s has a stage with no image: %s.\n", s->name, shortname );
-					pass->anim_frames[0] = r_notexture;
-				}
-
-				s->numpasses = 1;
-				s->numdeforms = 0;
-				s->flags = SHADER_NOPICMIP|SHADER_NOMIPMAPS;
-				s->features = MF_STCOORDS|MF_COLORS;
-				s->sort = SHADER_SORT_ADDITIVE;
-				s->registration_sequence = registration_sequence;
-				break;
-
-			default:
-				return -1;
 		}
 	}
 
-	return f;
+	return s;
 }
 
 shader_t *R_RegisterPic (char *name) 
 {
-	return &r_shaders[R_LoadShader (name, SHADER_2D)];
+	shader_t *shader;
+	
+	shader = R_Shader_Load ( name, SHADER_2D, qfalse );
+	shader->registration_sequence = registration_sequence;
+
+	return shader;
 }
 
 shader_t *R_RegisterShader (char *name)
 {
-	return &r_shaders[R_LoadShader (name, SHADER_BSP)];
+	shader_t *shader;
+
+	shader = R_Shader_Load ( name, SHADER_BSP, qfalse );
+	shader->registration_sequence = registration_sequence;
+
+	return shader;
 }
 
 shader_t *R_RegisterSkin (char *name)
 {
-	return &r_shaders[R_LoadShader (name, SHADER_MD3)];
+	shader_t *shader;
+
+	shader = R_Shader_Load ( name, SHADER_MD3, qfalse );
+	shader->registration_sequence = registration_sequence;
+
+	return shader;
 }

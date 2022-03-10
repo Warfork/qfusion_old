@@ -32,11 +32,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include <dlfcn.h>
 
-#ifdef QMAX
-qboolean have_stencil = false;
-#endif
-
-
 void ( APIENTRY * qglAccum )(GLenum op, GLfloat value);
 void ( APIENTRY * qglAlphaFunc )(GLenum func, GLclampf ref);
 GLboolean ( APIENTRY * qglAreTexturesResident )(GLsizei n, const GLuint *textures, GLboolean *residences);
@@ -3012,29 +3007,27 @@ void *qwglGetProcAddress(char *symbol)
 
 qboolean QGL_Init( const char *dllname )
 {
-
-
-	if ( glw_state.OpenGLLib ) QGL_Shutdown();
+	if ( glw_state.OpenGLLib )
+		QGL_Shutdown();
 	
-	if ((glw_state.OpenGLLib =dlopen(dllname, RTLD_LAZY)) == 0 ){
+	if ((glw_state.OpenGLLib = dlopen(dllname, RTLD_LAZY)) == 0 ){
 		char	fn[MAX_OSPATH];
 		char	*path;
 
-
 		// try basedir next
-		path =Cvar_Get ("basedir", ".", CVAR_NOSET)->string;
+		path = Cvar_Get ("basedir", ".", CVAR_NOSET)->string;
 		
 		snprintf(fn, MAX_OSPATH, "%s/%s", path, dllname );
 
-		if((glw_state.OpenGLLib = dlopen(fn, RTLD_LAZY)) == 0) {
+		if((glw_state.OpenGLLib = dlopen (fn, RTLD_LAZY)) == 0) {
 			Com_Printf( PRINT_ALL, "%s\n", dlerror() );
-			return false;
+			return qfalse;
 		}
+
 		Com_Printf ("Using %s for OpenGL...", fn); 
 	} else {
 		Com_Printf ("Using %s for OpenGL...", dllname);
 	}
-
 
 	qglAccum                     = dllAccum = GPA( "glAccum" );
 	qglAlphaFunc                 = dllAlphaFunc = GPA( "glAlphaFunc" );
@@ -3399,7 +3392,7 @@ qboolean QGL_Init( const char *dllname )
 	qglActiveTextureARB = 0;
 	qglClientActiveTextureARB = 0;
 
-	return true;
+	return qtrue;
 }
 
 void GLimp_EnableLogging( qboolean enable )

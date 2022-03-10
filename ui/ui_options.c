@@ -123,24 +123,21 @@ static void LookstrafeFunc( void *unused )
 
 void Options_MenuInit( void )
 {
-	static const char *yesno_names[] =
+	static char *yesno_names[] =
 	{
 		"no",
 		"yes",
 		0
 	};
 
-	int w, h;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	/*
 	** configure controls menu and menu items
 	*/
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_options_menu.x = w / 2;
+	s_options_menu.x = uis.vidWidth / 2;
+	s_options_menu.y = 0;
 	s_options_menu.nitems = 0;
 
 	s_options_title.generic.type = MTYPE_SEPARATOR;

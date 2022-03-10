@@ -48,7 +48,7 @@ void SV_SetMaster_f (void)
 	}
 
 	// make sure the server is listed public
-	Cvar_Set ("public", "1");
+	Cvar_Set ("sv_public", "1");
 
 	for (i=1 ; i<MAX_MASTERS ; i++)
 		memset (&master_adr[i], 0, sizeof(master_adr[i]));
@@ -68,10 +68,6 @@ void SV_SetMaster_f (void)
 			master_adr[slot].port = BigShort (PORT_MASTER);
 
 		Com_Printf ("Master server at %s\n", NET_AdrToString (&master_adr[slot]));
-
-		Com_Printf ("Sending a ping.\n");
-
-		Netchan_OutOfBandPrint (NS_SERVER, master_adr[slot], "ping");
 
 		slot++;
 	}
@@ -96,7 +92,7 @@ qboolean SV_SetPlayer (void)
 	char		*s;
 
 	if (Cmd_Argc() < 2)
-		return false;
+		return qfalse;
 
 	s = Cmd_Argv(1);
 
@@ -107,7 +103,7 @@ qboolean SV_SetPlayer (void)
 		if (idnum < 0 || idnum >= sv_maxclients->value)
 		{
 			Com_Printf ("Bad client slot: %i\n", idnum);
-			return false;
+			return qfalse;
 		}
 
 		sv_client = &svs.clients[idnum];
@@ -115,9 +111,9 @@ qboolean SV_SetPlayer (void)
 		if (!sv_client->state)
 		{
 			Com_Printf ("Client %i is not active\n", idnum);
-			return false;
+			return qfalse;
 		}
-		return true;
+		return qtrue;
 	}
 
 	// check for a name match
@@ -129,12 +125,12 @@ qboolean SV_SetPlayer (void)
 		{
 			sv_client = cl;
 			sv_player = sv_client->edict;
-			return true;
+			return qtrue;
 		}
 	}
 
 	Com_Printf ("Userid %s is not on the server\n", s);
-	return false;
+	return qfalse;
 }
 
 
@@ -193,7 +189,7 @@ void CopyFile (char *src, char *dst)
 {
 	FILE	*f1, *f2;
 	int		l;
-	byte	buffer[65536];
+	qbyte	buffer[65536];
 
 	Com_DPrintf ("CopyFile (%s, %s)\n", src, dst);
 
@@ -360,11 +356,11 @@ void SV_WriteServerFile (qboolean autosave)
 		Com_sprintf (comment,sizeof(comment), "%2i:%i%i %2i/%2i  ", newtime->tm_hour
 			, newtime->tm_min/10, newtime->tm_min%10,
 			newtime->tm_mon+1, newtime->tm_mday);
-		strncat (comment, sv.configstrings[CS_MESSAGE], sizeof(comment)-1-strlen(comment) );
+		strncat (comment, sv.name, sizeof(comment)-1-strlen(comment) );
 	}
 	else
 	{	// autosaved
-		Com_sprintf (comment, sizeof(comment), "%s", sv.configstrings[CS_MESSAGE]);
+		Com_sprintf (comment, sizeof(comment), "%s", sv.name);
 	}
 
 	fwrite (comment, 1, sizeof(comment), f);
@@ -467,7 +463,7 @@ FIXME: remove?
 */
 void SV_DemoMap_f (void)
 {
-	SV_Map (true, Cmd_Argv(1), false, false );
+	SV_Map (qtrue, Cmd_Argv(1), qfalse, qfalse );
 }
 
 /*
@@ -495,7 +491,7 @@ void SV_Demo_f (void)
 		return;
 	}
 
-	SV_Map (true, filename, false, false );
+	SV_Map (qtrue, filename, qfalse, qfalse );
 }
 
 
@@ -548,24 +544,24 @@ void SV_GameMap_f (void)
 			// clear all the client inuse flags before saving so that
 			// when the level is re-entered, the clients will spawn
 			// at spawn points instead of occupying body shells
-			savedInuse = Q_malloc(sv_maxclients->value * sizeof(qboolean));
+			savedInuse = Mem_TempMalloc (sv_maxclients->value * sizeof(qboolean));
 			for (i=0,cl=svs.clients ; i<sv_maxclients->value; i++,cl++)
 			{
-				savedInuse[i] = cl->edict->inuse;
-				cl->edict->inuse = false;
+				savedInuse[i] = cl->edict->r.inuse;
+				cl->edict->r.inuse = qfalse;
 			}
 
 			SV_WriteLevelFile ();
 
 			// we must restore these for clients to transfer over correctly
 			for (i=0,cl=svs.clients ; i<sv_maxclients->value; i++,cl++)
-				cl->edict->inuse = savedInuse[i];
-			Q_free (savedInuse);
+				cl->edict->r.inuse = savedInuse[i];
+			Mem_TempFree (savedInuse);
 		}
 	}
 
 	// start up the next map
-	SV_Map (false, Cmd_Argv(1), false, !Q_stricmp(Cmd_Argv(0), "devmap") );
+	SV_Map (qfalse, Cmd_Argv(1), qfalse, !Q_stricmp(Cmd_Argv(0), "devmap") );
 
 	// archive server state
 	Q_strncpyz (svs.mapcmd, Cmd_Argv(1), sizeof(svs.mapcmd));
@@ -573,7 +569,7 @@ void SV_GameMap_f (void)
 	// copy off the level to the autosave slot
 	if (!dedicated->value)
 	{
-		SV_WriteServerFile (true);
+		SV_WriteServerFile (qtrue);
 		SV_CopySaveGame ("current", "save0");
 	}
 }
@@ -659,7 +655,7 @@ void SV_Loadgame_f (void)
 
 	// go to the map
 	sv.state = ss_dead;		// don't save current level when changing
-	SV_Map (false, svs.mapcmd, true, false);
+	SV_Map (qfalse, svs.mapcmd, qtrue, qfalse);
 }
 
 
@@ -698,7 +694,7 @@ void SV_Savegame_f (void)
 		return;
 	}
 
-	if (sv_maxclients->value == 1 && svs.clients[0].edict->client->ps.stats[STAT_HEALTH] <= 0)
+	if (sv_maxclients->value == 1 && svs.clients[0].edict->r.client->r.health <= 0)
 	{
 		Com_Printf ("\nCan't savegame while dead!\n");
 		return;
@@ -718,7 +714,7 @@ void SV_Savegame_f (void)
 	SV_WriteLevelFile ();
 
 	// save server state
-	SV_WriteServerFile (false);
+	SV_WriteServerFile (qfalse);
 
 	// copy it off
 	SV_CopySaveGame ("current", dir);
@@ -786,7 +782,7 @@ void SV_Status_f (void)
 		if (!cl->state)
 			continue;
 		Com_Printf ("%3i ", i);
-		Com_Printf ("%5i ", cl->edict->client->ps.stats[STAT_FRAGS]);
+		Com_Printf ("%5i ", cl->edict->r.client->r.frags);
 
 		if (cl->state == cs_connected)
 			Com_Printf ("CNCT ");
@@ -914,7 +910,7 @@ recorded, but no playerinfo will be stored.  Primarily for demo merging.
 void SV_ServerRecord_f (void)
 {
 	char	name[MAX_OSPATH];
-	char	buf_data[32768];
+	char	buf_data[MAX_DEMO_MSGLEN];
 	sizebuf_t	buf;
 	int		len;
 	int		i;
@@ -972,14 +968,21 @@ void SV_ServerRecord_f (void)
 	MSG_WriteString (&buf, Cvar_VariableString ("fs_gamedir"));
 	MSG_WriteShort (&buf, -1);
 	// send full levelname
-	MSG_WriteString (&buf, sv.configstrings[CS_MESSAGE]);
+	MSG_WriteString (&buf, sv.name);
 
 	for (i=0 ; i<MAX_CONFIGSTRINGS ; i++)
 		if (sv.configstrings[i][0])
 		{
-			MSG_WriteByte (&buf, svc_configstring);
-			MSG_WriteShort (&buf, i);
-			MSG_WriteString (&buf, sv.configstrings[i]);
+			if (buf.cursize + strlen (sv.configstrings[i]) + 32 > buf.maxsize)
+			{	// write it out
+				len = LittleLong (buf.cursize);
+				fwrite (&len, 4, 1, svs.demofile);
+				fwrite (buf.data, buf.cursize, 1, svs.demofile);
+				buf.cursize = 0;
+			}
+
+			MSG_WriteByte (&buf, svc_servercmd);
+			MSG_WriteString (&buf, va("cs %i \"%s\"", i, sv.configstrings[i]));
 		}
 
 	// write it to the demo file
@@ -1024,8 +1027,8 @@ void SV_KillServer_f (void)
 {
 	if (!svs.initialized)
 		return;
-	SV_Shutdown ("Server was killed.\n", false);
-	NET_Config ( false );	// close network sockets
+	SV_Shutdown ("Server was killed.\n", qfalse);
+	NET_Config ( qfalse );	// close network sockets
 }
 
 /*

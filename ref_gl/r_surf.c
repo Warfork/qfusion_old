@@ -17,7 +17,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-// R_SURF.C: surface-related refresh code
+// r_surf.c: surface-related refresh code
 #include "r_local.h"
 
 #define GL_LIGHTMAP_FORMAT GL_RGBA
@@ -28,7 +28,7 @@ static vec3_t	modelorg;		// relative to viewpoint
 static vec3_t	modelmins;
 static vec3_t	modelmaxs;
 
-void R_BuildLightMap (byte *data, byte *dest);
+void R_BuildLightMap (qbyte *data, qbyte *dest);
 
 /*
 =============================================================
@@ -50,19 +50,17 @@ void R_AddSurfaceToList ( msurface_t *surf, int clipflags )
 	meshbuffer_t *mb;
 
 	surf->visframe = r_framecount;
-
-	// don't even bother culling
-	if ( !(mesh = surf->mesh) || !surf->shaderref ) {
-		return;
-	}
-
 	shader = surf->shaderref->shader;
 
 	// flare
 	if ( surf->facetype == FACETYPE_FLARE ) {
 		if ( r_flares->value ) {
-			R_AddMeshToBuffer ( surf->mesh, surf->fog, surf, shader, -1 );
+			R_AddMeshToList ( surf->fog, shader, surf - currentmodel->bmodel->surfaces + 1 );
 		}
+		return;
+	}
+
+	if ( !(mesh = surf->mesh) || R_InvalidMesh (mesh) ) {
 		return;
 	}
 
@@ -87,17 +85,17 @@ void R_AddSurfaceToList ( msurface_t *surf, int clipflags )
 				if ( dot <= BACKFACE_EPSILON )
 					return;
 			} else {
-				if ( dot > BACKFACE_EPSILON )
+				if ( dot >= -BACKFACE_EPSILON )
 					return;
 			}
 		}
 
-		if ( clipflags && R_CullBox ( mesh->mins, mesh->maxs, clipflags ) ) {
+		if ( clipflags && R_CullBox ( surf->mins, surf->maxs, clipflags ) ) {
 			return;
 		}
 	}
 
-	mb = R_AddMeshToBuffer ( mesh, surf->fog, surf, shader, surf->lightmaptexturenum );
+	mb = R_AddMeshToList ( surf->fog, shader, surf - currentmodel->bmodel->surfaces + 1 );
 	if ( mb ) {
 		if ( (shader->flags & SHADER_SKY) && !r_fastsky->value ) {
 			R_AddSkySurface ( surf );
@@ -162,7 +160,7 @@ void R_AddBrushModelToList (entity_t *e)
 
 	if ( !Matrix3_Compare (currententity->axis, axis_identity) )
 	{
-		rotated = true;
+		rotated = qtrue;
 		for (i=0 ; i<3 ; i++)
 		{
 			modelmins[i] = e->origin[i] - currentmodel->radius;
@@ -174,7 +172,7 @@ void R_AddBrushModelToList (entity_t *e)
 	}
 	else
 	{
-		rotated = false;
+		rotated = qfalse;
 		VectorAdd (e->origin, currentmodel->mins, modelmins);
 		VectorAdd (e->origin, currentmodel->maxs, modelmaxs);
 
@@ -298,7 +296,7 @@ cluster
 */
 void R_MarkLeaves (void)
 {
-	byte	*vis;
+	qbyte	*vis;
 	int		i;
 	mleaf_t	*leaf;
 	int		cluster;
@@ -354,7 +352,12 @@ void R_MarkLeaves (void)
 =============================================================================
 */
 
-mesh_t *GL_CreateMeshForPatch ( model_t *mod, dface_t *surf )
+/*
+================
+GL_CreateMeshForPatch
+================
+*/
+void GL_CreateMeshForPatch ( model_t *mod, dface_t *in, msurface_t *out )
 {
     int numverts, numindexes, firstvert, patch_cp[2], step[2], size[2], flat[2], i, u, v, p;
 	vec4_t colors[MAX_ARRAY_VERTS], points[MAX_ARRAY_VERTS], normals[MAX_ARRAY_VERTS],
@@ -364,19 +367,19 @@ mesh_t *GL_CreateMeshForPatch ( model_t *mod, dface_t *surf )
 	index_t	*indexes;
 	float subdivlevel;
 
-	patch_cp[0] = LittleLong ( surf->patch_cp[0] );
-	patch_cp[1] = LittleLong ( surf->patch_cp[1] );
+	patch_cp[0] = LittleLong ( in->patch_cp[0] );
+	patch_cp[1] = LittleLong ( in->patch_cp[1] );
 
 	if ( !patch_cp[0] || !patch_cp[1] ) {
-		return NULL;
+		return;
 	}
 
 	subdivlevel = r_subdivisions->value;
 	if ( subdivlevel < 1 )
 		subdivlevel = 1;
 
-	numverts = LittleLong ( surf->numverts );
-	firstvert = LittleLong ( surf->firstvert );
+	numverts = LittleLong ( in->numverts );
+	firstvert = LittleLong ( in->firstvert );
 	for ( i = 0; i < numverts; i++ ) {
 		VectorCopy ( mod->bmodel->xyz_array[firstvert + i], points[i] );
 		VectorCopy ( mod->bmodel->normals_array[firstvert + i], normals[i] );
@@ -396,19 +399,19 @@ mesh_t *GL_CreateMeshForPatch ( model_t *mod, dface_t *surf )
 	numverts = size[0] * size[1];
 
 	if ( numverts > MAX_ARRAY_VERTS ) {
-		return NULL;
+		return;
 	}
 
-	mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), mod->name );
-	mesh->numvertexes = numverts;
-	mesh->xyz_array = Hunk_AllocName ( numverts * sizeof(vec4_t), mod->name );
-	mesh->normals_array = Hunk_AllocName ( numverts * sizeof(vec3_t), mod->name );
-	mesh->st_array = Hunk_AllocName ( numverts * sizeof(vec2_t), mod->name );
-	mesh->lmst_array = Hunk_AllocName ( numverts * sizeof(vec2_t), mod->name );
-	mesh->colors_array = Hunk_AllocName ( numverts * sizeof(vec4_t), mod->name );
+	out->patchWidth = size[0];
+	out->patchHeight = size[1];
 
-	mesh->patchWidth = size[0];
-	mesh->patchHeight = size[1];
+	mesh = out->mesh = (mesh_t *)Mod_Malloc ( mod, sizeof(mesh_t) );
+	mesh->numvertexes = numverts;
+	mesh->xyz_array = Mod_Malloc ( mod, numverts * sizeof(vec4_t) );
+	mesh->normals_array = Mod_Malloc ( mod, numverts * sizeof(vec3_t) );
+	mesh->st_array = Mod_Malloc ( mod, numverts * sizeof(vec2_t) );
+	mesh->lmst_array = Mod_Malloc ( mod, numverts * sizeof(vec2_t) );
+	mesh->colors_array = Mod_Malloc ( mod, numverts * sizeof(vec4_t) );
 
 // fill in
 	Patch_Evaluate ( points, patch_cp, step, mesh->xyz_array );
@@ -427,42 +430,76 @@ mesh_t *GL_CreateMeshForPatch ( model_t *mod, dface_t *surf )
     }
 
 // compute new indexes avoiding adding invalid triangles
-	numindexes = 0;
+	numindexes = (size[0]-1)*(size[1]-1)*6;
 	indexes = tempIndexesArray;
     for (v = 0, i = 0; v < size[1]-1; v++)
 	{
-		for (u = 0; u < size[0]-1; u++, i += 6)
+		for (u = 0; u < size[0]-1; u++)
 		{
 			indexes[0] = p = v * size[0] + u;
 			indexes[1] = p + size[0];
 			indexes[2] = p + 1;
-
-			if ( !VectorCompare(mesh->xyz_array[indexes[0]], mesh->xyz_array[indexes[1]]) && 
-				!VectorCompare(mesh->xyz_array[indexes[0]], mesh->xyz_array[indexes[2]]) && 
-				!VectorCompare(mesh->xyz_array[indexes[1]], mesh->xyz_array[indexes[2]]) ) {
-				indexes += 3;
-				numindexes += 3;
-			}
-
-			indexes[0] = p + 1;
-			indexes[1] = p + size[0];
-			indexes[2] = p + size[0] + 1;
-
-			if ( !VectorCompare(mesh->xyz_array[indexes[0]], mesh->xyz_array[indexes[1]]) && 
-				!VectorCompare(mesh->xyz_array[indexes[0]], mesh->xyz_array[indexes[2]]) && 
-				!VectorCompare(mesh->xyz_array[indexes[1]], mesh->xyz_array[indexes[2]]) ) {
-				indexes += 3;
-				numindexes += 3;
-			}
+			indexes[3] = p + 1;
+			indexes[4] = p + size[0];
+			indexes[5] = p + size[0] + 1;
+			indexes += 6;
 		}
 	}
 
 // allocate and fill index table
 	mesh->numindexes = numindexes;
-	mesh->indexes = (index_t *)Hunk_AllocName ( numindexes * sizeof(index_t), mod->name );
+	mesh->indexes = (index_t *)Mod_Malloc ( mod, numindexes * sizeof(index_t) );
 	memcpy (mesh->indexes, tempIndexesArray, numindexes * sizeof(index_t) );
+}
 
-	return mesh;
+/*
+=============================================================================
+
+  AUTOSPRITES
+
+=============================================================================
+*/
+
+/*
+================
+GL_FixAutosprites
+================
+*/
+void GL_FixAutosprites (msurface_t *surf)
+{
+	int i;
+	mesh_t *mesh;
+	shader_t *shader;
+
+	if ( (surf->facetype != FACETYPE_PLANAR && surf->facetype != FACETYPE_TRISURF) ||
+		!surf->mesh || surf->mesh->numindexes < 6 || !surf->shaderref )
+		return;
+
+	shader = surf->shaderref->shader;
+	if ( !shader->numdeforms || !(shader->flags & SHADER_AUTOSPRITE) )
+		return;
+
+	for ( i = 0; i < shader->numdeforms; i++ )
+	{
+		if ( shader->deforms[i].type == DEFORMV_AUTOSPRITE )
+			break;
+	}
+
+	if ( i == shader->numdeforms )
+		return;
+
+	mesh = surf->mesh;
+	for ( i = 0; i < mesh->numindexes; i += 6 )
+	{
+		mesh->st_array[mesh->indexes[i+0]][0] = 0;
+		mesh->st_array[mesh->indexes[i+0]][1] = 1;
+		mesh->st_array[mesh->indexes[i+1]][0] = 0;
+		mesh->st_array[mesh->indexes[i+1]][1] = 0;
+		mesh->st_array[mesh->indexes[i+2]][0] = 1;
+		mesh->st_array[mesh->indexes[i+2]][1] = 1;
+		mesh->st_array[mesh->indexes[i+5]][0] = 1;
+		mesh->st_array[mesh->indexes[i+5]][1] = 0;
+	}
 }
 
 /*
@@ -503,31 +540,36 @@ R_BuildLightmaps
 void R_BuildLightmaps (bmodel_t *bmodel)
 {
 	int i;
-	byte lightmap_buffer[4*LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT];
+	qbyte lightmap_buffer[4*LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT];
 
 	if ( bmodel->numlightmaps > MAX_MAP_LIGHTMAPS )
 		Com_Error( ERR_DROP, "R_BuildLightmaps() - too many lightmaps" );
 
 	GL_BeginBuildingLightmaps ();
 
-	for (i = 0; i < bmodel->numlightmaps; i++)
+	if ( !r_vertexlight->value )
 	{
-        R_BuildLightMap (bmodel->lightdata + i*LIGHTMAP_SIZE, lightmap_buffer);
+		for (i = 0; i < bmodel->numlightmaps; i++)
+		{
+			R_BuildLightMap (bmodel->lightdata + i*LIGHTMAP_SIZE, lightmap_buffer);
 
-		GL_Bind( gl_state.lightmap_textures + i );
-		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-		qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
-		qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
+			GL_Bind( gl_state.lightmap_textures + i );
+			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+			qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP);
+			qglTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
-		qglTexImage2D( GL_TEXTURE_2D, 
-						   0, 
-						   GL_RGBA,
-						   LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, 
-						   0, 
-						   GL_LIGHTMAP_FORMAT, 
-						   GL_UNSIGNED_BYTE, 
-						   lightmap_buffer );
+			qglTexImage2D( GL_TEXTURE_2D, 
+							   0, 
+							   GL_RGBA,
+							   LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, 
+							   0, 
+							   GL_LIGHTMAP_FORMAT, 
+							   GL_UNSIGNED_BYTE, 
+							   lightmap_buffer );
+		}
+
+		Mod_Free (bmodel->lightdata);
 	}
 
 	GL_EndBuildingLightmaps ();

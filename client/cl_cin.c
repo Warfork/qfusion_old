@@ -34,45 +34,28 @@ SCR_StopCinematic
 */
 void SCR_StopCinematic (void)
 {
-	int i;
 	cinematics_t *cin = &cl.cin;
+
+	if ( !cin->file ) {
+		return;
+	}
 
 	cin->time = 0;	// done
 	cin->pic = NULL;
 	cin->pic_pending = NULL;
 
-	if ( cin->file ) {
-		FS_FCloseFile ( cin->file );
-		cin->file = 0;
-	}
-	if ( cin->buf ) {
-		Z_Free ( cin->buf );
-		cin->buf = NULL;
-	}
+	FS_FCloseFile (cin->file);
+	cin->file = 0;
 
-	for (i = 0; i < 2; i++)
-	{
-		if ( cin->y[i] ) {
-			Z_Free (cin->y[i]);
-			cin->y[i] = NULL;
-		}
-
-		if ( cin->u[i] ) {
-			Z_Free (cin->u[i]);
-			cin->u[i] = NULL;
-		}
-
-		if ( cin->v[i] ) {
-			Z_Free (cin->v[i]);
-			cin->v[i] = NULL;
-		}
+	if ( cin->vid_buffer ) {
+		Mem_ZoneFree ( cin->vid_buffer );
+		cin->vid_buffer = NULL;
 	}
 
-	// switch back down to 11 khz sound if necessary
-	if (cin->restart_sound)
-	{
-		cin->restart_sound = false;
-		CL_Snd_Restart_f ();
+	// switch back if necessary
+	if ( cin->restart_sound ) {
+		cin->restart_sound = qfalse;
+		S_Restart ( qtrue );
 	}
 }
 
@@ -88,6 +71,7 @@ void SCR_FinishCinematic (void)
 	// tell the server to advance to the next map / cinematic
 	MSG_WriteByte (&cls.netchan.message, clc_stringcmd);
 	SZ_Print (&cls.netchan.message, va("nextserver %i\n", cl.servercount));
+	CL_SetClientState (ca_connected);
 }
 
 //==========================================================================
@@ -97,7 +81,7 @@ void SCR_FinishCinematic (void)
 SCR_ReadNextFrame
 ==================
 */
-byte *SCR_ReadNextFrame (void)
+qbyte *SCR_ReadNextFrame (void)
 {
 	cinematics_t *cin = &cl.cin;
 	roq_chunk_t *chunk = &cin->chunk;
@@ -173,9 +157,6 @@ void SCR_RunCinematic (void)
 	{
 		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
-		cin->time = 1;	// hack to get the black screen behind loading
-		SCR_BeginLoadingPlaque ();
-		cin->time = 0;
 		return;
 	}
 }
@@ -193,14 +174,14 @@ qboolean SCR_DrawCinematic (void)
 	cinematics_t *cin = &cl.cin;
 
 	if (cin->time <= 0)
-		return false;
+		return qfalse;
 
 	if (!cin->pic)
-		return true;
+		return qtrue;
 
 	Draw_StretchRaw (0, 0, viddef.width, viddef.height, cin->width, cin->height, cin->frame, cin->pic);
 
-	return true;
+	return qtrue;
 }
 
 /*
@@ -211,7 +192,7 @@ SCR_PlayCinematic
 */
 void SCR_PlayCinematic (char *arg)
 {
-	int			old_khz;
+	int	old_khz;
 	cinematics_t *cin = &cl.cin;
 	roq_chunk_t *chunk = &cin->chunk;
 
@@ -223,34 +204,33 @@ void SCR_PlayCinematic (char *arg)
 
 	cin->frame = 0;
 	cin->remaining = FS_FOpenFile (cin->name, &cin->file);
-	if (!cin->file || !cin->remaining)
-	{
+	if ( !cin->file || !cin->remaining ) {
 		SCR_FinishCinematic ();
+		cin->file = 0;
 		cin->time = 0;	// done
 		return;
 	}
 
 	SCR_EndLoadingPlaque ();
 
-	cls.key_dest = key_game;
+	CL_SetKeyDest (key_game);
 	CL_SetClientState (ca_active);
 
 	// switch up to 22 khz sound if necessary
 	old_khz = Cvar_VariableValue ("s_khz");
-	if (old_khz != cin->s_rate/1000)
-	{
-		cin->restart_sound = true;
-		Cvar_SetValue ("s_khz", cin->s_rate/1000);
-		CL_Snd_Restart_f ();
-		Cvar_SetValue ("s_khz", old_khz);
+	if ( old_khz != cin->s_rate/1000 ) {
+		cin->restart_sound = qtrue;
+		Cvar_SetValue ( "s_khz", cin->s_rate/1000 );
+		S_Restart ( qtrue );
+		Cvar_SetValue ( "s_khz", old_khz );
 	}
 
 	// read header
 	RoQ_ReadChunk ( cin );
 
 	if ( LittleShort ( chunk->id ) != RoQ_HEADER1 || LittleLong ( chunk->size ) != RoQ_HEADER2 || LittleShort ( chunk->argument ) != RoQ_HEADER3 ) {
+		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
-		cin->time = 0;	// done
 		return;
 	}
 

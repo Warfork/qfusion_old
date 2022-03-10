@@ -46,7 +46,7 @@ cvar_t *nostdout;
 unsigned	sys_frame_time;
 
 uid_t saved_euid;
-qboolean stdin_active = true;
+qboolean stdin_active = qtrue;
 
 // =======================================================================
 // General routines
@@ -60,6 +60,11 @@ void Sys_ConsoleOutput (char *string)
 	fputs (string, stdout);
 }
 
+/*
+=================
+Sys_Printf
+=================
+*/
 void Sys_Printf (char *fmt, ...)
 {
 	va_list		argptr;
@@ -82,19 +87,34 @@ void Sys_Printf (char *fmt, ...)
 	}
 }
 
+/*
+=================
+Sys_Quit
+=================
+*/
 void Sys_Quit (void)
 {
-	CL_Shutdown ();
+	fcntl (0, F_SETFL, fcntl (0, F_GETFL, 0) & ~FNDELAY);
+
 	Qcommon_Shutdown ();
 
-	fcntl (0, F_SETFL, fcntl (0, F_GETFL, 0) & ~FNDELAY);
 	_exit(0);
 }
 
+/*
+=================
+Sys_Init
+=================
+*/
 void Sys_Init(void)
 {
 }
 
+/*
+=================
+Sys_Error
+=================
+*/
 void Sys_Error (char *error, ...)
 { 
 	va_list     argptr;
@@ -104,25 +124,15 @@ void Sys_Error (char *error, ...)
 	fcntl (0, F_SETFL, fcntl (0, F_GETFL, 0) & ~FNDELAY);
 
 	CL_Shutdown ();
-	Qcommon_Shutdown ();
 	
 	va_start (argptr, error);
 	vsnprintf (string, 1024, error, argptr);
 	va_end (argptr);
 	fprintf (stderr, "Error: %s\n", string);
 
+	Qcommon_Shutdown ();
+
 	_exit (1);
-} 
-
-void Sys_Warn (char *warning, ...)
-{
-	va_list     argptr;
-	char        string[1024];
-
-	va_start (argptr, warning);
-	vsnprintf (string, 1024, warning, argptr);
-	va_end (argptr);
-	fprintf (stderr, "Warning: %s", string);
 } 
 
 /*
@@ -169,7 +179,7 @@ char *Sys_ConsoleInput(void)
 
 	len = read (0, text, sizeof(text));
 	if (len == 0) { // eof!
-		stdin_active = false;
+		stdin_active = qfalse;
 		return NULL;
 	}
 
@@ -187,6 +197,11 @@ static void *game_library = NULL;
 static void *cgame_library = NULL;
 static void *ui_library = NULL;
 
+/*
+=================
+Sys_UnloadLibrary
+=================
+*/
 void Sys_UnloadLibrary (gamelib_t gamelib)
 {
 	void *lib;
@@ -209,6 +224,11 @@ void Sys_UnloadLibrary (gamelib_t gamelib)
 	lib = NULL;
 }
 
+/*
+=================
+Sys_LoadLibrary
+=================
+*/
 void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 {
 	char name[MAX_OSPATH];
@@ -277,7 +297,7 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 			apifuncname = "GetUIAPI";
 			break;
 
-		default: assert( false );
+		default: assert( 0 );
 	}
 
 	// check the current debug directory first for development purposes
@@ -325,10 +345,30 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 	return APIfunc(parms);
 }
 
+/*
+=================
+Sys_GetHomeDirectory
+=================
+*/
+char *Sys_GetHomeDirectory (void)
+{
+	return getenv ( "HOME" );
+}
+
+/*
+=================
+Sys_AppActivate
+=================
+*/
 void Sys_AppActivate (void)
 {
 }
 
+/*
+=================
+Sys_SendKeyEvents
+=================
+*/
 void Sys_SendKeyEvents (void)
 {
 #ifndef DEDICATED_ONLY

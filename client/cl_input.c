@@ -297,7 +297,7 @@ void CL_ClampPitch (void)
 {
 	float	pitch;
 
-	pitch = SHORT2ANGLE(cl.frame.playerstate.pmove.delta_angles[PITCH]);
+	pitch = SHORT2ANGLE(cl.frame.playerState.pmove.delta_angles[PITCH]);
 	if (pitch > 180)
 		pitch -= 360;
 
@@ -378,7 +378,7 @@ usercmd_t CL_CreateCmd (void)
 
 void IN_CenterView (void)
 {
-	cl.viewangles[PITCH] = -SHORT2ANGLE(cl.frame.playerstate.pmove.delta_angles[PITCH]);
+	cl.viewangles[PITCH] = -SHORT2ANGLE(cl.frame.playerState.pmove.delta_angles[PITCH]);
 }
 
 /*
@@ -434,7 +434,7 @@ CL_SendCmd
 void CL_SendCmd (void)
 {
 	sizebuf_t	buf;
-	byte		data[128];
+	qbyte		data[128];
 	int			i;
 	usercmd_t	*cmd, *oldcmd;
 	usercmd_t	nullcmd;
@@ -443,13 +443,11 @@ void CL_SendCmd (void)
 	// build a command even if not connected
 
 	// save this command off for prediction
-	i = cls.netchan.outgoing_sequence & (CMD_BACKUP-1);
+	i = cls.netchan.outgoing_sequence & CMD_MASK;
 	cmd = &cl.cmds[i];
 	cl.cmd_time[i] = cls.realtime;	// for netgraph ping calculation
 
-	*cmd = CL_CreateCmd ();
-
-	cl.cmd = *cmd;
+	*cmd = cl.cmd = CL_CreateCmd ();
 
 	if (cls.state == ca_disconnected || cls.state == ca_connecting)
 		return;
@@ -464,8 +462,7 @@ void CL_SendCmd (void)
 	// send a userinfo update if needed
 	if (userinfo_modified)
 	{
-		CL_FixUpGender();
-		userinfo_modified = false;
+		userinfo_modified = qfalse;
 		MSG_WriteByte (&cls.netchan.message, clc_userinfo);
 		MSG_WriteString (&cls.netchan.message, Cvar_Userinfo() );
 	}
@@ -475,7 +472,10 @@ void CL_SendCmd (void)
 	if (cmd->buttons && cl.cin.time > 0 && !cl.attractloop 
 		&& cls.realtime - cl.cin.time > 1000)
 	{	// skip the rest of the cinematic
+		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
+		SCR_UpdateScreen ();
+		return;
 	}
 
 	// begin a client move command
@@ -490,22 +490,22 @@ void CL_SendCmd (void)
 	if (cl_nodelta->value || !cl.frame.valid || cls.demowaiting)
 		MSG_WriteLong (&buf, -1);	// no compression
 	else
-		MSG_WriteLong (&buf, cl.frame.serverframe);
+		MSG_WriteLong (&buf, cl.frame.serverFrame);
 
 	// send this and the previous cmds in the message, so
 	// if the last packet was dropped, it can be recovered
-	i = (cls.netchan.outgoing_sequence-2) & (CMD_BACKUP-1);
+	i = (cls.netchan.outgoing_sequence-2) & CMD_MASK;
 	cmd = &cl.cmds[i];
 	memset (&nullcmd, 0, sizeof(nullcmd));
 	MSG_WriteDeltaUsercmd (&buf, &nullcmd, cmd);
 	oldcmd = cmd;
 
-	i = (cls.netchan.outgoing_sequence-1) & (CMD_BACKUP-1);
+	i = (cls.netchan.outgoing_sequence-1) & CMD_MASK;
 	cmd = &cl.cmds[i];
 	MSG_WriteDeltaUsercmd (&buf, oldcmd, cmd);
 	oldcmd = cmd;
 
-	i = (cls.netchan.outgoing_sequence) & (CMD_BACKUP-1);
+	i = (cls.netchan.outgoing_sequence) & CMD_MASK;
 	cmd = &cl.cmds[i];
 	MSG_WriteDeltaUsercmd (&buf, oldcmd, cmd);
 

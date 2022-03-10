@@ -25,47 +25,49 @@ model_t		*loadmodel;
 bmodel_t	*loadbmodel;
 int			modfilelen;
 
-void Mod_LoadAliasMD2Model (model_t *mod, void *buffer);
-void Mod_LoadAliasMD3Model (model_t *mod, void *buffer);
-void Mod_LoadSpriteModel (model_t *mod, void *buffer);
-void Mod_LoadDarkPlacesModel (model_t *mod, void *buffer);
-void Mod_LoadBrushModel (model_t *mod, void *buffer);
+void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer);
+void Mod_LoadAliasMD3Model (model_t *mod, model_t *parent, void *buffer);
+void Mod_LoadSpriteModel (model_t *mod, model_t *parent, void *buffer);
+void Mod_LoadSkeletalModel (model_t *mod, model_t *parent, void *buffer);
+void Mod_LoadBrushModel (model_t *mod, model_t *parent, void *buffer);
 
 model_t *Mod_LoadModel (model_t *mod, qboolean crash);
 
 void Mod_RegisterAliasModel ( model_t *mod );
-void Mod_RegisterDarkPlacesModel ( model_t *mod );
+void Mod_RegisterSkeletalModel ( model_t *mod );
 
-byte	mod_novis[MAX_MAP_LEAFS/8];
+qbyte	mod_novis[MAX_MAP_LEAFS/8];
 
 #define	MAX_MOD_KNOWN	512
 model_t	mod_known[MAX_MOD_KNOWN];
 int		mod_numknown;
 
 // the inline * models from the current map are kept separate
-model_t	mod_inline[MAX_MOD_KNOWN];
+model_t	mod_inline[MAX_MAP_MODELS];
 
 int		registration_sequence;
+
+mempool_t *mod_mempool;
 
 static modelformatdescriptor_t mod_supportedformats[] =
 {
  // Quake2 .md2 models
-	{ IDMD2HEADER,	4,	0x800000,			MD3_ALIAS_MAX_LODS,	Mod_LoadAliasMD2Model },
+	{ IDMD2HEADER,	4,	MD3_ALIAS_MAX_LODS,	Mod_LoadAliasMD2Model },
 
 // Quake III Arena .md3 models
-	{ IDMD3HEADER,	4,	0x800000,			MD3_ALIAS_MAX_LODS,	Mod_LoadAliasMD3Model },
+	{ IDMD3HEADER,	4,	MD3_ALIAS_MAX_LODS,	Mod_LoadAliasMD3Model },
 
 // Quake2 .sp2 sprites
-	{ IDSP2HEADER,	4,	0x10000,			0,					Mod_LoadSpriteModel	},
+	{ IDSP2HEADER,	4,	0,					Mod_LoadSpriteModel	},
 
-// DarkPlaces models
-	{ DPMHEADER,	16, DPM_MAX_FILESIZE,	DPM_MAX_LODS,		Mod_LoadDarkPlacesModel },
+// Skeletal models
+	{ SKMHEADER,	4,	SKM_MAX_LODS,		Mod_LoadSkeletalModel },
 
 // Quake III Arena .bsp models
-	{ IDBSPHEADER,	4,	0x4000000,			0,					Mod_LoadBrushModel },
+	{ IDBSPHEADER,	4,	0,					Mod_LoadBrushModel },
 
 // trailing NULL
-	{ NULL,			0,	0,					0,					NULL }
+	{ NULL,			0,	0,					NULL }
 };
 
 static int mod_numsupportedformats = sizeof(mod_supportedformats) / sizeof(mod_supportedformats[0]) - 1;
@@ -100,12 +102,12 @@ mleaf_t *Mod_PointInLeaf (vec3_t p, bmodel_t *model)
 Mod_ClusterPVS
 ==============
 */
-byte *Mod_ClusterPVS (int cluster, bmodel_t *model)
+qbyte *Mod_ClusterPVS (int cluster, bmodel_t *model)
 {
 	if (cluster == -1 || !model->vis)
 		return mod_novis;
 
-	return ((byte *)model->vis->data + cluster*model->vis->rowsize);
+	return ((qbyte *)model->vis->data + cluster*model->vis->rowsize);
 }
 
 
@@ -128,8 +130,8 @@ void Mod_Modellist_f (void)
 	{
 		if (!mod->name[0])
 			continue;
-		Com_Printf ("%8i : %s\n",mod->extradatasize, mod->name);
-		total += mod->extradatasize;
+		Com_Printf ("%8i : %s\n", mod->extradata->totalsize, mod->name);
+		total += mod->extradata->totalsize;
 	}
 	Com_Printf ("Total resident: %i\n", total);
 }
@@ -142,8 +144,33 @@ Mod_Init
 void Mod_Init (void)
 {
 	memset (mod_novis, 0xff, sizeof(mod_novis));
+
+	mod_mempool = Mem_AllocPool ( NULL, "Models" );
 }
 
+
+/*
+=================
+Mod_StripLODSuffix
+=================
+*/
+void Mod_StripLODSuffix ( char *name )
+{
+	int len;
+	int lodnum;
+
+	len = strlen ( name );
+	if ( len <= 2 ) {
+		return;
+	}
+
+	lodnum = atoi ( &name[len - 1] );
+	if ( lodnum < MD3_ALIAS_MAX_LODS ) {
+		if ( name[len-2] == '_' ) {
+			name[len-2] = 0;
+		}
+	}
+}
 
 /*
 ==================
@@ -220,7 +247,7 @@ model_t *Mod_ForName (char *name, qboolean crash)
 		return mod;
 	}
 
-	strcpy (mod->name, name);
+	Q_strncpyz (mod->name, name, sizeof(mod->name));
 
 	//
 	// load the file
@@ -248,13 +275,11 @@ model_t *Mod_ForName (char *name, qboolean crash)
 		Com_Error (ERR_DROP, "Mod_NumForName: unknown fileid for %s", mod->name);
 	}
 
-	mod->extradata = Hunk_Begin ( descr->maxSize );
-	descr->loader ( mod, buf );
-
-	FS_FreeFile (buf);
+	mod->extradata = Mem_AllocPool ( mod_mempool, mod->name );
+	descr->loader ( mod, NULL, buf );
+	FS_FreeFile ( buf );
 
 	if ( !descr->maxLods ) {
-		loadmodel->extradatasize = Hunk_End ();
 		return mod;
 	}
 
@@ -263,15 +288,15 @@ model_t *Mod_ForName (char *name, qboolean crash)
 	//
 	COM_StripExtension ( mod->name, shortname );
 
-	for ( i = 0, mod->numlods = 0; i < mod_supportedformats[i].maxLods; i++ )
+	for ( i = 0, mod->numlods = 0; i < descr->maxLods; i++ )
 	{
-		Com_sprintf ( lodname, MAX_QPATH, "%s_%i%s", shortname, i+1, &mod->name[strlen(shortname)] );
-		
-		modfilelen = FS_LoadFile (lodname, (void **)&buf);
-		if ( !buf ) {
+		if ( i >= MOD_MAX_LODS ) {
 			break;
 		}
-		if ( strncmp ((const char *)buf, descr->header, descr->headerLen) ) {
+
+		Com_sprintf ( lodname, MAX_QPATH, "%s_%i%s", shortname, i+1, &mod->name[strlen(shortname)] );
+		modfilelen = FS_LoadFile (lodname, (void **)&buf);
+		if ( !buf || strncmp ((const char *)buf, descr->header, descr->headerLen) ) {
 			break;
 		}
 		
@@ -281,17 +306,12 @@ model_t *Mod_ForName (char *name, qboolean crash)
 
 	if ( mod->numlods < 2 ) {
 		mod->numlods = 0;
-		mod->extradatasize = Hunk_End ();
 		return mod;
 	}
-
-	mod->lods = Hunk_AllocName ( sizeof(model_t *)*mod->numlods, mod->name );
-	mod->extradatasize = Hunk_End ();
 
 	for ( i = 0; i < mod->numlods; i++ )
 	{
 		Com_sprintf ( lodname, MAX_QPATH, "%s_%i%s", shortname, i+1, &mod->name[strlen(shortname)] );
-
 		FS_LoadFile ( lodname, (void **)&buf );
 
 		lod = mod->lods[i] = Mod_FindSlot ( lodname );
@@ -302,11 +322,8 @@ model_t *Mod_ForName (char *name, qboolean crash)
 		strcpy ( lod->name, lodname );
 
 		loadmodel = lod;
-
-		lod->extradata = Hunk_Begin ( descr->maxSize );
-		descr->loader ( lod, buf );
-		lod->extradatasize = Hunk_End ();
-
+		lod->extradata = Mem_AllocPool ( mod_mempool, lodname );
+		descr->loader ( lod, mod, buf );
 		FS_FreeFile (buf);
 	}
 
@@ -323,7 +340,7 @@ model_t *Mod_ForName (char *name, qboolean crash)
 ===============================================================================
 */
 
-byte	*mod_base;
+qbyte	*mod_base;
 
 void R_BuildLightmaps (bmodel_t *bmodel);
 
@@ -340,8 +357,8 @@ void Mod_LoadLighting (lump_t *l)
 		return;
 	}
 
-	loadbmodel->numlightmaps = l->filelen / ( 3 * 128 * 128);
-	loadbmodel->lightdata = Hunk_AllocName ( l->filelen, loadmodel->name );	
+	loadbmodel->numlightmaps = l->filelen / LIGHTMAP_SIZE;
+	loadbmodel->lightdata = Mod_Malloc ( loadmodel, l->filelen );
 	memcpy (loadbmodel->lightdata, mod_base + l->fileofs, l->filelen);
 }
 
@@ -358,8 +375,8 @@ void Mod_LoadVisibility (lump_t *l)
 		loadbmodel->vis = NULL;
 		return;
 	}
-	loadbmodel->vis = Hunk_AllocName (l->filelen, loadmodel->name);
 
+	loadbmodel->vis = Mod_Malloc ( loadmodel, l->filelen );
 	memcpy (loadbmodel->vis, mod_base + l->fileofs, l->filelen);
 
 	loadbmodel->vis->numclusters = LittleLong ( loadbmodel->vis->numclusters );
@@ -376,7 +393,7 @@ void Mod_LoadVertexes (lump_t *l)
 {
 	dvertex_t	*in;
 	float		*out_xyz, *out_normals,	*out_st, *out_lmst;
-	byte		*out_colors;
+	qbyte		*out_colors;
 	vec3_t		color, fcolor;
 	int			i, count, j;
 	float		div;
@@ -386,11 +403,11 @@ void Mod_LoadVertexes (lump_t *l)
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
 
-	loadbmodel->xyz_array = Hunk_AllocName ( count*sizeof(vec4_t), loadmodel->name );
-	loadbmodel->normals_array = Hunk_AllocName ( count*sizeof(vec3_t), loadmodel->name );	
-	loadbmodel->st_array = Hunk_AllocName ( count*sizeof(vec2_t), loadmodel->name );	
-	loadbmodel->lmst_array = Hunk_AllocName ( count*sizeof(vec2_t), loadmodel->name );	
-	loadbmodel->colors_array = Hunk_AllocName ( count*sizeof(vec4_t), loadmodel->name );	
+	loadbmodel->xyz_array = Mod_Malloc ( loadmodel, count*sizeof(vec4_t) );
+	loadbmodel->normals_array = Mod_Malloc ( loadmodel, count*sizeof(vec3_t) );	
+	loadbmodel->st_array = Mod_Malloc ( loadmodel, count*sizeof(vec2_t) );	
+	loadbmodel->lmst_array = Mod_Malloc ( loadmodel, count*sizeof(vec2_t) );	
+	loadbmodel->colors_array = Mod_Malloc ( loadmodel, count*sizeof(vec4_t) );	
 	loadbmodel->numvertexes = count;
 
 	out_xyz = loadbmodel->xyz_array[0];
@@ -426,9 +443,9 @@ void Mod_LoadVertexes (lump_t *l)
 
 			ColorNormalize ( color, fcolor );
 
-			out_colors[0] = FloatToByte ( fcolor[0] );
-			out_colors[1] = FloatToByte ( fcolor[1] );
-			out_colors[2] = FloatToByte ( fcolor[2] );
+			out_colors[0] = (qbyte) ( fcolor[0]*255 );
+			out_colors[1] = (qbyte) ( fcolor[1]*255 );
+			out_colors[2] = (qbyte) ( fcolor[2]*255 );
 		}
 
 		out_colors[3] = in->color[3];
@@ -450,7 +467,7 @@ void Mod_LoadSubmodels (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );	
 
 	loadbmodel->submodels = out;
 	loadbmodel->numsubmodels = count;
@@ -484,7 +501,7 @@ void Mod_LoadShaderrefs (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );	
 
 	loadbmodel->shaderrefs = out;
 	loadbmodel->numshaderrefs = count;
@@ -519,7 +536,7 @@ void Mod_LoadFaces (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );	
 
 	loadbmodel->surfaces = out;
 	loadbmodel->numsurfaces = count;
@@ -544,12 +561,12 @@ void Mod_LoadFaces (lump_t *l)
 		}
 
 		if ( out->facetype == FACETYPE_PATCH ) {
-			mesh = GL_CreateMeshForPatch ( loadmodel, in );
-			if ( mesh ) {
-				out->mesh = mesh;
+			GL_CreateMeshForPatch ( loadmodel, in, out );
+			if ( out->mesh ) {
+				mesh = out->mesh;
 			}
 		} else if ( out->facetype != FACETYPE_FLARE ) {
-			mesh = out->mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), loadmodel->name );
+			mesh = out->mesh = (mesh_t *)Mod_Malloc ( loadmodel, sizeof(mesh_t) );
 			mesh->xyz_array = loadbmodel->xyz_array + LittleLong ( in->firstvert );
 			mesh->normals_array = loadbmodel->normals_array + LittleLong ( in->firstvert );
 			mesh->st_array = loadbmodel->st_array + LittleLong ( in->firstvert );
@@ -562,8 +579,8 @@ void Mod_LoadFaces (lump_t *l)
 		} else {
 			int r, g, b;
 
-			mesh = out->mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), loadmodel->name );
-			mesh->xyz_array = (vec4_t *)Hunk_AllocName ( sizeof(vec4_t), loadmodel->name );
+			mesh = out->mesh = (mesh_t *)Mod_Malloc ( loadmodel, sizeof(mesh_t) );
+			mesh->xyz_array = (vec4_t *)Mod_Malloc ( loadmodel, sizeof(vec4_t) );
 			mesh->numvertexes = 1;
 			mesh->indexes = r_quad_indexes;
 			mesh->numindexes = 6;
@@ -588,21 +605,21 @@ void Mod_LoadFaces (lump_t *l)
 		shaderref = loadbmodel->shaderrefs + shadernum;
 		if ( !shaderref->shader ) {
 			if ( out->facetype == FACETYPE_FLARE ) {
-				shadernum = R_LoadShader ( shaderref->name, SHADER_BSP_FLARE );
+				shaderref->shader = R_Shader_Load ( shaderref->name, SHADER_BSP_FLARE, qfalse );
 			} else if ( out->facetype == FACETYPE_TRISURF || r_vertexlight->value || out->lightmaptexturenum < 0 ) {
-				shadernum = R_LoadShader ( shaderref->name, SHADER_BSP_VERTEX );
+				shaderref->shader = R_Shader_Load ( shaderref->name, SHADER_BSP_VERTEX, qfalse );
 			} else {
-				shadernum = R_LoadShader ( shaderref->name, SHADER_BSP );
+				shaderref->shader = R_Shader_Load ( shaderref->name, SHADER_BSP, qfalse );
 			}
 
-			shaderref->shader = &r_shaders[shadernum];
+			shaderref->shader->registration_sequence = registration_sequence;
 		}
 
 		out->shaderref = shaderref;
 		out->fog = NULL;
 
 		fognum = LittleLong ( in->fognum );
-		if ( fognum != -1 ) {
+		if ( fognum != -1 && (fognum < loadbmodel->numfogs) ) {
 			fog = loadbmodel->fogs + fognum;
 
 			if ( fog->numplanes && fog->shader ) {
@@ -610,23 +627,23 @@ void Mod_LoadFaces (lump_t *l)
 			}
 		}
 
-		if ( !mesh || out->facetype == FACETYPE_FLARE ) {
+		if ( !mesh ) {
 			continue;
 		}
 
-		ClearBounds ( mesh->mins, mesh->maxs );
+		ClearBounds ( out->mins, out->maxs );
 
 		vert = mesh->xyz_array[0];
 		for ( j = 0; j < out->mesh->numvertexes; j++, vert += 4 )
-			AddPointToBounds ( vert, mesh->mins, mesh->maxs );
-
-		mesh->radius = RadiusFromBounds ( mesh->mins, mesh->maxs );
+			AddPointToBounds ( vert, out->mins, out->maxs );
 
 		if ( out->facetype == FACETYPE_PLANAR ) {
 			for ( j = 0; j < 3; j++ ) {
 				out->origin[j] = LittleFloat ( in->normal[j] );
 			}
 		}
+
+		GL_FixAutosprites ( out );
 	}
 }
 
@@ -645,7 +662,7 @@ void Mod_LoadNodes (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->nodes = out;
 	loadbmodel->numnodes = count;
@@ -680,7 +697,7 @@ void Mod_LoadBrushsides (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->brushsides = out;
 	loadbmodel->numbrushsides = count;
@@ -704,7 +721,7 @@ void Mod_LoadBrushes (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->brushes = out;
 	loadbmodel->numbrushes = count;
@@ -733,7 +750,7 @@ void Mod_LoadFogs (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );	
 
 	loadbmodel->fogs = out;
 	loadbmodel->numfogs = count;
@@ -751,7 +768,7 @@ void Mod_LoadFogs (lump_t *l)
 		out->visibleplane = visibleside->plane;
 		out->shader = R_RegisterShader ( in->shader );
 		out->numplanes = brush->numsides;
-		out->planes = Hunk_AllocName ( out->numplanes*sizeof(cplane_t *), loadmodel->name );
+		out->planes = Mod_Malloc ( loadmodel, out->numplanes*sizeof(cplane_t *) );
 
 		for ( j = 0; j < out->numplanes; j++ )
 		{
@@ -775,7 +792,7 @@ void Mod_LoadLeafs (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->leafs = out;
 	loadbmodel->numleafs = count;
@@ -830,7 +847,7 @@ void Mod_LoadMarksurfaces (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->marksurfaces = out;
 	loadbmodel->nummarksurfaces = count;
@@ -862,7 +879,7 @@ void Mod_LoadIndexes (lump_t *l)
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: bad surfedges count in %s: %i",
 		loadmodel->name, count);
 
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->surfindexes = out;
 	loadbmodel->numsurfindexes = count;
@@ -888,20 +905,26 @@ void Mod_LoadPlanes (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 	
 	loadbmodel->planes = out;
 	loadbmodel->numplanes = count;
 
 	for ( i=0 ; i<count ; i++, in++, out++)
 	{
+		out->type = PLANE_NONAXIAL;
+		out->signbits = 0;
+
 		for (j=0 ; j<3 ; j++)
 		{
 			out->normal[j] = LittleFloat (in->normal[j]);
+			if (out->normal[j] < 0)
+				out->signbits |= 1<<j;
+			if (out->normal[j] == 1.0f)
+				out->type = j;
 		}
-		out->dist = LittleFloat (in->dist);
 
-		CategorizePlane ( out );
+		out->dist = LittleFloat (in->dist);
 	}
 }
 
@@ -920,7 +943,7 @@ void Mod_LoadLightgrid (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
 	count = l->filelen / sizeof(*in);
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, count*sizeof(*out) );
 
 	loadbmodel->lightgrid = out;
 	loadbmodel->numlightgridelems = count;
@@ -938,7 +961,7 @@ void Mod_LoadEntities (lump_t *l)
 {
 	char *data;
 	mlight_t *out;
-	int count, gridsizei[3];
+	int count, total, gridsizei[3];
 	qboolean islight, isworld;
 	float scale, gridsizef[3];
 	char key[MAX_KEY], value[MAX_VALUE], target[MAX_VALUE], *token;
@@ -948,10 +971,10 @@ void Mod_LoadEntities (lump_t *l)
 		return;
 	}
 
-	for ( count = 0; (token = COM_Parse (&data)) && token[0] == '{'; )
+	for ( total = 0; (token = COM_Parse (&data)) && token[0] == '{'; )
 	{
-		islight = false;
-		isworld = false;
+		islight = qfalse;
+		isworld = qfalse;
 
 		while (1)
 		{
@@ -976,9 +999,9 @@ void Mod_LoadEntities (lump_t *l)
 			// now that we have the key pair worked out...
 			if ( !strcmp (key, "classname") ) {
 				if ( !strncmp (value, "light", 5) ) {
-					islight = true;
+					islight = qtrue;
 				} else if ( !strcmp (value, "worldspawn") ) {
-					isworld = true;
+					isworld = qtrue;
 				}
 			} else if ( !strcmp (key, "gridsize") ) {
 				sscanf ( value, "%f %f %f", &gridsizef[0], &gridsizef[1], &gridsizef[2] );
@@ -996,23 +1019,30 @@ void Mod_LoadEntities (lump_t *l)
 		}
 
 		if ( islight ) {
-			count++;
+			total++;
 		}
 	}
 
-	if ( !count ) {
+#ifndef SHADOW_VOLUMES
+	total = 0;
+#endif
+
+	if ( !total ) {
 		return;
 	}
 
-	out = Hunk_AllocName ( count*sizeof(*out), loadmodel->name );	
+	out = Mod_Malloc ( loadmodel, total*sizeof(*out) );
 
-	loadbmodel->numworldlights = count;
 	loadbmodel->worldlights = out;
+	loadbmodel->numworldlights = total;
 
 	data = mod_base + l->fileofs;
-	for ( ; (token = COM_Parse (&data)) && token[0] == '{';  )
+	for ( count = 0; (token = COM_Parse (&data)) && token[0] == '{';  )
 	{
-		islight = false;
+		if (count == total)
+			break;
+
+		islight = qfalse;
 
 		while (1)
 		{
@@ -1043,7 +1073,7 @@ void Mod_LoadEntities (lump_t *l)
 				out->intensity = atof ( value );
 			} else if (!strcmp (key, "classname") ) {
 				if ( !strncmp (value, "light", 5) ) {
-					islight = true;
+					islight = qtrue;
 				}
 			} else if ( !strcmp (key, "target") ) {
 				Q_strncpyz ( target, value, sizeof(target) );
@@ -1069,6 +1099,7 @@ void Mod_LoadEntities (lump_t *l)
 		}
 
 		out++;
+		count++;
 	}
 }
 
@@ -1077,7 +1108,7 @@ void Mod_LoadEntities (lump_t *l)
 Mod_LoadBrushModel
 =================
 */
-void Mod_LoadBrushModel (model_t *mod, void *buffer)
+void Mod_LoadBrushModel (model_t *mod, model_t *parent, void *buffer)
 {
 	int			i;
 	dheader_t	*header;
@@ -1091,11 +1122,11 @@ void Mod_LoadBrushModel (model_t *mod, void *buffer)
 	header = (dheader_t *)buffer;
 
 	i = LittleLong (header->version);
-	if (i != BSPVERSION)
-		Com_Error (ERR_DROP, "Mod_LoadBrushModel: %s has wrong version number (%i should be %i)", mod->name, i, BSPVERSION);
+	if ((i != Q3BSPVERSION) && (i != RTCWBSPVERSION))
+		Com_Error (ERR_DROP, "Mod_LoadBrushModel: %s has wrong version number (%i should be %i or %i)", mod->name, i, Q3BSPVERSION, RTCWBSPVERSION);
 
-	mod_base = (byte *)header;
-	mod->bmodel = loadbmodel = Hunk_AllocName ( sizeof(bmodel_t), mod->name );
+	mod_base = (qbyte *)header;
+	mod->bmodel = loadbmodel = Mod_Malloc ( mod, sizeof(bmodel_t) );
 
 // swap all the lumps
 	for (i=0 ; i<sizeof(dheader_t)/4 ; i++)
@@ -1169,8 +1200,9 @@ Mod_RegisterBrushModel
 */
 void Mod_RegisterBrushModel (model_t *mod)
 {
-	int				i;
+	int				i, j;
 	bmodel_t		*bmodel;
+	shader_t		*shader;
 	mshaderref_t	*shaderref;
 
 	if ( !(bmodel = mod->bmodel) ) {
@@ -1179,8 +1211,28 @@ void Mod_RegisterBrushModel (model_t *mod)
 
 	shaderref = bmodel->shaderrefs;
 	for ( i = 0; i < bmodel->numshaderrefs; i++, shaderref++ ) {
-		if ( shaderref->shader )
-			shaderref->shader->registration_sequence = registration_sequence;
+		if ( !(shader = shaderref->shader) ) {
+			continue;
+		}
+
+		shader->registration_sequence = registration_sequence;
+
+		if ( (shader->flags & SHADER_SKY) && shader->skydome ) {
+			if ( shader->skydome->farbox_shaders[0] ) {
+				for ( j = 0; j < 6; j++ ) {
+					if ( shader->skydome->farbox_shaders[j] )
+						shader->skydome->farbox_shaders[j]->registration_sequence = registration_sequence;
+				}
+			}
+
+			if ( shader->skydome->nearbox_shaders[0] ) {
+				for ( j = 0; j < 6; j++ ) {
+					if ( shader->skydome->nearbox_shaders[j] )
+						shader->skydome->nearbox_shaders[j]->registration_sequence = registration_sequence;
+				}
+			}
+		}
+
 	}
 }
 
@@ -1197,7 +1249,7 @@ SPRITE MODELS
 Mod_LoadSpriteModel
 =================
 */
-void Mod_LoadSpriteModel (model_t *mod, void *buffer)
+void Mod_LoadSpriteModel (model_t *mod, model_t *parent, void *buffer)
 {
 	int			i;
 	dsprite_t	*sprin;
@@ -1212,7 +1264,7 @@ void Mod_LoadSpriteModel (model_t *mod, void *buffer)
 				 mod->name, LittleLong (sprin->version), SPRITE_VERSION );
 	}
 
-	mod->smodel = sprout = Hunk_AllocName ( sizeof(smodel_t), mod->name);
+	mod->smodel = sprout = Mod_Malloc ( mod, sizeof(smodel_t) );
 	sprout->numframes = LittleLong ( sprin->numframes );
 
 	if ( sprout->numframes > SPRITE_MAX_FRAMES ) {
@@ -1221,7 +1273,7 @@ void Mod_LoadSpriteModel (model_t *mod, void *buffer)
 	}
 
 	sprinframe = sprin->frames;
-	sprout->frames = sproutframe = Hunk_AllocName ( sizeof(sframe_t) * sprout->numframes, mod->name );
+	sprout->frames = sproutframe = Mod_Malloc ( mod, sizeof(sframe_t) * sprout->numframes );
 
 	mod->radius = 0;
 	ClearBounds ( mod->mins, mod->maxs );
@@ -1270,31 +1322,34 @@ void Mod_RegisterSpriteModel (model_t *mod)
 @@@@@@@@@@@@@@@@@@@@@
 R_BeginRegistration
 
+@@@@@@@@@@@@@@@@@@@@@
+*/
+void R_BeginRegistration (void)
+{
+	registration_sequence++;
+}
+
+/*
+@@@@@@@@@@@@@@@@@@@@@
+R_RegisterWorldModel
+
 Specifies the model that will be used as the world
 @@@@@@@@@@@@@@@@@@@@@
 */
-void R_BeginRegistration (char *model)
+void R_RegisterWorldModel (char *model)
 {
-	char	fullname[MAX_QPATH];
 	cvar_t	*flushmap;
-	extern void CL_LoadingString (char *str);
-
-	registration_sequence++;
-
-	Com_sprintf (fullname, sizeof(fullname), "maps/%s.bsp", model);
-	CL_LoadingString (fullname);
 
 	// explicitly free the old map if different
 	// this guarantees that mod_known[0] is the world map
 	flushmap = Cvar_Get ("flushmap", "0", 0);
-	if ( strcmp(mod_known[0].name, fullname) || flushmap->value)
-		Mod_Free (&mod_known[0]);
+	if (strcmp(mod_known[0].name, model) || flushmap->value)
+		Mod_FreeModel (&mod_known[0]);
 
-	r_worldmodel = Mod_ForName(fullname, true);
+	r_worldmodel = Mod_ForName (model, qtrue);
 	r_worldbmodel = r_worldmodel->bmodel;
 	r_oldviewcluster = r_viewcluster = -1;		// force markleafs
 }
-
 
 /*
 @@@@@@@@@@@@@@@@@@@@@
@@ -1308,7 +1363,7 @@ struct model_s *R_RegisterModel (char *name)
 	model_t		*mod;
 	void		(*registerer) ( model_t *mod );
 
-	mod = Mod_ForName (name, false);
+	mod = Mod_ForName (name, qfalse);
 	if (mod)
 	{
 		mod->registration_sequence = registration_sequence;
@@ -1318,8 +1373,8 @@ struct model_s *R_RegisterModel (char *name)
 			registerer = Mod_RegisterSpriteModel;
 		} else if ( mod->type == mod_alias ) {
 			registerer = Mod_RegisterAliasModel;
-		} else if ( mod->type == mod_dpm ) {
-			registerer = Mod_RegisterDarkPlacesModel;
+		} else if ( mod->type == mod_skeletal ) {
+			registerer = Mod_RegisterSkeletalModel;
 		} else if ( mod->type == mod_brush ) {
 			registerer = Mod_RegisterBrushModel;
 		}
@@ -1334,6 +1389,21 @@ struct model_s *R_RegisterModel (char *name)
 	return mod;
 }
 
+/*
+@@@@@@@@@@@@@@@@@@@@@
+R_ModelBounds
+
+@@@@@@@@@@@@@@@@@@@@@
+*/
+void R_ModelBounds (model_t *model, vec3_t mins, vec3_t maxs)
+{
+	if ( !model ) {
+		return;
+	}
+
+	VectorCopy ( model->mins, mins );
+	VectorCopy ( model->maxs, maxs );
+}
 
 /*
 @@@@@@@@@@@@@@@@@@@@@
@@ -1352,11 +1422,14 @@ void R_EndRegistration (void)
 			continue;
 		if (mod->registration_sequence != registration_sequence)
 		{	// don't need this model
-			Mod_Free (mod);
+			Mod_FreeModel (mod);
 		}
 	}
 
+	R_SkinFile_UpdateRegistration ();
+
 	Shader_UpdateRegistration ();
+
 	GL_FreeUnusedImages ();
 }
 
@@ -1365,27 +1438,29 @@ void R_EndRegistration (void)
 
 /*
 ================
-Mod_Free
+Mod_FreeModel
 ================
 */
-void Mod_Free (model_t *mod)
+void Mod_FreeModel (model_t *mod)
 {
-	Hunk_Free (mod->extradata);
+	Mem_FreePool (&mod->extradata);
 	memset (mod, 0, sizeof(*mod));
 }
 
 /*
 ================
-Mod_FreeAll
+Mod_Shutdown
 ================
 */
-void Mod_FreeAll (void)
+void Mod_Shutdown (void)
 {
 	int		i;
 
 	for (i=0 ; i<mod_numknown ; i++)
 	{
-		if (mod_known[i].extradatasize)
-			Mod_Free (&mod_known[i]);
+		if (mod_known[i].extradata)
+			Mod_FreeModel (&mod_known[i]);
 	}
+
+	Mem_FreePool ( &mod_mempool );
 }

@@ -329,10 +329,16 @@ extern int ZEXPORT unzGetLocalExtrafield OF((unzFile file,
 }
 #endif
 
+typedef struct
+{
+	char	*name;
+	struct	searchpath_s *search;
+} searchfile_t;
+
 file_in_zip_read_info_s *unzGetCurrentFileEntry (unzFile file);
 void unzSetCurrentFileEntry (unzFile file, file_in_zip_read_info_s *entry);
-int unzFileExists (unzFile *pak, const char *file, int iCaseSensitivity);
-int unzNumEntries (unzFile *pak);
-int unzGetStringForDir (unzFile *pak, const char *dir, const char *extension, char *buf, int bufsize, int *len);
+int unzFileExists (unzFile pak, const char *file, int iCaseSensitivity);
+int unzNumEntries (unzFile pak);
+int unzGetStringForDir (unzFile pak, const char *dir, const char *extension, searchfile_t **files, int size);
 
 #endif /* _unz_H */

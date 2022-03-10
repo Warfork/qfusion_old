@@ -96,7 +96,7 @@ void SV_New_f (void)
 	MSG_WriteShort (&sv_client->netchan.message, playernum);
 
 	// send full levelname
-	MSG_WriteString (&sv_client->netchan.message, sv.configstrings[CS_MESSAGE]);
+	MSG_WriteString (&sv_client->netchan.message, sv.name);
 
 	//
 	// game server
@@ -150,9 +150,8 @@ void SV_Configstrings_f (void)
 	{
 		if (sv.configstrings[start][0])
 		{
-			MSG_WriteByte (&sv_client->netchan.message, svc_configstring);
-			MSG_WriteShort (&sv_client->netchan.message, start);
-			MSG_WriteString (&sv_client->netchan.message, sv.configstrings[start]);
+			MSG_WriteByte (&sv_client->netchan.message, svc_servercmd);
+			MSG_WriteString (&sv_client->netchan.message, va("cs %i \"%s\"", start, sv.configstrings[start]));
 		}
 		start++;
 	}
@@ -204,14 +203,14 @@ void SV_Baselines_f (void)
 
 	// write a packet full of data
 
-	while ( sv_client->netchan.message.cursize <  MAX_MSGLEN/2
+	while ( sv_client->netchan.message.cursize < MAX_MSGLEN/2
 		&& start < MAX_EDICTS)
 	{
 		base = &sv.baselines[start];
 		if (base->modelindex || base->sound || base->effects)
 		{
 			MSG_WriteByte (&sv_client->netchan.message, svc_spawnbaseline);
-			MSG_WriteDeltaEntity (&nullstate, base, &sv_client->netchan.message, true, true);
+			MSG_WriteDeltaEntity (&nullstate, base, &sv_client->netchan.message, qtrue, qtrue);
 		}
 		start++;
 	}
@@ -478,7 +477,7 @@ void SV_ExecuteUserCommand (char *s)
 {
 	ucmd_t	*u;
 
-	Cmd_TokenizeString ( s, false );
+	Cmd_TokenizeString ( s, qfalse );
 
 	sv_player = sv_client->edict;
 
@@ -543,7 +542,7 @@ void SV_ExecuteClientMessage (client_t *cl)
 	sv_player = sv_client->edict;
 
 	// only allow one move command
-	move_issued = false;
+	move_issued = qfalse;
 	stringCmdCount = 0;
 
 	while (1)
@@ -578,7 +577,7 @@ void SV_ExecuteClientMessage (client_t *cl)
 			if (move_issued)
 				return;		// someone is trying to cheat...
 
-			move_issued = true;
+			move_issued = qtrue;
 			checksumIndex = net_message.readcount;
 			checksum = MSG_ReadByte (&net_message);
 			lastframe = MSG_ReadLong (&net_message);

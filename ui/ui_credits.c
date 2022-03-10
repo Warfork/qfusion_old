@@ -34,9 +34,6 @@ static char *creditsBuffer;
 
 static const char *idcredits[] =
 {
-	"+" S_COLOR_RED APPLICATION,
-	"+http://hkitchen.quakesrc.org/",
-	"",
 	"+" S_COLOR_RED "PROGRAMMING",
 	"Victor 'Vic' Luchits",
 	"",
@@ -45,7 +42,6 @@ static const char *idcredits[] =
 	"",
 	"+" S_COLOR_RED "LINUX PORT",
 	"Bobakitoo",
-	"",
 	"",
 	"+" S_COLOR_RED "SPECIAL THANKS",
 	"(in alphabetical order)",
@@ -67,8 +63,8 @@ static const char *idcredits[] =
 void M_Credits_MenuDraw( void )
 {
 	int i, x, y;
-	int w, h;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int w, h, length;
+	int y_offset = UI_StringHeightOffset ( 0 );
 	char *s;
 
 	/*
@@ -77,19 +73,21 @@ void M_Credits_MenuDraw( void )
 	w = uis.vidWidth;
 	h = uis.vidHeight;
 
-	for ( i = 0, y = h - ( ( trap_CL_GetTime() - credits_start_time ) * 0.025f ); credits[i] && y < h; y += y_offset, i++ )
+	y = h - ( ( uis.time - credits_start_time ) * 0.025f );
+
+	for ( i = 0; credits[i] && y < h; y += y_offset, i++ )
 	{
 		int stringoffset;
-		int bold, length;
+		int bold;
 
 		if ( credits[i][0] == '+' )
 		{
-			bold = true;
+			bold = qtrue;
 			stringoffset = 1;
 		}
 		else
 		{
-			bold = false;
+			bold = qfalse;
 			stringoffset = 0;
 		}
 
@@ -102,15 +100,15 @@ void M_Credits_MenuDraw( void )
 
 		if ( bold ) {
 			x = ( w - length * BIG_CHAR_WIDTH ) / 2;
-			trap_DrawString( x, y, s, FONT_BIG|FONT_SHADOWED, colorWhite );
+			UI_DrawNonPropString( x, y, s, FONT_BIG|FONT_SHADOWED, colorWhite );
 		} else {
 			x = ( w - length * SMALL_CHAR_WIDTH ) / 2;
-			trap_DrawString( x, y, s, FONT_SMALL, colorWhite );
+			UI_DrawNonPropString( x, y, s, FONT_SMALL, colorWhite );
 		}
 	}
 
 	if ( y < 0 )
-		credits_start_time = trap_CL_GetTime();
+		credits_start_time = uis.time;
 }
 
 const char *M_Credits_Key( int key )
@@ -166,6 +164,6 @@ void M_Menu_Credits_f( void )
 		credits = idcredits;	
 	}
 
-	credits_start_time = trap_CL_GetTime();
+	credits_start_time = uis.time;
 	M_PushMenu( NULL, M_Credits_MenuDraw, M_Credits_Key);
 }

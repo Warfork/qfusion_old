@@ -20,18 +20,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef __SHADER_H__
 #define __SHADER_H__
 
-#define MAX_SHADERS				1024
+#define MAX_SHADERS				4096
 
 #define SHADER_PASS_MAX			8
 #define SHADER_DEFORM_MAX		8
-#define SHADER_ANIM_FRAMES_MAX	8
+#define SHADER_ANIM_FRAMES_MAX	16
 #define SHADER_TCMOD_MAX		8
 
-#define SHADER_BSP				0
-#define SHADER_BSP_VERTEX		1
-#define SHADER_BSP_FLARE		2
-#define SHADER_MD3				3
-#define SHADER_2D				4
+enum
+{
+	SHADER_BSP,
+	SHADER_BSP_VERTEX,
+	SHADER_BSP_FLARE,
+	SHADER_MD3,
+	SHADER_2D,
+	SHADER_FARBOX,
+	SHADER_NEARBOX
+};
 
 // Shader flags
 enum
@@ -109,7 +114,7 @@ enum
 	RGB_GEN_IDENTITY,
 	RGB_GEN_IDENTITY_LIGHTING,
 	RGB_GEN_CONST,
-	RGB_GEN_WAVE,
+	RGB_GEN_COLORWAVE,
 	RGB_GEN_ENTITY,
 	RGB_GEN_ONE_MINUS_ENTITY,
 	RGB_GEN_VERTEX,
@@ -121,13 +126,16 @@ enum
 // alpha channel generation
 enum 
 {
+	ALPHA_GEN_UNKNOWN,
 	ALPHA_GEN_IDENTITY,
 	ALPHA_GEN_CONST,
 	ALPHA_GEN_PORTAL,
 	ALPHA_GEN_VERTEX,
 	ALPHA_GEN_ENTITY,
 	ALPHA_GEN_SPECULAR,
-	ALPHA_GEN_WAVE
+	ALPHA_GEN_WAVE,
+	ALPHA_GEN_DOT,
+	ALPHA_GEN_ONE_MINUS_DOT
 };
 
 // texture coordinates generation
@@ -149,7 +157,8 @@ enum
 	DEFORMV_MOVE,
 	DEFORMV_AUTOSPRITE,
 	DEFORMV_AUTOSPRITE2,
-	DEFORMV_PROJECTION_SHADOW
+	DEFORMV_PROJECTION_SHADOW,
+	DEFORMV_AUTOPARTICLE
 };
 
 // The flushing functions
@@ -181,6 +190,20 @@ typedef struct
 	float			args[6];
 } tcmod_t;
 
+typedef struct 
+{
+	int				type;
+	float			args[3];
+    shaderfunc_t	func;
+} rgbgen_t;
+
+typedef struct 
+{
+	int				type;
+	float			args[2];
+    shaderfunc_t	func;
+} alphagen_t;
+
 typedef struct
 {
 	int				type;
@@ -199,16 +222,14 @@ typedef struct shaderpass_s
     unsigned int	depthfunc;			// glDepthFunc arg
     unsigned int	alphafunc;
 
-    int				rgbgen;             
-    shaderfunc_t	rgbgen_func;
-
-	int				alphagen;
-    shaderfunc_t	alphagen_func;
+    rgbgen_t		rgbgen;             
+	alphagen_t		alphagen;
 
 	int				tcgen;
+	vec4_t			tcgenVec[2];
 
 	int				numMergedPasses;
-	void			(*flush)(struct meshbuffer_s *mb, struct shaderpass_s *pass);
+	void			(*flush) (struct shaderpass_s *pass);
 
     int				numtcmods;               
 	tcmod_t			tcmods[SHADER_TCMOD_MAX];
@@ -238,11 +259,17 @@ typedef struct shader_s
 
 	skydome_t		*skydome;
 
-	byte			fog_color[4];
+	qbyte			fog_color[4];
 	float			fog_dist;
 } shader_t;
 
 extern shader_t r_shaders[MAX_SHADERS];
+
+// memory management
+extern mempool_t *r_shadersmempool;
+
+#define Shader_Malloc(size) Mem_Alloc(r_shadersmempool,size)
+#define Shader_Free(data) Mem_Free(data)
 
 qboolean Shader_Init (void);
 void Shader_Shutdown (void);
@@ -250,7 +277,8 @@ void Shader_UpdateRegistration (void);
 void Shader_RunCinematic (void);
 void Shader_UploadCinematic (shader_t *shader);
 
-int R_LoadShader (char *name, int type);
+shader_t *R_Shader_Load (char *name, int type, qboolean forceDefault);
+
 shader_t *R_RegisterPic (char *name);
 shader_t *R_RegisterShader (char *name);
 shader_t *R_RegisterSkin (char *name);

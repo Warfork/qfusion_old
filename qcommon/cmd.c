@@ -54,7 +54,7 @@ bind g "impulse 5 ; +attack ; wait ; -attack ; impulse 2"
 */
 void Cmd_Wait_f (void)
 {
-	cmd_wait = true;
+	cmd_wait = qtrue;
 }
 
 
@@ -67,9 +67,9 @@ void Cmd_Wait_f (void)
 */
 
 sizebuf_t	cmd_text;
-byte		cmd_text_buf[8192];
+qbyte		cmd_text_buf[8192];
 
-byte		defer_text_buf[8192];
+qbyte		defer_text_buf[8192];
 
 /*
 ============
@@ -121,7 +121,7 @@ void Cbuf_InsertText (char *text)
 	templen = cmd_text.cursize;
 	if (templen)
 	{
-		temp = Z_Malloc (templen);
+		temp = Mem_ZoneMalloc (templen);
 		memcpy (temp, cmd_text.data, templen);
 		SZ_Clear (&cmd_text);
 	}
@@ -135,7 +135,7 @@ void Cbuf_InsertText (char *text)
 	if (templen)
 	{
 		SZ_Write (&cmd_text, temp, templen);
-		Z_Free (temp);
+		Mem_ZoneFree (temp);
 	}
 }
 
@@ -241,7 +241,7 @@ void Cbuf_Execute (void)
 		{
 			// skip out while text still remains in buffer, leaving it
 			// for next frame
-			cmd_wait = false;
+			cmd_wait = qfalse;
 			break;
 		}
 	}
@@ -310,9 +310,9 @@ qboolean Cbuf_AddLateCommands (void)
 		s += strlen (COM_Argv(i)) + 1;
 	}
 	if (!s)
-		return false;
+		return qfalse;
 		
-	text = Z_Malloc (s+1);
+	text = Mem_ZoneMalloc (s+1);
 	text[0] = 0;
 	for (i=1 ; i<argc ; i++)
 	{
@@ -322,7 +322,7 @@ qboolean Cbuf_AddLateCommands (void)
 	}
 	
 // pull out the commands
-	build = Z_Malloc (s+1);
+	build = Mem_ZoneMalloc (s+1);
 	build[0] = 0;
 	
 	for (i=0 ; i<s-1 ; i++)
@@ -348,8 +348,8 @@ qboolean Cbuf_AddLateCommands (void)
 	if (ret)
 		Cbuf_AddText (build);
 	
-	Z_Free (text);
-	Z_Free (build);
+	Mem_ZoneFree (text);
+	Mem_ZoneFree (build);
 
 	return ret;
 }
@@ -389,13 +389,13 @@ void Cmd_Exec_f (void)
 	Com_Printf ("execing %s\n",Cmd_Argv(1));
 	
 	// the file doesn't have a trailing 0, so we need to copy it off
-	f2 = Z_Malloc(len+1);
+	f2 = Mem_ZoneMalloc (len+1);
 	memcpy (f2, f, len);
 	f2[len] = 0;
 
 	Cbuf_InsertText (f2);
 
-	Z_Free (f2);
+	Mem_ZoneFree (f2);
 	FS_FreeFile (f);
 }
 
@@ -462,21 +462,21 @@ void Cmd_Alias_f (void)
 	{
 		if (!Q_stricmp(s, a->name))
 		{
-			Z_Free (a->value);
+			Mem_ZoneFree (a->value);
 			break;
 		}
 	}
 
 	if (!a)
 	{
-		a = Z_Malloc (sizeof(cmdalias_t));
+		a = Mem_ZoneMalloc (sizeof(cmdalias_t));
 		a->next = cmd_alias;
 		cmd_alias = a;
 	}
 	strcpy (a->name, s);	
 
 	if (!Q_stricmp(Cmd_Argv(0), "aliasa"))
-		a->archive = true;
+		a->archive = qtrue;
 
 // copy the rest of the command line
 	cmd[0] = 0;		// start out with a null string
@@ -580,7 +580,7 @@ char *Cmd_MacroExpandString (char *text)
 	char	temporary[MAX_STRING_CHARS];
 	char	*token, *start;
 
-	inquote = false;
+	inquote = qfalse;
 	scan = text;
 
 	len = strlen (scan);
@@ -656,7 +656,7 @@ void Cmd_TokenizeString (char *text, qboolean macroExpand)
 
 // clear the args from the last string
 	for (i=0 ; i<cmd_argc ; i++)
-		Z_Free (cmd_argv[i]);
+		Mem_ZoneFree (cmd_argv[i]);
 		
 	cmd_argc = 0;
 	cmd_args[0] = 0;
@@ -689,7 +689,8 @@ void Cmd_TokenizeString (char *text, qboolean macroExpand)
 		{
 			int		l;
 
-			strcpy (cmd_args, text);
+			strncpy (cmd_args, text, sizeof(cmd_args)-1); 
+			cmd_args[sizeof(cmd_args)-1] = 0; 
 
 			// strip off any trailing whitespace
 			l = strlen(cmd_args) - 1;
@@ -706,12 +707,11 @@ void Cmd_TokenizeString (char *text, qboolean macroExpand)
 
 		if (cmd_argc < MAX_STRING_TOKENS)
 		{
-			cmd_argv[cmd_argc] = Z_Malloc (strlen(com_token)+1);
+			cmd_argv[cmd_argc] = Mem_ZoneMalloc (strlen(com_token)+1);
 			strcpy (cmd_argv[cmd_argc], com_token);
 			cmd_argc++;
 		}
 	}
-	
 }
 
 
@@ -741,7 +741,7 @@ void	Cmd_AddCommand (char *cmd_name, xcommand_t function)
 		}
 	}
 
-	cmd = Z_Malloc (sizeof(cmd_function_t));
+	cmd = Mem_ZoneMalloc (sizeof(cmd_function_t));
 	cmd->name = cmd_name;
 	cmd->function = function;
 	cmd->next = cmd_functions;
@@ -769,7 +769,7 @@ void	Cmd_RemoveCommand (char *cmd_name)
 		if (!Q_stricmp(cmd_name, cmd->name))
 		{
 			*back = cmd->next;
-			Z_Free (cmd);
+			Mem_ZoneFree (cmd);
 			return;
 		}
 		back = &cmd->next;
@@ -788,10 +788,10 @@ qboolean	Cmd_Exists (char *cmd_name)
 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
 	{
 		if (!Q_stricmp(cmd_name,cmd->name))
-			return true;
+			return qtrue;
 	}
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -882,8 +882,8 @@ char **Cmd_CompleteBuildList (char *partial)
 	int				sizeofbuf = (Cmd_CompleteCountPossible (partial) + 1) * sizeof (char *);
 	char			**buf;
 
-	len = strlen(partial);
-	buf = (char**)Q_malloc(sizeofbuf + sizeof (char *));
+	len = strlen (partial);
+	buf = (char **)Mem_TempMalloc(sizeofbuf + sizeof (char *));
 
 	// Loop through the alias list and print all matches
 	for (cmd = cmd_functions; cmd; cmd = cmd->next)
@@ -950,7 +950,7 @@ char **Cmd_CompleteAliasBuildList (char *partial)
 	char		**buf;
 
 	len = strlen (partial);
-	buf = (char **)Q_malloc (sizeofbuf + sizeof (char *));
+	buf = (char **)Mem_TempMalloc (sizeofbuf + sizeof (char *));
 
 	// Loop through the alias list and print all matches
 	for (alias = cmd_alias; alias; alias = alias->next)
@@ -974,7 +974,7 @@ void	Cmd_ExecuteString (char *text)
 	cmd_function_t	*cmd;
 	cmdalias_t		*a;
 
-	Cmd_TokenizeString (text, true);
+	Cmd_TokenizeString (text, qtrue);
 			
 	// execute the command line
 	if (!Cmd_Argc())

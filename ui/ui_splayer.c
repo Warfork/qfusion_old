@@ -86,9 +86,8 @@ static void SaveGameFunc( void *unused )
 
 void Game_MenuInit( void )
 {
-	int w, h;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	static const char *difficulty_names[] =
 	{
@@ -98,11 +97,8 @@ void Game_MenuInit( void )
 		0
 	};
 
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_game_menu.x = w / 2;
-	s_game_menu.y = h / 2 - 88;
+	s_game_menu.x = uis.vidWidth / 2;
+	s_game_menu.y = uis.vidHeight / 2 - 88;
 	s_game_menu.nitems = 0;
 
 	s_easy_game_action.generic.type	= MTYPE_ACTION;
@@ -206,13 +202,13 @@ void Create_Savestrings (void)
 		if (!f)
 		{
 			strcpy (m_savestrings[i], "<EMPTY>");
-			m_savevalid[i] = false;
+			m_savevalid[i] = qfalse;
 		}
 		else
 		{
 			fread (m_savestrings[i], 1, sizeof(m_savestrings[i]), f);
 			fclose (f);
-			m_savevalid[i] = true;
+			m_savevalid[i] = qtrue;
 		}
 	}
 }
@@ -229,14 +225,10 @@ void LoadGameCallback( void *self )
 void LoadGame_MenuInit( void )
 {
 	int i;
-	int w, h;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_loadgame_menu.x = w / 2;
-	s_loadgame_menu.y = h / 2 - 88;
+	s_loadgame_menu.x = uis.vidWidth / 2;
+	s_loadgame_menu.y = uis.vidHeight / 2 - 88;
 	s_loadgame_menu.nitems = 0;
 
 	Create_Savestrings();
@@ -310,14 +302,10 @@ void SaveGame_MenuDraw( void )
 void SaveGame_MenuInit( void )
 {
 	int i;
-	int w, h;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_savegame_menu.x = w / 2;
-	s_savegame_menu.y = h / 2 - 88;
+	s_savegame_menu.x = uis.vidWidth / 2;
+	s_savegame_menu.y = uis.vidHeight / 2 - 88;
 	s_savegame_menu.nitems = 0;
 
 	Create_Savestrings();
@@ -354,7 +342,7 @@ const char *SaveGame_MenuKey( int key )
 
 void M_Menu_SaveGame_f (void)
 {
-	if (!trap_GetServerState())
+	if (!uis.serverState)
 		return;		// not playing a game
 
 	SaveGame_MenuInit();

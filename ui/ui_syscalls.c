@@ -19,33 +19,15 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "ui_local.h"
-#include "ui.h"
 
-static ui_import_t uii;
+ui_import_t uii;
 
-void UI_Init (void);
-void UI_Shutdown (void);
+void trap_Error ( char *str ) {
+	uii.Error ( str );
+}
 
-void UI_Refresh ( int frametime );
-void UI_Update (void);
-
-void UI_Keydown ( int key );
-void UI_MouseMove (int dx, int dy);
-
-void M_Menu_Main_f (void);
-void M_AddToServerList (char *adr, char *info);
-void M_ForceMenuOff (void);
-
-#define	MAXPRINTMSG	4096
-void trap_Sys_Error ( int err_level, char *str, ... ) {
-	va_list		argptr;
-	char		msg[MAXPRINTMSG];
-	
-	va_start ( argptr, str );
-	vsnprintf ( msg, sizeof(msg), str, argptr );
-	va_end ( argptr );
-
-	uii.Sys_Error ( err_level, msg );
+void trap_Print ( char *str ) {
+	uii.Print ( str );
 }
 
 void trap_Cmd_AddCommand ( char *name, void(*cmd)(void) ) {
@@ -64,39 +46,44 @@ void trap_Cmd_Execute (void) {
 	uii.Cmd_Execute ();
 }
 
-void trap_Con_Printf ( int print_level, char *str, ... ) {
-	va_list		argptr;
-	char		msg[MAXPRINTMSG];
-	
-	va_start ( argptr, str );
-	vsnprintf ( msg, sizeof(msg), str, argptr );
-	va_end ( argptr );
-
-	uii.Con_Printf ( print_level, str );
+void trap_R_RenderFrame ( refdef_t *fd ) {
+	uii.R_RenderFrame ( fd );
 }
 
-struct model_s *trap_RegisterModel ( char *name ) {
-	return uii.RegisterModel ( name );
+void trap_R_EndFrame (void) {
+	uii.R_EndFrame ();
 }
 
-struct shader_s *trap_RegisterSkin ( char *name ) {
-	return uii.RegisterSkin ( name );
+void trap_R_ModelBounds ( struct model_s *mod, vec3_t mins, vec3_t maxs ) {
+	uii.R_ModelBounds ( mod, mins, maxs );
 }
 
-struct shader_s *trap_RegisterPic ( char *name ) {
-	return uii.RegisterPic ( name );
+struct model_s *trap_R_RegisterModel ( char *name ) {
+	return uii.R_RegisterModel ( name );
 }
 
-void trap_RenderFrame ( refdef_t *fd ) {
-	uii.RenderFrame ( fd );
+struct shader_s *trap_R_RegisterSkin ( char *name ) {
+	return uii.R_RegisterSkin ( name );
+}
+
+struct shader_s *trap_R_RegisterPic ( char *name ) {
+	return uii.R_RegisterPic ( name );
+}
+
+struct skinfile_s *trap_R_RegisterSkinFile ( char *name ) {
+	return uii.R_RegisterSkinFile ( name );
+}
+
+qboolean trap_R_LerpAttachment ( orientation_t *orient, struct model_s *mod, int frame, int oldframe, float backlerp, char *name ) {
+	return uii.R_LerpAttachment ( orient, mod, frame, oldframe, backlerp, name );
 }
 
 void trap_S_StartLocalSound ( char *s ) {
 	uii.S_StartLocalSound ( s );
 }
 
-int trap_CL_GetTime (void) {
-	return uii.CL_GetTime ();
+void trap_CL_Quit (void) {
+	uii.CL_Quit ();
 }
 
 void trap_CL_SetKeyDest ( int key_dest ) {
@@ -107,23 +94,15 @@ void trap_CL_ResetServerCount (void) {
 	uii.CL_ResetServerCount ();
 }
 
-void trap_CL_Quit (void) {
-	uii.CL_Quit ();
-}
-
-int trap_GetClientState (void) {
-	return uii.GetClientState ();
-}
-
-int trap_GetServerState (void) {
-	return uii.GetServerState ();
+void trap_CL_GetClipboardData ( char *string, int size ) {
+	uii.CL_GetClipboardData ( string, size );
 }
 
 char *trap_Key_GetBindingBuf ( int binding ) {
 	return uii.Key_GetBindingBuf ( binding );
 }
 
-void trap_Key_ClearStates(void) {
+void trap_Key_ClearStates (void) {
 	uii.Key_ClearStates ();
 }
 
@@ -135,8 +114,15 @@ void trap_Key_SetBinding ( int keynum, char *binding ) {
 	uii.Key_SetBinding ( keynum, binding );
 }
 
-int	trap_FS_LoadFile ( char *name, void **buf )
-{
+qboolean trap_Key_IsDown ( int keynum ) {
+	return uii.Key_IsDown ( keynum );
+}
+
+void trap_GetConfigString ( int i, char *str, int size ) {
+	uii.GetConfigString ( i, str, size );
+}
+
+int	trap_FS_LoadFile ( const char *name, void **buf ) {
 	return uii.FS_LoadFile ( name, buf );
 }
 
@@ -144,16 +130,12 @@ void trap_FS_FreeFile ( void *buf ) {
 	uii.FS_FreeFile ( buf );
 }
 
-int trap_FS_FileExists ( char *path ) {
+int trap_FS_FileExists ( const char *path ) {
 	return uii.FS_FileExists ( path );
 }
 
-int	trap_FS_ListFiles ( char *path, char *ext, char *buf, int bufsize ) {
-	return uii.FS_ListFiles ( ( const char * )path, ( const char * )ext, buf, bufsize );
-}
-
-char *trap_FS_NextPath ( char *prevpath ) {
-	return uii.FS_NextPath ( prevpath );
+int	trap_FS_ListFiles ( const char *path, const char *ext, char *buf, int bufsize ) {
+	return uii.FS_ListFiles ( path, ext, buf, bufsize );
 }
 
 char *trap_FS_Gamedir (void) {
@@ -184,51 +166,52 @@ char *trap_Cvar_VariableString ( char *name ) {
 	return uii.Cvar_VariableString ( name );
 }
 
-void trap_DrawStretchPic (int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader) {
-	uii.DrawStretchPic ( x, y, w, h, s1, t1, s2, t2, color, shader );
+struct mempool_s *trap_Mem_AllocPool ( const char *name, const char *filename, int fileline ) {
+	return uii.Mem_AllocPool ( name, filename, fileline );
 }
 
-void trap_DrawChar ( int x, int y, int c, int fontstyle, vec4_t color ) {
-	uii.DrawChar ( x, y, c, fontstyle, color );
+void *trap_Mem_Alloc ( struct mempool_s *pool, int size, const char *filename, int fileline ) {
+	return uii.Mem_Alloc ( pool, size, filename, fileline );
 }
 
-void trap_DrawString ( int x, int y, char *str, int fontstyle, vec4_t color ) {
-	uii.DrawString ( x, y, str, fontstyle, color );
+void trap_Mem_Free ( void *data, const char *filename, int fileline ) {
+	uii.Mem_Free ( data, filename, fileline );
 }
 
-void trap_DrawPropString ( int x, int y, char *str, int fontstyle, vec4_t color ) {
-	uii.DrawPropString ( x, y, str, fontstyle, color );
+
+void trap_Mem_FreePool ( struct mempool_s **pool, const char *filename, int fileline ) {
+	uii.Mem_FreePool ( pool, filename, fileline );
 }
 
-int trap_PropStringLength ( char *str, int fontstyle ) {
-	return uii.PropStringLength ( str, fontstyle );
+void trap_Mem_EmptyPool ( struct mempool_s *pool, const char *filename, int fileline ) {
+	uii.Mem_EmptyPool ( pool, filename, fileline );
 }
 
-void trap_FillRect ( int x, int y, int w, int h, vec4_t color ) {
-	uii.FillRect ( x, y, w, h, color );
+void trap_Draw_StretchPic ( int x, int y, int w, int h, float s1, float t1, float s2, float t2, vec4_t color, struct shader_s *shader ) {
+	uii.Draw_StretchPic ( x, y, w, h, s1, t1, s2, t2, color, shader );
 }
 
-void trap_EndFrame (void) {
-	uii.EndFrame ();
-}
 
-void trap_Vid_GetCurrentInfo ( int *width, int *height ) {
-	uii.Vid_GetCurrentInfo ( width, height );
-}
+/*
+=================
+GetUIAPI
 
+Returns a pointer to the structure with all entry points
+=================
+*/
 ui_export_t *GetUIAPI (ui_import_t *uiimp)
 {
 	static ui_export_t	uie;
 
 	uii = *uiimp;
 
-	uie.api_version = UI_API_VERSION;
+	uie.API = UI_API;
 
 	uie.Init = UI_Init;
 	uie.Shutdown = UI_Shutdown;
 
 	uie.Refresh = UI_Refresh;
-	uie.Update = UI_Update;
+	uie.DrawConnectScreen = UI_DrawConnectScreen;
 
 	uie.Keydown = UI_Keydown;
 	uie.MouseMove = UI_MouseMove;
@@ -240,31 +223,9 @@ ui_export_t *GetUIAPI (ui_import_t *uiimp)
 	return &uie;
 }
 
-#ifndef UI_HARD_LINKED
-// this is only here so the functions in q_shared.c and q_shwin.c can link
-void Sys_Error (char *error, ...)
+#if defined(HAS_DLLMAIN) && !defined(UI_HARD_LINKED)
+int _stdcall DLLMain (void *hinstDll, unsigned long dwReason, void *reserved)
 {
-	va_list		argptr;
-	char		text[1024];
-
-	va_start (argptr, error);
-	vsnprintf (text, sizeof(text), error, argptr);
-	va_end (argptr);
-
-	uii.Sys_Error (ERR_FATAL, "%s", text);
+	return 1;
 }
-
-void Com_Printf (char *fmt, ...)
-{
-	va_list		argptr;
-	char		text[1024];
-
-	va_start (argptr, fmt);
-	vsnprintf (text, sizeof(text), fmt, argptr);
-	va_end (argptr);
-
-	uii.Con_Printf (PRINT_ALL, "%s", text);
-}
-
 #endif
-

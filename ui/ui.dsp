@@ -53,7 +53,7 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
-# ADD LINK32 kernel32.lib user32.lib winmm.lib /nologo /dll /machine:I386 /def:".\ui.def" /out:"..\release\ui_x86.dll"
+# ADD LINK32 kernel32.lib user32.lib winmm.lib /nologo /dll /machine:I386 /out:"..\release\ui_x86.dll"
 # SUBTRACT LINK32 /pdb:none
 
 !ELSEIF  "$(CFG)" == "ui - Win32 Debug"
@@ -80,7 +80,7 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
-# ADD LINK32 kernel32.lib user32.lib winmm.lib /nologo /dll /incremental:no /map /debug /machine:I386 /def:".\ui.def" /out:"..\debug\ui_x86.dll"
+# ADD LINK32 kernel32.lib user32.lib winmm.lib /nologo /dll /incremental:no /map /debug /machine:I386 /out:"..\debug\ui_x86.dll"
 # SUBTRACT LINK32 /pdb:none
 
 !ENDIF 
@@ -94,11 +94,11 @@ LINK32=link.exe
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
 # Begin Source File
 
-SOURCE=..\game\q_shared.c
+SOURCE=..\game\q_math.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ui_address.c
+SOURCE=..\game\q_shared.c
 # End Source File
 # Begin Source File
 
@@ -198,12 +198,20 @@ SOURCE=.\ui_local.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\ui_public.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\ui_syscalls.h
 # End Source File
 # End Group
 # Begin Group "Resource Files"
 
 # PROP Default_Filter "ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe"
+# Begin Source File
+
+SOURCE=.\ui.def
+# End Source File
 # End Group
 # End Target
 # End Project

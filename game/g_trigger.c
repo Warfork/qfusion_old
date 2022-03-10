@@ -30,10 +30,10 @@ void InitTrigger (edict_t *self)
 		G_SetMovedir ( self->s.angles, self->movedir );
 	}
 
-	self->solid = SOLID_TRIGGER;
+	self->r.solid = SOLID_TRIGGER;
 	self->movetype = MOVETYPE_NONE;
-	gi.setmodel (self, self->model);
-	self->svflags = SVF_NOCLIENT;
+	trap_SetBrushModel (self, self->model);
+	self->r.svflags = SVF_NOCLIENT;
 }
 
 
@@ -74,14 +74,14 @@ void Use_Multi (edict_t *ent, edict_t *other, edict_t *activator)
 	multi_trigger (ent);
 }
 
-void Touch_Multi (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+void Touch_Multi (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
-	if(other->client)
+	if(other->r.client)
 	{
 		if (self->spawnflags & 2)
 			return;
 	}
-	else if (other->svflags & SVF_MONSTER)
+	else if (other->r.svflags & SVF_MONSTER)
 	{
 		if (!(self->spawnflags & 1))
 			return;
@@ -115,9 +115,9 @@ set "message" to text string
 */
 void trigger_enable (edict_t *self, edict_t *other, edict_t *activator)
 {
-	self->solid = SOLID_TRIGGER;
+	self->r.solid = SOLID_TRIGGER;
 	self->use = Use_Multi;
-	gi.linkentity (self);
+	trap_LinkEntity (self);
 }
 
 void SP_trigger_multiple (edict_t *ent)
@@ -125,36 +125,35 @@ void SP_trigger_multiple (edict_t *ent)
 	if (ent->sounds && ent->sounds[0])
 	{
 		if (ent->sounds[0] == '1')
-			ent->noise_index = gi.soundindex ("sound/misc/secret.wav");
+			ent->noise_index = trap_SoundIndex ("sound/misc/secret.wav");
 		else if (ent->sounds[0] == '2')
-			ent->noise_index = gi.soundindex ("sound/misc/talk.wav");
+			ent->noise_index = trap_SoundIndex ("sound/misc/talk.wav");
 		else if (ent->sounds[0] == '3')
-			ent->noise_index = gi.soundindex ("sound/misc/trigger1.wav");
+			ent->noise_index = trap_SoundIndex ("sound/misc/trigger1.wav");
 	}
 
 	if (!ent->wait)
 		ent->wait = 0.2;
 	ent->touch = Touch_Multi;
 	ent->movetype = MOVETYPE_NONE;
-	ent->svflags |= SVF_NOCLIENT;
-
+	ent->r.svflags |= SVF_NOCLIENT;
 
 	if (ent->spawnflags & 4)
 	{
-		ent->solid = SOLID_NOT;
+		ent->r.solid = SOLID_NOT;
 		ent->use = trigger_enable;
 	}
 	else
 	{
-		ent->solid = SOLID_TRIGGER;
+		ent->r.solid = SOLID_TRIGGER;
 		ent->use = Use_Multi;
 	}
 
 	if (!VectorCompare(ent->s.angles, vec3_origin))
 		G_SetMovedir (ent->s.angles, ent->movedir);
 
-	gi.setmodel (ent, ent->model);
-	gi.linkentity (ent);
+	trap_SetBrushModel (ent, ent->model);
+	trap_LinkEntity (ent);
 }
 
 
@@ -181,12 +180,12 @@ void SP_trigger_once(edict_t *ent)
 	{
 		vec3_t	v;
 
-		VectorMA (ent->mins, 0.5, ent->size, v);
+		VectorMA (ent->r.mins, 0.5, ent->r.size, v);
 		ent->spawnflags &= ~1;
 		ent->spawnflags |= 4;
 
-		if ( developer->value )
-			gi.dprintf("fixed TRIGGERED flag on %s at %s\n", ent->classname, vtos(v));
+		if (developer->value)
+			G_Printf ("fixed TRIGGERED flag on %s at %s\n", ent->classname, vtos(v));
 	}
 
 	ent->wait = -1;
@@ -233,16 +232,16 @@ void trigger_counter_use(edict_t *self, edict_t *other, edict_t *activator)
 	{
 		if (! (self->spawnflags & 1))
 		{
-			gi.centerprintf(activator, "%i more to go...", self->count);
-			gi.sound (activator, CHAN_AUTO, gi.soundindex ("sound/misc/talk1.wav"), 1, ATTN_NORM, 0);
+			G_CenterPrintMsg (activator, "%i more to go...", self->count);
+			G_Sound (activator, CHAN_AUTO, trap_SoundIndex ("sound/misc/talk1.wav"), 1, ATTN_NORM);
 		}
 		return;
 	}
 	
 	if (! (self->spawnflags & 1))
 	{
-		gi.centerprintf(activator, "Sequence completed!");
-		gi.sound (activator, CHAN_AUTO, gi.soundindex ("sound/misc/talk1.wav"), 1, ATTN_NORM, 0);
+		G_CenterPrintMsg (activator, "Sequence completed!");
+		G_Sound (activator, CHAN_AUTO, trap_SoundIndex ("sound/misc/talk1.wav"), 1, ATTN_NORM);
 	}
 	self->activator = activator;
 	multi_trigger (self);
@@ -288,35 +287,67 @@ trigger_push
 
 #define PUSH_ONCE		1
 
-void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
-	if ( !other->client ) {
+	float time, dist, f;
+	vec3_t origin, velocity;
+
+	if ( self->wait >= level.time ) {
 		return;
 	}
-	if ( other->client->ps.pmove.pm_type != PM_NORMAL ) {
+	if ( !other->r.client ) {
+		return;
+	}
+	if ( other->r.client->ps.pmove.pm_type != PM_NORMAL ) {
 		return;
 	}
 
+	VectorAdd( self->r.absmin, self->r.absmax, origin );
+	VectorScale ( origin, 0.5, origin );
+	time = sqrt ((self->movetarget->s.origin[2] - origin[2]) / (0.5 * sv_gravity->value));
+	if (!time)
+		goto remove;
+
+	VectorSubtract ( self->movetarget->s.origin, origin, velocity );
+	velocity[2] = 0;
+	dist = VectorNormalize ( velocity );
+
+	f = dist / time;
+	VectorScale (velocity, f, velocity);
+	velocity[2] = time * sv_gravity->value;
+	
 	CTFPlayerResetGrapple ( other );
 
-	// add an event
-	if ( other->velocity[2] < 100 ) {
-		other->s.event = EV_JUMP_PAD;
-	}
-
-	// no prediction
-	other->client->jumppad_time = level.time;
-
-	VectorCopy ( self->movedir, other->velocity );
+	other->r.client->jumppad_time = level.time;
+	VectorCopy ( velocity, other->velocity );
 
 	// don't take falling damage immediately from this
-	VectorCopy ( other->velocity, other->client->oldvelocity );
+	VectorCopy ( other->velocity, other->r.client->oldvelocity );
 
-	if ( self->spawnflags & PUSH_ONCE ) {
-		G_FreeEdict ( self );
+	// add an event
+	G_AddEvent ( other, EV_JUMP_PAD, self - game.edicts, qtrue );
+
+	if ( !(self->spawnflags & PUSH_ONCE) )
+	{
+		self->wait = level.time + 2*FRAMETIME;
+		return;
 	}
+
+remove:
+	// we can't just remove (self) here, because this is a touch function
+	// called while looping through area links...
+	self->touch = NULL;
+	self->nextthink = level.time + FRAMETIME;
+	self->think = G_FreeEdict;
 }
 
+void S_trigger_push_think (edict_t *ent)
+{
+	ent->movetarget = G_PickTarget (ent->target);
+	if (!ent->movetarget)
+		G_FreeEdict (ent);
+
+}
 
 /*QUAKED trigger_push (.5 .5 .5) ? PUSH_ONCE
 Pushes the player
@@ -325,11 +356,15 @@ void SP_trigger_push (edict_t *self)
 {
 	InitTrigger (self);
 
-	self->touch = trigger_push_touch;
-	self->think = G_AimAtTarget;
-	self->nextthink = level.time + FRAMETIME;
+	trap_SoundIndex ( "sound/world/jumppad.wav" );
 
-	gi.linkentity (self);
+	self->touch = trigger_push_touch;
+	self->think = S_trigger_push_think;
+	self->nextthink = level.time + FRAMETIME;
+	self->r.svflags &= ~SVF_NOCLIENT;
+	self->s.type = ET_PUSH_TRIGGER;
+
+	trap_LinkEntity (self);
 }
 
 
@@ -355,24 +390,23 @@ NO_PROTECTION	*nothing* stops the damage
 */
 void hurt_use (edict_t *self, edict_t *other, edict_t *activator)
 {
-	if (self->solid == SOLID_NOT)
-		self->solid = SOLID_TRIGGER;
+	if (self->r.solid == SOLID_NOT)
+		self->r.solid = SOLID_TRIGGER;
 	else
-		self->solid = SOLID_NOT;
-	gi.linkentity (self);
+		self->r.solid = SOLID_NOT;
+	trap_LinkEntity (self);
 
 	if (!(self->spawnflags & 2))
 		self->use = NULL;
 }
 
 
-void hurt_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+void hurt_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
 	int		dflags;
 
 	if (!other->takedamage)
 		return;
-
 	if (self->timestamp > level.time)
 		return;
 
@@ -384,7 +418,7 @@ void hurt_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *sur
 	if (!(self->spawnflags & 4))
 	{
 		if ((level.framenum % 10) == 0)
-			gi.sound (other, CHAN_AUTO, self->noise_index, 1, ATTN_NORM, 0);
+			G_Sound (other, CHAN_AUTO, self->noise_index, 1, ATTN_NORM);
 	}
 
 	if (self->spawnflags & 8)
@@ -398,21 +432,21 @@ void SP_trigger_hurt (edict_t *self)
 {
 	InitTrigger (self);
 
-	self->noise_index = gi.soundindex ("sound/world/electro.wav");
+	self->noise_index = trap_SoundIndex ("sound/world/electro.wav");
 	self->touch = hurt_touch;
 
 	if (!self->dmg)
 		self->dmg = 5;
 
 	if (self->spawnflags & 1)
-		self->solid = SOLID_NOT;
+		self->r.solid = SOLID_NOT;
 	else
-		self->solid = SOLID_TRIGGER;
+		self->r.solid = SOLID_TRIGGER;
 
 	if (self->spawnflags & 2)
 		self->use = hurt_use;
 
-	gi.linkentity (self);
+	trap_LinkEntity (self);
 }
 
 
@@ -430,7 +464,7 @@ the value of "gravity".  1.0 is standard
 gravity for the level.
 */
 
-void trigger_gravity_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+void trigger_gravity_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
 	other->gravity = self->gravity;
 }
@@ -439,9 +473,8 @@ void SP_trigger_gravity (edict_t *self)
 {
 	if (st.gravity == 0)
 	{
-		if ( developer->value )
-			gi.dprintf("trigger_gravity without gravity set at %s\n", vtos(self->s.origin));
-
+		if (developer->value)
+			G_Printf ("trigger_gravity without gravity set at %s\n", vtos(self->s.origin));
 		G_FreeEdict  (self);
 		return;
 	}
@@ -466,13 +499,13 @@ Walking monsters that touch this will jump in the direction of the trigger's ang
 "height" default to 200, the speed thrown upwards
 */
 
-void trigger_monsterjump_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+void trigger_monsterjump_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
 	if (other->flags & (FL_FLY | FL_SWIM) )
 		return;
-	if (other->svflags & SVF_CORPSE)
+	if (other->s.effects & EF_CORPSE)
 		return;
-	if ( !(other->svflags & SVF_MONSTER))
+	if ( !(other->r.svflags & SVF_MONSTER))
 		return;
 
 // set XY even if not on ground, so the jump will clear lips
@@ -503,20 +536,21 @@ void SP_trigger_monsterjump (edict_t *self)
  * just here to help old map conversions
  *--------------------------------------------------------------------------*/
 
-static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
+static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
 	edict_t		*dest;
+	edict_t		*event;
 	int			i;
 	vec3_t		forward;
 
-	if ( !other->client ) {
+	if ( !other->r.client ) {
 		return;
 	} 
 	if ( self->spawnflags & 1 ) {
-		if ( other->client->ps.pmove.pm_type != PM_SPECTATOR )
+		if ( other->r.client->ps.pmove.pm_type != PM_SPECTATOR )
 			return;
 	} else {
-		if ( other->client->ps.pmove.pm_type == PM_DEAD )
+		if ( other->r.client->ps.pmove.pm_type == PM_DEAD )
 			return;
 	}
 
@@ -524,9 +558,8 @@ static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane
 
 	if (!dest)
 	{
-		if ( developer->value )
-			gi.dprintf ("Couldn't find destination.\n");
-
+		if (developer->value)
+			G_Printf ("Couldn't find destination.\n");
 		return;
 	}
 
@@ -535,40 +568,38 @@ static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane
 //ZOID
 
 	// unlink to make sure it can't possibly interfere with KillBox
-	gi.unlinkentity (other);
+	trap_UnlinkEntity (other);
 
 	VectorCopy (dest->s.origin, other->s.origin);
 	VectorCopy (dest->s.origin, other->s.old_origin);
-	other->s.event = EV_TELEPORT;
+	G_AddEvent (other, EV_TELEPORT, 0, qtrue);
 
 	// clear the velocity and hold them in place briefly
 	VectorClear (other->velocity);
-	other->client->ps.pmove.pm_time = 160>>3;		// hold time
-	other->client->ps.pmove.pm_flags |= PMF_TIME_TELEPORT;
+	other->r.client->ps.pmove.pm_time = 160>>3;		// hold time
+	other->r.client->ps.pmove.pm_flags |= PMF_TIME_TELEPORT;
 
 	// draw the teleport splash at source and on the player
-	gi.WriteByte ( svc_temp_entity );
-	gi.WriteByte ( TE_PLAYER_TELEPORT_OUT );
-	gi.WritePosition ( self->s.origin );
-	gi.multicast ( self->s.origin, MULTICAST_PVS );
+	event = G_SpawnEvent ( EV_PLAYER_TELEPORT_OUT, 0, self->s.origin );
+	event->r.svflags = SVF_NOOLDORIGIN;
+	event->s.ownerNum = other - game.edicts;
 
-	gi.WriteByte ( svc_temp_entity );
-	gi.WriteByte ( TE_PLAYER_TELEPORT_IN );
-	gi.WritePosition ( other->s.origin );
-	gi.multicast ( other->s.origin, MULTICAST_PVS );
+	event = G_SpawnEvent ( EV_PLAYER_TELEPORT_IN, 0, other->s.origin );
+	event->r.svflags = SVF_NOOLDORIGIN;
+	event->s.ownerNum = other - game.edicts;
 
 	// set angles
 	for (i=0 ; i<3 ; i++)
-		other->client->ps.pmove.delta_angles[i] = ANGLE2SHORT(dest->s.angles[i] - other->client->resp.cmd_angles[i]);
+		other->r.client->ps.pmove.delta_angles[i] = ANGLE2SHORT(dest->s.angles[i] - other->r.client->resp.cmd_angles[i]);
 
 	other->s.angles[PITCH] = 0;
 	other->s.angles[YAW] = dest->s.angles[YAW];
 	other->s.angles[ROLL] = 0;
-	VectorCopy (dest->s.angles, other->client->ps.viewangles);
-	VectorCopy (dest->s.angles, other->client->v_angle);
+	VectorCopy (dest->s.angles, other->r.client->ps.viewangles);
+	VectorCopy (dest->s.angles, other->r.client->v_angle);
 
 	// give a little forward velocity
-	AngleVectors (other->client->v_angle, forward, NULL, NULL);
+	AngleVectors (other->r.client->v_angle, forward, NULL, NULL);
 	VectorScale(forward, 200, other->velocity);
 
 	// kill anything at the destination
@@ -576,7 +607,7 @@ static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane
 	{
 	}
 
-	gi.linkentity (other);
+	trap_LinkEntity (other);
 }
 
 /*QUAKED trigger_teleport (0.5 0.5 0.5) ?
@@ -584,11 +615,10 @@ Players touching this will be teleported
 */
 void SP_trigger_teleport (edict_t *ent)
 {
-	if ( !ent->target )
+	if (!ent->target)
 	{
-		if ( developer->value )
-			gi.dprintf ( "teleporter without a target.\n" );
-
+		if (developer->value)
+			G_Printf ( "teleporter without a target.\n" );
 		G_FreeEdict ( ent );
 		return;
 	}

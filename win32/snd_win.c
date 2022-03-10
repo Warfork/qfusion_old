@@ -37,7 +37,7 @@ cvar_t	*s_wavonly;
 
 static qboolean	dsound_init;
 static qboolean	wav_init;
-static qboolean	snd_firsttime = true, snd_isdirect, snd_iswave;
+static qboolean	snd_firsttime = qtrue, snd_isdirect, snd_iswave;
 
 // starts at 0 for disabled
 static int	snd_buffer_count = 0;
@@ -117,7 +117,7 @@ static qboolean DS_CreateBuffers( void )
 	{
 		Com_DPrintf ("failed\n");
 		FreeSound ();
-		return false;
+		return qfalse;
 	}
 	Com_DPrintf("ok\n" );
 
@@ -139,7 +139,7 @@ static qboolean DS_CreateBuffers( void )
 		{
 			Com_DPrintf( "failed\n" );
 			FreeSound ();
-			return false;
+			return qfalse;
 		}
 
 		Com_DPrintf( "ok\n...forced to software\n" );
@@ -157,7 +157,7 @@ static qboolean DS_CreateBuffers( void )
 	{
 		Com_DPrintf ("*** GetCaps failed ***\n");
 		FreeSound ();
-		return false;
+		return qfalse;
 	}
 
 	// Make sure mixer is active
@@ -165,7 +165,7 @@ static qboolean DS_CreateBuffers( void )
 	{
 		Com_DPrintf ("*** Play failed ***\n");
 		FreeSound ();
-		return false;
+		return qfalse;
 	}
 
 	if (snd_firsttime)
@@ -189,7 +189,7 @@ static qboolean DS_CreateBuffers( void )
 	dma.buffer = (unsigned char *) lpData;
 	sample16 = (dma.samplebits/8) - 1;
 
-	return true;
+	return qtrue;
 }
 
 /*
@@ -289,8 +289,8 @@ void FreeSound (void)
 	hWaveHdr = 0;
 	lpData = NULL;
 	lpWaveHdr = NULL;
-	dsound_init = false;
-	wav_init = false;
+	dsound_init = qfalse;
+	wav_init = qfalse;
 }
 
 /*
@@ -377,7 +377,7 @@ sndinitstat SNDDMA_InitDirect (void)
 	if ( !DS_CreateBuffers() )
 		return SIS_FAILURE;
 
-	dsound_init = true;
+	dsound_init = qtrue;
 
 	Com_DPrintf("...completed successfully\n" );
 
@@ -432,7 +432,7 @@ qboolean SNDDMA_InitWav (void)
 		if (hr != MMSYSERR_ALLOCATED)
 		{
 			Com_Printf ("failed\n");
-			return false;
+			return qfalse;
 		}
 
 		if (MessageBox (NULL,
@@ -442,7 +442,7 @@ qboolean SNDDMA_InitWav (void)
 						MB_RETRYCANCEL | MB_SETFOREGROUND | MB_ICONEXCLAMATION) != IDRETRY)
 		{
 			Com_Printf ("hw in use\n" );
-			return false;
+			return qfalse;
 		}
 	} 
 	Com_DPrintf( "ok\n" );
@@ -460,7 +460,7 @@ qboolean SNDDMA_InitWav (void)
 	{ 
 		Com_Printf( " failed\n" );
 		FreeSound ();
-		return false; 
+		return qfalse; 
 	}
 	Com_DPrintf( "ok\n" );
 
@@ -470,7 +470,7 @@ qboolean SNDDMA_InitWav (void)
 	{ 
 		Com_Printf( " failed\n" );
 		FreeSound ();
-		return false; 
+		return qfalse; 
 	} 
 	memset (lpData, 0, gSndBufSize);
 	Com_DPrintf( "ok\n" );
@@ -488,7 +488,7 @@ qboolean SNDDMA_InitWav (void)
 	{ 
 		Com_Printf( "failed\n" );
 		FreeSound ();
-		return false; 
+		return qfalse; 
 	} 
 	Com_DPrintf( "ok\n" );
 
@@ -499,7 +499,7 @@ qboolean SNDDMA_InitWav (void)
 	{ 
 		Com_Printf( "failed\n" );
 		FreeSound ();
-		return false; 
+		return qfalse; 
 	}
 	memset (lpWaveHdr, 0, sizeof(WAVEHDR) * WAV_BUFFERS);
 	Com_DPrintf( "ok\n" );
@@ -516,7 +516,7 @@ qboolean SNDDMA_InitWav (void)
 		{
 			Com_Printf ("failed\n");
 			FreeSound ();
-			return false;
+			return qfalse;
 		}
 	}
 	Com_DPrintf ("ok\n");
@@ -527,9 +527,9 @@ qboolean SNDDMA_InitWav (void)
 	dma.buffer = (unsigned char *) lpData;
 	sample16 = (dma.samplebits/8) - 1;
 
-	wav_init = true;
+	wav_init = qtrue;
 
-	return true;
+	return qtrue;
 }
 
 /*
@@ -548,7 +548,7 @@ qboolean SNDDMA_Init(void)
 
 	s_wavonly = Cvar_Get ("s_wavonly", "0", 0);
 
-	dsound_init = wav_init = false;
+	dsound_init = wav_init = qfalse;
 
 	stat = SIS_FAILURE;	// assume DirectSound won't initialize
 
@@ -561,14 +561,14 @@ qboolean SNDDMA_Init(void)
 
 			if (stat == SIS_SUCCESS)
 			{
-				snd_isdirect = true;
+				snd_isdirect = qtrue;
 
 				if (snd_firsttime)
 					Com_Printf ("dsound init succeeded\n" );
 			}
 			else
 			{
-				snd_isdirect = false;
+				snd_isdirect = qfalse;
 				Com_Printf ("*** dsound init failed ***\n");
 			}
 		}
@@ -597,7 +597,7 @@ qboolean SNDDMA_Init(void)
 		}
 	}
 
-	snd_firsttime = false;
+	snd_firsttime = qfalse;
 	snd_buffer_count = 1;
 
 	if (!dsound_init && !wav_init)
@@ -605,10 +605,10 @@ qboolean SNDDMA_Init(void)
 		if (snd_firsttime)
 			Com_Printf ("*** No sound device initialized ***\n");
 
-		return false;
+		return qfalse;
 	}
 
-	return true;
+	return qtrue;
 }
 
 /*

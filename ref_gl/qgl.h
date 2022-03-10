@@ -25,29 +25,20 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define __QGL_H__
 
 #ifdef _WIN32
-# define GL_DRIVERNAME	"opengl32.dll"
-#endif
-
-#ifdef __linux
-# define GL_DRIVERNAME	"libGL.so"
-#endif
-
-#ifdef _WIN32
-#  include <windows.h>
+# include <windows.h>
 #endif
 
 #include <GL/gl.h>
 
 #ifdef __linux__
-//#include <GL/fxmesa.h>
-#include <GL/glx.h>
+# include <GL/glx.h>
 #endif
 
 qboolean QGL_Init( const char *dllname );
 void     QGL_Shutdown( void );
 
 #ifndef APIENTRY
-#  define APIENTRY
+# define APIENTRY
 #endif
 
 extern  void ( APIENTRY * qglAccum )(GLenum op, GLfloat value);
@@ -461,12 +452,11 @@ extern void (*qglXSwapBuffers)( Display *dpy, GLXDrawable drawable );
 extern int GL_TEXTURE_0, GL_TEXTURE_1;
 
 #ifndef GL_POLYGON_OFFSET
-# define GL_POLYGON_OFFSET					0x8037
+#define GL_POLYGON_OFFSET					0x8037
 #endif
 
 #ifndef GL_SGIS_generate_mipmap
 #define GL_SGIS_generate_mipmap
-
 #define GL_GENERATE_MIPMAP_SGIS           0x8191
 #define GL_GENERATE_MIPMAP_HINT_SGIS      0x8192
 
@@ -474,7 +464,6 @@ extern int GL_TEXTURE_0, GL_TEXTURE_1;
 
 #ifndef GL_EXT_texture_env_combine
 #define GL_EXT_texture_env_combine
-
 #define GL_COMBINE_EXT                    0x8570
 #define GL_COMBINE_RGB_EXT                0x8571
 #define GL_COMBINE_ALPHA_EXT              0x8572
@@ -522,7 +511,6 @@ extern int GL_TEXTURE_0, GL_TEXTURE_1;
 /* NV_texture_env_combine4 */
 #ifndef GL_NV_texture_env_combine4
 #define GL_NV_texture_env_combine4
-
 #define GL_COMBINE4_NV                      0x8503
 #define GL_SOURCE3_RGB_NV                   0x8583
 #define GL_SOURCE3_ALPHA_NV                 0x858B
@@ -533,7 +521,6 @@ extern int GL_TEXTURE_0, GL_TEXTURE_1;
 
 #ifndef GL_ARB_texture_compression
 #define GL_ARB_texture_compression
-
 #define GL_COMPRESSED_ALPHA_ARB           0x84E9
 #define GL_COMPRESSED_LUMINANCE_ARB       0x84EA
 #define GL_COMPRESSED_LUMINANCE_ALPHA_ARB 0x84EB
@@ -551,19 +538,19 @@ extern int GL_TEXTURE_0, GL_TEXTURE_1;
 /* GL_EXT_texture_filter_anisotropic */
 #ifndef GL_EXT_texture_filter_anisotropic
 #define GL_EXT_texture_filter_anisotropic
-
 #define GL_TEXTURE_MAX_ANISOTROPY_EXT                           0x84FE
 #define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT                       0x84FF
-
 #endif
 
 /* GL_EXT_bgra */
 #ifndef GL_EXT_bgra
 #define GL_EXT_bgra
-
 #define GL_BGR_EXT                                              0x80E0
 #define GL_BGRA_EXT                                             0x80E1
+#endif
 
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE										0x812F
 #endif
 
 #endif

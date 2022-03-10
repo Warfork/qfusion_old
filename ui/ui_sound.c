@@ -55,7 +55,7 @@ static void UpdateSoundCompatibilityFunc( void *unused )
 	M_Print( 16 + 16, 120 - 48 + 24, "please be patient." );
 
 	// the text box won't show up unless we do a buffer swap
-	trap_EndFrame();
+	trap_R_EndFrame();
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "snd_restart\n");
 	trap_Cmd_Execute();
@@ -71,7 +71,7 @@ static void UpdateSoundQualityFunc( void *unused )
 	M_Print( 16 + 16, 120 - 48 + 24, "please be patient." );
 
 	// the text box won't show up unless we do a buffer swap
-	trap_EndFrame();
+	trap_R_EndFrame();
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "snd_restart\n");
 	trap_Cmd_Execute();
@@ -84,27 +84,23 @@ static void UpdateSwapStereoFunc( void *unused )
 
 void Sound_MenuInit( void )
 {
-	static const char *quality_items[] =
+	static char *quality_items[] =
 	{
 		"low", "medium", "high", 0
 	};
 
-	static const char *swapstereo_items[] =
+	static char *swapstereo_items[] =
 	{
 		"no", "yes", 0
 	};
 
-	int w, h;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	/*
 	** configure controls menu and menu items
 	*/
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_sound_menu.x = w / 2;
+	s_sound_menu.x = uis.vidWidth / 2;
 	s_sound_menu.nitems = 0;
 
 	s_sound_title.generic.type	= MTYPE_SEPARATOR;

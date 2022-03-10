@@ -34,7 +34,6 @@ void M_Menu_Main_f (void);
 		void M_Menu_Credits_f( void );
 	void M_Menu_Multiplayer_f( void );
 		void M_Menu_JoinServer_f (void);
-			void M_Menu_AddressBook_f( void );
 		void M_Menu_StartServer_f (void);
 			void M_Menu_DMOptions_f (void);
 	void M_Menu_Options_f (void);
@@ -50,11 +49,61 @@ ui_local_t	uis;
 
 qboolean	m_entersound;		// play after drawing a frame, so caching
 								// won't disrupt the sound
+struct mempool_s *uipool;
 
 menuframework_s *m_active;
 void	*m_cursoritem;
 void	(*m_drawfunc) (void);
 const char *(*m_keyfunc) (int key);
+
+//======================================================================
+
+/*
+============
+UI_API
+============
+*/
+int UI_API (void) {
+	return UI_API_VERSION;
+}
+
+/*
+============
+UI_Error
+============
+*/
+void UI_Error ( char *fmt, ... )
+{
+	char		msg[1024];
+	va_list		argptr;
+
+	va_start ( argptr, fmt );
+	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+		trap_Error ( "CG_Error: Buffer overflow" );
+	}
+	va_end ( argptr );
+
+	trap_Error ( msg );
+}
+
+/*
+============
+UI_Printf
+============
+*/
+void UI_Printf ( char *fmt, ... )
+{
+	char		msg[1024];
+	va_list		argptr;
+
+	va_start ( argptr, fmt );
+	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+		trap_Error ( "CG_Print: Buffer overflow" );
+	}
+	va_end ( argptr );
+
+	trap_Print ( msg );
+}
 
 //=============================================================================
 /* Support Routines */
@@ -79,7 +128,7 @@ void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (i
 	int		i;
 
 	if (trap_Cvar_VariableValue ("sv_maxclients") == 1 
-		&& trap_GetServerState ())
+		&& uis.serverState)
 		trap_Cvar_Set ("paused", "1");
 
 	// if this menu is already present, drop back to that level
@@ -94,7 +143,7 @@ void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (i
 	if (i == m_menudepth)
 	{
 		if (m_menudepth >= MAX_MENU_DEPTH) {
-			trap_Sys_Error (ERR_FATAL, "M_PushMenu: MAX_MENU_DEPTH");
+			UI_Error ("M_PushMenu: MAX_MENU_DEPTH");
 			return;
 		}
 
@@ -108,7 +157,7 @@ void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (i
 	m_keyfunc = key;
 	m_active = m;
 
-	m_entersound = true;
+	m_entersound = qtrue;
 
 	UI_UpdateMousePosition ();
 
@@ -137,7 +186,7 @@ void M_PopMenu (void)
 	trap_S_StartLocalSound( menu_out_sound );
 
 	if (m_menudepth < 1) {
-		trap_Sys_Error (ERR_FATAL, "M_PopMenu: depth < 1");
+		UI_Error ("M_PopMenu: depth < 1");
 		return;
 	}
 
@@ -306,34 +355,16 @@ float M_ClampCvar( float min, float max, float value )
 
 /*
 =================
-UI_malloc
+UI_CopyString
 =================
 */
-void *UI_malloc (int cnt)
+char *UI_CopyString (char *in)
 {
-	void *buf = (void *)malloc (cnt);
-
-	if (!buf) {
-		Com_Printf ("UI_malloc: failed on allocation of %i bytes.\n", cnt);
-		return NULL;
-	}
-
-	memset (buf, 0, cnt);
-	return buf;
-}
-
-/*
-=================
-UI_free
-=================
-*/
-void UI_free (void *buf)
-{
-	if (!buf) {
-		return;
-	}
-
-	free (buf);
+	char	*out;
+	
+	out = UI_Malloc (strlen(in)+1);
+	strcpy (out, in);
+	return out;
 }
 
 //=============================================================================
@@ -355,7 +386,7 @@ void M_Print (int cx, int cy, char *str)
 	w = uis.vidWidth;
 	h = uis.vidHeight;
 
-	trap_DrawString (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, FONT_SMALL, colorWhite);
+	UI_DrawNonPropString (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, FONT_SMALL, colorWhite);
 }
 
 void M_PrintWhite (int cx, int cy, char *str)
@@ -365,7 +396,7 @@ void M_PrintWhite (int cx, int cy, char *str)
 	w = uis.vidWidth;
 	h = uis.vidHeight;
 
-	trap_DrawString (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, FONT_SMALL, colorYellow);
+	UI_DrawNonPropString (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, FONT_SMALL, colorYellow);
 }
 
 /*
@@ -382,80 +413,83 @@ void M_DrawTextBox (int x, int y, int width, int lines)
 {
 	int		cx, cy;
 	int		n;
-	int		w, h;
-
-	trap_Vid_GetCurrentInfo ( &w, &h );
 
 	// draw left side
-	cx = x + ((w - 320)>>1);
-	cy = y + ((h - 240)>>1);
+	cx = x + ((uis.vidWidth - 320)>>1);
+	cy = y + ((uis.vidHeight - 240)>>1);
 
-	trap_DrawChar ( cx, cy, 1, FONT_SMALL, colorWhite );
+	UI_DrawNonPropChar ( cx, cy, 1, FONT_SMALL, colorGreen );
 	for (n = 0; n < lines; n++)
 	{
-		cy += SMALL_CHAR_HEIGHT/2;
-		trap_DrawChar ( cx, cy, 4, FONT_SMALL, colorWhite );
+		cy += SMALL_CHAR_HEIGHT;
+		UI_DrawNonPropChar ( cx, cy, 4, FONT_SMALL, colorGreen );
 	}
-	trap_DrawChar ( cx, cy+SMALL_CHAR_HEIGHT/2-1, 7, FONT_SMALL, colorWhite );
+	UI_DrawNonPropChar ( cx, cy+SMALL_CHAR_HEIGHT/2-1, 7, FONT_SMALL, colorGreen );
 
 	// draw middle
 	cx += 8;
 	while (width > 0)
 	{
-		cy = y + ((h - 240)>>1);
-		trap_DrawChar ( cx, cy, 2, FONT_SMALL, colorWhite );
+		cy = y + ((uis.vidHeight - 240)>>1);
+		UI_DrawNonPropChar ( cx, cy, 2, FONT_SMALL, colorGreen );
 		for (n = 0; n < lines; n++)
 		{
-			cy += SMALL_CHAR_HEIGHT/2;
-			trap_DrawChar ( cx, cy, 5, FONT_SMALL, colorWhite );
+			cy += SMALL_CHAR_HEIGHT;
+			UI_DrawNonPropChar ( cx, cy, 5, FONT_SMALL, colorWhite );
 		}
-		trap_DrawChar ( cx, cy+SMALL_CHAR_HEIGHT/2, 7, FONT_SMALL, colorWhite );
+		UI_DrawNonPropChar ( cx, cy+SMALL_CHAR_HEIGHT/2, 7, FONT_SMALL, colorGreen );
 		width -= 1;
 		cx += SMALL_CHAR_WIDTH;
 	}
 
 	// draw right side
-	cy = y + ((h - 240)>>1);
-	trap_DrawChar ( cx, cy, 3, FONT_SMALL, colorWhite );
+	cy = y + ((uis.vidHeight - 240)>>1);
+	UI_DrawNonPropChar ( cx, cy, 3, FONT_SMALL, colorGreen );
 
 	for (n = 0; n < lines; n++)
 	{
-		cy += SMALL_CHAR_HEIGHT/2;
-		trap_DrawChar ( cx, cy, 6, FONT_SMALL, colorWhite );
+		cy += SMALL_CHAR_HEIGHT;
+		UI_DrawNonPropChar ( cx, cy, 6, FONT_SMALL, colorGreen );
 	}
-	trap_DrawChar ( cx, cy+SMALL_CHAR_HEIGHT/2, 9, FONT_SMALL, colorWhite );
+	UI_DrawNonPropChar ( cx, cy+SMALL_CHAR_HEIGHT/2, 9, FONT_SMALL, colorGreen );
 }
+
 
 //=============================================================================
 /* User Interface Subsystem */
-
 
 /*
 =================
 UI_Init
 =================
 */
-void UI_Init (void)
+void UI_Init ( int vidWidth, int vidHeight )
 {
-	uis.clientState = trap_GetClientState (); 
-	uis.serverState = trap_GetServerState ();
+	uipool = UI_MemAllocPool ( "UI" );
 
-	trap_Vid_GetCurrentInfo ( &uis.vidWidth, &uis.vidHeight );
+	uis.vidWidth = vidWidth;
+	uis.vidHeight = vidHeight;
 
-//	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
-//	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
+#if 0
+	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
+	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
+#else
 	uis.scaleX = 1;
 	uis.scaleY = 1;
+#endif
 
 	uis.cursorX = uis.vidWidth / 2;
 	uis.cursorY = uis.vidHeight / 2;
+
+	uis.whiteShader = trap_R_RegisterPic ( "white" );
+	uis.charsetShader = trap_R_RegisterPic ( "gfx/2d/bigchars" );
+	uis.propfontShader = trap_R_RegisterPic ( "menu/art/font1_prop" );
 
 	trap_Cmd_AddCommand ("menu_main", M_Menu_Main_f);
 	trap_Cmd_AddCommand ("menu_game", M_Menu_Game_f);
 		trap_Cmd_AddCommand ("menu_loadgame", M_Menu_LoadGame_f);
 		trap_Cmd_AddCommand ("menu_savegame", M_Menu_SaveGame_f);
 		trap_Cmd_AddCommand ("menu_joinserver", M_Menu_JoinServer_f);
-			trap_Cmd_AddCommand ("menu_addressbook", M_Menu_AddressBook_f);
 		trap_Cmd_AddCommand ("menu_startserver", M_Menu_StartServer_f);
 			trap_Cmd_AddCommand ("menu_dmoptions", M_Menu_DMOptions_f);
 		trap_Cmd_AddCommand ("menu_playerconfig", M_Menu_PlayerConfig_f);
@@ -482,7 +516,6 @@ void UI_Shutdown (void)
 	trap_Cmd_RemoveCommand ("menu_loadgame");
 	trap_Cmd_RemoveCommand ("menu_savegame");
 	trap_Cmd_RemoveCommand ("menu_joinserver");
-	trap_Cmd_RemoveCommand ("menu_addressbook");
 	trap_Cmd_RemoveCommand ("menu_startserver");
 	trap_Cmd_RemoveCommand ("menu_dmoptions");
 	trap_Cmd_RemoveCommand ("menu_playerconfig");
@@ -495,6 +528,8 @@ void UI_Shutdown (void)
 	trap_Cmd_RemoveCommand ("menu_options");
 	trap_Cmd_RemoveCommand ("menu_keys");
 	trap_Cmd_RemoveCommand ("menu_quit");
+
+	UI_MemFreePool ( &uipool );
 }
 
 /*
@@ -558,35 +593,85 @@ void UI_MouseMove (int dx, int dy)
 
 /*
 =================
+UI_DrawConnectScreen
+=================
+*/
+void UI_DrawConnectScreen ( char *serverName, int connectCount, qboolean backGround )
+{
+	qboolean localhost;
+	int fontstyle = FONT_SMALL|FONT_SHADOWED;
+	char str[MAX_QPATH], levelshot[MAX_QPATH];
+	char mapname[MAX_QPATH], message[MAX_QPATH];
+
+	localhost = !Q_stricmp ( serverName, "localhost" );
+
+	trap_GetConfigString ( CS_MAPNAME, mapname, sizeof(mapname) );
+	if ( backGround ) {
+		if ( mapname[0] ) {
+			Com_sprintf ( levelshot, sizeof(levelshot), "levelshots/%s.jpg", mapname );
+
+			if ( !trap_FS_FileExists ( levelshot ) ) 
+				Com_sprintf ( levelshot, sizeof(levelshot), "levelshots/%s.tga", mapname );
+
+			if ( !trap_FS_FileExists ( levelshot ) ) 
+				Com_sprintf ( levelshot, sizeof(levelshot), "menu/art/unknownmap" );
+
+			trap_Draw_StretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+				0, 0, 1, 1, colorWhite, trap_R_RegisterPic ( levelshot ) );
+			trap_Draw_StretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+				0, 0, 2.5, 2, colorWhite, trap_R_RegisterPic ( "levelShotDetail" ) );
+		} else {
+			UI_FillRect ( 0, 0, uis.vidWidth, uis.vidHeight, colorBlack );
+		}
+	}
+
+	// draw server name if not local host
+	if ( !localhost ) {
+		Com_sprintf ( str, sizeof(str), "Connecting to %s", serverName );
+		UI_DrawPropString ( (uis.vidWidth - UI_PropStringLength (str, fontstyle)) / 2, 64, str, fontstyle, colorWhite );
+	}
+
+	if ( mapname[0] ) {
+		trap_GetConfigString ( CS_MESSAGE, message, sizeof(message) );
+
+		if ( message[0] ) {
+			// level name ("message")
+			UI_DrawPropString ( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
+		}
+	} else {
+		Q_strncpyz ( message, va("Awaiting connection... %i", connectCount), sizeof(message) );
+
+		if ( !localhost ) {
+			UI_DrawPropString ( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
+		}
+	}
+}
+
+/*
+=================
 UI_Refresh
 =================
 */
-void UI_Refresh ( int frametime )
+void UI_Refresh ( int time, int clientState, int serverState, qboolean backGround )
 {
-	if ( !m_drawfunc )
-		return;
-
-	uis.clientState = trap_GetClientState (); 
-	uis.serverState = trap_GetServerState (); 
-
-	trap_Vid_GetCurrentInfo ( &uis.vidWidth, &uis.vidHeight );
-
-//	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
-//	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
-	uis.scaleX = 1;
-	uis.scaleY = 1;
+	uis.time = time;
+	uis.clientState = clientState;
+	uis.serverState = serverState;
 
 	// draw background
-	if ( trap_GetClientState() == ca_disconnected ) {
-		trap_DrawStretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
-			0, 0, 1, 1, colorWhite, trap_RegisterPic ( "menuback" ) );
+	if ( backGround ) {
+		trap_Draw_StretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+			0, 0, 1, 1, colorWhite, trap_R_RegisterPic ( "menuback" ) );
 	}
+
+	if ( !m_drawfunc )
+		return;
 
 	m_drawfunc ();
 
 	// draw cursor
-	trap_DrawStretchPic ( uis.cursorX - 16, uis.cursorY - 16, 32, 32, 
-		0, 0, 1, 1, colorWhite, trap_RegisterPic ( "menu/art/3_cursor2" ) );
+	trap_Draw_StretchPic ( uis.cursorX - 16, uis.cursorY - 16, 32, 32, 
+		0, 0, 1, 1, colorWhite, trap_R_RegisterPic ( "menu/art/3_cursor2" ) );
 
 	// delay playing the enter sound until after the
 	// menu has been drawn, to avoid delay while
@@ -594,28 +679,8 @@ void UI_Refresh ( int frametime )
 	if (m_entersound)
 	{
 		trap_S_StartLocalSound( menu_in_sound );
-		m_entersound = false;
+		m_entersound = qfalse;
 	}
-}
-
-/*
-=================
-UI_Update
-
-Force an update
-=================
-*/
-void UI_Update (void)
-{
-	uis.clientState = trap_GetClientState (); 
-	uis.serverState = trap_GetServerState (); 
-
-	trap_Vid_GetCurrentInfo ( &uis.vidWidth, &uis.vidHeight );
-
-//	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
-//	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
-	uis.scaleX = 1;
-	uis.scaleY = 1;
 }
 
 /*
@@ -631,4 +696,34 @@ void UI_Keydown (int key)
 		if ( ( s = m_keyfunc( key ) ) != 0 )
 			trap_S_StartLocalSound( ( char * ) s );
 }
+
+//======================================================================
+
+#ifndef UI_HARD_LINKED
+// this is only here so the functions in q_shared.c and q_math.c can link
+void Sys_Error (char *error, ...)
+{
+	va_list		argptr;
+	char		text[1024];
+
+	va_start (argptr, error);
+	vsnprintf (text, sizeof(text), error, argptr);
+	va_end (argptr);
+
+	trap_Error (text);
+}
+
+void Com_Printf (char *fmt, ...)
+{
+	va_list		argptr;
+	char		text[1024];
+
+	va_start (argptr, fmt);
+	vsnprintf (text, sizeof(text), fmt, argptr);
+	va_end (argptr);
+
+	trap_Print (text);
+}
+#endif
+
 

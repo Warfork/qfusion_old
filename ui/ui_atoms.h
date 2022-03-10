@@ -20,6 +20,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef __QMENU_H__
 #define __QMENU_H__
 
+#define	FONT_BIG		1
+#define FONT_SMALL		2
+#define FONT_GIANT		4
+#define FONT_SHADOWED	8
+
 #define MAXMENUITEMS		64
 
 #define MTYPE_SLIDER		0
@@ -35,6 +40,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define QMF_NOITEMNAMES		0x00000008
 #define QMF_CENTERED		0x00000010
 #define QMF_GIANT			0x00000020
+#define QMF_NONPROPOTIONAL	0x00000040
 
 #define SLIDER_RANGE		10
 
@@ -100,7 +106,7 @@ typedef struct
 
 	int curvalue;
 
-	const char **itemnames;
+	char **itemnames;
 } menulist_s;
 
 typedef struct
@@ -114,6 +120,19 @@ typedef struct
 } menuseparator_s;
 
 qboolean Field_Key( menufield_s *field, int key );
+
+void	UI_DrawNonPropChar ( int x, int y, int num, int fontstyle, vec4_t color );
+void	UI_DrawNonPropString ( int x, int y, char *str, int fontstyle, vec4_t color );
+void	UI_DrawPropString ( int x, int y, char *str, int fontstyle, vec4_t color );
+int		UI_PropStringLength ( char *str, int fontstyle );
+
+int		UI_FontstyleForFlags ( int flags );
+int		UI_NonPropStringLength ( char *s );
+int		UI_StringWidth ( int flags, char *s );
+int		UI_StringHeight ( int flags );
+int		UI_StringHeightOffset ( int flags );
+int		UI_AdjustStringPosition ( int flags, char *s );
+void	UI_DrawString ( int x, int y, char *str, int flags, int fsm, vec4_t color );
 
 void	Menu_AddItem( menuframework_s *menu, void *item );
 void	Menu_AdjustCursor( menuframework_s *menu, int dir );

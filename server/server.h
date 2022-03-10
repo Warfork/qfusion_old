@@ -19,11 +19,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // server.h
 
-
-//define	PARANOID			// speed sapping error checking
-
 #include "../qcommon/qcommon.h"
-#include "../game/game.h"
+#include "../game/g_public.h"
 
 //=============================================================================
 
@@ -50,7 +47,6 @@ typedef struct
 	int			framenum;
 
 	char		name[MAX_QPATH];			// map name, or cinematic name
-	struct cmodel_s		*models[MAX_MODELS];
 
 	char		configstrings[MAX_CONFIGSTRINGS][MAX_QPATH];
 	entity_state_t	baselines[MAX_EDICTS];
@@ -58,16 +54,36 @@ typedef struct
 	// the multicast buffer is used to send a message to a set of clients
 	// it is only used to marshall data until SV_Multicast is called
 	sizebuf_t	multicast;
-	byte		multicast_buf[MAX_MSGLEN];
+	qbyte		multicast_buf[MAX_MSGLEN];
 
 	// demo server information
 	int			demofile;
 	int			demolen;
 	qboolean	timedemo;		// don't time sync
+
+	//
+	// global variables shared between game and server
+	//
+	struct edict_s	*edicts;
+	int			edict_size;
+	int			num_edicts;		// current number, <= max_edicts
+	int			max_edicts;
 } server_t;
 
-#define EDICT_NUM(n) ((edict_t *)((byte *)ge->edicts + ge->edict_size*(n)))
-#define NUM_FOR_EDICT(e) ( ((byte *)(e)-(byte *)ge->edicts ) / ge->edict_size)
+struct gclient_s
+{
+	player_state_t	ps;		// communicated by server to clients
+	client_shared_t	r;
+};
+
+struct edict_s
+{
+	entity_state_t	s;
+	entity_shared_t	r;
+};
+
+#define EDICT_NUM(n) ((edict_t *)((qbyte *)sv.edicts + sv.edict_size*(n)))
+#define NUM_FOR_EDICT(e) ( ((qbyte *)(e)-(qbyte *)sv.edicts ) / sv.edict_size)
 
 
 typedef enum
@@ -82,7 +98,7 @@ typedef enum
 typedef struct
 {
 	int					areabytes;
-	byte				areabits[MAX_MAP_AREAS/8];		// portalarea visibility bits
+	qbyte				areabits[MAX_MAP_AREAS/8];		// portalarea visibility bits
 	player_state_t		ps;
 	int					num_entities;
 	int					first_entity;		// into the circular sv_packet_entities[]
@@ -118,11 +134,11 @@ typedef struct client_s
 	// The datagram is written to by sound calls, prints, temp ents, etc.
 	// It can be harmlessly overflowed.
 	sizebuf_t		datagram;
-	byte			datagram_buf[MAX_MSGLEN];
+	qbyte			datagram_buf[MAX_MSGLEN];
 
 	client_frame_t	frames[UPDATE_BACKUP];	// updates can be delta'd from here
 
-	byte			*download;			// file being downloaded
+	qbyte			*download;			// file being downloaded
 	int				downloadsize;		// total bytes (can't use EOF because of paks)
 	int				downloadcount;		// bytes sent
 
@@ -177,7 +193,7 @@ typedef struct
 	// serverrecord values
 	FILE		*demofile;
 	sizebuf_t	demo_multicast;
-	byte		demo_multicast_buf[MAX_MSGLEN];
+	qbyte		demo_multicast_buf[MAX_MSGLEN];
 } server_static_t;
 
 //=============================================================================
@@ -187,14 +203,15 @@ extern	sizebuf_t	net_message;
 
 extern	netadr_t	master_adr[MAX_MASTERS];	// address of the master server
 
+extern	mempool_t	*sv_mempool;
+
 extern	server_static_t	svs;				// persistant server info
 extern	server_t		sv;					// local server
 
 extern	cvar_t		*sv_paused;
 extern	cvar_t		*sv_maxclients;
 extern	cvar_t		*sv_noreload;			// don't reload level state when reentering
-extern	cvar_t		*sv_airaccelerate;		// don't reload level state when reentering
-											// development tool
+
 extern	cvar_t		*sv_enforcetime;
 
 extern	client_t	*sv_client;
@@ -223,6 +240,7 @@ void SV_UserinfoChanged (client_t *cl);
 
 void Master_Heartbeat (void);
 void Master_Packet (void);
+void SVC_MasterInfoResponse (void);
 
 //
 // sv_init.c
@@ -240,6 +258,10 @@ void SV_PrepWorldFrame (void);
 // sv_send.c
 //
 typedef enum {RD_NONE, RD_CLIENT, RD_PACKET} redirect_t;
+
+// destination class for SV_multicast
+typedef enum {MULTICAST_ALL,MULTICAST_PHS,MULTICAST_PVS,MULTICAST_ALL_R,MULTICAST_PHS_R,MULTICAST_PVS_R} multicast_t;
+
 #define	SV_OUTPUTBUF_LENGTH	(MAX_MSGLEN - 16)
 
 extern	char	sv_outputbuf[SV_OUTPUTBUF_LENGTH];
@@ -252,7 +274,7 @@ void SV_SendClientMessages (void);
 void SV_Multicast (vec3_t origin, multicast_t to);
 void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 					int soundindex, float volume,
-					float attenuation, float timeofs);
+					float attenuation);
 void SV_ClientPrintf (client_t *cl, int level, char *fmt, ...);
 void SV_BroadcastPrintf (int level, char *fmt, ...);
 void SV_BroadcastCommand (char *fmt, ...);
@@ -329,7 +351,7 @@ int SV_PointContents (vec3_t p);
 // Quake 2 extends this to also check entities, to allow moving liquids
 
 
-trace_t SV_Trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, edict_t *passedict, int contentmask);
+void SV_Trace (trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, edict_t *passedict, int contentmask);
 // mins and maxs are relative
 
 // if the entire move stays in a solid volume, trace.allsolid will be set,

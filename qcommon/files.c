@@ -21,10 +21,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "qcommon.h"
 #include "unzip.h"
 
-// if a packfile directory differs from this, it is assumed to be hacked
-// Full version
-#define	PAK0_CHECKSUM	0x40e614e0
-
 /*
 =============================================================================
 
@@ -45,6 +41,7 @@ typedef struct pack_s
 
 char	fs_gamedir[MAX_OSPATH];
 cvar_t	*fs_basepath;
+cvar_t	*fs_basedir;
 cvar_t	*fs_cdpath;
 cvar_t	*fs_gamedirvar;
 
@@ -88,7 +85,7 @@ int FS_FileHandle (void)
 	{
 		if (!fs_filehandles[i].occupied)
 		{
-			fs_filehandles[i].occupied = true;
+			fs_filehandles[i].occupied = qtrue;
 			return i+1;
 		}
 	}
@@ -102,7 +99,7 @@ void FS_FCloseFile (int f)
 	if (!fs_filehandles[--f].occupied)
 		return;
 
-	fs_filehandles[f].occupied = false;
+	fs_filehandles[f].occupied = qfalse;
 
 	if (fs_filehandles[f].f)
 	{
@@ -153,7 +150,7 @@ a separate file.
 */
 int file_from_pak;
 
-int FS_FOpenFile (char *filename, int *file)
+int FS_FOpenFile (const char *filename, int *file)
 {
 	searchpath_t	*search;
 	char			netpath[MAX_OSPATH];
@@ -228,7 +225,7 @@ int FS_FOpenFile (char *filename, int *file)
 
 	Com_DPrintf ("FindFile: can't find %s\n", filename);
 	
-	fs_filehandles[fhandle].occupied = false;
+	fs_filehandles[fhandle].occupied = qfalse;
 	*file = 0;
 	return -1;
 }
@@ -239,7 +236,7 @@ FS_FileExists
 
 ==============
 */
-int FS_FileExists (char *path)
+int FS_FileExists (const char *path)
 {
 	searchpath_t	*search;
 	char			netpath[MAX_OSPATH];
@@ -258,7 +255,7 @@ int FS_FileExists (char *path)
 		// look through all the pak file elements
 			if (unzFileExists (pak->handle, path, 2))
 			{	// found it!
-				return true;
+				return qtrue;
 			}
 		}
 		else
@@ -273,11 +270,11 @@ int FS_FileExists (char *path)
 				continue;
 		
 			fclose ( f );
-			return true;
+			return qtrue;
 		}
 	}
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -293,10 +290,10 @@ void FS_Read (void *buffer, int len, int f)
 {
 	int		block, remaining;
 	int		read;
-	byte	*buf;
+	qbyte	*buf;
 	int		tries;
 
-	buf = (byte *)buffer;
+	buf = (qbyte *)buffer;
 
 	// read in chunks for progress bar
 	remaining = len;
@@ -347,9 +344,9 @@ Filename are reletive to the quake search path
 a null buffer will just return the file length without loading
 ============
 */
-int FS_LoadFile (char *path, void **buffer)
+int FS_LoadFile (const char *path, void **buffer)
 {
-	byte	*buf;
+	qbyte	*buf;
 	int		len, fhandle;
 
 	buf = NULL;	// quiet compiler warning
@@ -369,7 +366,8 @@ int FS_LoadFile (char *path, void **buffer)
 		return len;
 	}
 
-	buf = Z_Malloc(len);
+	buf = Mem_ZoneMalloc (len+1);
+	buf[len] = 0;
 	*buffer = buf;
 
 	FS_Read (buf, len, fhandle);
@@ -386,7 +384,7 @@ FS_FreeFile
 */
 void FS_FreeFile (void *buffer)
 {
-	Z_Free (buffer);
+	Mem_ZoneFree (buffer);
 }
 
 /*
@@ -403,13 +401,13 @@ pack_t *FS_LoadPackFile (char *packfile)
 {
 	pack_t			*pack;
 
-	pack = Z_Malloc (sizeof (pack_t));
+	pack = Mem_ZoneMalloc (sizeof (pack_t));
 	strcpy (pack->filename, packfile);
 	pack->handle = unzOpen (packfile);
 
 	if (!pack->handle)
 	{
-		Z_Free (pack);
+		Mem_ZoneFree (pack);
 		Com_Error (ERR_FATAL, "%s is not a packfile", packfile);
 	}
 
@@ -441,7 +439,7 @@ void FS_AddGameDirectory (char *dir)
 	//
 	// add the directory to the search path
 	//
-	search = Z_Malloc (sizeof(searchpath_t));
+	search = Mem_ZoneMalloc (sizeof(searchpath_t));
 	strcpy (search->filename, dir);
 	search->next = fs_searchpaths;
 	fs_searchpaths = search;
@@ -460,16 +458,16 @@ void FS_AddGameDirectory (char *dir)
 			pak = FS_LoadPackFile (paknames[i]);
 			if (!pak)
 				continue;
-			search = Z_Malloc (sizeof(searchpath_t));
+			search = Mem_ZoneMalloc (sizeof(searchpath_t));
 			strcpy (search->filename, paknames[i]);
 			search->pack = pak;
 			search->next = fs_searchpaths;
 			fs_searchpaths = search;
 			
-			Q_free( paknames[i] );
+			Mem_ZoneFree( paknames[i] );
 		}
 
-		Q_free( paknames );
+		Mem_ZoneFree( paknames );
 	}
 }
 
@@ -484,29 +482,28 @@ icculus.org
 */
 void FS_AddHomeAsGameDirectory (char *dir)
 {
-#ifndef _WIN32
+	int len;
 	char gdir[MAX_OSPATH];
 	char *homedir;
 
-	homedir = getenv ("HOME");
+	homedir = Sys_GetHomeDirectory ();
 
-	if (homedir)
-	{
-		int len = snprintf (gdir, sizeof(gdir), "%s/.qfusion/%s/", homedir, dir);
+	if (!homedir)
+		return;
 
-		Com_Printf ("using %s for writing\n", gdir);
-		FS_CreatePath (gdir);
+	len = snprintf ( gdir, sizeof(gdir), "%s/.qfusion/%s/", homedir, dir );
 
-		if ((len > 0) && (len < sizeof(gdir)) && (gdir[len-1] == '/')) {
-			gdir[len-1] = 0;
-		}
+	Com_Printf ( "using %s for writing\n", gdir );
+	FS_CreatePath (gdir);
 
-		strncpy (fs_gamedir, gdir, sizeof(fs_gamedir)-1);
-		fs_gamedir[sizeof(fs_gamedir)-1] = 0;
-		
-		FS_AddGameDirectory (gdir);
+	if ((len > 0) && (len < sizeof(gdir)) && (gdir[len-1] == '/')) {
+		gdir[len-1] = 0;
 	}
-#endif
+
+	strncpy (fs_gamedir, gdir, sizeof(fs_gamedir)-1);
+	fs_gamedir[sizeof(fs_gamedir)-1] = 0;
+		
+	FS_AddGameDirectory ( gdir );
 }
 
 /*
@@ -571,11 +568,11 @@ void FS_SetGamedir (char *dir)
 		if (fs_searchpaths->pack) 
 		{
 			unzClose (fs_searchpaths->pack->handle);
-			Z_Free (fs_searchpaths->pack);
+			Mem_ZoneFree (fs_searchpaths->pack);
 		}
 
 		next = fs_searchpaths->next;
-		Z_Free (fs_searchpaths);
+		Mem_ZoneFree (fs_searchpaths);
 		fs_searchpaths = next;
 	}
 
@@ -583,7 +580,7 @@ void FS_SetGamedir (char *dir)
 	// flush all data, so it will be forced to reload
 	//
 	if (dedicated && !dedicated->value)
-		Cbuf_AddText ("vid_restart\nsnd_restart\n");
+		Cbuf_AddText ("vid_restart\nin_restart\n");
 
 	Com_sprintf (fs_gamedir, sizeof(fs_gamedir), "%s/%s", fs_basepath->string, dir);
 
@@ -626,7 +623,7 @@ char **FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned 
 	nfiles++; // add space for a guard
 	*numfiles = nfiles;
 
-	list = Q_malloc( sizeof( char * ) * nfiles );
+	list = Mem_ZoneMalloc( sizeof( char * ) * nfiles );
 
 	s = Sys_FindFirst( findname, musthave, canthave );
 	nfiles = 0;
@@ -634,7 +631,7 @@ char **FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned 
 	{
 		if ( s[strlen(s)-1] != '.' )
 		{
-			list[nfiles] = strdup( s );
+			list[nfiles] = CopyString( s );
 #ifdef _WIN32
 			strlwr( list[nfiles] );
 #endif
@@ -689,14 +686,25 @@ void FS_Dir_f( void )
 				else
 					Com_Printf( "%s\n", dirnames[i] );
 
-				Q_free( dirnames[i] );
+				Mem_ZoneFree( dirnames[i] );
 			}
-			Q_free( dirnames );
+			Mem_ZoneFree( dirnames );
 		}
 		Com_Printf( "\n" );
 	}
 }
 
+#define FS_MAX_SEARCHFILES	1024
+
+/*
+=================
+FS_SortFiles
+=================
+*/
+int FS_SortFiles (const searchfile_t **file1, const searchfile_t **file2)
+{
+	return Q_stricmp ((*file1)->name, (*file2)->name);
+}
 
 /*
 ================
@@ -705,30 +713,118 @@ FS_GetFileList
 */
 int FS_GetFileList (const char *dir, const char *extension, char *buf, int bufsize)
 {
-	int len, alllen;
+	int i, len, alllen;
 	int found, allfound;
 	searchpath_t *search;
+	searchfile_t *files[FS_MAX_SEARCHFILES];
 
-	alllen = 0;
 	allfound = 0;
+	memset (files, 0, sizeof(files));
 
 	for (search = fs_searchpaths ; search ; search = search->next)
 	{
 	// we are done
-		if ( bufsize <= alllen ) {
-			return allfound;
+		if ( allfound >= FS_MAX_SEARCHFILES ) {
+			break;
 		}
 
 	// is the element a pak file?
 		if ( search->pack ) {
 		// look through all the pak file elements
-			found = unzGetStringForDir (search->pack->handle, dir, extension, buf + alllen, bufsize - alllen, &len);
+			found = unzGetStringForDir (search->pack->handle, dir, extension, files + allfound, FS_MAX_SEARCHFILES - allfound);
 
 			if ( found ) {
-				alllen += len;
 				allfound += found;
 			}
 		}
+	}
+
+	qsort (files, allfound, sizeof (searchfile_t *), (int (*)(const void *, const void *))FS_SortFiles);
+
+	alllen = 0;
+	allfound = 0;
+
+	memset (buf, 0, bufsize);
+
+	for (i = 0; files[i]; i++, alllen += len + 1, allfound++)
+	{
+		len = strlen (files[i]->name);
+
+	// we are done
+		if ( bufsize-alllen <= len ) {
+			break;
+		}
+
+		strcpy (buf + alllen, files[i]->name);
+		Mem_ZoneFree (files[i]->name);
+		Mem_ZoneFree (files[i]);
+	}
+
+	return allfound;
+}
+
+/*
+================
+FS_GetFileListExt
+================
+*/
+int FS_GetFileListExt (const char *dir, const char *extension, char *buf, int bufsize, char *buf2, int buf2size)
+{
+	int i, len, len2, alllen, all2len;
+	int found, allfound;
+	searchpath_t *search;
+	searchfile_t *files[FS_MAX_SEARCHFILES];
+
+	allfound = 0;
+	memset (files, 0, sizeof(files));
+
+	for (search = fs_searchpaths ; search ; search = search->next)
+	{
+	// we are done
+		if ( allfound >= FS_MAX_SEARCHFILES ) {
+			break;
+		}
+
+	// is the element a pak file?
+		if ( search->pack ) {
+		// look through all the pak file elements
+			found = unzGetStringForDir (search->pack->handle, dir, extension, files + allfound, FS_MAX_SEARCHFILES - allfound);
+
+			if ( found ) {
+				for (i = 0; i < found; i++)
+					files[allfound+i]->search = search;
+
+				allfound += found;
+			}
+		}
+	}
+
+	qsort (files, allfound, sizeof (searchfile_t *), (int (*)(const void *, const void *))FS_SortFiles);
+
+	alllen = 0;
+	all2len = 0;
+	allfound = 0;
+
+	memset (buf, 0, bufsize);
+	memset (buf2, 0, buf2size);
+
+	for (i = 0; files[i]; i++, alllen += len + 1, all2len += len2 + 1, allfound++)
+	{
+		len = strlen (files[i]->name);
+		len2 = strlen (files[i]->search->filename);
+
+	// we are done
+		if ( bufsize-alllen <= len ) {
+			break;
+		}
+		if ( buf2size-all2len <= len2 ) {
+			break;
+		}
+
+		strcpy (buf + alllen, files[i]->name);
+		strcpy (buf2 + all2len, files[i]->search->filename);
+		Mem_ZoneFree (files[i]->name);
+		Mem_ZoneFree (files[i]);
 	}
 
 	return allfound;
@@ -800,6 +896,7 @@ void FS_InitFilesystem (void)
 	// allows the game to run from outside the data tree
 	//
 	fs_basepath = Cvar_Get ("fs_basepath", ".", CVAR_NOSET);
+	fs_basedir = Cvar_Get ("fs_basedir", BASEDIRNAME, CVAR_NOSET);
 
 	//
 	// cddir <path>
@@ -828,5 +925,3 @@ void FS_InitFilesystem (void)
 	if (fs_gamedirvar->string[0])
 		FS_SetGamedir (fs_gamedirvar->string);
 }
-
-

@@ -20,7 +20,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_misc.c
 
 #include "r_local.h"
-#include "jpeglib.h"
+#ifdef HAS_LIBJPEG
+# include <jpeglib.h>
+#else
+# include "jpeglib.h"
+#endif
 
 /*
 ==================
@@ -30,8 +34,8 @@ R_InitNoTexture
 void R_InitNoTexture (void)
 {
 	int x, y;
-	byte *data;
-	byte dottexture[8][8] =
+	qbyte *data;
+	qbyte dottexture[8][8] =
 	{
 		{0,0,0,0,0,0,0,0},
 		{0,0,1,1,0,0,0,0},
@@ -46,22 +50,22 @@ void R_InitNoTexture (void)
 	//
 	// also use this for bad textures, but without alpha
 	//
-	data = Q_malloc ( 8 * 8 * 4 );
+	data = Mem_TempMalloc ( 8 * 8 * 4 );
 
 	for (x=0 ; x<8 ; x++)
 	{
 		for (y=0 ; y<8 ; y++)
 		{
-			data[(y*8 + x)*4+0] = dottexture[x&3][y&3]*128;
-			data[(y*8 + x)*4+1] = dottexture[x&3][y&3]*128;
-			data[(y*8 + x)*4+2] = dottexture[x&3][y&3]*128;
+			data[(y*8 + x)*4+0] = dottexture[x&3][y&3]*127;
+			data[(y*8 + x)*4+1] = dottexture[x&3][y&3]*127;
+			data[(y*8 + x)*4+2] = dottexture[x&3][y&3]*127;
 			data[(y*8 + x)*4+3] = 255;
 		}
 	}
 
 	r_notexture = GL_LoadPic ("***r_notexture***", data, 8, 8, 0, 32);
 
-	Q_free ( data );
+	Mem_TempFree ( data );
 }
 
 /*
@@ -73,12 +77,12 @@ void R_InitDynamicLightTexture (void)
 {
 	int x, y;
 	int dx2, dy, d;
-	byte *data;
+	qbyte *data;
 
 	//
 	// dynamic light texture
 	//
-	data = Q_malloc ( 64 * 64 * 4 );
+	data = Mem_TempMalloc ( 64 * 64 * 4 );
 
 	for (x = 0; x < 64; x++) 
 	{
@@ -100,7 +104,7 @@ void R_InitDynamicLightTexture (void)
 
 	r_dlighttexture = GL_LoadPic ("***r_dlighttexture***", data, 64, 64, IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP, 32);
 
-	Q_free ( data );
+	Mem_TempFree ( data );
 }
 
 /*
@@ -112,34 +116,34 @@ void R_InitParticleTexture (void)
 {
 	int x, y;
 	int dx2, dy, d;
-	byte *data;
+	qbyte *data;
 
 	//
 	// particle texture
 	//
-	data = Q_malloc ( 32 * 32 * 4 );
+	data = Mem_TempMalloc ( 16 * 16 * 4 );
 
-	for (x=0 ; x<32 ; x++)
+	for (x=0 ; x<16 ; x++)
 	{
-		dx2 = x - 16;
+		dx2 = x - 8;
 		dx2 = dx2 * dx2;
 
-		for (y=0 ; y<32 ; y++)
+		for (y=0 ; y<16 ; y++)
 		{
-			dy = y - 16;
-			d = 255 - 25 * sqrt (dx2 + dy * dy);
+			dy = y - 8;
+			d = 255 - 35 * sqrt (dx2 + dy * dy);
 			clamp (d, 0, 255);
 
-			data[(y*32 + x) * 4 + 0] = 255;
-			data[(y*32 + x) * 4 + 1] = 255;
-			data[(y*32 + x) * 4 + 2] = 255;
-			data[(y*32 + x) * 4 + 3] = d;
+			data[(y*16 + x) * 4 + 0] = 255;
+			data[(y*16 + x) * 4 + 1] = 255;
+			data[(y*16 + x) * 4 + 2] = 255;
+			data[(y*16 + x) * 4 + 3] = d;
 		}
 	}
 
-	r_particletexture = GL_LoadPic ("***r_particletexture***", data, 32, 32, IT_NOMIPMAP, 32);
+	r_particletexture = GL_LoadPic ("***r_particletexture***", data, 16, 16, IT_NOMIPMAP, 32);
 
-	Q_free ( data );
+	Mem_TempFree ( data );
 }
 
 /*
@@ -149,17 +153,17 @@ R_InitWhiteTexture
 */
 void R_InitWhiteTexture (void)
 {
-	byte *data;
+	qbyte *data;
 
 	//
 	// white texture
 	//
-	data = Q_malloc ( 32 * 32 * 4 );
+	data = Mem_TempMalloc ( 32 * 32 * 4 );
 	memset ( data, 255, 32 * 32 * 4 );
 
 	r_whitetexture = GL_LoadPic ("***r_whitetexture***", data, 32, 32, 0, 32);
 	
-	Q_free ( data );
+	Mem_TempFree ( data );
 }
 
 /*
@@ -169,7 +173,7 @@ R_InitFogTexture
 */
 void R_InitFogTexture (void)
 {
-	byte *data;
+	qbyte *data;
 	int x, y;
 	float tw = 1.0f / ((float)FOG_TEXTURE_WIDTH - 1.0f);
 	float th = 1.0f / ((float)FOG_TEXTURE_HEIGHT - 1.0f);
@@ -178,14 +182,14 @@ void R_InitFogTexture (void)
 	//
 	// fog texture
 	//
-	data = Q_malloc ( FOG_TEXTURE_WIDTH*FOG_TEXTURE_HEIGHT );
+	data = Mem_TempMalloc ( FOG_TEXTURE_WIDTH*FOG_TEXTURE_HEIGHT );
 
 	for ( y = 0, ty = 0.0f; y < FOG_TEXTURE_HEIGHT; y++, ty += th )
 	{
 		for ( x = 0, tx = 0.0f; x < FOG_TEXTURE_WIDTH; x++, tx += tw )
 		{
 			t = (float)(sqrt( tx ) * 255.0);
-			data[x+y*FOG_TEXTURE_WIDTH] = (byte)(min( t, 255.0f ));
+			data[x+y*FOG_TEXTURE_WIDTH] = (qbyte)(min( t, 255.0f ));
 		}
 
 		data[y] = 0;
@@ -193,7 +197,7 @@ void R_InitFogTexture (void)
 
 	r_fogtexture = GL_LoadPic ("***r_fogtexture***", data, FOG_TEXTURE_WIDTH, FOG_TEXTURE_HEIGHT, IT_FOG|IT_NOMIPMAP, 8);
 	
-	Q_free ( data );
+	Mem_TempFree ( data );
 }
 
 /*
@@ -244,44 +248,16 @@ GL_ScreenShot_JPG
 By Robert 'Heffo' Heffernan
 ================== 
 */
-void GL_ScreenShot_JPG (qboolean silent)
+qboolean GL_ScreenShot_JPG (FILE *f)
 {
 	struct jpeg_compress_struct		cinfo;
 	struct jpeg_error_mgr			jerr;
-	byte							*rgbdata;
+	qbyte							*rgbdata;
 	JSAMPROW						s[1];
-	FILE							*f;
-	char							picname[80], checkname[MAX_OSPATH];
-	int								i, offset, w3;
-
-	// Find a file name to save it to 
-	strcpy (picname, "qfusion000.jpg");
-
-	for (i=0 ; i<=999 ; i++) 
-	{ 
-		picname[7] = i/100 + '0'; 
-		picname[8] = (i%100)/10 + '0'; 
-		picname[9] = ((i%100)%10) + '0'; 
-		Com_sprintf (checkname, sizeof(checkname), "%s/screenshots/%s", FS_Gamedir(), picname);
-		f = fopen (checkname, "rb");
-		if (!f)
-			break;	// file doesn't exist
-		fclose (f);
-	} 
-
-	if ( (i == 1000) || !(f = fopen (checkname, "wb")) )
-	{
-		Com_Printf ( "GL_ScreenShot_JPG: Couldn't create a file\n" ); 
-		return;
- 	}
+	int								offset, w3;
 
 	// Allocate room for a copy of the framebuffer
-	rgbdata = Q_malloc(vid.width * vid.height * 3);
-	if (!rgbdata)
-	{
-		fclose (f);
-		return;
-	}
+	rgbdata = Mem_TempMalloc (vid.width * vid.height * 3);
 
 	// Read the framebuffer into our storage
 	qglReadPixels (0, 0, vid.width, vid.height, GL_RGB, GL_UNSIGNED_BYTE, rgbdata);
@@ -305,7 +281,7 @@ void GL_ScreenShot_JPG (qboolean silent)
 	jpeg_set_quality (&cinfo, r_screenshot_jpeg_quality->value, TRUE);
 
 	// Start Compression
-	jpeg_start_compress (&cinfo, true);
+	jpeg_start_compress (&cinfo, qtrue);
 
 	// Feed scanline data
 	w3 = cinfo.image_width * 3;
@@ -323,11 +299,9 @@ void GL_ScreenShot_JPG (qboolean silent)
 
 	fclose ( f );
 
-	Q_free ( rgbdata );
+	Mem_TempFree ( rgbdata );
 
-	if ( !silent ) {
-		Com_Printf ( "Wrote %s\n", picname );
-	}
+	return qtrue;
 }
 
 typedef struct _TargaHeader {
@@ -344,37 +318,12 @@ typedef struct _TargaHeader {
 GL_ScreenShot_TGA
 ================== 
 */  
-void GL_ScreenShot_TGA (qboolean silent)
+qboolean GL_ScreenShot_TGA (FILE *f)
 {
-	byte		*buffer;
-	char		picname[80], checkname[MAX_OSPATH];
+	qbyte		*buffer;
 	int			i, c, temp;
-	FILE		*f;
 
-// 
-// find a file name to save it to 
-// 
-	strcpy(picname, "qfusion000.tga");
-
-	for (i=0 ; i<=999 ; i++) 
-	{ 
-		picname[7] = i/100 + '0'; 
-		picname[8] = (i%100)/10 + '0'; 
-		picname[9] = ((i%100)%10) + '0'; 
-		Com_sprintf (checkname, sizeof(checkname), "%s/screenshots/%s", FS_Gamedir(), picname);
-		f = fopen (checkname, "rb");
-		if (!f)
-			break;	// file doesn't exist
-		fclose (f);
-	}
-
-	if ( (i == 1000) || !(f = fopen (checkname, "wb")) )
-	{
-		Com_Printf ( "GL_ScreenShot_TGA: Couldn't create a file\n" ); 
-		return;
- 	}
-
-	buffer = Q_malloc (vid.width*vid.height*3 + 18);
+	buffer = Mem_TempMalloc (vid.width*vid.height*3 + 18);
 	buffer[2] = 2;		// uncompressed type
 	buffer[12] = vid.width&255;
 	buffer[13] = vid.width>>8;
@@ -401,11 +350,9 @@ void GL_ScreenShot_TGA (qboolean silent)
 	fwrite (buffer, 1, c, f);
 	fclose (f);
 
-	Q_free (buffer);
+	Mem_TempFree (buffer);
 
-	if ( !silent ) {
-		Com_Printf ( "Wrote %s\n", picname );
-	}
+	return qtrue;
 } 
 
 /* 
@@ -413,18 +360,70 @@ void GL_ScreenShot_TGA (qboolean silent)
 R_ScreenShot
 ================== 
 */  
-void R_ScreenShot (qboolean silent)
+void R_ScreenShot (char *name, qboolean silent)
 {
-	char checkname[MAX_OSPATH];
+	int i;
+	FILE *f;
+	char picname[80], checkname[MAX_OSPATH];
 
 	// create the screenshots directory if it doesn't exist
 	Com_sprintf (checkname, sizeof(checkname), "%s/screenshots", FS_Gamedir());
 	Sys_Mkdir (checkname);
+	
+	if ( name ) {
+		Com_sprintf (checkname, sizeof(checkname), "%s/screenshots/%s", FS_Gamedir(), name);
+
+		if ( r_screenshot_jpeg->value ) {
+			COM_DefaultExtension (checkname, ".jpg");
+		} else {
+			COM_DefaultExtension (checkname, ".tga");
+		}
+
+		if ( !(f = fopen (checkname, "wb")) )
+		{
+			Com_Printf ( "R_ScreenShot: Couldn't create a file\n" ); 
+			return;
+ 		}
+
+		goto shot;
+	}
 
 	if ( r_screenshot_jpeg->value ) {
-		GL_ScreenShot_JPG ( silent );
+		strcpy (picname, "qfusion000.jpg");
 	} else {
-		GL_ScreenShot_TGA ( silent );
+		strcpy (picname, "qfusion000.tga");
+	}
+
+	// 
+	// find a file name to save it to 
+	// 
+	for (i=0 ; i<=999 ; i++) 
+	{ 
+		picname[7] = i/100 + '0'; 
+		picname[8] = (i%100)/10 + '0'; 
+		picname[9] = ((i%100)%10) + '0'; 
+		Com_sprintf (checkname, sizeof(checkname), "%s/screenshots/%s", FS_Gamedir(), picname);
+		f = fopen (checkname, "rb");
+		if (!f)
+			break;	// file doesn't exist
+		fclose (f);
+	}
+
+	if ( (i == 1000) || !(f = fopen (checkname, "wb")) )
+	{
+		Com_Printf ( "R_ScreenShot: Couldn't create a file\n" ); 
+		return;
+ 	}
+
+shot:
+	if ( r_screenshot_jpeg->value ) {
+		if ( GL_ScreenShot_JPG (f) && !silent ) {
+			Com_Printf ( "Wrote %s\n", picname );
+		}
+	} else {
+		if ( GL_ScreenShot_TGA (f) && !silent ) {
+			Com_Printf ( "Wrote %s\n", picname );
+		}
 	}
 }
 
@@ -435,7 +434,7 @@ R_ScreenShot_f
 */  
 void R_ScreenShot_f (void)
 {
-	R_ScreenShot ( Cmd_Argc () >= 2 && !Q_stricmp (Cmd_Argv(1), "silent") );
+	R_ScreenShot ( NULL, Cmd_Argc () >= 2 && !Q_stricmp (Cmd_Argv(1), "silent") );
 }
 
 /*
@@ -479,11 +478,8 @@ void GL_SetDefaultState( void )
 
 	qglBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
-	GL_SelectTexture( GL_TEXTURE_0 );
-	GL_TexEnv( GL_MODULATE );
-
 	// make sure gl_swapinterval is checked after vid_restart
-	gl_swapinterval->modified = true;
+	gl_swapinterval->modified = qtrue;
 
 	GL_UpdateSwapInterval();
 }
@@ -492,7 +488,7 @@ void GL_UpdateSwapInterval( void )
 {
 	if ( gl_swapinterval->modified )
 	{
-		gl_swapinterval->modified = false;
+		gl_swapinterval->modified = qfalse;
 
 		if ( !gl_state.stereo_enabled ) 
 		{

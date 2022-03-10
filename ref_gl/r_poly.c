@@ -20,10 +20,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "r_local.h"
 
 // r_poly.c - handles fragments and arbitrary polygons
-static	vec4_t			poly_xyz[MAX_POLY_VERTS];
-static	vec2_t			poly_st[MAX_POLY_VERTS];
-static	byte_vec4_t		poly_color[MAX_POLY_VERTS];
-static	index_t			poly_indexes[(MAX_POLY_VERTS-2)*3];
+static	vec4_t			poly_xyz[MAX_ARRAY_VERTS];
+static	vec2_t			poly_st[MAX_ARRAY_VERTS];
+static	byte_vec4_t		poly_color[MAX_ARRAY_VERTS];
+static	index_t			poly_indexes[(MAX_ARRAY_VERTS-2)*3];
 
 entity_t				r_polyent;
 static	mesh_t			poly_mesh;
@@ -41,7 +41,7 @@ void R_InitPolys (void)
 
 	// build trifan indexes
 	index = poly_indexes;
-	for ( i = 0; i < MAX_POLY_VERTS-2; i++, index += 3 ) {
+	for ( i = 0; i < MAX_ARRAY_VERTS-2; i++, index += 3 ) {
 		index[0] = 0;
 		index[1] = i + 1;
 		index[2] = i + 2;
@@ -52,19 +52,32 @@ void R_InitPolys (void)
 	poly_mesh.colors_array = poly_color;
 	poly_mesh.indexes = poly_indexes;
 
-	r_polyent.type = ET_POLY;
+	r_polyent.rtype = RT_POLY;
 	Matrix3_Identity ( r_polyent.axis );
 
-	poly_mbuffer.mesh = &poly_mesh;
 	poly_mbuffer.entity = &r_polyent;
 }
 
 /*
 =================
-R_DrawPoly
+R_PolyOverflow
 =================
 */
-void R_DrawPoly ( meshbuffer_t *mb )
+qboolean R_PolyOverflow ( meshbuffer_t *mb )
+{
+	poly_t *p;
+
+	p = &r_newrefdef.polys[-mb->infokey-1];
+	return ( numVerts + p->numverts > MAX_ARRAY_VERTS/* || 
+		numIndexes + (p->numverts - 2) * 3 > MAX_ARRAY_INDEXES*/ );
+}
+
+/*
+=================
+R_PushPoly
+=================
+*/
+void R_PushPoly ( meshbuffer_t *mb )
 {
 	int i;
 	poly_t *p;
@@ -83,10 +96,18 @@ void R_DrawPoly ( meshbuffer_t *mb )
 	poly_mbuffer.fog = mb->fog;
 	poly_mbuffer.shader = mb->shader;
 
-	qglLoadMatrixf ( r_modelview_matrix );
+	R_PushMesh ( &poly_mesh, poly_mbuffer.shader->features );
+}
 
-	R_PushMesh ( &poly_mesh, MF_NONBATCHED | mb->shader->features );
-	R_RenderMeshBuffer ( &poly_mbuffer, false );
+/*
+=================
+R_DrawPoly
+=================
+*/
+void R_DrawPoly (void)
+{
+	R_TranslateForEntity ( &r_polyent );
+	R_RenderMeshBuffer ( &poly_mbuffer, qfalse );
 }
 
 /*
@@ -103,7 +124,7 @@ void R_AddPolysToList (void)
 	currententity = &r_polyent;
 	for ( i = 0, p = r_newrefdef.polys; i < r_newrefdef.num_polys; i++, p++ ) {
 		fog = R_FogForSphere ( p->verts[0], 0 );	// FIXME: this is a gross hack
-		R_AddMeshToBuffer ( NULL, fog, NULL, p->shader, -(i+1) );		
+		R_AddMeshToList ( fog, p->shader, -(i+1) );		
 	}
 }
 
@@ -128,7 +149,7 @@ R_ClipPoly
 void R_ClipPoly ( int nump, vec4_t vecs, int stage, fragment_t *fr )
 {
 	cplane_t *plane;
-	qboolean	front, back;
+	qboolean	front;
 	float	*v, d;
 	float	dists[MAX_FRAGMENT_VERTS];
 	int		sides[MAX_FRAGMENT_VERTS];
@@ -145,7 +166,7 @@ void R_ClipPoly ( int nump, vec4_t vecs, int stage, fragment_t *fr )
 			fr->numverts = nump;
 			fr->firstvert = numFragmentVerts;
 
-			if ( numFragmentVerts+nump >= maxFragmentVerts ) {
+			if ( numFragmentVerts+nump > maxFragmentVerts ) {
 				nump = maxFragmentVerts - numFragmentVerts;
 			}
 
@@ -159,23 +180,23 @@ void R_ClipPoly ( int nump, vec4_t vecs, int stage, fragment_t *fr )
 		return;
 	}
 
-	front = back = false;
+	front = qfalse;
 	plane = &fragmentPlanes[stage];
 	for ( i = 0, v = vecs; i < nump; i++, v += 4 )
 	{
 		d = PlaneDiff ( v, plane );
 		if (d > ON_EPSILON)
 		{
-			front = true;
+			front = qtrue;
 			sides[i] = SIDE_FRONT;
 		}
 		else if (d < -ON_EPSILON)
 		{
-			back = true;
 			sides[i] = SIDE_BACK;
 		}
 		else
 		{
+			front = qtrue;
 			sides[i] = SIDE_ON;
 		}
 
@@ -362,7 +383,7 @@ mark0:
 			if ( !(shaderref = surf->shaderref) ) {
 				continue;
 			}
-			if ( shaderref->flags & SURF_NOMARKS ) {
+			if ( shaderref->flags & (SURF_NOMARKS|SURF_NOIMPACT) ) {
 				continue;
 			}
 
@@ -432,6 +453,11 @@ int R_GetClippedFragments ( vec3_t origin, float radius, mat3_t axis, int maxfve
 
 	R_RecursiveFragmentNode ( r_worldbmodel->nodes, origin, radius, axis[0] );
 
+	// assume we missed some verts
+	if ( numFragmentVerts >= maxfverts || numClippedFragments >= maxfragments ) {
+		numFragmentVerts = 0;
+		numClippedFragments = 0;
+	}
+
 	return numClippedFragments;
 }
-

@@ -28,8 +28,6 @@ GL_StopCinematic
 */
 void GL_StopCinematic ( cinematics_t *cin )
 {
-	int i;
-
 	cin->time = 0;	// done
 	cin->pic = NULL;
 	cin->pic_pending = NULL;
@@ -38,27 +36,9 @@ void GL_StopCinematic ( cinematics_t *cin )
 		FS_FCloseFile ( cin->file );
 		cin->file = 0;
 	}
-	if ( cin->buf ) {
-		Z_Free ( cin->buf );
-		cin->buf = NULL;
-	}
-
-	for (i = 0; i < 2; i++)
-	{
-		if ( cin->y[i] ) {
-			Z_Free (cin->y[i]);
-			cin->y[i] = NULL;
-		}
-
-		if ( cin->u[i] ) {
-			Z_Free (cin->u[i]);
-			cin->u[i] = NULL;
-		}
-
-		if ( cin->v[i] ) {
-			Z_Free (cin->v[i]);
-			cin->v[i] = NULL;
-		}
+	if ( cin->vid_buffer ) {
+		Mem_ZoneFree ( cin->vid_buffer );
+		cin->vid_buffer = NULL;
 	}
 }
 
@@ -69,7 +49,7 @@ void GL_StopCinematic ( cinematics_t *cin )
 GL_ReadNextFrame
 ==================
 */
-byte *GL_ReadNextFrame ( cinematics_t *cin )
+qbyte *GL_ReadNextFrame ( cinematics_t *cin )
 {
 	roq_chunk_t *chunk = &cin->chunk;
 
@@ -121,9 +101,9 @@ image_t *GL_ResampleCinematicFrame ( shaderpass_t *pass )
 	if ( !cin->restart_sound ) {
 		return image;
 	}
-	cin->restart_sound = false;
+	cin->restart_sound = qfalse;
 
-	GL_EnableMultitexture ( false );
+	GL_EnableMultitexture ( qfalse );
 	GL_Bind ( image->texnum );
 
 	if ( pass->anim_frames[0] ) {
@@ -176,7 +156,7 @@ void GL_RunCinematic ( cinematics_t *cin )
 		cin->time = Sys_Milliseconds();
 	}
 
-	cin->restart_sound = true;
+	cin->restart_sound = qtrue;
 }
 
 /*
@@ -209,5 +189,5 @@ void GL_PlayCinematic ( cinematics_t *cin )
 	cin->pic = GL_ReadNextFrame ( cin );
 	cin->time = Sys_Milliseconds ();
 
-	cin->restart_sound = true;
+	cin->restart_sound = qtrue;
 }

@@ -42,10 +42,11 @@ image_t		*r_whitetexture;
 image_t		*r_dlighttexture;
 image_t		*r_fogtexture;
 
-shader_t	*particle_shader;
-
 entity_t	*currententity;
 model_t		*currentmodel;
+
+int			r_numnullentities;
+entity_t	*r_nullentities[MAX_EDICTS];
 
 cplane_t	frustum[4];
 
@@ -74,6 +75,7 @@ qboolean	r_mirrorview;	// if true, lock pvs
 
 cplane_t	r_clipplane;
 
+mat4_t		r_worldview_matrix;
 mat4_t		r_modelview_matrix;
 mat4_t		r_projection_matrix;
 
@@ -92,7 +94,6 @@ cvar_t	*r_fullbright;
 cvar_t	*r_novis;
 cvar_t	*r_nocull;
 cvar_t	*r_lerpmodels;
-cvar_t	*r_lefthand;
 cvar_t	*r_fastsky;
 cvar_t	*r_ignorehwgamma;
 cvar_t	*r_overbrightbits;
@@ -118,6 +119,7 @@ cvar_t	*r_shadows_alpha;
 cvar_t	*r_shadows_nudge;
 
 cvar_t	*r_lodbias;
+cvar_t	*r_lodscale;
 
 cvar_t	*r_stencilbits;
 cvar_t	*r_colorbits;
@@ -143,6 +145,9 @@ cvar_t	*gl_ext_texture_env_combine;
 cvar_t	*gl_ext_NV_texture_env_combine4;
 cvar_t	*gl_ext_compressed_textures;
 cvar_t	*gl_ext_bgra;
+cvar_t	*gl_ext_texture_edge_clamp;
+cvar_t	*gl_ext_texture_filter_anisotropic;
+cvar_t	*gl_ext_max_texture_filter_anisotropic;
 
 cvar_t	*gl_log;
 cvar_t	*gl_drawbuffer;
@@ -167,7 +172,7 @@ qboolean R_CullBox (const vec3_t mins, const vec3_t maxs, const int clipflags)
 	cplane_t *p;
 
 	if (r_nocull->value)
-		return false;
+		return qfalse;
 
 	for (i=0,p=frustum ; i<4; i++,p++)
 	{
@@ -179,43 +184,43 @@ qboolean R_CullBox (const vec3_t mins, const vec3_t maxs, const int clipflags)
 		{
 		case 0:
 			if (p->normal[0]*maxs[0] + p->normal[1]*maxs[1] + p->normal[2]*maxs[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 1:
 			if (p->normal[0]*mins[0] + p->normal[1]*maxs[1] + p->normal[2]*maxs[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 2:
 			if (p->normal[0]*maxs[0] + p->normal[1]*mins[1] + p->normal[2]*maxs[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 3:
 			if (p->normal[0]*mins[0] + p->normal[1]*mins[1] + p->normal[2]*maxs[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 4:
 			if (p->normal[0]*maxs[0] + p->normal[1]*maxs[1] + p->normal[2]*mins[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 5:
 			if (p->normal[0]*mins[0] + p->normal[1]*maxs[1] + p->normal[2]*mins[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 6:
 			if (p->normal[0]*maxs[0] + p->normal[1]*mins[1] + p->normal[2]*mins[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		case 7:
 			if (p->normal[0]*mins[0] + p->normal[1]*mins[1] + p->normal[2]*mins[2] < p->dist)
-				return true;
+				return qtrue;
 			break;
 		default:
 			assert( 0 );
-			return false;
+			return qfalse;
 		}
 	}
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -231,7 +236,7 @@ qboolean R_CullSphere (const vec3_t centre, const float radius, const int clipfl
 	cplane_t *p;
 
 	if (r_nocull->value)
-		return false;
+		return qfalse;
 
 	for (i=0,p=frustum ; i<4; i++,p++)
 	{
@@ -240,10 +245,10 @@ qboolean R_CullSphere (const vec3_t centre, const float radius, const int clipfl
 		}
 
 		if ( DotProduct ( centre, p->normal ) - p->dist <= -radius )
-			return true;
+			return qtrue;
 	}
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -285,9 +290,9 @@ mfog_t *R_FogForSphere( const vec3_t centre, const float radius )
 
 void R_RotateForEntity (entity_t *e)
 {
-	mat4_t obj_m, m;
+	mat4_t obj_m;
 
-	if ( e->scale != 1.0f ) {
+	if ( e->scale != 1.0f && e->model && (e->model->type == mod_brush) ) {
 		obj_m[0] = e->axis[0][0] * e->scale;
 		obj_m[1] = e->axis[0][1] * e->scale;
 		obj_m[2] = e->axis[0][2] * e->scale;
@@ -317,14 +322,14 @@ void R_RotateForEntity (entity_t *e)
 	obj_m[14] = e->origin[2];
 	obj_m[15] = 1.0;
 
-	Matrix4_MultiplyFast ( r_modelview_matrix, obj_m, m );
+	Matrix4_MultiplyFast ( r_worldview_matrix, obj_m, r_modelview_matrix );
 
-	qglLoadMatrixf ( m );
+	qglLoadMatrixf ( r_modelview_matrix );
 }
 
 void R_TranslateForEntity (entity_t *e)
 {
-	mat4_t obj_m, m;
+	mat4_t obj_m;
 
 	Matrix4_Identity ( obj_m );
 
@@ -332,29 +337,31 @@ void R_TranslateForEntity (entity_t *e)
 	obj_m[13] = e->origin[1];
 	obj_m[14] = e->origin[2];
 
-	Matrix4_MultiplyFast ( r_modelview_matrix, obj_m, m );
+	Matrix4_MultiplyFast ( r_worldview_matrix, obj_m, r_modelview_matrix );
 
-	qglLoadMatrixf ( m );
+	qglLoadMatrixf ( r_modelview_matrix );
 }
 
-void R_LerpAttachment ( orientation_t *orient, model_t *mod, int frame, int oldframe, float backlerp, char *name )
+qboolean R_LerpAttachment ( orientation_t *orient, model_t *mod, int frame, int oldframe, float backlerp, char *name )
 {
 	if ( !orient ) {
-		return;
+		return qfalse;
 	}
 
 	VectorClear ( orient->origin );
 	Matrix3_Identity ( orient->axis );
 
 	if ( !name ) {
-		return;
+		return qfalse;
 	}
 
-	if ( mod->aliasmodel ) {
-		R_AliasModelLerpTag ( orient, mod->aliasmodel, frame, oldframe, backlerp, name );
-	} else if ( mod->dpmmodel ) {
-		R_DarkPlacesModelLerpAttachment ( orient, mod->dpmmodel, frame, oldframe, backlerp, name );
+	if ( mod->type == mod_alias ) {
+		return R_AliasModelLerpTag ( orient, mod->aliasmodel, frame, oldframe, backlerp, name );
+	} else if ( mod->type == mod_skeletal ) {
+		return R_SkeletalModelLerpAttachment ( orient, mod->skmodel, frame, oldframe, backlerp, name );
 	}
+
+	return qfalse;
 }
 
 /*
@@ -374,39 +381,33 @@ static	meshbuffer_t	spr_mbuffer;
 
 /*
 =================
-R_DrawSpriteModel
+R_DrawSprite
 
 =================
 */
-void R_DrawSpriteModel (meshbuffer_t *mb)
+void R_DrawSprite ( meshbuffer_t *mb, float rotation, float right, float left, float up, float down )
 {
 	vec3_t		point;
+	vec3_t		v_right, v_up;
 	int			features;
-	float		*up, *right;
-	sframe_t	*frame;
-	smodel_t	*psprite;
 	entity_t	*e = mb->entity;
 
-	psprite = e->model->smodel;
-	frame = psprite->frames + e->frame;
-
-	{	// normal sprite
-		up = vup;
-		right = vright;
+	if ( rotation ) {
+		RotatePointAroundVector ( v_right, vpn, vright, rotation );
+		CrossProduct ( vpn, v_right, v_up );
+	} else {
+		VectorCopy ( vright, v_right );
+		VectorCopy ( vup, v_up );
 	}
 
-	VectorScale (up, -frame->origin_y, point);
-	VectorMA (point, -frame->origin_x, right, spr_mesh.xyz_array[0]);
+	VectorScale ( v_up, down, point );
+	VectorMA ( point, -left, v_right, spr_mesh.xyz_array[0] );
+	VectorMA ( point, -right, v_right, spr_mesh.xyz_array[3] );
 
-	VectorScale (up, frame->height - frame->origin_y, point);
-	VectorMA (point, -frame->origin_x, right, spr_mesh.xyz_array[1]);
+	VectorScale ( v_up, up, point );
+	VectorMA ( point, -left, v_right, spr_mesh.xyz_array[1] );
+	VectorMA ( point, -right, v_right, spr_mesh.xyz_array[2] );
 
-	VectorScale (up, frame->height - frame->origin_y, point);
-	VectorMA (point, frame->width - frame->origin_x, right, spr_mesh.xyz_array[2]);
-
-	VectorScale (up, -frame->origin_y, point);
-	VectorMA (point, frame->width - frame->origin_x, right, spr_mesh.xyz_array[3]);
-	
 	if ( e->scale != 1.0f ) {
 		VectorScale ( spr_mesh.xyz_array[0], e->scale, spr_mesh.xyz_array[0] );
 		VectorScale ( spr_mesh.xyz_array[1], e->scale, spr_mesh.xyz_array[1] );
@@ -423,19 +424,41 @@ void R_DrawSpriteModel (meshbuffer_t *mb)
 		Vector4Copy ( e->color, spr_mesh.colors_array[3] );
 	}
 
-	spr_mbuffer.shader = mb->shader;
-	spr_mbuffer.entity = e;
-	spr_mbuffer.fog = mb->fog;
-
-	features = MF_NONBATCHED | mb->shader->features;
+	features = MF_NOCULL | mb->shader->features;
 	if ( r_shownormals->value ) {
 		features |= MF_NORMALS;
 	}
 
-	R_TranslateForEntity ( e );
+	if ( !(mb->shader->flags & SHADER_ENTITY_MERGABLE) ) {
+		R_TranslateForEntity ( e );
+		R_PushMesh ( &spr_mesh, MF_NONBATCHED | features );
+		R_RenderMeshBuffer ( mb, qfalse );
+	} else {
+		VectorAdd ( spr_mesh.xyz_array[0], e->origin, spr_mesh.xyz_array[0] );
+		VectorAdd ( spr_mesh.xyz_array[1], e->origin, spr_mesh.xyz_array[1] );
+		VectorAdd ( spr_mesh.xyz_array[2], e->origin, spr_mesh.xyz_array[2] );
+		VectorAdd ( spr_mesh.xyz_array[3], e->origin, spr_mesh.xyz_array[3] );
+		R_PushMesh ( &spr_mesh, features );
+	}
+}
 
-	R_PushMesh ( &spr_mesh, features );
-	R_RenderMeshBuffer ( &spr_mbuffer, false );
+/*
+=================
+R_DrawSpriteModel
+
+=================
+*/
+void R_DrawSpriteModel (meshbuffer_t *mb)
+{
+	sframe_t	*frame;
+	smodel_t	*psprite;
+	entity_t	*e = mb->entity;
+	model_t		*model = e->model;
+
+	psprite = model->smodel;
+	frame = psprite->frames + e->frame;
+
+	R_DrawSprite ( mb, e->rotation, frame->origin_x, frame->origin_x - frame->width, frame->height - frame->origin_y, -frame->origin_y );
 }
 
 /*
@@ -447,22 +470,27 @@ void R_AddSpriteModelToList (entity_t *e)
 {
 	sframe_t	*frame;
 	smodel_t	*psprite;
+	model_t		*model = e->model;
 
-	if ( !(psprite = e->model->smodel) ) {
+	if ( !(psprite = model->smodel) ) {
 		return;
 	}
 
-	// don't even bother culling, because it's just a single
-	// polygon without a surface cache
+	// cull it because we don't want to sort unneeded things
+	if ((e->origin[0] - r_newrefdef.vieworg[0]) * vpn[0] +
+		(e->origin[1] - r_newrefdef.vieworg[1]) * vpn[1] + 
+		(e->origin[2] - r_newrefdef.vieworg[2]) * vpn[2] < 0) {
+		return;
+	}
 
 	e->frame %= psprite->numframes;
 	frame = psprite->frames + e->frame;
 
 	// select skin
 	if ( e->customShader ) {
-		R_AddMeshToBuffer ( &spr_mesh, R_FogForSphere ( e->origin, frame->radius ), NULL, e->customShader, 0 );
+		R_AddMeshToList ( R_FogForSphere ( e->origin, frame->radius ), e->customShader, -1 );
 	} else {
-		R_AddMeshToBuffer ( &spr_mesh, R_FogForSphere ( e->origin, frame->radius ), NULL, frame->shader, 0 );
+		R_AddMeshToList ( R_FogForSphere ( e->origin, frame->radius ), frame->shader, -1 );
 	}
 }
 
@@ -474,65 +502,9 @@ R_DrawSpritePoly
 */
 void R_DrawSpritePoly (meshbuffer_t *mb)
 {
-	vec3_t		point;
-	int			features;
-	float		*up, *right;
 	entity_t	*e = mb->entity;
 
-	{	// normal sprite
-		up = vup;
-		right = vright;
-	}
-
-	VectorAdd ( up, right, point );
-	VectorNormalizeFast ( point );
-	VectorScale ( point, e->radius, point );
-	VectorCopy ( point, spr_mesh.xyz_array[1] );
-	VectorNegate ( point, spr_mesh.xyz_array[3] );
-
-	VectorSubtract ( up, right, point );
-	VectorNormalizeFast ( point );
-	VectorScale ( point, e->radius, point );
-	VectorCopy ( point, spr_mesh.xyz_array[2] );
-	VectorNegate ( point, spr_mesh.xyz_array[0] );
-	
-	if ( e->scale != 1.0f ) {
-		VectorScale ( spr_mesh.xyz_array[0], e->scale, spr_mesh.xyz_array[0] );
-		VectorScale ( spr_mesh.xyz_array[1], e->scale, spr_mesh.xyz_array[1] );
-		VectorScale ( spr_mesh.xyz_array[2], e->scale, spr_mesh.xyz_array[2] );
-		VectorScale ( spr_mesh.xyz_array[3], e->scale, spr_mesh.xyz_array[3] );
-	}
-
-	// the code below is disgusting, but some q3a shaders use 'rgbgen vertex'
-	// and 'alphagen vertex' for effects instead of 'rgbgen entity' and 'alphagen entity'
-	if ( mb->shader->features & MF_COLORS ) {
-		Vector4Copy ( e->color, spr_mesh.colors_array[0] );
-		Vector4Copy ( e->color, spr_mesh.colors_array[1] );
-		Vector4Copy ( e->color, spr_mesh.colors_array[2] );
-		Vector4Copy ( e->color, spr_mesh.colors_array[3] );
-	}
-
-	spr_mbuffer.shader = mb->shader;
-	spr_mbuffer.entity = e;
-	spr_mbuffer.fog = mb->fog;
-
-	features = MF_NOCULL | mb->shader->features;
-	if ( r_shownormals->value ) {
-		features |= MF_NORMALS;
-	}
-
-	if ( !(mb->shader->flags & SHADER_ENTITY_MERGABLE) ) {
-		features |= MF_NONBATCHED;
-		R_TranslateForEntity ( e );
-		R_PushMesh ( &spr_mesh, features );
-		R_RenderMeshBuffer ( &spr_mbuffer, false );
-	} else {
-		VectorAdd ( spr_mesh.xyz_array[0], e->origin, spr_mesh.xyz_array[0] );
-		VectorAdd ( spr_mesh.xyz_array[1], e->origin, spr_mesh.xyz_array[1] );
-		VectorAdd ( spr_mesh.xyz_array[2], e->origin, spr_mesh.xyz_array[2] );
-		VectorAdd ( spr_mesh.xyz_array[3], e->origin, spr_mesh.xyz_array[3] );
-		R_PushMesh ( &spr_mesh, features );
-	}
+	R_DrawSprite ( mb, e->rotation, -e->radius, e->radius, e->radius, -e->radius );
 }
 
 /*
@@ -547,10 +519,24 @@ void R_AddSpritePolyToList (entity_t *e)
 		return;
 	}
 
-	// don't even bother culling, because it's just a single
-	// polygon without a surface cache
+	// cull it because we don't want to sort unneeded things
+	if ((e->origin[0] - r_newrefdef.vieworg[0]) * vpn[0] +
+		(e->origin[1] - r_newrefdef.vieworg[1]) * vpn[1] + 
+		(e->origin[2] - r_newrefdef.vieworg[2]) * vpn[2] < 0) {
+		return;
+	}
 
-	R_AddMeshToBuffer ( &spr_mesh, R_FogForSphere ( e->origin, e->radius ), NULL, e->customShader, 0 );
+	R_AddMeshToList ( R_FogForSphere ( e->origin, e->radius ), e->customShader, -1 );
+}
+
+/*
+=================
+R_SpriteOverflow
+=================
+*/
+qboolean R_SpriteOverflow ( void )
+{
+	return R_BackendOverflow ( &spr_mesh );
 }
 
 /*
@@ -569,15 +555,13 @@ void R_InitSpriteModels (void)
 	spr_mesh.colors_array = spr_color;
 
 	spr_mesh.st_array[0][0] = 0;
-	spr_mesh.st_array[0][1] = 0;
-	spr_mesh.st_array[1][0] = 1;
+	spr_mesh.st_array[0][1] = 1;
+	spr_mesh.st_array[1][0] = 0;
 	spr_mesh.st_array[1][1] = 0;
 	spr_mesh.st_array[2][0] = 1;
-	spr_mesh.st_array[2][1] = 1;
-	spr_mesh.st_array[3][0] = 0;
+	spr_mesh.st_array[2][1] = 0;
+	spr_mesh.st_array[3][0] = 1;
 	spr_mesh.st_array[3][1] = 1;
-
-	spr_mbuffer.mesh = &spr_mesh;
 }
 
 /*
@@ -588,144 +572,45 @@ void R_InitSpriteModels (void)
 =============================================================
 */
 
-static	vec4_t			flare_xyz[4];
-static	vec2_t			flare_st[4];
-static	byte_vec4_t		flare_color[4];
-
-static	mesh_t			flare_mesh;
-static	meshbuffer_t	flare_mbuffer;
 
 /*
 =================
-R_PushFlare
+R_PushFlareSurf
 =================
 */
-void R_PushFlare ( meshbuffer_t *mb )
+void R_PushFlareSurf ( meshbuffer_t *mb )
 {
-	vec3_t origin, v;
 	vec4_t color;
-	float *up, *right;
+	vec3_t origin, point;
 	float radius = r_flaresize->value, flarescale;
+	float up = radius, down = -radius, left = -radius, right = radius;
+	msurface_t *surf;
 
-	VectorCopy (mb->mesh->xyz_array[0], origin);
+	surf = &currentmodel->bmodel->surfaces[mb->infokey];
+	VectorCopy (surf->origin, origin);
 
-	{	// normal sprite
-		up = vup;
-		right = vright;
-	}
+	VectorMA ( origin, down, vup, point );
+	VectorMA ( point, -left, vright, spr_mesh.xyz_array[0] );
+	VectorMA ( point, -right, vright, spr_mesh.xyz_array[3] );
 
-	VectorAdd (up, right, v);
-	VectorNormalizeFast (v);
-	VectorScale (v, radius, v);
-	VectorAdd (origin, v, flare_mesh.xyz_array[0]);
-
-	VectorSubtract (origin, v, flare_mesh.xyz_array[2]);
-
-	VectorSubtract (up, right, v);
-	VectorNormalizeFast (v);
-	VectorScale (v, radius, v);
-	VectorAdd (origin, v, flare_mesh.xyz_array[1]);
-
-	VectorSubtract (origin, v, flare_mesh.xyz_array[3]);
+	VectorMA ( origin, up, vup, point );
+	VectorMA ( point, -left, vright, spr_mesh.xyz_array[1] );
+	VectorMA ( point, -right, vright, spr_mesh.xyz_array[2] );
 
 	flarescale = 1.0 / r_flarefade->value;
 	Vector4Set ( color, 
-		COLOR_R ( mb->dlightbits ) * flarescale,
-		COLOR_G ( mb->dlightbits ) * flarescale,
-		COLOR_B ( mb->dlightbits ) * flarescale, 255 );
+		COLOR_R ( surf->dlightbits ) * flarescale,
+		COLOR_G ( surf->dlightbits ) * flarescale,
+		COLOR_B ( surf->dlightbits ) * flarescale, 255 );
 
-	Vector4Copy ( color, flare_mesh.colors_array[0] );
-	Vector4Copy ( color, flare_mesh.colors_array[1] );
-	Vector4Copy ( color, flare_mesh.colors_array[2] );
-	Vector4Copy ( color, flare_mesh.colors_array[3] );
+	Vector4Copy ( color, spr_mesh.colors_array[0] );
+	Vector4Copy ( color, spr_mesh.colors_array[1] );
+	Vector4Copy ( color, spr_mesh.colors_array[2] );
+	Vector4Copy ( color, spr_mesh.colors_array[3] );
 
-	flare_mbuffer.fog = mb->fog;
-	flare_mbuffer.shader = mb->shader;
-	flare_mbuffer.entity = mb->entity;
-
-	R_PushMesh  ( &flare_mesh, MF_NOCULL | mb->shader->features );
+	R_PushMesh  ( &spr_mesh, MF_NOCULL | mb->shader->features );
 }
 
-/*
-=================
-R_InitFlares
-=================
-*/
-void R_InitFlares (void)
-{
-	flare_mesh.numindexes = 6;
-	flare_mesh.indexes = r_quad_indexes;
-
-	flare_mesh.numvertexes = 4;
-	flare_mesh.xyz_array = flare_xyz;
-	flare_mesh.st_array = flare_st;
-	flare_mesh.colors_array = flare_color;
-
-	flare_mesh.st_array[0][0] = 0;
-	flare_mesh.st_array[0][1] = 0;
-	flare_mesh.st_array[1][0] = 1;
-	flare_mesh.st_array[1][1] = 0;
-	flare_mesh.st_array[2][0] = 1;
-	flare_mesh.st_array[2][1] = 1;
-	flare_mesh.st_array[3][0] = 0;
-	flare_mesh.st_array[3][1] = 1;
-
-	flare_mbuffer.mesh = &flare_mesh;
-
-	particle_shader = R_RegisterShader ( "particle" );
-}
-
-
-/*
-** R_DrawBeam
-*/
-#define NUM_BEAM_SEGS	6
-
-void R_DrawBeam( entity_t *e )
-{
-	int	i;
-	vec3_t perpvec;
-	vec3_t direction, normalized_direction;
-	vec3_t start_points[NUM_BEAM_SEGS], end_points[NUM_BEAM_SEGS];
-	vec3_t oldorigin, origin;
-
-	oldorigin[0] = e->oldorigin[0];
-	oldorigin[1] = e->oldorigin[1];
-	oldorigin[2] = e->oldorigin[2];
-
-	origin[0] = e->origin[0];
-	origin[1] = e->origin[1];
-	origin[2] = e->origin[2];
-
-	normalized_direction[0] = direction[0] = oldorigin[0] - origin[0];
-	normalized_direction[1] = direction[1] = oldorigin[1] - origin[1];
-	normalized_direction[2] = direction[2] = oldorigin[2] - origin[2];
-
-	if ( VectorNormalize( normalized_direction ) == 0 )
-		return;
-
-	PerpendicularVector( perpvec, normalized_direction );
-	VectorScale( perpvec, e->radius, perpvec );
-
-	for ( i = 0; i < NUM_BEAM_SEGS; i++ )
-	{
-		RotatePointAroundVector( start_points[i], normalized_direction, perpvec, (360.0/NUM_BEAM_SEGS)*i );
-		VectorAdd( start_points[i], origin, start_points[i] );
-		VectorAdd( start_points[i], direction, end_points[i] );
-	}
-
-	qglColor4ubv( e->color );
-
-	qglBegin( GL_TRIANGLE_STRIP );
-	for ( i = 0; i < NUM_BEAM_SEGS; i++ )
-	{
-		qglVertex3fv( start_points[i] );
-		qglVertex3fv( end_points[i] );
-		qglVertex3fv( start_points[(i+1)%NUM_BEAM_SEGS] );
-		qglVertex3fv( end_points[(i+1)%NUM_BEAM_SEGS] );
-	}
-	qglEnd();
-}
 
 //==================================================================================
 
@@ -770,6 +655,8 @@ void R_AddEntitiesToList (void)
 {
 	int		i;
 
+	r_numnullentities = 0;
+
 	if (!r_drawentities->value)
 		return;
 
@@ -782,10 +669,11 @@ void R_AddEntitiesToList (void)
 				continue;
 		}
 
-		switch ( currententity->type )
+		switch ( currententity->rtype )
 		{
-			case ET_MODEL:
+			case RT_MODEL:
 				if ( !(currentmodel = currententity->model) ) {
+					r_nullentities[r_numnullentities++] = currententity;
 					break;
 				}
 
@@ -794,8 +682,8 @@ void R_AddEntitiesToList (void)
 				case mod_alias:
 					R_AddAliasModelToList (currententity);
 					break;
-				case mod_dpm:
-					R_AddDarkPlacesModelToList (currententity);
+				case mod_skeletal:
+					R_AddSkeletalModelToList (currententity);
 					break;
 				case mod_brush:
 					R_AddBrushModelToList (currententity);
@@ -809,20 +697,17 @@ void R_AddEntitiesToList (void)
 				}
 				break;
 			
-			case ET_SPRITE:
+			case RT_SPRITE:
 				if ( currententity->radius ) {
 					R_AddSpritePolyToList ( currententity );
 				}
 				break;
 
-			case ET_BEAM:
-				break;
-
-			case ET_PORTALSURFACE:
+			case RT_PORTALSURFACE:
 				break;
 
 			default:
-				Com_Error (ERR_DROP, "%s: bad entitytype", currententity->type);
+				Com_Error (ERR_DROP, "%s: bad entitytype", currententity->rtype);
 				break;
 		}
 	}
@@ -830,17 +715,17 @@ void R_AddEntitiesToList (void)
 
 /*
 =============
-R_DrawEntities
+R_DrawNullEntities
 =============
 */
-void R_DrawEntities (void)
+void R_DrawNullEntities (void)
 {
 	int		i;
 
-	if (!r_drawentities->value)
+	if (!r_numnullentities)
 		return;
 
-	GL_EnableMultitexture ( false );
+	GL_EnableMultitexture ( qfalse );
 	qglDepthFunc ( GL_LEQUAL );
 	qglDisable ( GL_TEXTURE_2D );
 	qglDisable ( GL_ALPHA_TEST );
@@ -848,9 +733,9 @@ void R_DrawEntities (void)
 	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
 	// draw non-transparent first
-	for (i=0 ; i<r_newrefdef.num_entities ; i++)
+	for (i=0 ; i<r_numnullentities ; i++)
 	{
-		currententity = &r_newrefdef.entities[i];
+		currententity = r_nullentities[i];
 
 		if ( r_mirrorview ) {
 			if ( currententity->flags & RF_WEAPONMODEL ) 
@@ -860,97 +745,11 @@ void R_DrawEntities (void)
 				continue;
 		}
 
-		switch ( currententity->type )
-		{
-			case ET_MODEL:
-				if ( !(currentmodel = currententity->model) ) {
-					R_DrawNullModel ();
-				}
-				break;
-
-			case ET_SPRITE:
-				break;
-
-			case ET_BEAM:
-				R_DrawBeam( currententity );
-				break;
-
-			case ET_PORTALSURFACE:
-				break;
-		}
+		R_DrawNullModel ();
 	}
 
 	qglDisable ( GL_BLEND );
 	qglEnable ( GL_TEXTURE_2D );
-}
-
-/*
-===============
-R_DrawParticles
-===============
-*/
-void R_DrawParticles (void)
-{
-	const particle_t *p;
-	int				i;
-	vec3_t			up, right;
-	vec3_t			corner, r_pup, r_pright;
-	float			scale;
-
-	if( !r_newrefdef.num_particles || !particle_shader )
-		return;
-
-	VectorScale ( vup, 1.5f, r_pup );
-	VectorScale ( vright, 1.5f, r_pright );
-
-	flare_mbuffer.fog = NULL;				// FIXME
-	flare_mbuffer.entity = &r_worldent;
-	flare_mbuffer.shader = particle_shader;
-
-	for ( i=0,p = r_newrefdef.particles ; i < r_newrefdef.num_particles ; i++, p++ )
-	{
-		// hack a scale up to keep particles from disappearing
-		scale = ( p->origin[0] - r_origin[0] ) * vpn[0] + 
-			( p->origin[1] - r_origin[1] ) * vpn[1] +
-			( p->origin[2] - r_origin[2] ) * vpn[2];
-
-		if ( scale < 20 ) {
-			scale = 1;
-		} else {
-			scale = 1 + scale * 0.004f;
-		}
-		scale *= p->scale;
-
-		VectorScale ( r_pup, scale, up );
-		VectorScale ( r_pright, scale, right );
-
-		*(int *)flare_mesh.colors_array[0] = *(int *)p->color;
-		*(int *)flare_mesh.colors_array[1] = *(int *)p->color;
-		*(int *)flare_mesh.colors_array[2] = *(int *)p->color;
-		*(int *)flare_mesh.colors_array[3] = *(int *)p->color;
-
-		corner[0] = p->origin[0] - 0.5f * (up[0] + right[0]);
-		corner[1] = p->origin[1] - 0.5f * (up[1] + right[1]);
-		corner[2] = p->origin[2] - 0.5f * (up[2] + right[2]);
-
-		VectorSet ( flare_mesh.xyz_array[0], corner[0] + up[0] + right[0], 
-			corner[1] + up[1] + right[1], corner[2] + up[2] + right[2] );
-		VectorSet ( flare_mesh.xyz_array[1], corner[0] + up[0], 
-			corner[1] + up[1], corner[2] + up[2] );
-		VectorSet ( flare_mesh.xyz_array[2], corner[0], corner[1], corner[2] );
-		VectorSet ( flare_mesh.xyz_array[3], corner[0] + right[0],
-			corner[1] + right[1], corner[2] + right[2]);
-
-		R_PushMesh ( &flare_mesh, flare_mbuffer.shader->features );
-
-		if ( R_BackendOverflow (&flare_mesh) || (i == r_newrefdef.num_particles - 1) ) {
-			R_RenderMeshBuffer (&flare_mbuffer, false);
-		}
-	}
-
-	qglColor4f ( 1, 1, 1, 1 );
-	qglDisable ( GL_BLEND );
-	qglDepthMask( GL_TRUE );		// back to normal Z buffering
 }
 
 /*
@@ -1046,6 +845,7 @@ void R_ApplySoftwareGamma (void)
 
 void R_ShadowBlend (void)
 {
+#ifdef SHADOW_VOLUMES
 	if ( r_shadows->value != 2 || !gl_state.stencil_enabled ) {
 		return;
 	}
@@ -1080,6 +880,7 @@ void R_ShadowBlend (void)
 	qglEnable ( GL_TEXTURE_2D );
 
 	qglColor4f(1,1,1,1);
+#endif
 }
 
 //=======================================================================
@@ -1099,7 +900,7 @@ void R_SetFrustum (void)
 
 	for (i=0 ; i<4 ; i++)
 	{
-		frustum[i].type = PLANE_ANYZ;
+		frustum[i].type = PLANE_NONAXIAL;
 		frustum[i].dist = DotProduct (r_origin, frustum[i].normal);
 		frustum[i].signbits = SignbitsForPlane (&frustum[i]);
 	}
@@ -1203,12 +1004,8 @@ void R_SetupGL (void)
     qglLoadIdentity ();
 	MYgluPerspective (r_newrefdef.fov_y, screenaspect, 4, 65536);
 
-	if (r_mirrorview)
-	{
-		if ( r_clipplane.normal[2] )
-			qglScalef (  1, -1, 1 );
-		else
-			qglScalef ( -1,  1, 1 );
+	if ( r_mirrorview ) {
+		qglScalef ( -1, 1, 1 );
 	}
 
 	qglGetFloatv (GL_PROJECTION_MATRIX, r_projection_matrix);
@@ -1216,28 +1013,15 @@ void R_SetupGL (void)
 	qglMatrixMode (GL_MODELVIEW);
 
 modelview:
-#ifndef HARDWARE_TRANSFORMS
-	Matrix4_Identity ( r_modelview_matrix );
-	Matrix4_Rotate ( r_modelview_matrix, -90, 1, 0, 0 );
-	Matrix4_Rotate ( r_modelview_matrix, 90, 0, 0, 1 );
-	Matrix4_Rotate ( r_modelview_matrix, -r_newrefdef.viewangles[2], 1, 0, 0 );
-	Matrix4_Rotate ( r_modelview_matrix, -r_newrefdef.viewangles[0], 0, 1, 0 );
-	Matrix4_Rotate ( r_modelview_matrix, -r_newrefdef.viewangles[1], 0, 0, 1 );
-	Matrix4_Translate ( r_modelview_matrix, -r_newrefdef.vieworg[0], -r_newrefdef.vieworg[1], -r_newrefdef.vieworg[2] );
+	Matrix4_Identity ( r_worldview_matrix );
+	Matrix4_Rotate ( r_worldview_matrix, -90, 1, 0, 0 );
+	Matrix4_Rotate ( r_worldview_matrix,  90, 0, 0, 1 );
+	Matrix4_Rotate ( r_worldview_matrix, -r_newrefdef.viewangles[2], 1, 0, 0 );
+	Matrix4_Rotate ( r_worldview_matrix, -r_newrefdef.viewangles[0], 0, 1, 0 );
+	Matrix4_Rotate ( r_worldview_matrix, -r_newrefdef.viewangles[1], 0, 0, 1 );
+	Matrix4_Translate ( r_worldview_matrix, -r_newrefdef.vieworg[0], -r_newrefdef.vieworg[1], -r_newrefdef.vieworg[2] );
 
-	qglLoadMatrixf ( r_modelview_matrix );
-#else
-	qglLoadIdentity ();
-
-    qglRotatef (-90,1, 0, 0);	    // put Z going up
-    qglRotatef (90, 0, 0, 1);	    // put Z going up
-    qglRotatef (-r_newrefdef.viewangles[2], 1, 0, 0);
-    qglRotatef (-r_newrefdef.viewangles[0], 0, 1, 0);
-    qglRotatef (-r_newrefdef.viewangles[1], 0, 0, 1);
-    qglTranslatef (-r_newrefdef.vieworg[0], -r_newrefdef.vieworg[1], -r_newrefdef.vieworg[2]);
-
-	qglGetFloatv (GL_MODELVIEW_MATRIX, r_modelview_matrix);
-#endif
+	qglLoadMatrixf ( r_worldview_matrix );
 
 	if ( r_portalview || r_mirrorview ) {
 		GLdouble clip[4];
@@ -1297,7 +1081,7 @@ r_newrefdef must be set before the first call
 void R_RenderView ( refdef_t *fd, meshlist_t *list )
 {
 	r_newrefdef = *fd;
-	currentlist = list;
+	r_currentlist = list;
 
 	if ( (!r_worldmodel || !r_worldbmodel) && !( r_newrefdef.rdflags & RDF_NOWORLDMODEL ) )
 		Com_Error (ERR_DROP, "R_RenderView: NULL worldmodel");
@@ -1309,6 +1093,7 @@ void R_RenderView ( refdef_t *fd, meshlist_t *list )
 	R_SetupGL ();
 
 	if ( (r_mirrorview || r_portalview) && r_fastsky->value ) {
+		R_DrawSky ( NULL );
 		goto done;
 	}
 
@@ -1320,13 +1105,15 @@ void R_RenderView ( refdef_t *fd, meshlist_t *list )
 
 	R_AddEntitiesToList ();
 
-	R_DrawSortedMeshes ();
+	R_SortMeshes ();
 
-	R_DrawEntities ();
+	R_DrawMeshes ( qfalse );
+
+	R_DrawTriangleOutlines ();
+
+	R_DrawNullEntities ();
 
 	R_RenderDlights ();
-
-	R_DrawParticles ();
 
 	if ( r_mirrorview || r_portalview ) {
 done:
@@ -1346,7 +1133,7 @@ void R_SetGL2D (void)
 	qglDisable (GL_DEPTH_TEST);
 	qglDisable ( GL_CULL_FACE );
 	qglColor4f (1, 1, 1, 1);
-	gl_state.in2d = true;
+	gl_state.in2d = qtrue;
 }
 
 static void GL_DrawColoredStereoLinePair( float r, float g, float b, float y )
@@ -1394,7 +1181,7 @@ void GL_TransformToScreen_Vec3 ( vec3_t in, vec3_t out )
 {
 	vec3_t temp;
 
-	Matrix4_Multiply_Vec3 ( r_modelview_matrix, in, temp );
+	Matrix4_Multiply_Vec3 ( r_worldview_matrix, in, temp );
 	Matrix4_Multiply_Vec3 ( r_projection_matrix, temp, out );
 
 	out[0] = r_newrefdef.x + (out[0] + 1.0f) * r_newrefdef.width * 0.5f;
@@ -1409,7 +1196,7 @@ R_RenderFrame
 */
 void R_RenderFrame (refdef_t *fd)
 {
-	gl_state.in2d = false;
+	gl_state.in2d = qfalse;
 
 	if ( !r_norefresh->value ) {
 		R_BackendStartFrame ();
@@ -1417,11 +1204,15 @@ void R_RenderFrame (refdef_t *fd)
 		if (gl_finish->value)
 			qglFinish ();
 
-		r_mirrorview = false;
-		r_portalview = false;
+		r_mirrorview = qfalse;
+		r_portalview = qfalse;
 
 		c_brush_polys = 0;
 		c_world_leafs = 0;
+
+		r_worldlist.skyDrawn = qfalse;
+		r_worldlist.num_meshes = 0;
+		r_worldlist.num_additive_meshes = 0;
 
 		R_RenderView( fd, &r_worldlist );
 		R_Flash();
@@ -1437,7 +1228,6 @@ void R_Register( void )
 {
 	Cvar_GetLatchedVars (CVAR_LATCH_VIDEO);
 
-	r_lefthand = Cvar_Get( "hand", "0", CVAR_USERINFO | CVAR_ARCHIVE );
 	r_norefresh = Cvar_Get ("r_norefresh", "0", 0);
 	r_fullbright = Cvar_Get ("r_fullbright", "0", CVAR_CHEAT|CVAR_LATCH_VIDEO);
 	r_drawentities = Cvar_Get ("r_drawentities", "1", CVAR_CHEAT);
@@ -1449,7 +1239,7 @@ void R_Register( void )
 
 	r_fastsky = Cvar_Get ("r_fastsky", "0", CVAR_ARCHIVE);
 	r_ignorehwgamma = Cvar_Get ("r_ignorehwgamma", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO);
-	r_overbrightbits = Cvar_Get ("r_overbrightbits", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO);
+	r_overbrightbits = Cvar_Get ("r_overbrightbits", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO);
 	r_mapoverbrightbits = Cvar_Get ("r_mapoverbrightbits", "2", CVAR_ARCHIVE|CVAR_LATCH_VIDEO);
 	r_vertexlight = Cvar_Get ("r_vertexlight", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO);
 	r_detailtextures = Cvar_Get ("r_detailtextures", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO);
@@ -1472,6 +1262,7 @@ void R_Register( void )
 	r_shadows_nudge = Cvar_Get ("r_shadows_nudge", "1", CVAR_ARCHIVE );
 
 	r_lodbias = Cvar_Get( "r_lodbias", "0", CVAR_ARCHIVE );
+	r_lodscale = Cvar_Get( "r_lodscale", "5.0", CVAR_ARCHIVE );
 
 	r_colorbits = Cvar_Get( "r_colorbits", "0", CVAR_ARCHIVE | CVAR_LATCH_VIDEO );
 	r_texturebits = Cvar_Get( "r_texturebits", "0", CVAR_ARCHIVE | CVAR_LATCH_VIDEO );
@@ -1502,6 +1293,9 @@ void R_Register( void )
 	gl_ext_NV_texture_env_combine4 = Cvar_Get( "gl_ext_NV_texture_env_combine4", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_compressed_textures = Cvar_Get( "gl_ext_compressed_textures", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_bgra = Cvar_Get( "gl_ext_bgra", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	gl_ext_texture_edge_clamp = Cvar_Get( "gl_ext_texture_edge_clamp", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	gl_ext_texture_filter_anisotropic = Cvar_Get( "gl_ext_texture_filter_anisotropic", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	gl_ext_max_texture_filter_anisotropic = Cvar_Get( "gl_ext_max_texture_filter_anisotropic", "0", CVAR_NOSET );
 
 	gl_drawbuffer = Cvar_Get( "gl_drawbuffer", "GL_BACK", 0 );
 	gl_swapinterval = Cvar_Get( "gl_swapinterval", "0", CVAR_ARCHIVE );
@@ -1530,13 +1324,19 @@ qboolean R_SetMode (void)
 	{
 		Com_Printf( "R_SetMode() - CDS not allowed with this driver\n" );
 		Cvar_SetValue( "vid_fullscreen", !vid_fullscreen->value );
-		vid_fullscreen->modified = false;
+		vid_fullscreen->modified = qfalse;
 	}
 
 	fullscreen = vid_fullscreen->value;
 
-	vid_fullscreen->modified = false;
-	r_mode->modified = false;
+	vid_fullscreen->modified = qfalse;
+
+	if ( r_mode->value < 3 ) {
+		Com_Printf ( "Resolutions below 640x480 are not supported\n" );
+		Cvar_ForceSet ( "r_mode", "3" );
+	}
+
+	r_mode->modified = qfalse;
 
 	if ( ( err = GLimp_SetMode( &vid.width, &vid.height, r_mode->value, fullscreen ) ) == rserr_ok )
 	{
@@ -1547,26 +1347,26 @@ qboolean R_SetMode (void)
 		if ( err == rserr_invalid_fullscreen )
 		{
 			Cvar_SetValue( "vid_fullscreen", 0);
-			vid_fullscreen->modified = false;
+			vid_fullscreen->modified = qfalse;
 			Com_Printf( "ref_gl::R_SetMode() - fullscreen unavailable in this mode\n" );
-			if ( ( err = GLimp_SetMode( &vid.width, &vid.height, r_mode->value, false ) ) == rserr_ok )
-				return true;
+			if ( ( err = GLimp_SetMode( &vid.width, &vid.height, r_mode->value, qfalse ) ) == rserr_ok )
+				return qtrue;
 		}
 		else if ( err == rserr_invalid_mode )
 		{
 			Cvar_SetValue( "r_mode", gl_state.prev_mode );
-			r_mode->modified = false;
+			r_mode->modified = qfalse;
 			Com_Printf( "ref_gl::R_SetMode() - invalid mode\n" );
 		}
 
 		// try setting it back to something safe
-		if ( ( err = GLimp_SetMode( &vid.width, &vid.height, gl_state.prev_mode, false ) ) != rserr_ok )
+		if ( ( err = GLimp_SetMode( &vid.width, &vid.height, gl_state.prev_mode, qfalse ) ) != rserr_ok )
 		{
 			Com_Printf( "ref_gl::R_SetMode() - could not revert to safe mode\n" );
-			return false;
+			return qfalse;
 		}
 	}
-	return true;
+	return qtrue;
 }
 
 /*
@@ -1588,12 +1388,15 @@ void GL_CheckExtensions (void)
 	qglSelectTextureSGIS = NULL;
 	qglMTexCoord2fSGIS = NULL;
 
-	gl_config.env_add = false;
-	gl_config.tex_env_combine = false;
-	gl_config.sgis_mipmap = false;
-	gl_config.nv_tex_env_combine4 = false;
-	gl_config.compressed_textures = false;
-	gl_config.bgra = false;
+	gl_config.env_add = qfalse;
+	gl_config.tex_env_combine = qfalse;
+	gl_config.sgis_mipmap = qfalse;
+	gl_config.nv_tex_env_combine4 = qfalse;
+	gl_config.compressed_textures = qfalse;
+	gl_config.bgra = qfalse;
+	gl_config.texture_edge_clamp = qfalse;
+	gl_config.texture_filter_anisotropic = qfalse;
+	gl_config.max_texture_filter_anisotropic = 0.0f;
 
 	if ( !gl_extensions->value ) {
 		Com_Printf ( "...ignoring all OpenGL extensions\n" );
@@ -1708,7 +1511,7 @@ void GL_CheckExtensions (void)
 	if ( strstr( gl_config.extensions_string, "GL_ARB_texture_env_add" ) )
 	{
 		Com_Printf( "...using GL_ARB_texture_env_add\n" );
-		gl_config.env_add = true;
+		gl_config.env_add = qtrue;
 	}
 	else
 	{
@@ -1720,7 +1523,7 @@ void GL_CheckExtensions (void)
 		if ( gl_ext_texture_env_combine->value && qglMTexCoord2fSGIS )
 		{
 			Com_Printf( "...using GL_ARB_texture_env_combine\n" );
-			gl_config.tex_env_combine = true;
+			gl_config.tex_env_combine = qtrue;
 		}
 		else
 		{
@@ -1739,7 +1542,7 @@ void GL_CheckExtensions (void)
 			if ( gl_ext_texture_env_combine->value && qglMTexCoord2fSGIS )
 			{
 				Com_Printf( "...using GL_EXT_texture_env_combine\n" );
-				gl_config.tex_env_combine = true;
+				gl_config.tex_env_combine = qtrue;
 			}
 			else
 			{
@@ -1757,7 +1560,7 @@ void GL_CheckExtensions (void)
 		if ( gl_ext_NV_texture_env_combine4->value && qglMTexCoord2fSGIS )
 		{
 			Com_Printf( "...using NV_texture_env_combine4\n" );
-			gl_config.nv_tex_env_combine4 = true;
+			gl_config.nv_tex_env_combine4 = qtrue;
 		}
 		else
 		{
@@ -1774,7 +1577,7 @@ void GL_CheckExtensions (void)
 		if ( gl_ext_sgis_mipmap->value )
 		{
 			Com_Printf ( "...using GL_SGIS_generate_mipmap\n" );
-			gl_config.sgis_mipmap = true;
+			gl_config.sgis_mipmap = qtrue;
 		}
 		else
 		{
@@ -1791,7 +1594,7 @@ void GL_CheckExtensions (void)
 		if ( gl_ext_compressed_textures->value )
 		{
 			Com_Printf ( "...using GL_ARB_texture_compression\n" );
-			gl_config.compressed_textures = true;
+			gl_config.compressed_textures = qtrue;
 		}
 		else
 		{
@@ -1808,7 +1611,7 @@ void GL_CheckExtensions (void)
 		if ( gl_ext_bgra->value )
 		{
 			Com_Printf ( "...using GL_EXT_bgra\n" );
-			gl_config.bgra = true;
+			gl_config.bgra = qtrue;
 		}
 		else
 		{
@@ -1818,6 +1621,60 @@ void GL_CheckExtensions (void)
 	else
 	{
 		Com_Printf ( "...GL_EXT_bgra not found\n" );
+	}
+
+	if ( strstr( gl_config.extensions_string, "GL_EXT_texture_edge_clamp" ) )
+	{
+		if ( gl_ext_texture_edge_clamp->value )
+		{
+			Com_Printf ( "...using GL_EXT_texture_edge_clamp\n" );
+			gl_config.texture_edge_clamp = qtrue;
+		}
+		else
+		{
+			Com_Printf ( "...ignoring GL_EXT_texture_edge_clamp\n" );
+		}
+	}
+	else
+	{
+		Com_Printf ( "...GL_EXT_texture_edge_clamp not found\n" );
+
+		if ( strstr( gl_config.extensions_string, "GL_SGIS_texture_edge_clamp" ) )
+		{
+			if ( gl_ext_texture_edge_clamp->value )
+			{
+				Com_Printf ( "...using GL_SGIS_texture_edge_clamp\n" );
+				gl_config.texture_edge_clamp = qtrue;
+			}
+			else
+			{
+				Com_Printf ( "...ignoring GL_SGIS_texture_edge_clamp\n" );
+			}
+		}
+		else
+		{
+			Com_Printf ( "...GL_SGIS_texture_edge_clamp not found\n" );
+		}
+	}
+
+	qglGetFloatv ( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &gl_config.max_texture_filter_anisotropic );
+	Cvar_ForceSet ( "gl_ext_max_texture_filter_anisotropic", va ("%1.1f", gl_config.max_texture_filter_anisotropic) );
+
+	if ( strstr( gl_config.extensions_string, "GL_EXT_texture_filter_anisotropic" ) )
+	{
+		if ( gl_ext_texture_filter_anisotropic->value )
+		{
+			Com_Printf ( "...using GL_EXT_texture_filter_anisotropic (max %1.1f)\n", gl_config.max_texture_filter_anisotropic );
+			gl_config.texture_filter_anisotropic = qtrue;
+		}
+		else
+		{
+			Com_Printf ( "...ignoring GL_EXT_texture_filter_anisotropic\n" );
+		}
+	}
+	else
+	{
+		Com_Printf ( "...GL_EXT_texture_filter_anisotropic not found\n" );
 	}
 }
 
@@ -1918,19 +1775,7 @@ int R_Init( void *hinstance, void *hWnd )
 	else
 		gl_config.renderer = GL_RENDERER_OTHER;
 
-
-	// power vr can't have anything stay in the framebuffer, so
-	// the screen needs to redraw the tiled background every frame
-	if ( gl_config.renderer & GL_RENDERER_POWERVR ) 
-	{
-		Cvar_Set( "scr_drawall", "1" );
-	}
-	else
-	{
-		Cvar_Set( "scr_drawall", "0" );
-	}
-
-#ifdef __linux__
+#ifdef GL_FORCEFINISH
 	Cvar_SetValue( "gl_finish", 1 );
 #endif
 
@@ -1943,13 +1788,13 @@ int R_Init( void *hinstance, void *hWnd )
 	if ( gl_config.renderer & GL_RENDERER_3DLABS )
 	{
 		if ( r_3dlabs_broken->value )
-			gl_config.allow_cds = false;
+			gl_config.allow_cds = qfalse;
 		else
-			gl_config.allow_cds = true;
+			gl_config.allow_cds = qtrue;
 	}
 	else
 	{
-		gl_config.allow_cds = true;
+		gl_config.allow_cds = qtrue;
 	}
 
 	if ( gl_config.allow_cds )
@@ -1974,16 +1819,17 @@ int R_Init( void *hinstance, void *hWnd )
 	R_InitBuiltInTextures ();
 	R_InitBubble ();
 
+	R_SkinFile_Init ();
+
 	Shader_Init ();
 
 	Draw_InitLocal ();
 
 	R_InitPolys ();
-	R_InitFlares ();
 
 	R_InitSpriteModels ();
 	R_InitAliasModels ();
-	R_InitDarkPlacesModels ();
+	R_InitSkeletalModels ();
 
 	R_InitSkydome ();
 
@@ -1993,7 +1839,7 @@ int R_Init( void *hinstance, void *hWnd )
 	if ( err != GL_NO_ERROR )
 		Com_Printf( "glGetError() = 0x%x\n", err);
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -2008,9 +1854,11 @@ void R_Shutdown (void)
 	Cmd_RemoveCommand ("imagelist");
 	Cmd_RemoveCommand ("gl_strings");
 
-	Mod_FreeAll ();
+	Mod_Shutdown ();
 
 	R_BackendShutdown ();
+
+	R_SkinFile_Shutdown ();
 
 	Shader_Shutdown ();
 
@@ -2049,7 +1897,7 @@ void R_BeginFrame( float camera_separation )
 	if ( gl_log->modified )
 	{
 		GLimp_EnableLogging( gl_log->value );
-		gl_log->modified = false;
+		gl_log->modified = qfalse;
 	}
 
 	if ( gl_log->value )
@@ -2062,7 +1910,7 @@ void R_BeginFrame( float camera_separation )
 	*/
 	if ( vid_gamma->modified )
 	{
-		vid_gamma->modified = false;
+		vid_gamma->modified = qfalse;
 		GLimp_UpdateGammaRamp ();
 	}
 
@@ -2078,7 +1926,7 @@ void R_BeginFrame( float camera_separation )
 	*/
 	if ( gl_drawbuffer->modified )
 	{
-		gl_drawbuffer->modified = false;
+		gl_drawbuffer->modified = qfalse;
 
 		if ( gl_state.camera_separation == 0 || !gl_state.stereo_enabled )
 		{
@@ -2095,7 +1943,7 @@ void R_BeginFrame( float camera_separation )
 	if ( r_texturemode->modified )
 	{
 		GL_TextureMode( r_texturemode->string );
-		r_texturemode->modified = false;
+		r_texturemode->modified = qfalse;
 	}
 
 	/*

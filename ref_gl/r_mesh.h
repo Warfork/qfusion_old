@@ -20,16 +20,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_RENDER_MESHES			16384
 #define MAX_RENDER_ADDITIVE_MESHES	MAX_RENDER_MESHES >> 1
 
-struct mfog_s;
-struct shader_s;
-struct msurface_s;
-
-#if _MSC_VER || __BORLANDC__
-typedef unsigned __int64 msortkey_t;
-#else
-typedef unsigned long long msortkey_t;
-#endif
-
 typedef struct mesh_s
 {
     int				numvertexes;
@@ -41,24 +31,20 @@ typedef struct mesh_s
 
     int				numindexes;
     index_t			*indexes;
+
+#ifdef SHADOW_VOLUMES
 	int				*trneighbors;
 	vec3_t			*trnormals;
-
-	vec3_t			mins, maxs;
-	float			radius;
-
-	unsigned int	patchWidth;
-	unsigned int	patchHeight;
+#endif
 } mesh_t;
 
 typedef struct meshbuffer_s
 {
-	msortkey_t			sortkey;
-	int					infokey;		// lightmap number or mesh number
+	int					sortkey;
+	int					infokey;		// surface number or mesh number
 	unsigned int		dlightbits;
 	entity_t			*entity;
 	struct shader_s		*shader;
-	mesh_t				*mesh;
 	struct mfog_s		*fog;
 } meshbuffer_t;
 
@@ -69,6 +55,8 @@ typedef struct
 
 	int					num_additive_meshes;
 	meshbuffer_t		meshbuffer_additives[MAX_RENDER_ADDITIVE_MESHES];
+
+	qboolean			skyDrawn;
 
 	float				skymins[2][6];
 	float				skymaxs[2][6];
@@ -86,15 +74,19 @@ enum
 
 typedef struct
 {
-	mesh_t			meshes[5];
+	mesh_t			meshes[6];
+	vec2_t			*sphereStCoords[5];
+	vec2_t			*linearStCoords[6];
 
-	image_t			*farbox_textures[6];
-	image_t			*nearbox_textures[6];
+	struct shader_s	*farbox_shaders[6];
+	struct shader_s *nearbox_shaders[6];
 } skydome_t;
 
-meshbuffer_t *R_AddMeshToBuffer ( mesh_t *mesh, struct mfog_s *fog, struct msurface_s *surf, struct shader_s *shader, int infokey );
+meshbuffer_t *R_AddMeshToList ( struct mfog_s *fog, struct shader_s *shader, int infokey );
 
-void R_DrawSortedMeshes (void);
+void R_SortMeshes (void);
+void R_DrawMeshes ( qboolean triangleOutlines );
+void R_DrawTriangleOutlines (void);
 
 extern	meshlist_t	r_worldlist;
-extern	meshlist_t	*currentlist;
+extern	meshlist_t	*r_currentlist;

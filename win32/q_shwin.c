@@ -29,94 +29,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //===============================================================================
 
-
 int MHz, CPUfamily, Mem, InstCache, DataCache, L2Cache;
 char VendorID[16];
-boolean SupportCMOVs, Support3DNow, Support3DNowExt, SupportMMX, SupportMMXext, SupportSSE;
-
-int		hunkcount;
-
-
-byte	*membase;
-int		hunkmaxsize;
-int		cursize;
-
-#define	VIRTUAL_ALLOC
-
-void *Hunk_Begin (int maxsize)
-{
-	// reserve a huge chunk of memory, but don't commit any yet
-	cursize = 0;
-	hunkmaxsize = maxsize;
-
-#ifdef VIRTUAL_ALLOC
-	membase = VirtualAlloc (NULL, maxsize, MEM_RESERVE, PAGE_NOACCESS);
-#else
-	membase = malloc (maxsize);
-	memset (membase, 0, maxsize);
-#endif
-
-	if (!membase)
-		Sys_Error ("VirtualAlloc reserve failed");
-
-	return (void *)membase;
-}
-
-void *Hunk_AllocName (int size, char *name)
-{
-	void	*buf;
-
-	// round to cacheline
-	size = (size + 31) & ~31;
-
-#ifdef VIRTUAL_ALLOC
-	// commit pages as needed
-	buf = VirtualAlloc (membase, cursize+size, MEM_COMMIT, PAGE_READWRITE);
-	if (!buf)
-	{
-		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR) &buf, 0, NULL);
-		Sys_Error ("VirtualAlloc commit failed for %s.\n%s", name, buf);
-	}
-#endif
-
-	cursize += size;
-	if (cursize > hunkmaxsize)
-		Sys_Error ("Hunk_Alloc overflow (%s)", name);
-
-	return (void *)(membase+cursize-size);
-}
-
-int Hunk_End (void)
-{
-	// free the remaining unused virtual memory
-#if 0
-	void	*buf;
-
-	// write protect it
-	buf = VirtualAlloc (membase, cursize, MEM_COMMIT, PAGE_READONLY);
-	if (!buf)
-		Sys_Error ("VirtualAlloc commit failed");
-#endif
-
-	hunkcount++;
-
-	return cursize;
-}
-
-void Hunk_Free (void *base)
-{
-	if ( base )
-#ifdef VIRTUAL_ALLOC
-		VirtualFree (base, 0, MEM_RELEASE);
-#else
-		free (base);
-#endif
-
-	hunkcount--;
-}
+unsigned char SupportCMOVs, Support3DNow, Support3DNowExt, SupportMMX, SupportMMXext, SupportSSE;
 
 //===============================================================================
-
 
 /*
 ================
@@ -124,56 +41,16 @@ Sys_Milliseconds
 ================
 */
 int			curtime;
-qboolean	hwtimer;
-double		pfreq;
-
-void Sys_InitTimer (void)
-{
-#if 0
-#if _MSC_VER || __BORLANDC__
-	__int64			freq;
-#else
-	long long		freq;
-#endif
-
-	if (QueryPerformanceFrequency ((LARGE_INTEGER *)&freq) && freq > 0)
-	{
-		// hardware timer available
-		pfreq = (double)freq;
-		hwtimer = true;
-	}
-#endif
-}
 
 int Sys_Milliseconds (void)
 {
 	static int		base;
-	static qboolean	initialized = false;
-#if _MSC_VER || __BORLANDC__
-	__int64				pcount;
-	static __int64		startcount;
-#else
-	long long			pcount;
-	static long long	startcount;
-#endif
-
-	if (hwtimer)
-	{
-		QueryPerformanceCounter ((LARGE_INTEGER *)&pcount);
-		if (!initialized) {
-			initialized = true;
-			startcount = pcount;
-			return 0.0;
-		}
-		// TODO: check for wrapping
-		curtime = (int)(1000.0f*(pcount - startcount) / pfreq);
-		return curtime;
-	}
+	static qboolean	initialized = qfalse;
 
 	if (!initialized)
 	{	// let base retain 16 bits of effectively random data
 		base = timeGetTime() & 0xffff0000;
-		initialized = true;
+		initialized = qtrue;
 	}
 	curtime = timeGetTime() - base;
 
@@ -194,28 +71,28 @@ int		findhandle;
 static qboolean CompareAttributes( unsigned found, unsigned musthave, unsigned canthave )
 {
 	if ( ( found & _A_RDONLY ) && ( canthave & SFF_RDONLY ) )
-		return false;
+		return qfalse;
 	if ( ( found & _A_HIDDEN ) && ( canthave & SFF_HIDDEN ) )
-		return false;
+		return qfalse;
 	if ( ( found & _A_SYSTEM ) && ( canthave & SFF_SYSTEM ) )
-		return false;
+		return qfalse;
 	if ( ( found & _A_SUBDIR ) && ( canthave & SFF_SUBDIR ) )
-		return false;
+		return qfalse;
 	if ( ( found & _A_ARCH ) && ( canthave & SFF_ARCH ) )
-		return false;
+		return qfalse;
 
 	if ( ( musthave & SFF_RDONLY ) && !( found & _A_RDONLY ) )
-		return false;
+		return qfalse;
 	if ( ( musthave & SFF_HIDDEN ) && !( found & _A_HIDDEN ) )
-		return false;
+		return qfalse;
 	if ( ( musthave & SFF_SYSTEM ) && !( found & _A_SYSTEM ) )
-		return false;
+		return qfalse;
 	if ( ( musthave & SFF_SUBDIR ) && !( found & _A_SUBDIR ) )
-		return false;
+		return qfalse;
 	if ( ( musthave & SFF_ARCH ) && !( found & _A_ARCH ) )
-		return false;
+		return qfalse;
 
-	return true;
+	return qtrue;
 }
 
 char *Sys_FindFirst (char *path, unsigned musthave, unsigned canthave )
@@ -268,6 +145,7 @@ void Sys_FindClose (void)
 
 //============================================
 
+#ifdef id386
 #pragma warning(disable: 4035)
 #if _MSC_VER || __BORLANDC__
 inline __int64 GetCycleNumber()
@@ -439,14 +317,31 @@ void Sys_PrintCPUInfo (void)
 	GetSysInfo ();
 
 	Com_Printf ( "CPU Vendor: %s\n", VendorID );
-	Com_Printf ( "Detecting CPU extensions:" );
+	Com_Printf ( "CPU Family: %i\n", CPUfamily );
+	Com_Printf ( "Detecting CPU extensions:\n" );
 
 	if ( Support3DNow ) {
-		Com_Printf ( " 3DNow!\n" );
+		Com_Printf ( "3DNow!" );
+		if ( Support3DNowExt ) {
+			Com_Printf ( "(extended)" );
+		}
+		Com_Printf ( " " );
 	}
 	if ( SupportMMX ) {
-		Com_Printf ( " MMX" );
+		Com_Printf ( "MMX" );
+		if ( SupportMMXext ) {
+			Com_Printf ( "(extended)" );
+		}
+		Com_Printf ( " " );
+	}
+	if ( SupportSSE ) {
+		Com_Printf ( "SSE " );
 	}
 
 	Com_Printf ( "\n" );
 }
+#else
+void Sys_PrintCPUInfo (void)
+{
+}
+#endif

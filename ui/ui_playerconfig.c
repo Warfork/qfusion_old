@@ -45,7 +45,7 @@ static menuseparator_s	s_player_rate_title;
 
 typedef struct
 {
-	int		nskins;
+	int	nskins;
 	char	**skindisplaynames;
 	char	displayname[MAX_DISPLAYNAME];
 	char	directory[MAX_QPATH];
@@ -56,7 +56,7 @@ static char *s_pmnames[MAX_PLAYERMODELS];
 static int s_numplayermodels;
 
 static int rate_tbl[] = { 2500, 3200, 5000, 10000, 25000, 0 };
-static const char *rate_names[] = { "28.8 Modem", "33.6 Modem", "Single ISDN",
+static char *rate_names[] = { "28.8 Modem", "33.6 Modem", "Single ISDN",
 	"Dual ISDN/Cable", "T1/LAN", "User defined", 0 };
 
 static void HandednessCallback( void *unused )
@@ -93,10 +93,10 @@ static qboolean IconOfSkinExists( char *skin, char *pcxfiles, int npcxfiles )
 		len = strlen (ptr);
 
 		if ( strcmp( ptr, scratch ) == 0 )
-			return true;
+			return qtrue;
 	}
 
-	return false;
+	return qfalse;
 }
 
 static void PlayerConfig_ScanDirectories( void )
@@ -168,7 +168,7 @@ static void PlayerConfig_ScanDirectories( void )
 		if ( !nskins )
 			continue;
 
-		skinnames = UI_malloc( sizeof( char * ) * ( nskins + 1 ) );
+		skinnames = UI_Malloc( sizeof( char * ) * ( nskins + 1 ) );
 		skinptr = pcxnames;
 
 		// copy the valid skins
@@ -180,7 +180,7 @@ static void PlayerConfig_ScanDirectories( void )
 			{
 				if ( IconOfSkinExists( skinptr, pcxnames, npcxfiles ) )
 				{
-					skinnames[s] = strdup( skinptr );
+					skinnames[s] = UI_CopyString( skinptr );
 					*strstr(skinnames[s], ".") = 0;
 					s++;
 				}
@@ -231,16 +231,15 @@ qboolean PlayerConfig_MenuInit( void )
 	int	hand = trap_Cvar_VariableValue( "hand" );
 	char *name = trap_Cvar_VariableString ( "name" );
 	char *skin = trap_Cvar_VariableString ( "skin" );
-	int w, h;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
-	static const char *handedness[] = { "right", "left", "center", 0 };
+	static char *handedness[] = { "right", "left", "center", 0 };
 
 	PlayerConfig_ScanDirectories();
 
 	if (s_numplayermodels == 0)
-		return false;
+		return qfalse;
 
 	if ( hand < 0 || hand > 2 )
 		trap_Cvar_SetValue( "hand", 0 );
@@ -286,11 +285,8 @@ qboolean PlayerConfig_MenuInit( void )
 		}
 	}
 
-	w = uis.vidWidth;
-	h = uis.vidHeight;
-
-	s_player_config_menu.x = w / 2 - 95; 
-	s_player_config_menu.y = h / 2 - 97;
+	s_player_config_menu.x = uis.vidWidth / 2 - 95; 
+	s_player_config_menu.y = uis.vidHeight / 2 - 97;
 	s_player_config_menu.nitems = 0;
 
 	s_player_name_field.generic.type = MTYPE_FIELD;
@@ -380,44 +376,46 @@ qboolean PlayerConfig_MenuInit( void )
 
 	Menu_Init ( &s_player_config_menu );
 
-	return true;
+	return qtrue;
 }
 
 void PlayerConfig_MenuDraw( void )
 {
 	refdef_t refdef;
 	char scratch[MAX_QPATH];
-	int w, h;
 
 	memset( &refdef, 0, sizeof( refdef ) );
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
-
-	refdef.x = w / 2 + 60;
-	refdef.y = h / 2 - 72;
+	refdef.x = uis.vidWidth / 2 + 60;
+	refdef.y = uis.vidHeight / 2 - 72;
 	refdef.width = 200;
 	refdef.height = 200;
 	refdef.fov_x = 30;
 	refdef.fov_y = 30;
-	refdef.time = trap_CL_GetTime() * 0.001f;
 	refdef.areabits = 0;
+	refdef.time = uis.time * 0.001;
 	refdef.rdflags = RDF_NOWORLDMODEL;
 
 	if ( s_pmi[s_player_model_box.curvalue].skindisplaynames )
 	{
 		static vec3_t angles;
 		entity_t entity;
+		vec3_t mins, maxs;
 
 		memset( &entity, 0, sizeof( entity ) );
 
 		Com_sprintf( scratch, sizeof( scratch ), "players/%s/tris.md2", s_pmi[s_player_model_box.curvalue].directory );
-		entity.model = trap_RegisterModel( scratch );
-		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s.pcx", s_pmi[s_player_model_box.curvalue].directory, s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
-		entity.customShader = trap_RegisterSkin( scratch );
+		entity.model = trap_R_RegisterModel( scratch );
+		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s", s_pmi[s_player_model_box.curvalue].directory, s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
+		entity.customShader = trap_R_RegisterSkin( scratch );
+		trap_R_ModelBounds ( entity.model, mins, maxs );
+		entity.origin[0] = 0.5 * (maxs[2] - mins[2]) * (1.0 / 0.268);
+		entity.origin[1] = 0.5 * (mins[1] + maxs[1]);
+		entity.origin[2] = -0.5 * (mins[2] + maxs[2]);
 		entity.flags = RF_FULLBRIGHT;
-		entity.origin[0] = 100;
 		entity.scale = 1.0f;
 		VectorCopy( entity.origin, entity.oldorigin );
+		VectorCopy( entity.origin, entity.lightingOrigin );
 		angles[1] += 1.0f;
 
 		if ( angles[1] > 360 )
@@ -433,12 +431,12 @@ void PlayerConfig_MenuDraw( void )
 
 		Menu_Draw( &s_player_config_menu );
 
-		trap_RenderFrame( &refdef );
+		trap_R_RenderFrame( &refdef );
 
-		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s_i.pcx", 
+		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s_i", 
 			s_pmi[s_player_model_box.curvalue].directory,
 			s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
-		trap_DrawStretchPic( s_player_config_menu.x - 40, refdef.y, 32, 32, 0, 0, 1, 1, colorWhite, trap_RegisterPic(scratch) );
+		trap_Draw_StretchPic( s_player_config_menu.x - 40, refdef.y, 32, 32, 0, 0, 1, 1, colorWhite, trap_R_RegisterPic(scratch) );
 	}
 }
 
@@ -468,10 +466,10 @@ const char *PlayerConfig_MenuKey (int key)
 
 			for ( j = 0; j < s_pmi[i].nskins; j++ )
 			{
-				UI_free( s_pmi[i].skindisplaynames[j] );
+				UI_Free( s_pmi[i].skindisplaynames[j] );
 				s_pmi[i].skindisplaynames[j] = 0;
 			}
-			UI_free( s_pmi[i].skindisplaynames );
+			UI_Free( s_pmi[i].skindisplaynames );
 			s_pmi[i].skindisplaynames = 0;
 			s_pmi[i].nskins = 0;
 		}

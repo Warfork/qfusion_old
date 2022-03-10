@@ -23,22 +23,34 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_ARRAY_TRIANGLES		MAX_ARRAY_INDEXES/3
 #define MAX_ARRAY_NEIGHBORS		MAX_ARRAY_TRIANGLES*3
 
+#ifdef SHADOW_VOLUMES
 extern vec4_t	vertexArray[MAX_ARRAY_VERTS*2];	// the second half is for shadow volumes
+#else
+extern vec4_t	vertexArray[MAX_ARRAY_VERTS];
+#endif
+
 extern vec3_t	normalsArray[MAX_ARRAY_VERTS];
 extern index_t	tempIndexesArray[MAX_ARRAY_INDEXES];
+extern byte_vec4_t colorArray[MAX_ARRAY_VERTS];
 
 extern vec4_t	tempVertexArray[MAX_ARRAY_VERTS];
 extern vec3_t	tempNormalsArray[MAX_ARRAY_VERTS];
 
 extern index_t	*indexesArray;
+#ifdef SHADOW_VOLUMES
 extern int		*neighborsArray;
 extern vec3_t	*trNormalsArray;
+#endif
 extern vec2_t	*coordsArray;
 extern vec2_t	*lightmapCoordsArray;
 
 extern index_t	inIndexesArray[MAX_ARRAY_INDEXES];
+
+#ifdef SHADOW_VOLUMES
 extern int		inNeighborsArray[MAX_ARRAY_NEIGHBORS];
 extern vec3_t	inTrNormalsArray[MAX_ARRAY_TRIANGLES];
+#endif
+
 extern vec2_t	inCoordsArray[MAX_ARRAY_VERTS];
 extern vec2_t	inLightmapCoordsArray[MAX_ARRAY_VERTS];
 extern byte_vec4_t	inColorsArray[MAX_ARRAY_VERTS];
@@ -52,7 +64,7 @@ extern float	*currentVertex;
 extern float	*currentNormal;
 extern float	*currentCoords;
 extern float	*currentLightmapCoords;
-extern byte		*currentColor;
+extern qbyte		*currentColor;
 
 extern unsigned int	r_numverts;
 extern unsigned int	r_numtris;
@@ -116,6 +128,7 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 		indexesArray = indexes;
 		currentIndex = indexesArray + numIndexes;
 
+#ifdef SHADOW_VOLUMES
 		if ( neighbors ) {
 			neighborsArray = neighbors;
 			currentTrNeighbor = neighborsArray + numIndexes;
@@ -127,6 +140,7 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 			trNormalsArray = trnormals;
 			currentTrNormal = trNormalsArray[0] + numTris;
 		}
+#endif
 	} else {
 		// clamp
 		if ( numIndexes + numindexes > MAX_ARRAY_INDEXES ) {
@@ -143,6 +157,7 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 			currentIndex[1] = numVerts + indexes[1];
 			currentIndex[2] = numVerts + indexes[2];
 
+#ifdef SHADOW_VOLUMES
 			if ( neighbors ) {
 				currentTrNeighbor[0] = numTris + neighbors[0];
 				currentTrNeighbor[1] = numTris + neighbors[1];
@@ -156,6 +171,7 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 				VectorCopy ( trnormals[i], currentTrNormal );
 				currentTrNormal += 3;
 			}
+#endif
 		}
 	}
 }
@@ -170,7 +186,11 @@ static inline void R_PushMesh ( mesh_t *mesh, int features )
 
 	r_features = features;
 
+#ifdef SHADOW_VOLUMES
 	R_PushIndexes ( mesh->indexes, mesh->trneighbors, mesh->trnormals, mesh->numindexes, features );
+#else
+	R_PushIndexes ( mesh->indexes, NULL, NULL, mesh->numindexes, features );
+#endif
 
 	numverts = mesh->numvertexes;
 	if ( numVerts + numverts > MAX_ARRAY_VERTS ) {
@@ -229,8 +249,9 @@ static inline qboolean R_InvalidMesh ( mesh_t *mesh )
 }
 
 void R_RenderMeshBuffer ( meshbuffer_t *mb, qboolean shadowpass );
-void R_RenderMeshGeneric ( meshbuffer_t *mb, shaderpass_t *pass );
-void R_RenderMeshMultitextured ( meshbuffer_t *mb, shaderpass_t *pass );
-void R_RenderMeshCombined ( meshbuffer_t *mb, shaderpass_t *pass );
+void R_RenderMeshGeneric ( shaderpass_t *pass );
+void R_RenderMeshMultitextured ( shaderpass_t *pass );
+void R_RenderMeshCombined ( shaderpass_t *pass );
 
-
+void R_BackendBeginTriangleOutlines (void);
+void R_BackendEndTriangleOutlines (void);

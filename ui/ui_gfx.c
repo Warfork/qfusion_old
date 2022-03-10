@@ -20,6 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "ui_local.h"
 
+#define NUM_CROSSHAIRS	10
+
 /*
 =======================================================================
 
@@ -45,8 +47,14 @@ static void				*s_crosshair_pic;
 
 static void CrosshairFunc( void *unused )
 {
-	s_crosshair_pic = trap_RegisterPic( va ("gfx/2d/crosshair%s", s_crosshair_box.itemnames[s_crosshair_box.curvalue]));
-	trap_Cvar_SetValue( "crosshair", s_crosshair_box.curvalue );
+	if ( s_crosshair_box.curvalue == 0 ) {
+		s_crosshair_pic = NULL;
+		trap_Cvar_SetValue( "cg_crosshair", 0 );
+		return;
+	}
+
+	s_crosshair_pic = trap_R_RegisterPic( va ("gfx/2d/crosshair%s", s_crosshair_box.itemnames[s_crosshair_box.curvalue]));
+	trap_Cvar_SetValue( "cg_crosshair", s_crosshair_box.curvalue );
 }
 
 static void UpdateSkyQualityFunc( void *unused )
@@ -66,7 +74,7 @@ static void UpdateLightFlaresFunc( void *unused )
 
 static void UpdateThirdPersonFunc( void *unused )
 {
-	trap_Cvar_SetValue( "cl_thirdperson", s_thirdperson_list.curvalue );
+	trap_Cvar_SetValue( "cg_thirdPerson", s_thirdperson_list.curvalue );
 }
 
 static void UpdateFinishFunc( void *unused )
@@ -76,49 +84,49 @@ static void UpdateFinishFunc( void *unused )
 
 static void UpdateMarksFunc( void *unused )
 {
-	trap_Cvar_SetValue( "cl_decals", s_marks_list.curvalue );
+	trap_Cvar_SetValue( "cg_decals", s_marks_list.curvalue );
 }
 
 void Gfx_MenuInit( void )
 {
-	static const char *crosshair_names[] =
+	static char *crosshair_names[] =
 	{
-		"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", 0
+		"z", "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", 0
 	};
 
-	static const char *sky_quality_items[] =
+	static char *sky_quality_items[] =
 	{
 		"fast", "high quality", 0
 	};
 
-	static const char *dlights_items[] =
+	static char *dlights_items[] =
 	{
 		"off", "nice", "fast", 0
 	};
 
-	static const char *lightflares_items[] =
+	static char *lightflares_items[] =
 	{
 		"off", "on", 0
 	};
 
-	static const char *thirdperson_items[] =
+	static char *thirdperson_items[] =
 	{
 		"off", "on", 0
 	};
 
-	static const char *finish_names[] =
+	static char *finish_names[] =
 	{
 		"no", "yes", 0
 	};
 
-	static const char *marks_names[] =
+	static char *marks_names[] =
 	{
 		"off", "on", 0
 	};
 
 	int w, h;
 	int y = 0;
-	int y_offset = PROP_SMALL_HEIGHT - 2;
+	int y_offset = UI_StringHeightOffset ( 0 );
 
 	/*
 	** configure controls menu and menu items
@@ -145,10 +153,15 @@ void Gfx_MenuInit( void )
 	s_crosshair_box.itemnames			= crosshair_names;
 	y += y_offset;
 
-	trap_Cvar_SetValue( "crosshair", M_ClampCvar( 0, NUM_CROSSHAIRS, trap_Cvar_VariableValue("crosshair") ) );
-	s_crosshair_box.curvalue		= trap_Cvar_VariableValue("crosshair");
-	clamp ( s_crosshair_box.curvalue, 0, 9 );
-	s_crosshair_pic = trap_RegisterPic( va ("gfx/2d/crosshair%s", s_crosshair_box.itemnames[s_crosshair_box.curvalue]));
+	trap_Cvar_SetValue( "cg_crosshair", M_ClampCvar( 0, NUM_CROSSHAIRS, trap_Cvar_VariableValue("crosshair") ) );
+	s_crosshair_box.curvalue		= trap_Cvar_VariableValue("cg_crosshair");
+	clamp ( s_crosshair_box.curvalue, 0, 10 );
+
+	if ( s_crosshair_box.curvalue == 0 ) {
+		s_crosshair_pic = NULL;
+	} else {
+		s_crosshair_pic = trap_R_RegisterPic( va ("gfx/2d/crosshair%s", s_crosshair_box.itemnames[s_crosshair_box.curvalue]));
+	}
 
 	s_skyquality_list.generic.type			= MTYPE_SPINCONTROL;
 	s_skyquality_list.generic.x				= 0;
@@ -183,7 +196,7 @@ void Gfx_MenuInit( void )
 	s_thirdperson_list.generic.name			= "third person view";
 	s_thirdperson_list.generic.callback		= UpdateThirdPersonFunc;
 	s_thirdperson_list.itemnames			= thirdperson_items;
-	s_thirdperson_list.curvalue				= trap_Cvar_VariableValue( "cl_thirdperson" );
+	s_thirdperson_list.curvalue				= trap_Cvar_VariableValue( "cg_thirdPerson" );
 	clamp ( s_thirdperson_list.curvalue, 0, 1 );
 
 	s_finish_box.generic.type				= MTYPE_SPINCONTROL;
@@ -198,7 +211,7 @@ void Gfx_MenuInit( void )
 	s_marks_list.generic.x					= 0;
 	s_marks_list.generic.y					= y+=y_offset;
 	s_marks_list.generic.name				= "marks on walls";
-	s_marks_list.curvalue					= trap_Cvar_VariableValue( "cl_decals" );
+	s_marks_list.curvalue					= trap_Cvar_VariableValue( "cg_decals" );
 	s_marks_list.itemnames					= marks_names;
 	clamp ( s_marks_list.curvalue, 0, 1 );
 
@@ -220,9 +233,11 @@ void Gfx_MenuDraw (void)
 {
 	Menu_AdjustCursor( &s_gfx_menu, 1 );
 
-	trap_DrawStretchPic ( (int)(BIG_CHAR_WIDTH*1.2) + s_gfx_menu.x + s_crosshair_box.generic.x,
-		s_gfx_menu.y + s_crosshair_box.generic.y - BIG_CHAR_WIDTH / 2, 32, 32, 
-		0, 0, 1, 1, colorWhite, s_crosshair_pic );
+	if ( s_crosshair_pic ) {
+		trap_Draw_StretchPic ( (int)(BIG_CHAR_WIDTH*1.2) + s_gfx_menu.x + s_crosshair_box.generic.x,
+			s_gfx_menu.y + s_crosshair_box.generic.y - BIG_CHAR_WIDTH / 2, 32, 32, 
+			0, 0, 1, 1, colorWhite, s_crosshair_pic );
+	}
 
 	Menu_Draw( &s_gfx_menu );
 }

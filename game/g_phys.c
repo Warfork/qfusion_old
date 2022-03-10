@@ -52,14 +52,14 @@ edict_t	*SV_TestEntityPosition (edict_t *ent)
 	int		mask;
 
 	
-	if (ent->clipmask)
-		mask = ent->clipmask;
+	if (ent->r.clipmask)
+		mask = ent->r.clipmask;
 	else
 		mask = MASK_SOLID;
-	trace = gi.trace (ent->s.origin, ent->mins, ent->maxs, ent->s.origin, ent, mask);
+	trap_Trace (&trace, ent->s.origin, ent->r.mins, ent->r.maxs, ent->s.origin, ent, mask);
 
 	if (trace.startsolid)
-		return g_edicts;
+		return game.edicts;
 		
 	return NULL;
 }
@@ -97,16 +97,16 @@ qboolean SV_RunThink (edict_t *ent)
 
 	thinktime = ent->nextthink;
 	if (thinktime <= 0)
-		return true;
+		return qtrue;
 	if (thinktime > level.time+0.001)
-		return true;
+		return qtrue;
 	
 	ent->nextthink = 0;
 	if (!ent->think)
-		gi.error ("NULL ent->think");
+		G_Error ("NULL ent->think");
 	ent->think (ent);
 
-	return false;
+	return qfalse;
 }
 
 /*
@@ -119,15 +119,14 @@ Two entities have touched, so run their touch functions
 void SV_Impact (edict_t *e1, trace_t *trace)
 {
 	edict_t		*e2;
-//	cplane_t	backplane;
 
-	e2 = trace->ent;
+	e2 = &game.edicts[trace->ent];
 
-	if (e1->touch && e1->solid != SOLID_NOT)
-		e1->touch (e1, e2, &trace->plane, trace->surface);
-	
-	if (e2->touch && e2->solid != SOLID_NOT)
-		e2->touch (e2, e1, NULL, NULL);
+	if (e1->touch && e1->r.solid != SOLID_NOT)
+		e1->touch (e1, e2, &trace->plane, trace->surfFlags);
+
+	if (e2->touch && e2->r.solid != SOLID_NOT)
+		e2->touch (e2, e1, NULL, 0);
 }
 
 
@@ -209,7 +208,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 		for (i=0 ; i<3 ; i++)
 			end[i] = ent->s.origin[i] + time_left * ent->velocity[i];
 
-		trace = gi.trace (ent->s.origin, ent->mins, ent->maxs, end, ent, mask);
+		trap_Trace (&trace, ent->s.origin, ent->r.mins, ent->r.maxs, end, ent, mask);
 
 		if (trace.allsolid)
 		{	// entity is trapped in another solid
@@ -227,15 +226,15 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 		if (trace.fraction == 1)
 			 break;		// moved the entire distance
 
-		hit = trace.ent;
+		hit = &game.edicts[trace.ent];
 
 		if (trace.plane.normal[2] > 0.7)
 		{
 			blocked |= 1;		// floor
-			if ( hit->solid == SOLID_BSP)
+			if (hit->r.solid == SOLID_BSP)
 			{
 				ent->groundentity = hit;
-				ent->groundentity_linkcount = hit->linkcount;
+				ent->groundentity_linkcount = hit->r.linkcount;
 			}
 		}
 		if (!trace.plane.normal[2])
@@ -247,7 +246,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 // run the impact function
 //
 		SV_Impact (ent, &trace);
-		if (!ent->inuse)
+		if (!ent->r.inuse)
 			break;		// removed by the impact function
 
 		
@@ -348,31 +347,31 @@ trace_t SV_PushEntity (edict_t *ent, vec3_t push)
 	VectorAdd (start, push, end);
 
 retry:
-	if (ent->clipmask)
-		mask = ent->clipmask;
+	if (ent->r.clipmask)
+		mask = ent->r.clipmask;
 	else
 		mask = MASK_SOLID;
 
-	trace = gi.trace (start, ent->mins, ent->maxs, end, ent, mask);
+	trap_Trace (&trace, start, ent->r.mins, ent->r.maxs, end, ent, mask);
 	
 	VectorCopy (trace.endpos, ent->s.origin);
-	gi.linkentity (ent);
+	trap_LinkEntity (ent);
 
 	if (trace.fraction != 1.0)
 	{
 		SV_Impact (ent, &trace);
 
 		// if the pushed entity went away and the pusher is still there
-		if (!trace.ent->inuse && ent->inuse)
+		if (!game.edicts[trace.ent].r.inuse && ent->r.inuse)
 		{
 			// move the pusher back and try again
 			VectorCopy (start, ent->s.origin);
-			gi.linkentity (ent);
+			trap_LinkEntity (ent);
 			goto retry;
 		}
 	}
 
-	if (ent->inuse)
+	if (ent->r.inuse)
 		G_TouchTriggers (ent);
 
 	return trace;
@@ -404,50 +403,47 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 	edict_t		*check, *block;
 	vec3_t		mins, maxs;
 	pushed_t	*p;
-	vec3_t		org, org2, move2, forward, right, up;
+	mat3_t		axis;
+	vec3_t		org, org2, move2;
 
 	// clamp the move to 1/8 units, so the position will
 	// be accurate for client side prediction
 	for (i=0 ; i<3 ; i++)
 	{
 		float	temp;
-		temp = move[i]*8.0;
-		if (temp > 0.0)
-			temp += 0.5;
-		else
-			temp -= 0.5;
-		move[i] = 0.125 * (int)temp;
+		temp = move[i]*16.0;
+		move[i] = (1.0/16.0) * (int)temp;
 	}
 
 	// find the bounding box
 	for (i=0 ; i<3 ; i++)
 	{
-		mins[i] = pusher->absmin[i] + move[i];
-		maxs[i] = pusher->absmax[i] + move[i];
+		mins[i] = pusher->r.absmin[i] + move[i];
+		maxs[i] = pusher->r.absmax[i] + move[i];
 	}
 
 // we need this for pushing things later
 	VectorNegate (amove, org);
-	AngleVectors (org, forward, right, up);
+	AnglesToAxis (org, axis);
 
 // save the pusher's original position
 	pushed_p->ent = pusher;
 	VectorCopy (pusher->s.origin, pushed_p->origin);
 	VectorCopy (pusher->s.angles, pushed_p->angles);
-	if (pusher->client)
-		pushed_p->deltayaw = pusher->client->ps.pmove.delta_angles[YAW];
+	if (pusher->r.client)
+		pushed_p->deltayaw = pusher->r.client->ps.pmove.delta_angles[YAW];
 	pushed_p++;
 
 // move the pusher to its final position
 	VectorAdd (pusher->s.origin, move, pusher->s.origin);
 	VectorAdd (pusher->s.angles, amove, pusher->s.angles);
-	gi.linkentity (pusher);
+	trap_LinkEntity (pusher);
 
 // see if any solid entities are inside the final position
-	check = g_edicts+1;
-	for (e = 1; e < globals.num_edicts; e++, check++)
+	check = game.edicts+1;
+	for (e = 1; e < game.numentities; e++, check++)
 	{
-		if (!check->inuse)
+		if (!check->r.inuse)
 			continue;
 		if (check->movetype == MOVETYPE_PUSH
 		|| check->movetype == MOVETYPE_STOP
@@ -455,19 +451,19 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 		|| check->movetype == MOVETYPE_NOCLIP)
 			continue;
 
-		if (!check->area.prev)
+		if (!check->r.area.prev)
 			continue;		// not linked in anywhere
 
 	// if the entity is standing on the pusher, it will definitely be moved
 		if (check->groundentity != pusher)
 		{
 			// see if the ent needs to be tested
-			if ( check->absmin[0] >= maxs[0]
-			|| check->absmin[1] >= maxs[1]
-			|| check->absmin[2] >= maxs[2]
-			|| check->absmax[0] <= mins[0]
-			|| check->absmax[1] <= mins[1]
-			|| check->absmax[2] <= mins[2] )
+			if ( check->r.absmin[0] >= maxs[0]
+			|| check->r.absmin[1] >= maxs[1]
+			|| check->r.absmin[2] >= maxs[2]
+			|| check->r.absmax[0] <= mins[0]
+			|| check->r.absmax[1] <= mins[1]
+			|| check->r.absmax[2] <= mins[2] )
 				continue;
 
 			// see if the ent's bbox is inside the pusher's final position
@@ -485,16 +481,14 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 
 			// try moving the contacted entity 
 			VectorAdd (check->s.origin, move, check->s.origin);
-			if (check->client)
+			if (check->r.client)
 			{	// FIXME: doesn't rotate monsters?
-				check->client->ps.pmove.delta_angles[YAW] += amove[YAW];
+				check->r.client->ps.pmove.delta_angles[YAW] += amove[YAW];
 			}
 
 			// figure movement due to the pusher's amove
 			VectorSubtract (check->s.origin, pusher->s.origin, org);
-			org2[0] = DotProduct (org, forward);
-			org2[1] = -DotProduct (org, right);
-			org2[2] = DotProduct (org, up);
+			Matrix3_Multiply_Vec3 (axis, org, org2);
 			VectorSubtract (org2, org, move2);
 			VectorAdd (check->s.origin, move2, check->s.origin);
 
@@ -505,7 +499,7 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 			block = SV_TestEntityPosition (check);
 			if (!block)
 			{	// pushed ok
-				gi.linkentity (check);
+				trap_LinkEntity (check);
 				// impact?
 				continue;
 			}
@@ -532,13 +526,13 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 		{
 			VectorCopy (p->origin, p->ent->s.origin);
 			VectorCopy (p->angles, p->ent->s.angles);
-			if (p->ent->client)
+			if (p->ent->r.client)
 			{
-				p->ent->client->ps.pmove.delta_angles[YAW] = p->deltayaw;
+				p->ent->r.client->ps.pmove.delta_angles[YAW] = p->deltayaw;
 			}
-			gi.linkentity (p->ent);
+			trap_LinkEntity (p->ent);
 		}
-		return false;
+		return qfalse;
 	}
 
 //FIXME: is there a better way to handle this?
@@ -546,7 +540,7 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 	for (p=pushed_p-1 ; p>=pushed ; p--)
 		G_TouchTriggers (p->ent);
 
-	return true;
+	return qtrue;
 }
 
 /*
@@ -585,7 +579,7 @@ void SV_Physics_Pusher (edict_t *ent)
 		}
 	}
 	if (pushed_p > &pushed[MAX_EDICTS])
-		gi.error (ERR_FATAL, "pushed_p > &pushed[MAX_EDICTS], memory corrupted");
+		G_Error ("pushed_p > &pushed[MAX_EDICTS], memory corrupted");
 
 	if (part)
 	{
@@ -647,7 +641,7 @@ void SV_Physics_Noclip (edict_t *ent)
 	VectorMA (ent->s.angles, FRAMETIME, ent->avelocity, ent->s.angles);
 	VectorMA (ent->s.origin, FRAMETIME, ent->velocity, ent->s.origin);
 
-	gi.linkentity (ent);
+	trap_LinkEntity (ent);
 }
 
 /*
@@ -687,7 +681,7 @@ void SV_Physics_Toss (edict_t *ent)
 
 // check for the groundentity going away
 	if (ent->groundentity)
-		if (!ent->groundentity->inuse)
+		if (!ent->groundentity->r.inuse)
 			ent->groundentity = NULL;
 
 // if onground, return without moving
@@ -709,7 +703,7 @@ void SV_Physics_Toss (edict_t *ent)
 // move origin
 	VectorScale (ent->velocity, FRAMETIME, move);
 	trace = SV_PushEntity (ent, move);
-	if (!ent->inuse)
+	if (!ent->r.inuse)
 		return;
 
 	if (trace.fraction < 1)
@@ -729,8 +723,8 @@ void SV_Physics_Toss (edict_t *ent)
 			if (ent->velocity[2] < 60 ||
 				(ent->movetype != MOVETYPE_BOUNCE && ent->movetype != MOVETYPE_BOUNCEGRENADE) )
 			{
-				ent->groundentity = trace.ent;
-				ent->groundentity_linkcount = trace.ent->linkcount;
+				ent->groundentity = &game.edicts[trace.ent];
+				ent->groundentity_linkcount = ent->groundentity->r.linkcount;
 				VectorClear (ent->velocity);
 				VectorClear (ent->avelocity);
 			}
@@ -742,7 +736,7 @@ void SV_Physics_Toss (edict_t *ent)
 	
 // check for water transition
 	wasinwater = (ent->watertype & MASK_WATER);
-	ent->watertype = gi.pointcontents (ent->s.origin);
+	ent->watertype = trap_PointContents (ent->s.origin);
 	isinwater = ent->watertype & MASK_WATER;
 
 	// never allow items in CONTENTS_NODROP
@@ -750,13 +744,13 @@ void SV_Physics_Toss (edict_t *ent)
 		// flags are important
 		if (strcmp(ent->classname, "team_CTF_redflag") == 0) {
 			CTFResetFlag(CTF_TEAM1); // this will free self!
-			gi.bprintf(PRINT_HIGH, "The %s flag has returned!\n",
+			G_PrintMsg (NULL, PRINT_HIGH, "The %s flag has returned!\n",
 				CTFTeamName(CTF_TEAM1));
 			return;
 		}
 		if (strcmp(ent->classname, "team_CTF_blueflag") == 0) {
 			CTFResetFlag(CTF_TEAM2); // this will free self!
-			gi.bprintf(PRINT_HIGH, "The %s flag has returned!\n",
+			G_PrintMsg (NULL, PRINT_HIGH, "The %s flag has returned!\n",
 				CTFTeamName(CTF_TEAM1));
 			return;
 		}
@@ -776,15 +770,15 @@ void SV_Physics_Toss (edict_t *ent)
 		ent->waterlevel = 0;
 
 	if (!wasinwater && isinwater)
-		gi.positioned_sound (old_origin, g_edicts, CHAN_AUTO, gi.soundindex("sound/misc/h2ohit1.wav"), 1, 1, 0);
+		G_PositionedSound (old_origin, game.edicts, CHAN_AUTO, trap_SoundIndex("sound/misc/h2ohit1.wav"), 1, 1);
 	else if (wasinwater && !isinwater)
-		gi.positioned_sound (ent->s.origin, g_edicts, CHAN_AUTO, gi.soundindex("sound/misc/h2ohit1.wav"), 1, 1, 0);
+		G_PositionedSound (ent->s.origin, game.edicts, CHAN_AUTO, trap_SoundIndex("sound/misc/h2ohit1.wav"), 1, 1);
 
 // move teamslaves
 	for (slave = ent->teamchain; slave; slave = slave->teamchain)
 	{
 		VectorCopy (ent->s.origin, slave->s.origin);
-		gi.linkentity (slave);
+		trap_LinkEntity (slave);
 	}
 }
 
@@ -841,7 +835,7 @@ void SV_AddRotationalFriction (edict_t *ent)
 void SV_Physics_Step (edict_t *ent)
 {
 	qboolean	wasonground;
-	qboolean	hitsound = false;
+	qboolean	hitsound = qfalse;
 	float		*vel;
 	float		speed, newspeed, control;
 	float		friction;
@@ -857,9 +851,9 @@ void SV_Physics_Step (edict_t *ent)
 	SV_CheckVelocity (ent);
 
 	if (groundentity)
-		wasonground = true;
+		wasonground = qtrue;
 	else
-		wasonground = false;
+		wasonground = qfalse;
 		
 	if (ent->avelocity[0] || ent->avelocity[1] || ent->avelocity[2])
 		SV_AddRotationalFriction (ent);
@@ -872,7 +866,7 @@ void SV_Physics_Step (edict_t *ent)
 			if (!((ent->flags & FL_SWIM) && (ent->waterlevel > 2)))
 			{
 				if (ent->velocity[2] < sv_gravity->value*-0.1)
-					hitsound = true;
+					hitsound = qtrue;
 				if (ent->waterlevel == 0)
 					SV_AddGravity (ent);
 			}
@@ -927,19 +921,19 @@ void SV_Physics_Step (edict_t *ent)
 				}
 			}
 
-		if (ent->svflags & SVF_MONSTER)
+		if (ent->r.svflags & SVF_MONSTER)
 			mask = MASK_MONSTERSOLID;
 		else
 			mask = MASK_SOLID;
 		SV_FlyMove (ent, FRAMETIME, mask);
 
-		gi.linkentity (ent);
+		trap_LinkEntity (ent);
 		G_TouchTriggers (ent);
 
 		if (ent->groundentity)
 			if (!wasonground)
 				if (hitsound)
-					gi.sound (ent, 0, gi.soundindex("sound/world/land.wav"), 1, 1, 0);
+					G_Sound (ent, 0, trap_SoundIndex("sound/world/land.wav"), 1, ATTN_NORM);
 	}
 
 // regular thinking
@@ -981,6 +975,6 @@ void G_RunEntity (edict_t *ent)
 		SV_Physics_Toss (ent);
 		break;
 	default:
-		gi.error ("SV_Physics: bad movetype %i", (int)ent->movetype);			
+		G_Error ("SV_Physics: bad movetype %i", (int)ent->movetype);			
 	}
 }

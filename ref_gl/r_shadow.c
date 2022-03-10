@@ -19,6 +19,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "r_local.h"
 
+#ifdef SHADOW_VOLUMES
+
 static qboolean triangleFacingLight[MAX_ARRAY_TRIANGLES];
 static index_t	shadowVolumeIndexes[MAX_SHADOWVOLUME_INDEXES];
 static int		numShadowVolumeTris;
@@ -252,7 +254,7 @@ qboolean R_CheckLightBoundaries ( vec3_t mins, vec3_t maxs, vec3_t lightorg, flo
 	return ( DotProduct(v, v) < intensity2 );
 }
 
-void R_CastShadowVolume ( mesh_t *mesh, vec3_t lightorg, float intensity )
+void R_CastShadowVolume ( vec3_t mins, vec3_t maxs, float radius, vec3_t lightorg, float intensity )
 {
 	float projectdistance, intensity2;
 	vec3_t lightdist, lightdist2;
@@ -260,11 +262,11 @@ void R_CastShadowVolume ( mesh_t *mesh, vec3_t lightorg, float intensity )
 	intensity2 = intensity * intensity;
 	VectorSubtract ( lightorg, currententity->origin, lightdist2 );
 
-	if ( !R_CheckLightBoundaries (mesh->mins, mesh->maxs, lightdist2, intensity2) ) {
+	if ( !R_CheckLightBoundaries (mins, maxs, lightdist2, intensity2) ) {
 		return;
 	}
 
-	projectdistance = mesh->radius - VectorLength ( lightdist2 );
+	projectdistance = radius - VectorLength ( lightdist2 );
 	if ( projectdistance > 0 ) {	// light is inside the bbox
 		return;
 	}
@@ -319,6 +321,8 @@ void R_DrawShadowVolumes ( mesh_t *mesh )
 	R_ClearArrays ();
 }
 
+#endif
+
 void R_Draw_SimpleShadow ( entity_t *e )
 {
 	int i;
@@ -326,15 +330,19 @@ void R_Draw_SimpleShadow ( entity_t *e )
 	float planedist, dist;
 	vec3_t planenormal, lightdir, lightdir2, point;
 	trace_t tr;
-	extern trace_t CL_Trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask);
+	extern void CL_GameModule_Trace (trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask);
 
-	R_LightDirForOrigin ( e->origin, lightdir );
+	if ( e->flags & RF_NOSHADOW ) {
+		return;
+	}
+
+	R_LightDirForOrigin ( e->lightingOrigin, lightdir );
 
 	VectorSet ( lightdir, -lightdir[0], -lightdir[1], -1 );	
 	VectorNormalizeFast ( lightdir );
 	VectorMA ( e->origin, 1024.0f, lightdir, point );
 
-	tr = CL_Trace ( e->origin, vec3_origin, vec3_origin, point, -1, CONTENTS_SOLID );
+	CL_GameModule_Trace ( &tr, e->origin, vec3_origin, vec3_origin, point, -1, CONTENTS_SOLID );
 	if ( tr.fraction == 1.0f ) {
 		R_ClearArrays ();
 		return;
@@ -345,8 +353,9 @@ void R_Draw_SimpleShadow ( entity_t *e )
 
 	VectorSubtract ( tr.endpos, e->origin, point );
 	planedist = DotProduct ( point, tr.plane.normal ) + 1;
-	dist = -1.0f / DotProduct ( point, planenormal );
-	VectorScale ( point, dist, point );
+
+	dist = -1.0f / DotProduct ( lightdir2, planenormal );
+	VectorScale ( lightdir2, dist, lightdir2 );
 
 	v = (float *)(vertexArray[0]);
 	for (i = 0; i < numVerts; i++, v += 4)

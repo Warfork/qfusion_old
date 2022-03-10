@@ -37,105 +37,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //===============================================================================
 
-byte *membase;
-int maxhunksize;
-int curhunksize;
-
-void *Hunk_Begin (int maxsize)
-{
-	// reserve a huge chunk of memory, but don't commit any yet
-	maxhunksize = maxsize + sizeof(int);
-	curhunksize = 0;
-
-#if (defined __FreeBSD__)
-	membase = mmap(0, maxhunksize, PROT_READ|PROT_WRITE, 
-		MAP_PRIVATE|MAP_ANON, -1, 0);
-#else
-	membase = mmap(0, maxhunksize, PROT_READ|PROT_WRITE, 
-		MAP_PRIVATE|MAP_ANONYMOUS, -1, 0);
-#endif
-
-	if (membase == NULL || membase == (byte *)-1)
-		Sys_Error("unable to virtual allocate %d bytes", maxsize);
-
-	*((int *)membase) = curhunksize;
-
-	return membase + sizeof(int);
-}
-
-void *Hunk_Alloc (int size)
-{
-	byte *buf;
-
-	// round to cacheline
-	size = (size+31)&~31;
-	if (curhunksize + size > maxhunksize)
-		Sys_Error("Hunk_Alloc overflow");
-	buf = membase + sizeof(int) + curhunksize;
-	curhunksize += size;
-	return buf;
-}
-
-void *Hunk_AllocName (int size, char *name)
-{
-	byte *buf;
-
-	// round to cacheline
-	size = (size+31)&~31;
-	if (curhunksize + size > maxhunksize)
-		Sys_Error("Hunk_Alloc overflow (%s)", name);
-	buf = membase + sizeof(int) + curhunksize;
-	curhunksize += size;
-	return buf;
-}
-
-
-int Hunk_End (void)
-{
-	byte *n;
-
-#if defined(__FreeBSD__)
-	size_t old_size = maxhunksize;
-	size_t new_size = curhunksize + sizeof(int);
-	void *unmap_base;
-	size_t unmap_len;
-
-	new_size = round_page(new_size);
-	old_size = round_page(old_size);
-	if (new_size > old_size)
-  		n = 0; /* error */
-	else if (new_size < old_size)
-	{
-		unmap_base = (caddr_t)(membase + new_size);
-		unmap_len = old_size - new_size;
-		n = munmap(unmap_base, unmap_len) + membase;
-	}
-#endif
-
-#if defined(__linux__)
-	n = mremap (membase, maxhunksize, curhunksize + sizeof(int), 0);
-#endif
-
-	if (n != membase)
-		Sys_Error("Hunk_End:  Could not remap virtual block (%d)", errno);
-	*((int *)membase) = curhunksize + sizeof(int);
-	
-	return curhunksize;
-}
-
-void Hunk_Free (void *base)
-{
-	byte *m;
-
-	if (base) {
-		m = ((byte *)base) - sizeof(int);
-		munmap(m, *((int *)m));
-	}
-}
-
-//===============================================================================
-
-
 /*
 ================
 Sys_Milliseconds
@@ -193,20 +94,20 @@ static qboolean CompareAttributes(char *path, char *name,
 
 // . and .. never match
 	if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-		return false;
+		return qfalse;
 
-	return true;
+	return qtrue;
 
 	if (stat(fn, &st) == -1)
-		return false; // shouldn't happen
+		return qfalse; // shouldn't happen
 
 	if ( ( st.st_mode & S_IFDIR ) && ( canthave & SFF_SUBDIR ) )
-		return false;
+		return qfalse;
 
 	if ( ( musthave & SFF_SUBDIR ) && !( st.st_mode & S_IFDIR ) )
-		return false;
+		return qfalse;
 
-	return true;
+	return qtrue;
 }
 
 char *Sys_FindFirst (char *path, unsigned musthave, unsigned canhave)

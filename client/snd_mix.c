@@ -29,7 +29,7 @@ int		snd_musicscaletable[32][256];
 int 	*snd_p, snd_linear_count, snd_vol, music_vol;
 short	*snd_out;
 
-#if !id386 || defined __linux__
+#ifndef id386
 void S_WriteLinearBlastStereo16 (void)
 {
 	int		i;
@@ -412,7 +412,7 @@ void S_InitScaletable (void)
 	int		i, j;
 	int		scale;
 
-	s_volume->modified = false;
+	s_volume->modified = qfalse;
 	for (i=0 ; i<32 ; i++)
 	{
 		scale = i * 8 * 256 * s_volume->value;
@@ -426,7 +426,7 @@ void S_InitMusicScaletable (void)
 	int		i, j;
 	int		scale;
 
-	s_musicvolume->modified = false;
+	s_musicvolume->modified = qfalse;
 	for (i=0 ; i<32 ; i++)
 	{
 		scale = i * 8 * 256 * s_musicvolume->value;

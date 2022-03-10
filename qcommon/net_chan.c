@@ -79,8 +79,12 @@ cvar_t		*showdrop;
 cvar_t		*qport;
 
 netadr_t	net_from;
+
+sizebuf_t	net_recieved;
+qbyte		net_recieved_buffer[MAX_PACKETLEN];
+
 sizebuf_t	net_message;
-byte		net_message_buffer[MAX_MSGLEN];
+qbyte		net_message_buffer[MAX_MSGLEN];
 
 /*
 ===============
@@ -107,10 +111,10 @@ Netchan_OutOfBand
 Sends an out-of-band datagram
 ================
 */
-void Netchan_OutOfBand (int net_socket, netadr_t adr, int length, byte *data)
+void Netchan_OutOfBand (int net_socket, netadr_t adr, int length, qbyte *data)
 {
 	sizebuf_t	send;
-	byte		send_buf[MAX_MSGLEN];
+	qbyte		send_buf[MAX_PACKETLEN];
 
 // write the packet header
 	SZ_Init (&send, send_buf, sizeof(send_buf));
@@ -132,13 +136,13 @@ Sends a text message in an out-of-band datagram
 void Netchan_OutOfBandPrint (int net_socket, netadr_t adr, char *format, ...)
 {
 	va_list		argptr;
-	static char		string[MAX_MSGLEN - 4];
+	static char		string[MAX_PACKETLEN - 4];
 	
 	va_start (argptr, format);
 	vsnprintf (string, sizeof(string), format, argptr);
 	va_end (argptr);
 
-	Netchan_OutOfBand (net_socket, adr, strlen(string), (byte *)string);
+	Netchan_OutOfBand (net_socket, adr, strlen(string), (qbyte *)string);
 }
 
 
@@ -161,7 +165,7 @@ void Netchan_Setup (netsrc_t sock, netchan_t *chan, netadr_t adr, int qport)
 	chan->outgoing_sequence = 1;
 
 	SZ_Init (&chan->message, chan->message_buf, sizeof(chan->message_buf));
-	chan->message.allowoverflow = true;
+	chan->message.allowoverflow = qtrue;
 }
 
 
@@ -175,8 +179,8 @@ Returns true if the last reliable message has acked
 qboolean Netchan_CanReliable (netchan_t *chan)
 {
 	if (chan->reliable_length)
-		return false;			// waiting for ack
-	return true;
+		return qfalse;			// waiting for ack
+	return qtrue;
 }
 
 
@@ -185,16 +189,16 @@ qboolean Netchan_NeedReliable (netchan_t *chan)
 	qboolean	send_reliable;
 
 // if the remote side dropped the last reliable message, resend it
-	send_reliable = false;
+	send_reliable = qfalse;
 
 	if (chan->incoming_acknowledged > chan->last_reliable_sequence
 	&& chan->incoming_reliable_acknowledged != chan->reliable_sequence)
-		send_reliable = true;
+		send_reliable = qtrue;
 
 // if the reliable transmit buffer is empty, copy the current message out
 	if (!chan->reliable_length && chan->message.cursize)
 	{
-		send_reliable = true;
+		send_reliable = qtrue;
 	}
 
 	return send_reliable;
@@ -210,17 +214,20 @@ transmition / retransmition of the reliable messages.
 A 0 length will still generate a packet and deal with the reliable messages.
 ================
 */
-void Netchan_Transmit (netchan_t *chan, int length, byte *data)
+void Netchan_Transmit (netchan_t *chan, int length, qbyte *data)
 {
+	int			datatype;
 	sizebuf_t	send;
-	byte		send_buf[MAX_MSGLEN];
-	qboolean	send_reliable;
+	qbyte		send_buf[MAX_PACKETLEN];
+	qbyte		bigbuf[MAX_MSGLEN], compressed[MAX_PACKETLEN-PACKET_HEADER];
+	qboolean	send_reliable, send_unreliable;
 	unsigned	w1, w2;
+	unsigned	bigbuflen, len;
 
-// check for message overflow
+	// check for message overflow
 	if (chan->message.overflowed)
 	{
-		chan->fatal_error = true;
+		chan->fatal_error = qtrue;
 		Com_Printf ("%s:Outgoing message overflow\n"
 			, NET_AdrToString (&chan->remote_address));
 		return;
@@ -236,10 +243,59 @@ void Netchan_Transmit (netchan_t *chan, int length, byte *data)
 		chan->reliable_sequence ^= 1;
 	}
 
-
-// write the packet header
+	// initialize our packet buffer
 	SZ_Init (&send, send_buf, sizeof(send_buf));
 
+	// zero-fill our buffer for huffman compression
+	datatype = DATA_COMPRESSED;
+
+	bigbuflen = 0;
+	memset (bigbuf, 0, sizeof(bigbuf));
+
+	// copy the reliable message to the packet first
+	if (send_reliable)
+	{
+		memcpy (bigbuf, chan->reliable_buf, chan->reliable_length);
+		bigbuflen += chan->reliable_length;
+		chan->last_reliable_sequence = chan->outgoing_sequence;
+	}
+
+	// add the unreliable part if space is available
+	if (sizeof(bigbuf) - bigbuflen >= length)
+	{
+		send_unreliable = qtrue;
+		memcpy (bigbuf+bigbuflen, data, length);
+		bigbuflen += length;
+	}
+	else
+	{
+		send_unreliable = qfalse;
+		Com_Printf ("Netchan_Transmit: dumped unreliable\n");
+	}
+
+	// compress leaving space for header
+	len = Huff_EncodeStatic (bigbuf, bigbuflen, compressed, sizeof(compressed));
+	if (len >= bigbuflen)					// no compression
+		datatype = DATA_RAW;
+	else if (len > sizeof(compressed))
+	{	// try sending reliable data only
+		if (send_unreliable)
+		{
+			Com_Printf ("Netchan_Transmit: dumped unreliable\n");
+
+			len = Huff_EncodeStatic (bigbuf, bigbuflen -= length, compressed, sizeof(compressed));
+			if (len >= bigbuflen)					// no compression
+				datatype = DATA_RAW;
+			else if (len > sizeof(compressed))
+				Com_Error (ERR_FATAL, "Netchan_Transmit: buffer overflow");
+		}
+		else
+		{
+			Com_Error (ERR_FATAL, "Netchan_Transmit: buffer overflow");
+		}
+	}
+
+	// write the packet header
 	w1 = ( chan->outgoing_sequence & ~(1<<31) ) | (send_reliable<<31);
 	w2 = ( chan->incoming_sequence & ~(1<<31) ) | (chan->incoming_reliable_sequence<<31);
 
@@ -253,20 +309,14 @@ void Netchan_Transmit (netchan_t *chan, int length, byte *data)
 	if (chan->sock == NS_CLIENT)
 		MSG_WriteShort (&send, qport->value);
 
-// copy the reliable message to the packet first
-	if (send_reliable)
-	{
-		SZ_Write (&send, chan->reliable_buf, chan->reliable_length);
-		chan->last_reliable_sequence = chan->outgoing_sequence;
-	}
-	
-// add the unreliable part if space is available
-	if (send.maxsize - send.cursize >= length)
-		SZ_Write (&send, data, length);
+	// write compression type
+	MSG_WriteByte (&send, datatype);
+	if (datatype == DATA_RAW)
+		SZ_Write (&send, bigbuf, bigbuflen);
 	else
-		Com_Printf ("Netchan_Transmit: dumped unreliable\n");
+		SZ_Write (&send, compressed, len);
 
-// send the datagram
+	// send the datagram
 	NET_SendPacket (chan->sock, send.cursize, send.data, chan->remote_address);
 
 	if (showpackets->value)
@@ -295,26 +345,50 @@ called when the current net_message is from remote_address
 modifies net_message so that it points to the packet payload
 =================
 */
-qboolean Netchan_Process (netchan_t *chan, sizebuf_t *msg)
+qboolean Netchan_Process (netchan_t *chan, sizebuf_t *recieved, sizebuf_t *msg)
 {
 	unsigned	sequence, sequence_ack;
 	unsigned	reliable_ack, reliable_message;
-	int			qport;
+	int			qport, datatype, length, headerlength;
+	qbyte		bigbuf[MAX_MSGLEN], compressed[MAX_PACKETLEN-PACKET_HEADER];
 
-// get sequence numbers		
-	MSG_BeginReading (msg);
-	sequence = MSG_ReadLong (msg);
-	sequence_ack = MSG_ReadLong (msg);
-
-	// read the qport if we are a server
-	if (chan->sock == NS_SERVER)
-		qport = MSG_ReadShort (msg);
+	// get sequence numbers		
+	MSG_BeginReading (recieved);
+	sequence = MSG_ReadLong (recieved);
+	sequence_ack = MSG_ReadLong (recieved);
 
 	reliable_message = sequence >> 31;
 	reliable_ack = sequence_ack >> 31;
 
 	sequence &= ~(1<<31);
 	sequence_ack &= ~(1<<31);	
+
+	// read the qport if we are a server
+	if (chan->sock == NS_SERVER)
+		qport = MSG_ReadShort (recieved);
+
+	// read compression type
+	datatype = MSG_ReadByte (recieved);
+
+	headerlength = recieved->readcount;
+	SZ_Init (msg, msg->data, msg->maxsize);
+	SZ_Write (msg, recieved->data, headerlength);
+	length = recieved->cursize - headerlength;
+
+	if (datatype == DATA_RAW)
+		SZ_Write (msg, recieved->data + headerlength, length);
+	else
+	{
+		if (length <= sizeof(compressed))
+			memcpy (compressed, recieved->data + headerlength, length);
+		else
+			Com_Error (ERR_FATAL, "Netchan_Process: buffer overflow");
+		length = Huff_DecodeStatic (compressed, length, bigbuf, sizeof(bigbuf));
+		SZ_Write (msg, bigbuf, length);
+	}
+
+	// skip header for other functions
+	msg->readcount = headerlength;
 
 	if (showpackets->value)
 	{
@@ -343,7 +417,7 @@ qboolean Netchan_Process (netchan_t *chan, sizebuf_t *msg)
 				, NET_AdrToString (&chan->remote_address)
 				,  sequence
 				, chan->incoming_sequence);
-		return false;
+		return qfalse;
 	}
 
 //
@@ -382,6 +456,6 @@ qboolean Netchan_Process (netchan_t *chan, sizebuf_t *msg)
 //
 	chan->last_received = curtime;
 
-	return true;
+	return qtrue;
 }
 

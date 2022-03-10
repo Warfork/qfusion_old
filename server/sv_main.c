@@ -22,6 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 netadr_t	master_adr[MAX_MASTERS];	// address of group servers
 
+mempool_t	*sv_mempool;
+
 client_t	*sv_client;			// current client
 
 cvar_t	*sv_paused;
@@ -40,8 +42,6 @@ cvar_t	*allow_download_models;
 cvar_t	*allow_download_sounds;
 cvar_t	*allow_download_maps;
 
-cvar_t	*sv_airaccelerate;
-
 cvar_t	*sv_noreload;			// don't reload level state when reentering
 
 cvar_t	*sv_maxclients;
@@ -51,8 +51,6 @@ cvar_t	*sv_hostname;
 cvar_t	*sv_public;			// should heartbeats be sent
 
 cvar_t	*sv_reconnectlimit;	// minimum seconds between connect messages
-
-void Master_Shutdown (void);
 
 
 //============================================================================
@@ -108,45 +106,47 @@ Builds the string that is sent as heartbeats and status replies
 */
 char	*SV_StatusString (void)
 {
-	char	player[1024];
+	char	tempstr[1024];
 	static char	status[MAX_MSGLEN - 16];
-	int		i;
+	int		i, count;
 	client_t	*cl;
 	int		statusLength;
-	int		playerLength;
+	int		tempstrLength;
 
 	strcpy (status, Cvar_Serverinfo());
-	strcat (status, "\n");
 	statusLength = strlen(status);
+
+	count = 0;
+	for (i=0 ; i<sv_maxclients->value ; i++)
+	{
+		cl = &svs.clients[i];
+		if (cl->state >= cs_connected )
+			count++;
+	}
+
+	Com_sprintf (tempstr, sizeof(tempstr), "\\clients\\%i\n", count);
+	tempstrLength = strlen(tempstr);
+	if (statusLength + tempstrLength >= sizeof(status) )
+		return status;		// can't hold any more
+	strcpy (status + statusLength, tempstr);
+	statusLength += tempstrLength;
 
 	for (i=0 ; i<sv_maxclients->value ; i++)
 	{
 		cl = &svs.clients[i];
 		if (cl->state == cs_connected || cl->state == cs_spawned )
 		{
-			Com_sprintf (player, sizeof(player), "%i %i \"%s\"\n", 
-				cl->edict->client->ps.stats[STAT_FRAGS], cl->ping, cl->name);
-			playerLength = strlen(player);
-			if (statusLength + playerLength >= sizeof(status) )
+			Com_sprintf (tempstr, sizeof(tempstr), "%i %i \"%s\"\n", 
+				cl->edict->r.client->r.frags, cl->ping, cl->name);
+			tempstrLength = strlen(tempstr);
+			if (statusLength + tempstrLength >= sizeof(status) )
 				break;		// can't hold any more
-			strcpy (status + statusLength, player);
-			statusLength += playerLength;
+			strcpy (status + statusLength, tempstr);
+			statusLength += tempstrLength;
 		}
 	}
 
 	return status;
-}
-
-/*
-================
-SVC_Status
-
-Responds with all the info that qplug or qspy can see
-================
-*/
-void SVC_Status (void)
-{
-	Netchan_OutOfBandPrint (NS_SERVER, net_from, "print\n%s", SV_StatusString());
 }
 
 /*
@@ -173,24 +173,34 @@ void SVC_Info (void)
 	char	string[64];
 	int		i, count;
 	int		version;
+	qboolean no_empty, no_full;
 
 	if (sv_maxclients->value == 1)
 		return;		// ignore in single player
 
 	version = atoi (Cmd_Argv(1));
 
-	if (version != PROTOCOL_VERSION)
-		Com_sprintf (string, sizeof(string), "%s: wrong version\n", sv_hostname->string, sizeof(string));
-	else
-	{
-		count = 0;
-		for (i=0 ; i<sv_maxclients->value ; i++)
-			if (svs.clients[i].state >= cs_connected)
-				count++;
-
-		Com_sprintf (string, sizeof(string), "%16s %8s %2i/%2i\n", sv_hostname->string, sv.name, count, (int)sv_maxclients->value);
+	if ( version != PROTOCOL_VERSION ) {
+		Com_sprintf ( string, sizeof(string), "%s: wrong version\n", sv_hostname->string, sizeof(string) );
+		return;
 	}
 
+	count = 0;
+	for (i=0 ; i<sv_maxclients->value ; i++)
+		if (svs.clients[i].state >= cs_connected)
+			count++;
+
+	no_full = strcmp (Cmd_Argv(2), "full") && strcmp (Cmd_Argv(3), "full" );
+	if ( (count == sv_maxclients->value) && no_full ) {
+		return;
+	}
+
+	no_empty = strcmp (Cmd_Argv(2), "empty") && strcmp (Cmd_Argv(3), "empty" );
+	if ( (count == 0) && no_empty ) {
+		return;
+	}
+
+	Com_sprintf (string, sizeof(string), "%16s %8s %2i/%2i\n", sv_hostname->string, sv.name, count, (int)sv_maxclients->value);
 	Netchan_OutOfBandPrint (NS_SERVER, net_from, "info\n%s", string);
 }
 
@@ -371,7 +381,7 @@ gotnewcl:
 	*newcl = temp;
 	sv_client = newcl;
 	edictnum = (newcl-svs.clients)+1;
-	ent = EDICT_NUM(edictnum);
+	ent = EDICT_NUM (edictnum);
 	newcl->edict = ent;
 	newcl->challenge = challenge; // save challenge for checksumming
 
@@ -394,12 +404,12 @@ gotnewcl:
 	// send the connect packet to the client
 	Netchan_OutOfBandPrint (NS_SERVER, adr, "client_connect");
 
-	Netchan_Setup (NS_SERVER, &newcl->netchan , adr, qport);
+	Netchan_Setup (NS_SERVER, &newcl->netchan, adr, qport);
 
 	newcl->state = cs_connected;
 	
 	SZ_Init (&newcl->datagram, newcl->datagram_buf, sizeof(newcl->datagram_buf) );
-	newcl->datagram.allowoverflow = true;
+	newcl->datagram.allowoverflow = qtrue;
 	newcl->lastmessage = svs.realtime;	// don't timeout
 	newcl->lastconnect = svs.realtime;
 }
@@ -473,12 +483,12 @@ void SV_ConnectionlessPacket (void)
 	char	*s;
 	char	*c;
 
-	MSG_BeginReading (&net_message);
-	MSG_ReadLong (&net_message);		// skip the -1 marker
+	MSG_BeginReading (&net_recieved);
+	MSG_ReadLong (&net_recieved);		// skip the -1 marker
 
-	s = MSG_ReadStringLine (&net_message);
+	s = MSG_ReadStringLine (&net_recieved);
 
-	Cmd_TokenizeString (s, false);
+	Cmd_TokenizeString (s, qfalse);
 
 	c = Cmd_Argv(0);
 	Com_DPrintf ("Packet %s : %s\n", NET_AdrToString(&net_from), c);
@@ -487,10 +497,10 @@ void SV_ConnectionlessPacket (void)
 		SVC_Ping ();
 	else if (!strcmp(c, "ack"))
 		SVC_Ack ();
-	else if (!strcmp(c, "status"))
-		SVC_Status ();
 	else if (!strcmp(c, "info"))
 		SVC_Info ();
+	else if (!strcmp(c, "getinfo"))
+		SVC_MasterInfoResponse ();
 	else if (!strcmp(c, "getchallenge"))
 		SVC_GetChallenge ();
 	else if (!strcmp(c, "connect"))
@@ -544,7 +554,7 @@ void SV_CalcPings (void)
 #endif
 
 		// let the game dll know about the ping
-		cl->edict->client->ping = cl->ping;
+		cl->edict->r.client->r.ping = cl->ping;
 	}
 }
 
@@ -587,10 +597,10 @@ void SV_ReadPackets (void)
 	client_t	*cl;
 	int			qport;
 
-	while (NET_GetPacket (NS_SERVER, &net_from, &net_message))
+	while (NET_GetPacket (NS_SERVER, &net_from, &net_recieved))
 	{
 		// check for connectionless packet (0xffffffff) first
-		if (*(int *)net_message.data == -1)
+		if (*(int *)net_recieved.data == -1)
 		{
 			SV_ConnectionlessPacket ();
 			continue;
@@ -598,15 +608,18 @@ void SV_ReadPackets (void)
 
 		// read the qport out of the message so we can fix up
 		// stupid address translating routers
-		MSG_BeginReading (&net_message);
-		MSG_ReadLong (&net_message);		// sequence number
-		MSG_ReadLong (&net_message);		// sequence number
-		qport = MSG_ReadShort (&net_message) & 0xffff;
+		MSG_BeginReading (&net_recieved);
+		MSG_ReadLong (&net_recieved);		// sequence number
+		MSG_ReadLong (&net_recieved);		// sequence number
+		qport = MSG_ReadShort (&net_recieved) & 0xffff;
+		// data follows
 
 		// check for packets from connected clients
 		for (i=0, cl=svs.clients ; i<sv_maxclients->value ; i++,cl++)
 		{
 			if (cl->state == cs_free)
+				continue;
+			if (cl->edict && (cl->edict->r.svflags & SVF_FAKECLIENT))
 				continue;
 			if (!NET_CompareBaseAdr (&net_from, &cl->netchan.remote_address))
 				continue;
@@ -618,7 +631,7 @@ void SV_ReadPackets (void)
 				cl->netchan.remote_address.port = net_from.port;
 			}
 
-			if (Netchan_Process(&cl->netchan, &net_message))
+			if (Netchan_Process(&cl->netchan, &net_recieved, &net_message))
 			{	// this is a valid, sequenced packet, so process it
 				if (cl->state != cs_zombie)
 				{
@@ -692,13 +705,14 @@ void SV_PrepWorldFrame (void)
 	edict_t	*ent;
 	int		i;
 
-	for (i=0 ; i<ge->num_edicts ; i++, ent++)
+	for (i=0 ; i<sv.num_edicts ; i++, ent++)
 	{
 		ent = EDICT_NUM(i);
-		// events only last for a single message
-		ent->s.event = 0;
-	}
 
+		// events only last for a single message
+		ent->s.events[0] = ent->s.events[1] = 0;
+		ent->s.eventParms[0] = ent->s.eventParms[1] = 0;
+	}
 }
 
 
@@ -735,7 +749,6 @@ void SV_RunGameFrame (void)
 
 	if (host_speeds->value)
 		time_after_game = Sys_Milliseconds ();
-
 }
 
 /*
@@ -797,7 +810,6 @@ void SV_Frame (int msec)
 
 	// clear teleport flags, etc for next frame
 	SV_PrepWorldFrame ();
-
 }
 
 //============================================================================
@@ -813,7 +825,6 @@ let it know we are alive, and log information
 #define	HEARTBEAT_SECONDS	300
 void Master_Heartbeat (void)
 {
-	char		*string;
 	int			i;
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
@@ -833,28 +844,24 @@ void Master_Heartbeat (void)
 
 	svs.last_heartbeat = svs.realtime;
 
-	// send the same string that we would give for a status OOB command
-	string = SV_StatusString();
-
 	// send to group master
 	for (i=0 ; i<MAX_MASTERS ; i++)
 		if (master_adr[i].port)
 		{
 			Com_Printf ("Sending heartbeat to %s\n", NET_AdrToString (&master_adr[i]));
-			Netchan_OutOfBandPrint (NS_SERVER, master_adr[i], "heartbeat\n%s", string);
+			Netchan_OutOfBandPrint (NS_SERVER, master_adr[i], "heartbeat %s\n", APPLICATION);
 		}
 }
 
 /*
-=================
-Master_Shutdown
+================
+SVC_MasterInfoResponse
 
-Informs all masters that this server is going down
-=================
+================
 */
-void Master_Shutdown (void)
+void SVC_MasterInfoResponse (void)
 {
-	int			i;
+	char		*string;
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
 	if (!dedicated || !dedicated->value)
@@ -864,14 +871,10 @@ void Master_Shutdown (void)
 	if (!sv_public || !sv_public->value)
 		return;		// a private dedicated game
 
-	// send to group master
-	for (i=0 ; i<MAX_MASTERS ; i++)
-		if (master_adr[i].port)
-		{
-			if (i > 0)
-				Com_Printf ("Sending heartbeat to %s\n", NET_AdrToString (&master_adr[i]));
-			Netchan_OutOfBandPrint (NS_SERVER, master_adr[i], "shutdown");
-		}
+	// send the same string that we would give for a status OOB command
+	string = SV_StatusString();
+
+	Netchan_OutOfBandPrint (NS_SERVER, net_from, "infoResponse\n%s\\challenge\\%s", string, Cmd_Argv(1));
 }
 
 //============================================================================
@@ -937,7 +940,7 @@ void SV_Init (void)
 	Cvar_Get ("skill", "1", 0);
 	Cvar_Get ("deathmatch", "1", CVAR_LATCH);
 	Cvar_Get ("coop", "0", CVAR_LATCH);
-	Cvar_Get ("dmflags", va("%i", DF_INSTANT_ITEMS), CVAR_SERVERINFO);
+	Cvar_Get ("dmflags", 0, CVAR_SERVERINFO);
 	Cvar_Get ("fraglimit", "0", CVAR_SERVERINFO);
 	Cvar_Get ("capturelimit", "0", CVAR_SERVERINFO);
 	Cvar_Get ("timelimit", "0", CVAR_SERVERINFO);
@@ -957,16 +960,17 @@ void SV_Init (void)
 	allow_download_sounds = Cvar_Get ("allow_download_sounds", "1", CVAR_ARCHIVE);
 	allow_download_maps	  = Cvar_Get ("allow_download_maps", "1", CVAR_ARCHIVE);
 
+	sv_mempool = Mem_AllocPool ( NULL, "Server" );
+
 	sv_maxclients = Cvar_Get ("sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
 
 	sv_noreload = Cvar_Get ("sv_noreload", "0", 0);
-
-	sv_airaccelerate = Cvar_Get("sv_airaccelerate", "0", CVAR_LATCH);
 
 	sv_public = Cvar_Get ("sv_public", "0", 0);
 
 	sv_reconnectlimit = Cvar_Get ("sv_reconnectlimit", "3", CVAR_ARCHIVE);
 
+	SZ_Init (&net_recieved, net_recieved_buffer, sizeof(net_recieved_buffer));
 	SZ_Init (&net_message, net_message_buffer, sizeof(net_message_buffer));
 }
 
@@ -986,9 +990,8 @@ void SV_FinalMessage (char *message, qboolean reconnect)
 	client_t	*cl;
 	
 	SZ_Clear (&net_message);
-	MSG_WriteByte (&net_message, svc_print);
-	MSG_WriteByte (&net_message, PRINT_HIGH);
-	MSG_WriteString (&net_message, message);
+	MSG_WriteByte (&net_message, svc_servercmd);
+	MSG_WriteString (&net_message, va ("pr %i \"%s\"", PRINT_HIGH, message));
 
 	if (reconnect)
 		MSG_WriteByte (&net_message, svc_reconnect);
@@ -1024,7 +1027,6 @@ void SV_Shutdown (char *finalmsg, qboolean reconnect)
 	if (svs.clients)
 		SV_FinalMessage (finalmsg, reconnect);
 
-	Master_Shutdown ();
 	SV_ShutdownGameProgs ();
 
 	// get any latched variable changes (sv_maxclients, etc)
@@ -1037,12 +1039,9 @@ void SV_Shutdown (char *finalmsg, qboolean reconnect)
 	Com_SetServerState (sv.state);
 
 	// free server static data
-	if (svs.clients)
-		Z_Free (svs.clients);
-	if (svs.client_entities)
-		Z_Free (svs.client_entities);
 	if (svs.demofile)
 		fclose (svs.demofile);
+	Mem_EmptyPool (sv_mempool);
 	memset (&svs, 0, sizeof(svs));
 }
 

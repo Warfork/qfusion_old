@@ -1,5 +1,5 @@
 /*
-Copyright (C) 1997-2001 Id Software, Inc.
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -19,114 +19,142 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "client.h"
-#include "../ui/ui.h"
+#include "../ui/ui_public.h"
 
 // Structure containing functions exported from user interface DLL
 ui_export_t	*uie;
 
-#define	MAXPRINTMSG	4096
-void UI_Printf (int print_level, char *fmt, ...)
+mempool_t	*ui_mempool;
+
+/*
+===============
+CL_UIModule_Print
+===============
+*/
+static void CL_UIModule_Print ( char *msg ) {
+	Com_Printf ( "%s", msg );
+}
+
+/*
+===============
+CL_UIModule_Error
+===============
+*/
+static void CL_UIModule_Error ( char *msg ) {
+	Com_Error ( ERR_FATAL, "%s", msg );
+}
+
+/*
+===============
+CL_UIModule_GetConfigString
+===============
+*/
+static void CL_UIModule_GetConfigString ( int i, char *str, int size )
 {
-	va_list		argptr;
-	char		msg[MAXPRINTMSG];
-
-	va_start (argptr, fmt);
-	vsnprintf (msg, sizeof(msg), fmt, argptr);
-	va_end (argptr);
-
-	if (print_level == PRINT_ALL)
-	{
-		Com_Printf ("%s", msg);
+	if ( i < 0 || i >= MAX_CONFIGSTRINGS ) {
+		Com_Error ( ERR_DROP, "CL_UIModule_GetConfigString: i > MAX_CONFIGSTRINGS" );
 	}
-	else if ( print_level == PRINT_DEVELOPER )
-	{
-		Com_DPrintf ("%s", msg);
+	if ( !str || size <= 0 ) {
+		Com_Error ( ERR_DROP, "CL_UIModule_GetConfigString: NULL string" );
 	}
+
+	Q_strncpyz ( str, cl.configstrings[i], size );
 }
 
-void UI_Error (int err_level, char *fmt, ...)
-{
-	va_list		argptr;
-	char		msg[MAXPRINTMSG];
-	
-	va_start (argptr, fmt);
-	vsnprintf (msg, sizeof(msg), fmt, argptr);
-	va_end (argptr);
-
-	Com_Error (err_level, "%s", msg);
+/*
+===============
+CL_UIModule_MemAlloc
+===============
+*/
+static void *CL_UIModule_MemAlloc ( mempool_t *pool, int size, const char *filename, int fileline ) {
+	return _Mem_Alloc ( pool, size, MEMPOOL_USERINTERFACE, 0, filename, fileline );
 }
 
-void VID_GetCurrentInfo (int *width, int *height)
-{
-	if (width)
-		*width = viddef.width;
-	if (height)
-		*height = viddef.height;
+/*
+===============
+CL_UIModule_MemFree
+===============
+*/
+static void CL_UIModule_MemFree ( void *data, const char *filename, int fileline ) {
+	_Mem_Free ( data, MEMPOOL_USERINTERFACE, 0, filename, fileline );
 }
 
-int CL_GetTime (void)
-{
-	return cls.realtime;
+/*
+===============
+CL_UIModule_MemAllocPool
+===============
+*/
+static mempool_t *CL_UIModule_MemAllocPool ( const char *name, const char *filename, int fileline ) {
+	return _Mem_AllocPool ( ui_mempool, name, MEMPOOL_USERINTERFACE, filename, fileline );
 }
 
-void CL_SetKeyDest ( int key_dest )
-{
-	if (key_dest < key_game || key_dest > key_menu)
-		Com_Error (ERR_DROP, "CL_SetKeyDest_f: invalid key_dest");
-	cls.key_dest = key_dest;
+/*
+===============
+CL_UIModule_MemFreePool
+===============
+*/
+static void CL_UIModule_MemFreePool ( mempool_t **pool, const char *filename, int fileline ) {
+	_Mem_FreePool ( pool, MEMPOOL_USERINTERFACE, 0, filename, fileline );
 }
 
-void CL_ResetServerCount ( void )
-{
-	cl.servercount = -1;
-}
-
-char *Key_GetBindingBuf (int binding)
-{
-	return keybindings[binding];
+/*
+===============
+CL_UIModule_MemEmptyPool
+===============
+*/
+static void CL_UIModule_MemEmptyPool ( mempool_t *pool, const char *filename, int fileline ) {
+	_Mem_EmptyPool ( pool, MEMPOOL_GAMEPROGS, 0, filename, fileline );
 }
 
 /*
 ==============
-UI_Init
+CL_UIModule_Init
 ==============
 */
-void UI_Init (void)
+void CL_UIModule_Init (void)
 {
+	int apiversion;
 	ui_import_t	ui;
 
-	UI_Shutdown ();
+	CL_UIModule_Shutdown ();
 
-	ui.RenderFrame = R_RenderFrame;
-	ui.RegisterModel = R_RegisterModel;
-	ui.RegisterPic = R_RegisterPic;
-	ui.RegisterSkin = R_RegisterSkin;
-	ui.EndFrame = GLimp_EndFrame;
+	ui_mempool = Mem_AllocPool ( NULL, "User Iterface" );
+
+	ui.Error = CL_UIModule_Error;
+	ui.Print = CL_UIModule_Print;
+
+	ui.R_RenderFrame = R_RenderFrame;
+	ui.R_EndFrame = GLimp_EndFrame;
+	ui.R_ModelBounds = R_ModelBounds;
+	ui.R_RegisterModel = R_RegisterModel;
+	ui.R_RegisterPic = R_RegisterPic;
+	ui.R_RegisterSkin = R_RegisterSkin;
+	ui.R_RegisterSkinFile = R_RegisterSkinFile;
+	ui.R_LerpAttachment = R_LerpAttachment;
 
 	ui.S_StartLocalSound = S_StartLocalSound;
 
-	ui.CL_Quit = CL_Quit_f;
-	ui.CL_GetTime = CL_GetTime;
+	ui.CL_Quit = CL_Quit;
 	ui.CL_SetKeyDest = CL_SetKeyDest;
 	ui.CL_ResetServerCount = CL_ResetServerCount;
+	ui.CL_GetClipboardData = CL_GetClipboardData;
 
 	ui.Cmd_AddCommand = Cmd_AddCommand;
 	ui.Cmd_RemoveCommand = Cmd_RemoveCommand;
 	ui.Cmd_ExecuteText = Cbuf_ExecuteText;
 	ui.Cmd_Execute = Cbuf_Execute;
 
-	ui.GetClientState = Com_ClientState;
-	ui.GetServerState = Com_ServerState;
-
-	ui.Con_Printf = UI_Printf;
-	ui.Sys_Error = UI_Error;
-
 	ui.FS_LoadFile = FS_LoadFile;
 	ui.FS_FreeFile = FS_FreeFile;
 	ui.FS_FileExists = FS_FileExists;
 	ui.FS_Gamedir = FS_Gamedir;
 	ui.FS_ListFiles = FS_GetFileList;
-	ui.FS_NextPath = FS_NextPath;
+
+	ui.Mem_Alloc = CL_UIModule_MemAlloc;
+	ui.Mem_Free = CL_UIModule_MemFree;
+	ui.Mem_AllocPool = CL_UIModule_MemAllocPool;
+	ui.Mem_FreePool = CL_UIModule_MemFreePool;
+	ui.Mem_EmptyPool = CL_UIModule_MemEmptyPool;
 
 	ui.Cvar_Get = Cvar_Get;
 	ui.Cvar_Set = Cvar_Set;
@@ -139,99 +167,125 @@ void UI_Init (void)
 	ui.Key_GetBindingBuf = Key_GetBindingBuf;
 	ui.Key_KeynumToString = Key_KeynumToString;
 	ui.Key_SetBinding = Key_SetBinding;
+	ui.Key_IsDown = Key_IsDown;
 
-	ui.DrawStretchPic = Draw_StretchPic;
-	ui.DrawChar = Draw_Char;
-	ui.DrawString = Draw_String;
-	ui.DrawPropString = Draw_PropString;
-	ui.PropStringLength = Q_PropStringLength;
-	ui.FillRect = Draw_FillRect;
+	ui.GetConfigString = CL_UIModule_GetConfigString;
 
-	ui.Vid_GetCurrentInfo = VID_GetCurrentInfo;
+	ui.Draw_StretchPic = Draw_StretchPic;
 
-	uie = (ui_export_t *) Sys_LoadLibrary (LIB_UI, &ui);
+	uie = ( ui_export_t * )Sys_LoadLibrary ( LIB_UI, &ui );
+	if ( !uie ) {
+		Com_Error ( ERR_DROP, "Failed to load UI dll" );
+	}
 
-	if (!uie)
-		Com_Error (ERR_DROP, "Failed to load UI dll");
+	apiversion = uie->API ();
+	if ( apiversion != UI_API_VERSION ) {
+		Sys_UnloadLibrary ( LIB_UI );
+		Mem_FreePool ( &ui_mempool );
+		uie = NULL;
 
-	if (uie->api_version != UI_API_VERSION)
-		Com_Error (ERR_FATAL, "ui version is %i, not %i", uie->api_version,
-			UI_API_VERSION);
+		Com_Error ( ERR_FATAL, "ui version is %i, not %i", apiversion, UI_API_VERSION );
+	}
 
-	uie->Init ();
+	uie->Init ( viddef.width, viddef.height );
 }
 
-void UI_Shutdown ( void )
+/*
+===============
+CL_UIModule_Shutdown
+===============
+*/
+void CL_UIModule_Shutdown ( void )
 {
 	if ( !uie )
 		return;
 
 	uie->Shutdown ();
-	Sys_UnloadLibrary (LIB_UI);
+	Sys_UnloadLibrary ( LIB_UI );
+	Mem_FreePool ( &ui_mempool );
 	uie = NULL;
 }
 
-void UI_Refresh ( int frametime )
+/*
+===============
+CL_UIModule_Refresh
+===============
+*/
+void CL_UIModule_Refresh ( qboolean backGround )
 {
-	if ( !uie )
-		return;
-
-	// repaint everything next frame
-	SCR_DirtyScreen ();
-
-	// dim everything behind it down
-	if (cl.cin.time > 0)
-		Draw_FillRect (0, 0, viddef.width, viddef.height, colorBlack);
-
-	uie->Refresh ( frametime );
+	if ( uie ) {
+		uie->Refresh ( cls.realtime, Com_ClientState (), Com_ServerState (), backGround );
+	}
 }
 
-void UI_Update (void)
+/*
+===============
+CL_UIModule_DrawConnectScreen
+===============
+*/
+void CL_UIModule_DrawConnectScreen ( qboolean backGround )
 {
-	if ( !uie )
-		return;
-
-	uie->Update ();
+	if ( uie ) {
+		uie->DrawConnectScreen ( cls.servername, cls.connect_count, backGround );
+	}
 }
 
-void UI_Keydown (int key)
+/*
+===============
+CL_UIModule_Keydown
+===============
+*/
+void CL_UIModule_Keydown ( int key )
 {
-	if ( !uie )
-		return;
-
-	uie->Keydown (key);
+	if ( uie ) {
+		uie->Keydown ( key );
+	}
 }
 
-void UI_Menu_Main_f (void)
+/*
+===============
+CL_UIModule_MenuMain
+===============
+*/
+void CL_UIModule_MenuMain (void)
 {
-	if ( !uie )
-		return;
-
-	uie->MainMenu ();
+	if ( uie ) {
+		uie->MainMenu ();
+	}
 }
 
-void UI_ForceMenuOff (void)
+/*
+===============
+CL_UIModule_ForceMenuOff
+===============
+*/
+void CL_UIModule_ForceMenuOff (void)
 {
-	if ( !uie )
-		return;
-
-	uie->ForceMenuOff ();
+	if ( uie ) {
+		uie->ForceMenuOff ();
+	}
 }
 
-void UI_AddToServerList ( char *adr, char *info )
+/*
+===============
+CL_UIModule_AddToServerList
+===============
+*/
+void CL_UIModule_AddToServerList ( char *adr, char *info )
 {
-	if ( !uie )
-		return;
-
-	uie->AddToServerList ( adr, info );
+	if ( uie ) {
+		uie->AddToServerList ( adr, info );
+	}
 }
 
-void UI_MouseMove ( int dx, int dy )
+/*
+===============
+CL_UIModule_MouseMove
+===============
+*/
+void CL_UIModule_MouseMove ( int dx, int dy )
 {
-	if ( !uie )
-		return;
-
-	uie->MouseMove ( dx, dy );
+	if ( uie ) {
+		uie->MouseMove ( dx, dy );
+	}
 }
-
-

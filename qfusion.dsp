@@ -53,7 +53,7 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /machine:I386
-# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib /nologo /subsystem:windows /machine:I386 /nodefaultlib:"libc" /libpath:".\win32/lib"
+# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib dxguid.lib /nologo /subsystem:windows /machine:I386 /nodefaultlib:"libc" /libpath:".\win32/lib"
 # SUBTRACT LINK32 /pdb:none
 
 !ELSEIF  "$(CFG)" == "qfusion - Win32 Debug"
@@ -80,7 +80,7 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /debug /machine:I386
-# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib /nologo /subsystem:windows /profile /map /debug /machine:I386 /nodefaultlib:"libc" /libpath:".\win32/lib"
+# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib dxguid.lib /nologo /subsystem:windows /profile /map /debug /machine:I386 /nodefaultlib:"libc" /libpath:".\win32/lib"
 
 !ENDIF 
 
@@ -101,7 +101,7 @@ SOURCE=.\client\cl_cin.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\client\cl_decals.c
+SOURCE=.\client\cl_demo.c
 # End Source File
 # Begin Source File
 
@@ -109,11 +109,7 @@ SOURCE=.\client\cl_ents.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\client\cl_events.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\client\cl_fx.c
+SOURCE=.\client\cl_game.c
 # End Source File
 # Begin Source File
 
@@ -129,23 +125,11 @@ SOURCE=.\client\cl_parse.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\client\cl_pred.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\client\cl_scrn.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\client\cl_tent.c
+SOURCE=.\client\cl_screen.c
 # End Source File
 # Begin Source File
 
 SOURCE=.\client\cl_ui.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\client\cl_view.c
 # End Source File
 # Begin Source File
 
@@ -169,10 +153,6 @@ SOURCE=.\client\console.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\crc.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\qcommon\cvar.c
 # End Source File
 # Begin Source File
@@ -185,6 +165,10 @@ SOURCE=.\win32\glw_imp.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\qcommon\huff.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\win32\in_win.c
 # End Source File
 # Begin Source File
@@ -193,11 +177,11 @@ SOURCE=.\client\keys.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\game\m_flash.c
+SOURCE=.\qcommon\mdfour.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\mdfour.c
+SOURCE=.\qcommon\mem.c
 # End Source File
 # Begin Source File
 
@@ -213,7 +197,7 @@ SOURCE=.\qcommon\patch.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\pmove.c
+SOURCE=.\game\q_math.c
 # End Source File
 # Begin Source File
 
@@ -238,10 +222,6 @@ SOURCE=.\ref_gl\r_backend.c
 # Begin Source File
 
 SOURCE=.\ref_gl\r_cin.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\ref_gl\r_dpm.c
 # End Source File
 # Begin Source File
 
@@ -282,6 +262,14 @@ SOURCE=.\ref_gl\r_shader.c
 # Begin Source File
 
 SOURCE=.\ref_gl\r_shadow.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\r_skin.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\r_skm.c
 # End Source File
 # Begin Source File
 
@@ -349,7 +337,7 @@ SOURCE=.\qcommon\unzip.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\win32\vid_dll.c
+SOURCE=.\win32\vid_win.c
 # End Source File
 # End Group
 # Begin Group "Header Files"
@@ -377,10 +365,6 @@ SOURCE=.\client\console.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\game\game.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\client\input.h
 # End Source File
 # Begin Source File
@@ -393,11 +377,19 @@ SOURCE=.\client\keys.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\win32\net_wins.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\game\q_shared.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\qcommon\qcommon.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\game\qfconfig.h
 # End Source File
 # Begin Source File
 
@@ -433,7 +425,7 @@ SOURCE=.\ref_gl\r_shadow.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\client\ref.h
+SOURCE=.\ref_gl\r_skin.h
 # End Source File
 # Begin Source File
 
@@ -457,15 +449,15 @@ SOURCE=.\client\sound.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\ui\ui.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\qcommon\unzip.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\client\vid.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\game\win32conf.h
 # End Source File
 # Begin Source File
 
@@ -489,11 +481,11 @@ SOURCE=.\win32\q2.ico
 # End Source File
 # Begin Source File
 
-SOURCE=.\win32\q2.rc
+SOURCE=.\win32\qe3.ico
 # End Source File
 # Begin Source File
 
-SOURCE=.\win32\qe3.ico
+SOURCE=.\win32\qf.rc
 # End Source File
 # End Group
 # End Target

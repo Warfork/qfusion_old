@@ -178,7 +178,7 @@ mark0:
 			surf = *mark++;
 
 			if ( (mesh = surf->mesh) && (surf->facetype != FACETYPE_FLARE) ) {
-				if ( !BoundsAndSphereIntersect (mesh->mins, mesh->maxs, light->origin, light->intensity) ) {
+				if ( !BoundsAndSphereIntersect (surf->mins, surf->maxs, light->origin, light->intensity) ) {
 					continue;
 				}
 			}
@@ -233,14 +233,14 @@ void R_MarkLights (void)
 R_AddDynamicLights
 =================
 */
-void R_AddDynamicLights ( meshbuffer_t *mb )
+void R_AddDynamicLights ( unsigned int dlightbits )
 {
 	dlight_t *light;
 	int i, j, lnum;
-	vec3_t point, tvec, dlorigin;
+	vec3_t tvec, dlorigin;
 	vec3_t vright, vup;
 	vec3_t dir1, dir2, normal, right, up, oldnormal;
-	float *v[3], dist, scale;
+	float *v[3], dist, fdist, scale;
 	index_t *oldIndexesArray, index[3];
 	int dlightNumIndexes, oldNumIndexes;
 
@@ -256,14 +256,14 @@ void R_AddDynamicLights ( meshbuffer_t *mb )
 	light = r_newrefdef.dlights;
 	for ( lnum = 0; lnum < r_newrefdef.num_dlights; lnum++, light++ )
 	{
-		if ( !(mb->dlightbits & (1<<lnum) ) )
+		if ( !(dlightbits & (1<<lnum) ) )
 			continue;		// not lit by this light
 
 		VectorSubtract ( light->origin, currententity->origin, dlorigin );
 		if ( !Matrix3_Compare (currententity->axis, axis_identity) )
 		{
-			VectorCopy ( dlorigin, point );
-			Matrix3_Multiply_Vec3 ( currententity->axis, point, dlorigin );
+			VectorCopy ( dlorigin, tvec );
+			Matrix3_Multiply_Vec3 ( currententity->axis, tvec, dlorigin );
 		}
 
 		qglColor3fv ( light->color );
@@ -288,21 +288,22 @@ void R_AddDynamicLights ( meshbuffer_t *mb )
 			// we have two edge directions, we can calculate a third vector from
 			// them, which is the direction of the surface normal
 			CrossProduct ( dir1, dir2, normal );
-			VectorNormalize ( normal );
-
-			VectorSubtract ( v[0], dlorigin, tvec );
-			dist = DotProduct ( tvec, normal );
-			if ( dist < 0 )
-				dist = -dist;
-			if ( dist >= light->intensity ) {
+			if ( VectorNormalize (normal) <= 0.1 ) {
 				continue;
 			}
 
-			VectorMA ( dlorigin, -dist, normal, point );
-			scale = DLIGHT_SCALE / (light->intensity - dist);
+			VectorSubtract ( dlorigin, v[0], tvec );
+			dist = fdist = DotProduct ( tvec, normal );
+			if ( fdist < 0 )
+				fdist = -fdist;
+			if ( fdist >= light->intensity ) {
+				continue;
+			}
+
+			scale = DLIGHT_SCALE / (light->intensity - fdist);
 
 			if ( !VectorCompare (normal, oldnormal) ) {
-				MakeNormalVectors ( normal, right, up );
+				MakeNormalVectors ( normal, up, right );
 				VectorCopy ( normal, oldnormal );
 			}
 
@@ -313,7 +314,7 @@ void R_AddDynamicLights ( meshbuffer_t *mb )
 			{		
 				// Get our texture coordinates
 				// Project the light image onto the face
-				VectorSubtract( v[j], point, tvec );
+				VectorSubtract( v[j], dlorigin, tvec );
 				
 				coordsArray[index[j]][0] = DotProduct( tvec, vright ) + 0.5f;
 				coordsArray[index[j]][1] = DotProduct( tvec, vup ) + 0.5f;
@@ -339,14 +340,33 @@ void R_AddDynamicLights ( meshbuffer_t *mb )
 
 /*
 ===============
+R_LightLatLongToDir
+===============
+*/
+inline void R_LightLatLongToDir ( qbyte latlong[2], vec3_t dir )
+{
+	float sin_a, sin_b, cos_a, cos_b;
+
+	sin_a = (float)latlong[0] * (1.0 / 255.0);
+	cos_a = R_FastSin ( sin_a + 0.25 );
+	sin_a = R_FastSin ( sin_a );
+	sin_b = (float)latlong[1] * (1.0 / 255.0);
+	cos_b = R_FastSin ( sin_b + 0.25 );
+	sin_b = R_FastSin ( sin_b );
+
+	VectorSet ( dir, cos_b * sin_a, sin_b * sin_a, cos_a );
+}
+
+/*
+===============
 R_LightDirForOrigin
 ===============
 */
 void R_LightDirForOrigin ( vec3_t origin, vec3_t dir )
 {
-	vec3_t vf, vf2;
-	float t[8], direction_uv[2], dot;
-	int vi[3], i, j, index[4];
+	vec3_t vf, vf2, tdir;
+	float t[8];
+	int vi[3], i, index[4];
 
 	if ( !r_worldmodel || (r_newrefdef.rdflags & RDF_NOWORLDMODEL) || !r_worldbmodel ||
 		 !r_worldbmodel->lightgrid || !r_worldbmodel->numlightgridelems ) {
@@ -384,26 +404,16 @@ void R_LightDirForOrigin ( vec3_t origin, vec3_t dir )
 	t[6] = vf2[0] * vf[1] * vf[2];
 	t[7] = vf[0] * vf[1] * vf[2];
 
-	for ( j = 0; j < 2; j++ ) {
-		direction_uv[j] = 0;
+	VectorClear ( dir );
 
-		for ( i = 0; i < 4; i++ ) {
-			direction_uv[j] += t[i*2] * r_worldbmodel->lightgrid[ index[i] ].direction[j];
-			direction_uv[j] += t[i*2+1] * r_worldbmodel->lightgrid[ index[i] + 1 ].direction[j];
-		}
-
-		direction_uv[j] = anglemod ( direction_uv[j] );
+	for ( i = 0; i < 4; i++ ) {
+		R_LightLatLongToDir ( r_worldbmodel->lightgrid[ index[i] ].direction, tdir );
+		VectorMA ( dir, t[i*2], tdir, dir );
+		R_LightLatLongToDir ( r_worldbmodel->lightgrid[ index[i] + 1 ].direction, tdir );
+		VectorMA ( dir, t[i*2+1], tdir, dir );
 	}
 
-	dot = direction_uv[0] * (1.0 / 255.0);
-	t[0] = R_FastSin ( dot + 0.25f );
-	t[1] = R_FastSin ( dot );
-
-	dot = direction_uv[1] * (1.0 / 255.0);
-	t[2] = R_FastSin ( dot + 0.25f );
-	t[3] = R_FastSin ( dot );
-
-	VectorSet ( dir, t[2] * t[1], t[3] * t[1], t[0] );
+	VectorNormalizeFast ( dir );
 }
 
 /*
@@ -411,13 +421,13 @@ void R_LightDirForOrigin ( vec3_t origin, vec3_t dir )
 R_LightForEntity
 ===============
 */
-void R_LightForEntity ( entity_t *e, byte *bArray )
+void R_LightForEntity ( entity_t *e, qbyte *bArray )
 {
 	vec3_t vf, vf2;
 	float *cArray;
-	float t[8], direction_uv[2], dot;
+	float t[8], dot;
 	int vi[3], i, j, index[4];
-	vec3_t dlorigin, ambient, diffuse, dir, direction;
+	vec3_t dlorigin, ambient, diffuse, dir, tdir, direction;
 	vec4_t tempColorsArray[MAX_ARRAY_VERTS];
 
 	if ( (e->flags & RF_FULLBRIGHT) || r_fullbright->value ) {
@@ -425,9 +435,9 @@ void R_LightForEntity ( entity_t *e, byte *bArray )
 		return;
 	}
 
-	// probably a weird shader, see mpteam4 for example
+	// probably weird shader, see mpteam4 for example
 	if ( !e->model || (e->model->type == mod_brush) ) {
-		memset ( bArray, 0, sizeof(byte_vec4_t)*numColors );
+		memset ( bArray, 255, sizeof(byte_vec4_t)*numColors );
 		return;
 	}
 
@@ -437,11 +447,14 @@ void R_LightForEntity ( entity_t *e, byte *bArray )
 
 	if ( !r_worldmodel || (r_newrefdef.rdflags & RDF_NOWORLDMODEL) || !r_worldbmodel ||
 		 !r_worldbmodel->lightgrid || !r_worldbmodel->numlightgridelems ) {
+		cArray = tempColorsArray[0];
+		for ( i = 0; i < numColors; i++, cArray += 4 )
+			cArray[0] = cArray[1] = cArray[2] = cArray[3] = 0;
 		goto dynamic;
 	}
 
 	for ( i = 0; i < 3; i++ ) {
-		vf[i] = (e->origin[i] - r_worldmodel->gridMins[i]) / r_worldmodel->gridSize[i];
+		vf[i] = (e->lightingOrigin[i] - r_worldmodel->gridMins[i]) / r_worldmodel->gridSize[i];
 		vi[i] = (int)vf[i];
 		vf[i] = vf[i] - floor(vf[i]);
 		vf2[i] = 1.0f - vf[i];
@@ -479,16 +492,16 @@ void R_LightForEntity ( entity_t *e, byte *bArray )
 		}
 	}
 
-	for ( j = 0; j < 2; j++ ) {
-		direction_uv[j] = 0;
+	VectorClear ( dir );
 
-		for ( i = 0; i < 4; i++ ) {
-			direction_uv[j] += t[i*2] * r_worldbmodel->lightgrid[ index[i] ].direction[j];
-			direction_uv[j] += t[i*2+1] * r_worldbmodel->lightgrid[ index[i] + 1 ].direction[j];
-		}
-
-		direction_uv[j] = anglemod ( direction_uv[j] );
+	for ( i = 0; i < 4; i++ ) {
+		R_LightLatLongToDir ( r_worldbmodel->lightgrid[ index[i] ].direction, tdir );
+		VectorMA ( dir, t[i*2], tdir, dir );
+		R_LightLatLongToDir ( r_worldbmodel->lightgrid[ index[i] + 1 ].direction, tdir );
+		VectorMA ( dir, t[i*2+1], tdir, dir );
 	}
+
+	VectorNormalizeFast ( dir );
 
 	dot = bound(0.0f, r_ambientscale->value, 1.0f) * gl_state.pow2_mapovrbr;
 	VectorScale ( ambient, dot, ambient );
@@ -509,16 +522,6 @@ void R_LightForEntity ( entity_t *e, byte *bArray )
 			ambient[2] = 0.1f;
 		}
 	}
-
-	dot = direction_uv[0] * (1.0 / 255.0);
-	t[0] = R_FastSin ( dot + 0.25f );
-	t[1] = R_FastSin ( dot );
-
-	dot = direction_uv[1] * (1.0 / 255.0);
-	t[2] = R_FastSin ( dot + 0.25f );
-	t[3] = R_FastSin ( dot );
-
-	VectorSet ( dir, t[2] * t[1], t[3] * t[1], t[0] );
 
 	// rotate direction
 	Matrix3_Multiply_Vec3 ( e->axis, dir, direction );
@@ -577,9 +580,9 @@ dynamic:
 
 	cArray = tempColorsArray[0];
 	for ( i = 0; i < numColors; i++, bArray += 4, cArray += 4 ) {
-		bArray[0] = FloatToByte ( bound (0.0f, cArray[0], 1.0f) );
-		bArray[1] = FloatToByte ( bound (0.0f, cArray[1], 1.0f) );
-		bArray[2] = FloatToByte ( bound (0.0f, cArray[2], 1.0f) );
+		bArray[0] = R_FloatToByte ( bound (0.0f, cArray[0], 1.0f) );
+		bArray[1] = R_FloatToByte ( bound (0.0f, cArray[1], 1.0f) );
+		bArray[2] = R_FloatToByte ( bound (0.0f, cArray[2], 1.0f) );
 	}
 }
 
@@ -590,7 +593,7 @@ LIGHT SAMPLING
 
 =============================================================================
 */
-void R_BuildLightMap (byte *data, byte *dest)
+void R_BuildLightMap (qbyte *data, qbyte *dest)
 {
 	int smax, tmax;
 	int size, i;
@@ -605,7 +608,7 @@ void R_BuildLightMap (byte *data, byte *dest)
 		memset ( dest, 255, size * 4 );
 		return;
 	}
-	
+
 	scale = gl_state.pow2_mapovrbr;
 	for ( i = 0; i < size; i++, dest += 4 )
 	{
@@ -615,9 +618,9 @@ void R_BuildLightMap (byte *data, byte *dest)
 
 		ColorNormalize ( scaled, rgb );
 
-		dest[0] = FloatToByte ( rgb[0] );
-		dest[1] = FloatToByte ( rgb[1] );
-		dest[2] = FloatToByte ( rgb[2] );
+		dest[0] = (qbyte) ( rgb[0]*255 );
+		dest[1] = (qbyte) ( rgb[1]*255 );
+		dest[2] = (qbyte) ( rgb[2]*255 );
 		dest[3] = 255;
 	}
 }
