@@ -144,9 +144,9 @@ qboolean SV_FilterPacket (char *from)
 
 	for (i=0 ; i<numipfilters ; i++)
 		if ( (in & ipfilters[i].mask) == ipfilters[i].compare)
-			return (int)filterban->value;
+			return filterban->integer;
 
-	return (int)!filterban->value;
+	return !filterban->integer;
 }
 
 
@@ -248,9 +248,9 @@ void SVCmd_WriteIP_f (void)
 	basedir = trap_Cvar_Get ("fs_basedir", "", 0);
 
 	if (!*game->string)
-		sprintf (name, "%s/listip.cfg", basedir->string);
+		Q_snprintfz (name, sizeof(name), "%s/listip.cfg", basedir->string);
 	else
-		sprintf (name, "%s/listip.cfg", game->string);
+		Q_snprintfz (name, sizeof(name), "%s/listip.cfg", game->string);
 
 	G_Printf ("Writing %s.\n", name);
 
@@ -261,7 +261,7 @@ void SVCmd_WriteIP_f (void)
 		return;
 	}
 	
-	fprintf(f, "set filterban %d\n", (int)filterban->value);
+	fprintf(f, "set filterban %d\n", filterban->integer);
 
 	for (i=0 ; i<numipfilters ; i++)
 	{
@@ -281,7 +281,7 @@ The game can issue trap_Cmd_Args() / trap_Cmd_Argv() commands to get the rest
 of the parameters
 =================
 */
-void	ServerCommand (void)
+void ServerCommand (void)
 {
 	char	*cmd;
 

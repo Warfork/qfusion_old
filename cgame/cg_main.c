@@ -49,8 +49,6 @@ cvar_t			*cg_footSteps;
 cvar_t			*cg_gun;
 cvar_t			*cg_timeDemo;
 
-cvar_t			*cg_stats;
-
 cvar_t			*cg_thirdPerson;
 cvar_t			*cg_thirdPersonAngle;
 cvar_t			*cg_thirdPersonRange;
@@ -60,7 +58,7 @@ cvar_t			*cg_thirdPersonRange;
 CG_Error
 ============
 */
-int CG_API (void) {
+int CG_API( void ) {
 	return CGAME_API_VERSION;
 }
 
@@ -69,15 +67,14 @@ int CG_API (void) {
 CG_Error
 ============
 */
-void CG_Error ( char *fmt, ... )
+void CG_Error( char *fmt, ... )
 {
 	char		msg[1024];
 	va_list		argptr;
 
 	va_start ( argptr, fmt );
-	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+	if( vsprintf (msg, fmt, argptr) > sizeof(msg) )
 		trap_Error ( "CG_Error: Buffer overflow" );
-	}
 	va_end ( argptr );
 
 	trap_Error ( msg );
@@ -88,15 +85,14 @@ void CG_Error ( char *fmt, ... )
 CG_Printf
 ============
 */
-void CG_Printf ( char *fmt, ... )
+void CG_Printf( char *fmt, ... )
 {
 	char		msg[1024];
 	va_list		argptr;
 
 	va_start ( argptr, fmt );
-	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
+	if( vsprintf (msg, fmt, argptr) > sizeof(msg) )
 		trap_Error ( "CG_Print: Buffer overflow" );
-	}
 	va_end ( argptr );
 
 	trap_Print ( msg );
@@ -107,12 +103,12 @@ void CG_Printf ( char *fmt, ... )
 CG_CopyString
 =================
 */
-char *CG_CopyString ( char *in )
+char *CG_CopyString( char *in )
 {
 	char	*out;
 	
-	out = CG_Malloc ( strlen(in) + 1 );
-	strcpy ( out, in );
+	out = CG_Malloc( strlen(in) + 1 );
+	strcpy( out, in );
 
 	return out;
 }
@@ -122,17 +118,17 @@ char *CG_CopyString ( char *in )
 CG_RegisterModels
 =================
 */
-void CG_RegisterModels (void)
+void CG_RegisterModels( void )
 {
 	int i;
 	char *name;
 
 	name = cgs.configStrings[CS_MODELS+1];
-	CG_LoadingString ( name );
+	CG_LoadingString( name );
 
-	trap_R_RegisterWorldModel ( name );
+	trap_R_RegisterWorldModel( name );
 
-	CG_LoadingString ( "models" );
+	CG_LoadingString( "models" );
 
 	cgs.numWeaponModels = 1;
 	strcpy ( cgs.weaponModels[0], "weapon.md2" );
@@ -140,23 +136,21 @@ void CG_RegisterModels (void)
 	for ( i = 1; i < MAX_MODELS; i++ )
 	{
 		name = cgs.configStrings[CS_MODELS+i];
-
-		if ( !name[0] ) {
+		if( !name[0] )
 			break;
-		} else if ( name[0] == '#' ) {	// special player weapon model
+		if( name[0] == '#' ) {	// special player weapon model
 			if ( cgs.numWeaponModels < WEAP_TOTAL ) {
-				Q_strncpyz ( cgs.weaponModels[cgs.numWeaponModels], name+1, sizeof(cgs.weaponModels[cgs.numWeaponModels]) );
+				Q_strncpyz( cgs.weaponModels[cgs.numWeaponModels], name+1, sizeof(cgs.weaponModels[cgs.numWeaponModels]) );
 				cgs.numWeaponModels++;
 			}
 		} else {
-			CG_LoadingFilename ( name );
-			cgs.modelDraw[i] = trap_R_RegisterModel ( name );
+			CG_LoadingFilename( name );
+			cgs.modelDraw[i] = trap_R_RegisterModel( name );
 		}
 	}
 
-	for ( i = 1; i < trap_CM_NumInlineModels (); i++ ) {
-		cgs.inlineModelDraw[i] = trap_R_RegisterModel ( va("*%i", i) );
-	}
+	for( i = 1; i < trap_CM_NumInlineModels (); i++ )
+		cgs.inlineModelDraw[i] = trap_R_RegisterModel( va("*%i", i) );
 
 	CG_RegisterMediaModels ();
 }
@@ -166,31 +160,22 @@ void CG_RegisterModels (void)
 CG_RegisterSounds
 =================
 */
-void CG_RegisterSounds (void)
+void CG_RegisterSounds( void )
 {
 	int i;
 	char *name;
 
-	CG_LoadingString ( "sounds" );
+	CG_LoadingString( "sounds" );
 
-	name = cgs.configStrings[CS_AUDIOTRACK];
-	if ( name[0] )
-		cgs.musicPrecache = trap_S_RegisterSound ( name );
-	else
-		cgs.musicPrecache = NULL;
-
-	for ( i = 1; i < MAX_SOUNDS; i++ )
-	{
+	for( i = 1; i < MAX_SOUNDS; i++ ) {
 		name = cgs.configStrings[CS_SOUNDS+i];
 
-		if ( !name[0] ) {
+		if( !name[0] )
 			break;
-		} else if ( name[0] == '*' ) {
-			continue;
+		if( name[0] != '*' ) {
+			CG_LoadingFilename ( name );
+			cgs.soundPrecache[i] = trap_S_RegisterSound ( name );
 		}
-
-		CG_LoadingFilename ( name );
-		cgs.soundPrecache[i] = trap_S_RegisterSound ( name );
 	}
 
 	CG_RegisterMediaSounds ();
@@ -206,18 +191,15 @@ void CG_RegisterShaders (void)
 	int i;
 	char *name;
 
-	CG_LoadingString ( "images" );
+	CG_LoadingString( "images" );
 
-	for ( i = 1; i < MAX_IMAGES; i++ )
-	{
+	for( i = 1; i < MAX_IMAGES; i++ ) {
 		name = cgs.configStrings[MAX_IMAGES+i];
-
-		if ( !name[0] ) {
+		if( !name[0] )
 			break;
-		}
 
-		CG_LoadingFilename ( name );
-		cgs.imagePrecache[i] = trap_R_RegisterPic ( name );
+		CG_LoadingFilename( name );
+		cgs.imagePrecache[i] = trap_R_RegisterPic( name );
 	}
 
 	CG_RegisterMediaShaders ();
@@ -233,20 +215,18 @@ void CG_RegisterClients (void)
 	int i;
 	char *name;
 
-	CG_LoadingFilename ( "" );
+	CG_LoadingFilename( "" );
 
-	for ( i = 0; i < MAX_CLIENTS; i++ )
-	{
+	for( i = 0; i < MAX_CLIENTS; i++ ) {
 		name = cgs.configStrings[CS_PLAYERSKINS+i];
-		if ( !name[0] ) {
+		if( !name[0] )
 			break;
-		}
 
-		CG_LoadingString ( va ("client %i", i) );
-		CG_LoadClientInfo ( &cgs.clientInfo[i], name, i );
+		CG_LoadingString( va ("client %i", i) );
+		CG_LoadClientInfo( &cgs.clientInfo[i], name, i );
 	}
 
-	CG_LoadClientInfo ( &cgs.baseClientInfo, "unnamed\\0\\male/grunt", -1 );
+	CG_LoadClientInfo( &cgs.baseClientInfo, "unnamed\\0\\male/grunt", -1 );
 }
 
 /*
@@ -272,14 +252,12 @@ void CG_RegisterVariables (void)
 	gender_auto = trap_Cvar_Get ( "gender_auto", "1", CVAR_ARCHIVE );
 	gender->modified = qfalse; // clear this so we know when user sets it manually
 
-	cg_stats = trap_Cvar_Get ( "cg_stats", "0", 0 );
-
 	cg_addDecals = trap_Cvar_Get ( "cg_decals", "1", 0 );
 
 	cg_footSteps = trap_Cvar_Get ( "cg_footSteps", "1", 0 );
 
 	cg_gun = trap_Cvar_Get ( "cg_gun", "1", 0 );
-	cg_timeDemo = trap_Cvar_Get ( "cg_timeDemo", "0", 0 );
+	cg_timeDemo = trap_Cvar_Get ( "timedemo", "0", 0 );
 
 	cg_thirdPerson = trap_Cvar_Get ( "cg_thirdPerson", "0", CVAR_CHEAT );
 	cg_thirdPersonAngle = trap_Cvar_Get ( "cg_thirdPersonAngle", "0", 0 );
@@ -295,9 +273,25 @@ void CG_RegisterConfigStrings (void)
 {
 	int i;
 
-	for ( i = 0; i < MAX_CONFIGSTRINGS; i++ ) {
+	for ( i = 0; i < MAX_CONFIGSTRINGS; i++ )
 		trap_GetConfigString ( i, cgs.configStrings[i], MAX_QPATH );
-	}
+}
+
+/*
+=================
+CG_StartBackgroundTrack
+=================
+*/
+void CG_StartBackgroundTrack (void)
+{
+	char *string;
+	char intro[MAX_QPATH], loop[MAX_QPATH];
+
+	string = cgs.configStrings[CS_AUDIOTRACK];
+	Q_strncpyz( intro, COM_Parse( &string ), sizeof( intro ) );
+	Q_strncpyz( loop, COM_Parse( &string ), sizeof( loop ) );
+
+	trap_S_StartBackgroundTrack( intro, loop );
 }
 
 /*
@@ -352,9 +346,7 @@ void CG_Init ( int playerNum, qboolean attractLoop, int vidWidth, int vidHeight 
 	CG_ClearLocalEntities ();
 
 	// start background track
-	if ( cgs.musicPrecache ) {
-		trap_S_StartSound ( NULL, cgs.playerNum+1, 0, cgs.musicPrecache, 1, 1, 0 );
-	}
+	CG_StartBackgroundTrack ();
 }
 
 /*
@@ -381,6 +373,7 @@ void Sys_Error (char *error, ...)
 	va_start (argptr, error);
 	vsnprintf (text, sizeof(text), error, argptr);
 	va_end (argptr);
+	text[sizeof(text)-1] = 0;
 
 	trap_Error (text);
 }
@@ -393,6 +386,7 @@ void Com_Printf (char *msg, ...)
 	va_start (argptr, msg);
 	vsnprintf (text, sizeof(text), msg, argptr);
 	va_end (argptr);
+	text[sizeof(text)-1] = 0;
 
 	trap_Print (text);
 }

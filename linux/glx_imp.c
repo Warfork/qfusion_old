@@ -63,8 +63,8 @@ qboolean mouse_avail;
 int mouse_buttonstate;
 int mouse_oldbuttonstate;
 int mx, my;
+int p_mouse_x, p_mouse_y;
 int old_mouse_x, old_mouse_y;
-int win_x, win_y;
 
 qboolean	mlooking;
 
@@ -266,7 +266,7 @@ void install_grabs (void)
 	XDefineCursor (x11display.dpy, x11display.win, CreateNullCursor(x11display.dpy, x11display.win));
 	XGrabPointer (x11display.dpy, x11display.win, True, 0, GrabModeAsync, GrabModeAsync, x11display.win, None, CurrentTime);
 
-	if (in_dgamouse->value)
+	if (in_dgamouse->integer)
 	{
 		#ifdef XF86
 		int MajorVersion, MinorVersion;
@@ -286,11 +286,17 @@ void install_grabs (void)
 			dgamouse = qfalse;
 		}
 	} else {
-		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, x11display.win_width / 2, x11display.win_height / 2);
+		p_mouse_x = x11display.win_width / 2;
+		p_mouse_y = x11display.win_height / 2;
+		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, p_mouse_x, p_mouse_y);
 	}
 
 	XGrabKeyboard (x11display.dpy, x11display.win, False, GrabModeAsync, GrabModeAsync, CurrentTime);
 
+	mx = 0;
+	my = 0;
+	old_mouse_x = 0;
+	old_mouse_y = 0;
 	mouse_active = qtrue;
 }
 
@@ -479,20 +485,22 @@ void HandleEvents(void)
 				{
 					if (dgamouse)
 					{
-						mx += (event.xmotion.x + win_x) * 2;
-						my += (event.xmotion.y + win_y) * 2;
+						mx += event.xmotion.x_root * 2;
+						my += event.xmotion.y_root * 2;
 					}
 					else
 					{
-						mx += ((int)event.xmotion.x - mwx) * 2;
-						my += ((int)event.xmotion.y - mwy) * 2;
+						if( !event.xmotion.send_event ) {
+    						    mx += event.xmotion.x - p_mouse_x;
+						    my += event.xmotion.y - p_mouse_y;
 
-						//this just chop the mouvement
-						//mwx = event.xmotion.x;
-						//mwy = event.xmotion.y;
-
-						if (mx || my) 
+						    if( abs( mwx - event.xmotion.x ) > mwx / 2 || abs( mwy - event.xmotion.y ) > mwy / 2 )
 							dowarp = qtrue;
+						}
+						p_mouse_x = event.xmotion.x;
+						p_mouse_y = event.xmotion.y;
+
+
 					}
 				}
 				break;
@@ -500,28 +508,18 @@ void HandleEvents(void)
 			case ButtonPress:
 				myxtime = event.xbutton.time;
 				if (event.xbutton.button == 1) Key_Event(K_MOUSE1, 1, Sys_Milliseconds());
-				else if (event.xbutton.button == 2) Key_Event(K_MOUSE2, 1, Sys_Milliseconds());
-				else if (event.xbutton.button == 3) Key_Event(K_MOUSE3, 1, Sys_Milliseconds());
+				else if (event.xbutton.button == 2) Key_Event(K_MOUSE3, 1, Sys_Milliseconds());
+				else if (event.xbutton.button == 3) Key_Event(K_MOUSE2, 1, Sys_Milliseconds());
 				else if (event.xbutton.button == 4) Key_Event(K_MWHEELUP, 1, Sys_Milliseconds());
 				else if (event.xbutton.button == 5) Key_Event(K_MWHEELDOWN, 1, Sys_Milliseconds());
 				break;
 
 			case ButtonRelease:
 				if (event.xbutton.button == 1) Key_Event(K_MOUSE1, 0, Sys_Milliseconds());
-				else if (event.xbutton.button == 2) Key_Event(K_MOUSE2, 0, Sys_Milliseconds());
-				else if (event.xbutton.button == 3) Key_Event(K_MOUSE3, 0, Sys_Milliseconds());
+				else if (event.xbutton.button == 2) Key_Event(K_MOUSE3, 0, Sys_Milliseconds());
+				else if (event.xbutton.button == 3) Key_Event(K_MOUSE2, 0, Sys_Milliseconds());
 				else if (event.xbutton.button == 4) Key_Event(K_MWHEELUP, 0, Sys_Milliseconds());
 				else if (event.xbutton.button == 5) Key_Event(K_MWHEELDOWN, 0, Sys_Milliseconds());
-				break;
-
-			case CreateNotify:
-				win_x = event.xcreatewindow.x;
-				win_y = event.xcreatewindow.y;
-				break;
-
-			case ConfigureNotify:
-				win_x = event.xconfigure.x;
-				win_y = event.xconfigure.y;
 				break;
 
 			case ClientMessage:
@@ -534,7 +532,9 @@ void HandleEvents(void)
 	if (dowarp) 
 	{
 		/* move the mouse to the window center again */
-		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, x11display.win_width/2, x11display.win_height/2);
+		p_mouse_x = mwx;
+		p_mouse_y = mwy;
+		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, mwx, mwy);
 	}
 }
 
@@ -615,7 +615,8 @@ static void InitSig (void)
 /*
 ** GLimp_SetMode
 */
-int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen ){
+int GLimp_SetMode( int mode, qboolean fullscreen )
+{
 	int width, height, screen_width, screen_height, screen_mode;
 	float ratio;
 	XSetWindowAttributes wa;
@@ -721,11 +722,12 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen ){
 		XDestroyWindow (x11display.dpy, x11display.old_win);
 		x11display.old_win = 0;
 	}
-
+	
 	XFlush (x11display.dpy);
 
-	*pwidth = width;
-	*pheight = height;
+	glState.width = width;
+	glState.height = height;
+	glState.fullScreen = fullscreen;
 
 	// let the sound and input subsystems know about the new window
 	VID_NewWindow (width, height);
@@ -744,12 +746,11 @@ void GLimp_Shutdown (void)
 
 	if (x11display.dpy)
 	{
-		IN_Activate (qfalse);
+//		IN_Activate (qfalse);
 #ifdef XF86
 		_xf86_VidmodesSwitchBack();
 		_xf86_VidmodesFree();
 #endif
-
 		if (x11display.ctx) 
 			qglXDestroyContext (x11display.dpy, x11display.ctx);
 
@@ -864,9 +865,8 @@ int GLimp_Init( void *hinstance, void *wndproc)
 /*
 ** GLimp_BeginFrame
 */
-void GLimp_BeginFrame(float camera_seperation)
+void GLimp_BeginFrame( void )
 {
-	Shader_RunCinematic ();
 }
 
 /*
@@ -882,28 +882,21 @@ void GLimp_EndFrame (void)
 }
 
 /*
-** UpdateHardwareGamma
-**
-** We are using gamma relative to the desktop, so that we can share it
-** with software renderer and don't require to change desktop gamma
-** to match hardware gamma image brightness. It seems that Quake 3 is
-** using the opposite approach, but it has no software renderer after
-** all.
+** GLimp_BeginFrame
 */
-void GLimp_UpdateGammaRamp( void ){
-/*
-	XF86VidModeGamma gamma;
-	double div, g;
+qboolean GLimp_GetGammaRamp( size_t stride, unsigned short *ramp )
+{
+	if( XF86VidModeGetGammaRamp( x11display.dpy, x11display.scr, stride, ramp, ramp + stride, ramp + (stride << 1) ) != 0 )
+	    return qtrue;
+	return qfalse;
+}
 
-	div = (double) (1 << ((int)floor(r_overbrightbits->value)) + 0.5;
-	g = pow ( div + 0.5, vid_gamma->value ) + 0.5;
-	
-	gamma.red = oldgamma.red * g; if (gamma.red < 0) gamma.red = 0; else if (gamma.red > 255) gamma.red = 255;
-	gamma.green = oldgamma.green * g; if (gamma.green < 0) gamma.green = 0; else if (gamma.green > 255) gamma.green = 255;
-	gamma.blue = oldgamma.blue * g; if (gamma.blue < 0) gamma.blue = 0; else if (gamma.blue > 255) gamma.blue = 255;
-	
-	XF86VidModeSetGamma(x11display.dpy, x11display.scr, &gamma);
+/*
+** GLimp_BeginFrame
 */
+void GLimp_SetGammaRamp( size_t stride, unsigned short *ramp )
+{
+    XF86VidModeSetGammaRamp( x11display.dpy, x11display.scr, stride, ramp, ramp + stride, ramp + (stride << 1) );
 }
 
 /*

@@ -615,148 +615,144 @@ void CG_EntityEvent ( entity_state_t *ent )
 	for ( i = 0; i < 2; i++ ) {
 		parm = ent->eventParms[i];
 
-		switch ( ent->events[i] )
-		{
+		switch( ent->events[i] ) {
 			case EV_FOOTSTEP:
-				if ( cg_footSteps->value ) {
-					trap_S_StartSound ( NULL, ent->number, CHAN_BODY, CG_MediaSfx (cgs.media.sfxFootsteps[parm][rand()&3]), 1, ATTN_NORM, 0 );
-				}
+				if( cg_footSteps->integer )
+					trap_S_StartSound( NULL, ent->number, CHAN_BODY, CG_MediaSfx (cgs.media.sfxFootsteps[parm][rand()&3]), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_FALL:
-				if ( parm == FALL_MEDIUM ) {
-					CG_SexedSound ( ent->number, CHAN_AUTO, "*fall2.wav", 1 );
-				} else if ( parm == FALL_FAR ) {
-					CG_SexedSound ( ent->number, CHAN_AUTO, "*fall1.wav", 1 );
-				} else {
+				if( parm == FALL_MEDIUM )
+					CG_SexedSound( ent->number, CHAN_AUTO, "*fall2.wav", 1 );
+				else if ( parm == FALL_FAR )
+					CG_SexedSound( ent->number, CHAN_AUTO, "*fall1.wav", 1 );
+				else
 					trap_S_StartSound ( NULL, ent->number, CHAN_AUTO, CG_MediaSfx (cgs.media.sfxLand), 1, ATTN_NORM, 0 );
-				}
 				break;
 
 			case EV_PAIN:
-				CG_SexedSound ( ent->number, CHAN_VOICE, va("*pain%i_%i.wav", 25 * (parm+1), 1 + (rand()&1)), 1 );
+				CG_SexedSound( ent->number, CHAN_VOICE, va("*pain%i_%i.wav", 25 * (parm+1), 1 + (rand()&1)), 1 );
 				break;
 
 			case EV_DIE:
-				CG_SexedSound ( ent->number, CHAN_BODY, va("*death%i.wav", ( rand()%4 ) + 1), 1 );
+				CG_SexedSound( ent->number, CHAN_BODY, va("*death%i.wav", ( rand()%4 ) + 1), 1 );
 				break;
 
 			case EV_GIB:
-				trap_S_StartSound ( NULL, ent->number, CHAN_VOICE, CG_MediaSfx (cgs.media.sfxGibSound), 1, ATTN_NORM, 0 );
+				trap_S_StartSound( NULL, ent->number, CHAN_VOICE, CG_MediaSfx (cgs.media.sfxGibSound), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_JUMP:
-				CG_SexedSound ( ent->number, CHAN_VOICE, "*jump1.wav", 1 );
+				CG_SexedSound( ent->number, CHAN_VOICE, "*jump1.wav", 1 );
 				break;
 
 			case EV_JUMP_PAD:
-				CG_TouchJumpPad ( ent, parm );
+				CG_TouchJumpPad( ent, parm );
 				break;
 
 			case EV_MUZZLEFLASH:
-				CG_PlayerMuzzleFlash ( ent, parm );
+				CG_PlayerMuzzleFlash( ent, parm );
 				break;
 				
 			case EV_PLAYER_TELEPORT_IN:
-				trap_S_StartSound ( ent->origin, ent->ownerNum, 0, CG_MediaSfx (cgs.media.sfxTeleportIn), 1, ATTN_NORM, 0 );
-				CG_TeleportEffect ( ent->origin );
+				trap_S_StartSound( ent->origin, ent->ownerNum, 0, CG_MediaSfx (cgs.media.sfxTeleportIn), 1, ATTN_NORM, 0 );
+				CG_TeleportEffect( ent->origin );
 				break;
 				
 			case EV_PLAYER_TELEPORT_OUT:
-				trap_S_StartSound ( ent->origin, ent->ownerNum, 0, CG_MediaSfx (cgs.media.sfxTeleportOut), 1, ATTN_NORM, 0 );
-				CG_TeleportEffect ( ent->origin );
+				trap_S_StartSound( ent->origin, ent->ownerNum, 0, CG_MediaSfx (cgs.media.sfxTeleportOut), 1, ATTN_NORM, 0 );
+				CG_TeleportEffect( ent->origin );
 				break;
 
 			case EV_ITEM_RESPAWN:
 				cg_entities[ent->number].respawnTime = cg.time;
-				trap_S_StartSound ( NULL, ent->number, CHAN_WEAPON, CG_MediaSfx (cgs.media.sfxItemRespawn), 1, ATTN_IDLE, 0 );
+				trap_S_StartSound( NULL, ent->number, CHAN_WEAPON, CG_MediaSfx (cgs.media.sfxItemRespawn), 1, ATTN_IDLE, 0 );
 				break;
 
 			case EV_EXPLOSION1:
-				CG_Explosion1 ( ent->origin );
+				CG_Explosion1( ent->origin );
 				break;
 
 			case EV_EXPLOSION2:
-				CG_Explosion2 ( ent->origin );
+				CG_Explosion2( ent->origin );
 				break;
 
 			case EV_ROCKET_EXPLOSION:
-				ByteToDir ( parm, dir );
-				CG_RocketExplosion ( ent->origin, dir );
+				ByteToDir( parm, dir );
+				CG_RocketExplosion( ent->origin, dir );
 				break;
 
 			case EV_GRENADE_EXPLOSION:
-				ByteToDir ( parm, dir );
-				CG_GrenadeExplosion ( ent->origin, dir );
+				ByteToDir( parm, dir );
+				CG_GrenadeExplosion( ent->origin, dir );
 				break;
 
 			case EV_GRENADE_BOUNCE:
-				if ( rand() & 1 ) {
-					trap_S_StartSound ( NULL, ent->number, CHAN_VOICE, CG_MediaSfx (cgs.media.sfxGrenBounce1), 1, ATTN_NORM, 0 );
-				} else {
-					trap_S_StartSound ( NULL, ent->number, CHAN_VOICE, CG_MediaSfx (cgs.media.sfxGrenBounce2), 1, ATTN_NORM, 0 );
-				}
+				if( rand() & 1 )
+					trap_S_StartSound( NULL, ent->number, CHAN_VOICE, CG_MediaSfx (cgs.media.sfxGrenBounce1), 1, ATTN_NORM, 0 );
+				else
+					trap_S_StartSound( NULL, ent->number, CHAN_VOICE, CG_MediaSfx (cgs.media.sfxGrenBounce2), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_BOSSTPORT:
-				CG_BigTeleportParticles ( ent->origin );
-				trap_S_StartSound ( ent->origin, 0, 0, trap_S_RegisterSound ("sound/misc/bigtele.wav"), 1, ATTN_NONE, 0 );
+				CG_BigTeleportParticles( ent->origin );
+				trap_S_StartSound( ent->origin, 0, 0, trap_S_RegisterSound ("sound/misc/bigtele.wav"), 1, ATTN_NONE, 0 );
 				break;
 
 			case EV_MUZZLEFLASH2:
-				CG_MonsterMuzzleFlash ( ent, parm );
+				CG_MonsterMuzzleFlash( ent, parm );
 				break;
 
 			case EV_FIRE_BULLET:
-				CG_FireBullet ( ent->ownerNum, ent->origin, ent->origin2, 1, DEFAULT_BULLET_VSPREAD, DEFAULT_BULLET_HSPREAD, parm, CG_BulletImpact );
+				CG_FireBullet( ent->ownerNum, ent->origin, ent->origin2, 1, DEFAULT_BULLET_VSPREAD, DEFAULT_BULLET_HSPREAD, parm, CG_BulletImpact );
 				break;
 
 			case EV_FIRE_SHOTGUN:
-				CG_FireBullet ( ent->ownerNum, ent->origin, ent->origin2, ent->eventCount, DEFAULT_SHOTGUN_VSPREAD, DEFAULT_SHOTGUN_HSPREAD, parm, CG_ShotgunImpact );
+				CG_FireBullet( ent->ownerNum, ent->origin, ent->origin2, ent->eventCount, DEFAULT_SHOTGUN_VSPREAD, DEFAULT_SHOTGUN_HSPREAD, parm, CG_ShotgunImpact );
 				break;
 
 			case EV_GRAPPLE_CABLE:
-				CG_AddBeam ( ent->ownerNum, cg_entities[ent->ownerNum].current.origin, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modGrappleCable) );
+				CG_AddBeam( ent->ownerNum, cg_entities[ent->ownerNum].current.origin, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modGrappleCable) );
 				break;
 
 			case EV_PARASITE_ATTACK:
-				CG_AddBeam ( ent->ownerNum, cg_entities[ent->ownerNum].current.origin, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modParasiteSegment) );
+				CG_AddBeam( ent->ownerNum, cg_entities[ent->ownerNum].current.origin, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modParasiteSegment) );
 				break;
 
 			case EV_MEDIC_CABLE_ATTACK:
-				CG_AddBeam ( ent->ownerNum, cg_entities[ent->ownerNum].current.origin, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modParasiteSegment) );
+				CG_AddBeam( ent->ownerNum, cg_entities[ent->ownerNum].current.origin, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modParasiteSegment) );
 				break;
 
 			case EV_RAILTRAIL:
-				CG_RailTrail ( ent->origin, ent->origin2 );
-				trap_S_StartSound ( ent->origin2, 0, 0, CG_MediaSfx (cgs.media.sfxRailg), 1, ATTN_NORM, 0 );
+				CG_RailTrail( ent->origin, ent->origin2 );
+				trap_S_StartSound( ent->origin2, 0, 0, CG_MediaSfx (cgs.media.sfxRailg), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_BFG_LASER:
-				CG_BFGLaser ( ent->origin, ent->origin2 );
+				CG_BFGLaser( ent->origin, ent->origin2 );
 				break;
 
 			case EV_BFG_EXPLOSION:
-				CG_BFGExplosion ( ent->origin );
+				CG_BFGExplosion( ent->origin );
 				break;
 
 			case EV_BFG_BIGEXPLOSION:
-				CG_BFGBigExplosion ( ent->origin );
+				CG_BFGBigExplosion( ent->origin );
 				break;
 
 			case EV_LIGHTNING:
-				CG_AddLightning ( ent->ownerNum, ent->targetNum, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modLightning) );
-				trap_S_StartSound ( NULL, ent->ownerNum, CHAN_WEAPON, CG_MediaSfx (cgs.media.sfxLightning), 1, ATTN_NORM, 0 );
+				CG_AddLightning( ent->ownerNum, ent->targetNum, ent->origin, ent->origin2, CG_MediaModel (cgs.media.modLightning) );
+				trap_S_StartSound( NULL, ent->ownerNum, CHAN_WEAPON, CG_MediaSfx (cgs.media.sfxLightning), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_BLASTER:
-				ByteToDir ( parm, dir );
-				CG_BlasterExplosion ( ent->origin, dir );
+				ByteToDir( parm, dir );
+				CG_BlasterExplosion( ent->origin, dir );
 				break;
 
 			case EV_BLOOD:
-				ByteToDir ( parm, dir );
-				CG_ParticleEffect ( ent->origin, dir, 0.61, 0.1, 0, 60 );
+				ByteToDir( parm, dir );
+				CG_ParticleEffect( ent->origin, dir, 0.61, 0.1, 0, 60 );
 				break;
 
 			case EV_SPARKS:
@@ -765,24 +761,24 @@ void CG_EntityEvent ( entity_state_t *ent )
 				break;
 
 			case EV_BULLET_SPARKS:
-				ByteToDir ( parm, dir );
-				CG_BulletExplosion ( ent->origin, dir );
-				CG_ParticleEffect ( ent->origin, dir, 1, 0.67, 0, 6 );
-				trap_S_StartSound ( ent->origin, 0, 0, CG_MediaSfx (cgs.media.sfxRic[rand()&2]), 1, ATTN_NORM, 0 );
+				ByteToDir( parm, dir );
+				CG_BulletExplosion( ent->origin, dir );
+				CG_ParticleEffect( ent->origin, dir, 1, 0.67, 0, 6 );
+				trap_S_StartSound( ent->origin, 0, 0, CG_MediaSfx (cgs.media.sfxRic[rand()&2]), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_SCREEN_SPARKS:
-				ByteToDir ( parm, dir );
-				CG_ParticleEffect ( ent->origin, dir, 0, 1, 0, 40 );
+				ByteToDir( parm, dir );
+				CG_ParticleEffect( ent->origin, dir, 0, 1, 0, 40 );
 				//FIXME : replace or remove this sound
-				trap_S_StartSound ( ent->origin, 0, 0, CG_MediaSfx (cgs.media.sfxLashit), 1, ATTN_NORM, 0 );
+				trap_S_StartSound( ent->origin, 0, 0, CG_MediaSfx (cgs.media.sfxLashit), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_SHIELD_SPARKS:
-				ByteToDir ( parm, dir );
-				CG_ParticleEffect ( ent->origin, dir, 0.47, 0.48, 0.8, 40 );
+				ByteToDir( parm, dir );
+				CG_ParticleEffect( ent->origin, dir, 0.47, 0.48, 0.8, 40 );
 				//FIXME : replace or remove this sound
-				trap_S_StartSound ( ent->origin, 0, 0, CG_MediaSfx (cgs.media.sfxLashit), 1, ATTN_NORM, 0 );
+				trap_S_StartSound( ent->origin, 0, 0, CG_MediaSfx (cgs.media.sfxLashit), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_LASER_SPARKS:

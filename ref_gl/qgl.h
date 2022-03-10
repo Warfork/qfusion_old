@@ -41,6 +41,9 @@ void     QGL_Shutdown( void );
 # define APIENTRY
 #endif
 
+typedef int GLintptrARB;
+typedef int GLsizeiptrARB;
+
 extern  void ( APIENTRY * qglAccum )(GLenum op, GLfloat value);
 extern  void ( APIENTRY * qglAlphaFunc )(GLenum func, GLclampf ref);
 extern  GLboolean ( APIENTRY * qglAreTexturesResident )(GLsizei n, const GLuint *textures, GLboolean *residences);
@@ -378,14 +381,28 @@ extern  void ( APIENTRY * qglVertex4sv )(const GLshort *v);
 extern  void ( APIENTRY * qglVertexPointer )(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 extern  void ( APIENTRY * qglViewport )(GLint x, GLint y, GLsizei width, GLsizei height);
 
-extern	void ( APIENTRY * qglLockArraysEXT) (int , int);
-extern	void ( APIENTRY * qglUnlockArraysEXT) (void);
+extern	void ( APIENTRY * qglLockArraysEXT )( int , int );
+extern	void ( APIENTRY * qglUnlockArraysEXT )( void );
 
-extern	void ( APIENTRY * qglMTexCoord2fSGIS)( GLenum, GLfloat, GLfloat );
-extern	void ( APIENTRY * qglSelectTextureSGIS)( GLenum );
+extern	void ( APIENTRY * qglSelectTextureSGIS )( GLenum );
 
-extern	void ( APIENTRY * qglActiveTextureARB)( GLenum );
-extern	void ( APIENTRY * qglClientActiveTextureARB)( GLenum );
+extern	void ( APIENTRY * qglMTexCoord2f )( GLenum, GLfloat, GLfloat );
+
+extern	void ( APIENTRY * qglActiveTextureARB )( GLenum );
+extern	void ( APIENTRY * qglClientActiveTextureARB )( GLenum );
+
+extern	void ( APIENTRY * qglDrawRangeElementsEXT )( GLenum, GLuint, GLuint, GLsizei, GLenum, const GLvoid *);
+
+extern	void ( APIENTRY * qglBindBufferARB )( GLenum target, GLuint buffer );
+extern	void ( APIENTRY * qglDeleteBuffersARB )( GLsizei n, const GLuint *buffers );
+extern	void ( APIENTRY * qglGenBuffersARB )( GLsizei n, GLuint *buffers );
+extern	GLboolean ( APIENTRY * qglIsBufferARB )( GLuint buffer );
+extern	void *( APIENTRY * qglMapBufferARB )( GLenum target, GLenum access );
+extern	GLboolean ( APIENTRY * qglUnmapBufferARB )( GLenum target );
+extern	void ( APIENTRY * qglBufferDataARB )( GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage );
+extern	void ( APIENTRY * qglBufferSubDataARB )( GLenum target, GLintptrARB offset, GLsizeiptrARB size, const GLvoid *data );
+
+extern	void *qglGetProcAddress(const GLubyte *);
 
 #ifdef _WIN32
 
@@ -401,7 +418,6 @@ extern HGLRC ( WINAPI * qwglCreateLayerContext)(HDC, int);
 extern BOOL  ( WINAPI * qwglDeleteContext)(HGLRC);
 extern HGLRC ( WINAPI * qwglGetCurrentContext)(VOID);
 extern HDC   ( WINAPI * qwglGetCurrentDC)(VOID);
-extern PROC  ( WINAPI * qwglGetProcAddress)(LPCSTR);
 extern BOOL  ( WINAPI * qwglMakeCurrent)(HDC, HGLRC);
 extern BOOL  ( WINAPI * qwglShareLists)(HGLRC, HGLRC);
 extern BOOL  ( WINAPI * qwglUseFontBitmaps)(HDC, DWORD, DWORD, DWORD);
@@ -427,9 +443,6 @@ extern BOOL ( WINAPI * qwglSetDeviceGammaRamp3DFX ) ( HDC, WORD * );
 
 #ifdef __linux__
 
-// local function in dll
-extern void *qwglGetProcAddress(char *symbol);
-
 // GLX Functions
 extern XVisualInfo * (*qglXChooseVisual)( Display *dpy, int screen, int *attribList );
 extern GLXContext (*qglXCreateContext)( Display *dpy, XVisualInfo *vis, GLXContext shareList, Bool direct );
@@ -448,109 +461,137 @@ extern void (*qglXSwapBuffers)( Display *dpy, GLXDrawable drawable );
 #define GL_TEXTURE1_SGIS					0x835F
 #define GL_TEXTURE0_ARB						0x84C0
 #define GL_TEXTURE1_ARB						0x84C1
-
-extern int GL_TEXTURE_0, GL_TEXTURE_1;
+#define GL_MAX_TEXTURE_UNITS				0x84E2
+#define GL_MAX_TEXTURE_UNITS_ARB			0x84E2
 
 #ifndef GL_POLYGON_OFFSET
 #define GL_POLYGON_OFFSET					0x8037
-#endif
+#endif /* GL_POLYGON_OFFSET */
 
-#ifndef GL_SGIS_generate_mipmap
-#define GL_SGIS_generate_mipmap
-#define GL_GENERATE_MIPMAP_SGIS           0x8191
-#define GL_GENERATE_MIPMAP_HINT_SGIS      0x8192
+#ifndef GL_ARB_texture_env_combine
+#define GL_ARB_texture_env_combine
 
-#endif
+#define GL_COMBINE_ARB                                          0x8570
+#define GL_COMBINE_RGB_ARB                                      0x8571
+#define GL_COMBINE_ALPHA_ARB                                    0x8572
+#define GL_RGB_SCALE_ARB                                        0x8573
+#define GL_ADD_SIGNED_ARB                                       0x8574
+#define GL_INTERPOLATE_ARB                                      0x8575
+#define GL_CONSTANT_ARB                                         0x8576
+#define GL_PRIMARY_COLOR_ARB                                    0x8577
+#define GL_PREVIOUS_ARB                                         0x8578
+#define GL_SOURCE0_RGB_ARB                                      0x8580
+#define GL_SOURCE1_RGB_ARB                                      0x8581
+#define GL_SOURCE2_RGB_ARB                                      0x8582
+#define GL_SOURCE0_ALPHA_ARB                                    0x8588
+#define GL_SOURCE1_ALPHA_ARB                                    0x8589
+#define GL_SOURCE2_ALPHA_ARB                                    0x858A
+#define GL_OPERAND0_RGB_ARB                                     0x8590
+#define GL_OPERAND1_RGB_ARB                                     0x8591
+#define GL_OPERAND2_RGB_ARB                                     0x8592
+#define GL_OPERAND0_ALPHA_ARB                                   0x8598
+#define GL_OPERAND1_ALPHA_ARB                                   0x8599
+#define GL_OPERAND2_ALPHA_ARB                                   0x859A
 
-#ifndef GL_EXT_texture_env_combine
-#define GL_EXT_texture_env_combine
-#define GL_COMBINE_EXT                    0x8570
-#define GL_COMBINE_RGB_EXT                0x8571
-#define GL_COMBINE_ALPHA_EXT              0x8572
-#define GL_RGB_SCALE_EXT                  0x8573
-#define GL_ADD_SIGNED_EXT                 0x8574
-#define GL_INTERPOLATE_EXT                0x8575
-#define GL_CONSTANT_EXT                   0x8576
-#define GL_PRIMARY_COLOR_EXT              0x8577
-#define GL_PREVIOUS_EXT                   0x8578
-#define GL_SOURCE0_RGB_EXT                0x8580
-#define GL_SOURCE1_RGB_EXT                0x8581
-#define GL_SOURCE2_RGB_EXT                0x8582
-#define GL_SOURCE3_RGB_EXT                0x8583
-#define GL_SOURCE4_RGB_EXT                0x8584
-#define GL_SOURCE5_RGB_EXT                0x8585
-#define GL_SOURCE6_RGB_EXT                0x8586
-#define GL_SOURCE7_RGB_EXT                0x8587
-#define GL_SOURCE0_ALPHA_EXT              0x8588
-#define GL_SOURCE1_ALPHA_EXT              0x8589
-#define GL_SOURCE2_ALPHA_EXT              0x858A
-#define GL_SOURCE3_ALPHA_EXT              0x858B
-#define GL_SOURCE4_ALPHA_EXT              0x858C
-#define GL_SOURCE5_ALPHA_EXT              0x858D
-#define GL_SOURCE6_ALPHA_EXT              0x858E
-#define GL_SOURCE7_ALPHA_EXT              0x858F
-#define GL_OPERAND0_RGB_EXT               0x8590
-#define GL_OPERAND1_RGB_EXT               0x8591
-#define GL_OPERAND2_RGB_EXT               0x8592
-#define GL_OPERAND3_RGB_EXT               0x8593
-#define GL_OPERAND4_RGB_EXT               0x8594
-#define GL_OPERAND5_RGB_EXT               0x8595
-#define GL_OPERAND6_RGB_EXT               0x8596
-#define GL_OPERAND7_RGB_EXT               0x8597
-#define GL_OPERAND0_ALPHA_EXT             0x8598
-#define GL_OPERAND1_ALPHA_EXT             0x8599
-#define GL_OPERAND2_ALPHA_EXT             0x859A
-#define GL_OPERAND3_ALPHA_EXT             0x859B
-#define GL_OPERAND4_ALPHA_EXT             0x859C
-#define GL_OPERAND5_ALPHA_EXT             0x859D
-#define GL_OPERAND6_ALPHA_EXT             0x859E
-#define GL_OPERAND7_ALPHA_EXT             0x859F
-
-#endif
+#endif /* GL_ARB_texture_env_combine */
 
 /* NV_texture_env_combine4 */
 #ifndef GL_NV_texture_env_combine4
 #define GL_NV_texture_env_combine4
-#define GL_COMBINE4_NV                      0x8503
-#define GL_SOURCE3_RGB_NV                   0x8583
-#define GL_SOURCE3_ALPHA_NV                 0x858B
-#define GL_OPERAND3_RGB_NV                  0x8593
-#define GL_OPERAND3_ALPHA_NV                0x859B
 
-#endif
+#define GL_COMBINE4_NV						0x8503
+#define GL_SOURCE3_RGB_NV					0x8583
+#define GL_SOURCE3_ALPHA_NV					0x858B
+#define GL_OPERAND3_RGB_NV					0x8593
+#define GL_OPERAND3_ALPHA_NV				0x859B
 
+#endif /* NV_texture_env_combine4 */
+
+/* GL_ARB_texture_compression */
 #ifndef GL_ARB_texture_compression
 #define GL_ARB_texture_compression
-#define GL_COMPRESSED_ALPHA_ARB           0x84E9
-#define GL_COMPRESSED_LUMINANCE_ARB       0x84EA
-#define GL_COMPRESSED_LUMINANCE_ALPHA_ARB 0x84EB
-#define GL_COMPRESSED_INTENSITY_ARB       0x84EC
-#define GL_COMPRESSED_RGB_ARB             0x84ED
-#define GL_COMPRESSED_RGBA_ARB            0x84EE
-#define GL_TEXTURE_COMPRESSION_HINT_ARB   0x84EF
-#define GL_TEXTURE_IMAGE_SIZE_ARB         0x86A0
-#define GL_TEXTURE_COMPRESSED_ARB         0x86A1
-#define GL_NUM_COMPRESSED_TEXTURE_FORMATS_ARB 0x86A2
-#define GL_COMPRESSED_TEXTURE_FORMATS_ARB 0x86A3
 
-#endif
+#define GL_COMPRESSED_ALPHA_ARB				0x84E9
+#define GL_COMPRESSED_LUMINANCE_ARB			0x84EA
+#define GL_COMPRESSED_LUMINANCE_ALPHA_ARB	0x84EB
+#define GL_COMPRESSED_INTENSITY_ARB			0x84EC
+#define GL_COMPRESSED_RGB_ARB				0x84ED
+#define GL_COMPRESSED_RGBA_ARB				0x84EE
+#define GL_TEXTURE_COMPRESSION_HINT_ARB		0x84EF
+#define GL_TEXTURE_IMAGE_SIZE_ARB			0x86A0
+#define GL_TEXTURE_COMPRESSED_ARB			0x86A1
+#define GL_NUM_COMPRESSED_TEXTURE_FORMATS_ARB 0x86A2
+#define GL_COMPRESSED_TEXTURE_FORMATS_ARB	0x86A3
+#endif /* GL_ARB_texture_compression */
 
 /* GL_EXT_texture_filter_anisotropic */
 #ifndef GL_EXT_texture_filter_anisotropic
 #define GL_EXT_texture_filter_anisotropic
-#define GL_TEXTURE_MAX_ANISOTROPY_EXT                           0x84FE
-#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT                       0x84FF
-#endif
 
-/* GL_EXT_bgra */
-#ifndef GL_EXT_bgra
-#define GL_EXT_bgra
-#define GL_BGR_EXT                                              0x80E0
-#define GL_BGRA_EXT                                             0x80E1
-#endif
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT		0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT   0x84FF
+#endif /* GL_EXT_texture_filter_anisotropic */
 
-#ifndef GL_CLAMP_TO_EDGE
-#define GL_CLAMP_TO_EDGE										0x812F
-#endif
+/* GL_EXT_texture_edge_clamp */
+#ifndef GL_EXT_texture_edge_clamp
+#define GL_EXT_texture_edge_clamp
+
+#define GL_CLAMP_TO_EDGE					0x812F
+#endif /* GL_EXT_texture_edge_clamp */
+
+/* GL_ARB_vertex_buffer_object */
+#ifndef GL_ARB_vertex_buffer_object
+#define GL_ARB_vertex_buffer_object
+
+#define GL_ARRAY_BUFFER_ARB					0x8892
+#define GL_ELEMENT_ARRAY_BUFFER_ARB			0x8893
+#define GL_ARRAY_BUFFER_BINDING_ARB			0x8894
+#define GL_ELEMENT_ARRAY_BUFFER_BINDING_ARB 0x8895
+#define GL_VERTEX_ARRAY_BUFFER_BINDING_ARB	0x8896
+#define GL_NORMAL_ARRAY_BUFFER_BINDING_ARB	0x8897
+#define GL_COLOR_ARRAY_BUFFER_BINDING_ARB	0x8898
+#define GL_INDEX_ARRAY_BUFFER_BINDING_ARB	0x8899
+#define GL_TEXTURE_COORD_ARRAY_BUFFER_BINDING_ARB 0x889A
+#define GL_EDGE_FLAG_ARRAY_BUFFER_BINDING_ARB 0x889B
+#define GL_SECONDARY_COLOR_ARRAY_BUFFER_BINDING_ARB 0x889C
+#define GL_FOG_COORDINATE_ARRAY_BUFFER_BINDING_ARB 0x889D
+#define GL_WEIGHT_ARRAY_BUFFER_BINDING_ARB	0x889E
+#define GL_VERTEX_ATTRIB_ARRAY_BUFFER_BINDING_ARB 0x889F
+#define GL_STREAM_DRAW_ARB					0x88E0
+#define GL_STREAM_READ_ARB					0x88E1
+#define GL_STREAM_COPY_ARB					0x88E2
+#define GL_STATIC_DRAW_ARB					0x88E4
+#define GL_STATIC_READ_ARB					0x88E5
+#define GL_STATIC_COPY_ARB					0x88E6
+#define GL_DYNAMIC_DRAW_ARB					0x88E8
+#define GL_DYNAMIC_READ_ARB					0x88E9
+#define GL_DYNAMIC_COPY_ARB					0x88EA
+#define GL_READ_ONLY_ARB					0x88B8
+#define GL_WRITE_ONLY_ARB					0x88B9
+#define GL_READ_WRITE_ARB					0x88BA
+#define GL_BUFFER_SIZE_ARB					0x8764
+#define GL_BUFFER_USAGE_ARB					0x8765
+#define GL_BUFFER_ACCESS_ARB				0x88BB
+#define GL_BUFFER_MAPPED_ARB				0x88BC
+#define GL_BUFFER_MAP_POINTER_ARB			0x88BD
+#endif /* GL_ARB_vertex_buffer_object */
+
+/* GL_ARB_texture_cube_map */
+#ifndef GL_ARB_texture_cube_map
+#define GL_ARB_texture_cube_map
+
+#define GL_NORMAL_MAP_ARB                 0x8511
+#define GL_REFLECTION_MAP_ARB             0x8512
+#define GL_TEXTURE_CUBE_MAP_ARB           0x8513
+#define GL_TEXTURE_BINDING_CUBE_MAP_ARB   0x8514
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_X_ARB 0x8515
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_X_ARB 0x8516
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_Y_ARB 0x8517
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_Y_ARB 0x8518
+#define GL_TEXTURE_CUBE_MAP_POSITIVE_Z_ARB 0x8519
+#define GL_TEXTURE_CUBE_MAP_NEGATIVE_Z_ARB 0x851A
+#define GL_PROXY_TEXTURE_CUBE_MAP_ARB     0x851B
+#define GL_MAX_CUBE_MAP_TEXTURE_SIZE_ARB  0x851C
+#endif /* GL_ARB_texture_cube_map */
 
 #endif

@@ -33,35 +33,37 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifdef _WIN32
 
 // unknown pragmas are SUPPOSED to be ignored, but....
-# pragma warning(disable : 4244)     // MIPS
-# pragma warning(disable : 4136)     // X86
-# pragma warning(disable : 4051)     // ALPHA
+# pragma warning(disable : 4244)		// MIPS
+# pragma warning(disable : 4136)		// X86
+# pragma warning(disable : 4051)		// ALPHA
 
-# pragma warning(disable : 4018)     // signed/unsigned mismatch
+# pragma warning(disable : 4018)		// signed/unsigned mismatch
 # pragma warning(disable : 4305)		// truncation from const double to float
 
-# define HAS___INLINE
+# define HAVE___INLINE
 
-# define HAS__SNPRINTF
+# define HAVE__SNPRINTF
 
-# define HAS__VSNPRINTF
+# define HAVE__VSNPRINTF
 
-# define HAS__STRICMP
+# define HAVE__STRICMP
 
 # ifdef LCC_WIN32
 #  ifndef C_ONLY
 #   define C_ONLY
 #  endif
-#  define HAS_TCHAR
-#  define HAS_MMSYSTEM
-#  define HAS_DLLMAIN
+#  define HAVE_TCHAR
+#  define HAVE_MMSYSTEM
+#  define HAVE_DLLMAIN
 # else
-#  define HAS_WSIPX
+#  define HAVE_WSIPX
 # endif
 
 # define VID_INITFIRST
 
 # define GL_DRIVERNAME	"opengl32.dll"
+
+# define VORBISFILE_LIBNAME	"vorbisfile.dll"
 
 # ifdef NDEBUG
 #  define BUILDSTRING "Win32 RELEASE"
@@ -71,7 +73,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 # ifdef _M_IX86
 #  define CPUSTRING	"x86"
-# elif defined _M_ALPHA
+# elif defined(_M_ALPHA)
 #  define CPUSTRING	"AXP"
 # endif
 
@@ -81,20 +83,20 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifdef __linux__
 
-# ifndef C_ONLY
-#  define C_ONLY
-# endif
+# define HAVE_INLINE
 
-# define HAS_STRCASECMP
-# define HAS_LIBJPEG
+# define HAVE_STRCASECMP
 
 # define GL_FORCEFINISH
 # define GL_DRIVERNAME	"libGL.so.1"
+
+# define VORBISFILE_LIBNAME	"libvorbisfile.so"
+
 # define BUILDSTRING "Linux"
 
 # ifdef __i386__
 #  define CPUSTRING "i386"
-# elif defined __alpha__
+# elif defined(__alpha__)
 #  define CPUSTRING "axp"
 # else
 #  define CPUSTRING "Unknown"
@@ -104,25 +106,29 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //==============================================
 
-#ifdef HAS___INLINE
+#ifdef HAVE___INLINE
 # ifndef inline
 #  define inline __inline
 # endif
+#elif !defined(HAVE_INLINE)
+# ifndef inline
+#  define inline
+# endif
 #endif
 
-#ifdef HAS__SNPRINTF
+#ifdef HAVE__SNPRINTF
 # ifndef snprintf 
 #  define snprintf _snprintf
 # endif
 #endif
 
-#ifdef HAS__VSNPRINTF
+#ifdef HAVE__VSNPRINTF
 # ifndef vsnprintf 
 #  define vsnprintf _vsnprintf
 # endif
 #endif
 
-#ifdef HAS__STRICMP
+#ifdef HAVE__STRICMP
 # ifndef Q_stricmp 
 #  define Q_stricmp(s1, s2) _stricmp((s1), (s2))
 # endif
@@ -131,7 +137,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # endif
 #endif
 
-#ifdef HAS_STRCASECMP
+#ifdef HAVE_STRCASECMP
 # ifndef Q_stricmp 
 #  define Q_stricmp(s1, s2) strcasecmp((s1), (s2))
 # endif
@@ -140,7 +146,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # endif
 #endif
 
-#if (defined _M_IX86 || defined __i386__) && !defined C_ONLY
+#if (defined(_M_IX86) || defined(__i386__)) && !defined(C_ONLY)
 # define id386
 #else
 # ifdef id386
@@ -156,7 +162,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # define CPUSTRING	"NON-WIN32"
 #endif
 
-#ifdef HAS_TCHAR
+#ifdef HAVE_TCHAR
 # include <tchar.h>
 #endif
 
@@ -220,10 +226,16 @@ typedef vec_t vec3_t[3];
 typedef vec_t vec4_t[4];
 typedef vec_t vec5_t[5];
 
-typedef vec3_t mat3_t[3];
-typedef float mat4_t[16];
-
 typedef qbyte byte_vec4_t[4];
+
+struct cplane_s;
+
+extern vec3_t vec3_origin;
+extern vec3_t axis_identity[3];
+
+#define	nanmask (255<<23)
+
+#define	IS_NAN(x) (((*(int *)&x)&nanmask)==nanmask)
 
 #ifndef M_PI
 # define M_PI		3.14159265358979323846	// matches value in gcc v2 math.h
@@ -262,19 +274,8 @@ int		Q_rand (int *seed);
 #define Q_brandom(seed,a,b)	((a)+Q_random(seed)*((b)-(a)))						// a..b
 #define Q_crandom(seed)		Q_brandom(seed,-1,1)
 
-struct cplane_s;
-
-extern vec3_t vec3_origin;
-
-extern mat3_t mat3_identity;
-extern mat4_t mat4_identity;
-extern mat3_t axis_identity;
-
-#define	nanmask (255<<23)
-
-#define	IS_NAN(x) (((*(int *)&x)&nanmask)==nanmask)
-
-float Q_RSqrt (float number);
+float	Q_RSqrt (float number);
+int		Q_log2 (int val);
 
 #define PlaneDiff(point,plane) (((plane)->type < 3 ? (point)[(plane)->type] : DotProduct((point), (plane)->normal)) - (plane)->dist)
 
@@ -291,14 +292,26 @@ float Q_RSqrt (float number);
 #define VectorSet(v, x, y, z)	((v)[0]=(x),(v)[1]=(y),(v)[2]=(z))
 #define VectorAvg(a,b,c)		((c)[0]=((a)[0]+(b)[0])*0.5f,(c)[1]=((a)[1]+(b)[1])*0.5f, (c)[2]=((a)[2]+(b)[2])*0.5f)
 #define VectorMA(a,b,c,d)		((d)[0]=(a)[0]+(b)*(c)[0],(d)[1]=(a)[1]+(b)*(c)[1],(d)[2]=(a)[2]+(b)*(c)[2])
+#define VectorCompare(v1,v2)	((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2])
+#define VectorLength(v)			(sqrt(DotProduct((v),(v))))
+#define VectorInverse(v)		((v)[0]=-(v)[0],(v)[1]=-(v)[1],(v)[2]=-(v)[2])
+#define VectorScale(in,scale,out) ((out)[0]=(in)[0]*(scale),(out)[1]=(in)[1]*(scale),(out)[2]=(in)[2]*(scale))
+
+#define DistanceSquared(v1,v2) (((v1)[0]-(v2)[0])*((v1)[0]-(v2)[0])+((v1)[1]-(v2)[1])*((v1)[1]-(v2)[1])+((v1)[2]-(v2)[2])*((v1)[2]-(v2)[2]))
+#define Distance(v1,v2) (sqrt(DistanceSquared(v1,v2)))
+
+#define Vector2Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1])
+#define Vector2Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f)) 
+
 #define Vector4Set(v, a, b, c, d)	((v)[0]=(a),(v)[1]=(b),(v)[2]=(c),(v)[3] = (d))
 #define Vector4Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2],(b)[3]=(a)[3])
 #define Vector4Scale(in,scale,out)		((out)[0]=(in)[0]*scale,(out)[1]=(in)[1]*scale,(out)[2]=(in)[2]*scale,(out)[3]=(in)[3]*scale)
 #define Vector4Add(a,b,c)		((c)[0]=(((a[0])+(b[0]))),(c)[1]=(((a[1])+(b[1]))),(c)[2]=(((a[2])+(b[2]))),(c)[3]=(((a[3])+(b[3])))) 
 #define Vector4Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f),(c)[2]=(((a[2])+(b[2]))*0.5f),(c)[3]=(((a[3])+(b[3]))*0.5f)) 
 
-#define Vector2Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1])
-#define Vector2Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f)) 
+vec_t VectorNormalize (vec3_t v);		// returns vector length
+vec_t VectorNormalize2 (vec3_t v, vec3_t out);
+void  VectorNormalizeFast (vec3_t v);
 
 // just in case you do't want to use the macros
 void _VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc);
@@ -308,24 +321,10 @@ void _VectorAdd (vec3_t veca, vec3_t vecb, vec3_t out);
 void _VectorCopy (vec3_t in, vec3_t out);
 
 void ClearBounds (vec3_t mins, vec3_t maxs);
-qboolean BoundsIntersect (const vec3_t mins1, const vec3_t maxs1, const vec3_t mins2, const vec3_t maxs2);
-qboolean BoundsAndSphereIntersect (const vec3_t mins, const vec3_t maxs, const vec3_t centre, float radius);
 void AddPointToBounds (const vec3_t v, vec3_t mins, vec3_t maxs);
 float RadiusFromBounds (const vec3_t mins, const vec3_t maxs);
-
-#define VectorCompare(v1,v2) ((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2])
-#define VectorLength(v) (sqrt(DotProduct((v),(v))))
-#define VectorInverse(v) ((v)[0]=-(v)[0],(v)[1]=-(v)[1],(v)[2]=-(v)[2])
-#define VectorScale(in,scale,out) ((out)[0]=(in)[0]*(scale),(out)[1]=(in)[1]*(scale),(out)[2]=(in)[2]*(scale))
-
-#define DistanceSquared(v1,v2) (((v1)[0]-(v2)[0])*((v1)[0]-(v2)[0])+((v1)[1]-(v2)[1])*((v1)[1]-(v2)[1])+((v1)[2]-(v2)[2])*((v1)[2]-(v2)[2]))
-#define Distance(v1,v2) (sqrt(DistanceSquared(v1,v2)))
-
-vec_t VectorNormalize (vec3_t v);		// returns vector length
-vec_t VectorNormalize2 (vec3_t v, vec3_t out);
-void  VectorNormalizeFast (vec3_t v);
-
-int Q_log2 (int val);
+qboolean BoundsIntersect (const vec3_t mins1, const vec3_t maxs1, const vec3_t mins2, const vec3_t maxs2);
+qboolean BoundsAndSphereIntersect (const vec3_t mins, const vec3_t maxs, const vec3_t centre, float radius);
 
 #define NUMVERTEXNORMALS	162
 int DirToByte (vec3_t dir);
@@ -333,53 +332,49 @@ void ByteToDir (int b, vec3_t dir);
 
 void NormToLatLong ( const vec3_t normal, qbyte latlong[2] );
 
-void R_ConcatTransforms (const float in1[3*4], const float in2[3*4], float out[3*4]);
-
 void MakeNormalVectors (const vec3_t forward, vec3_t right, vec3_t up);
 void AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up);
 int BoxOnPlaneSide (const vec3_t emins, const vec3_t emaxs, const struct cplane_s *plane);
 float anglemod(float a);
 float LerpAngle (float a1, float a2, const float frac);
 void VecToAngles (const vec3_t vec, vec3_t angles);
-void AnglesToAxis (const vec3_t angles, mat3_t axis);
-float ColorNormalize (const vec3_t in, vec3_t out);
+void AnglesToAxis (const vec3_t angles, vec3_t axis[3]);
+
+vec_t ColorNormalize( const vec_t *in, vec_t *out );
 
 float CalcFov (float fov_x, float width, float height);
 
 #define Q_rint(x)	((x) < 0 ? ((int)((x)-0.5f)) : ((int)((x)+0.5f)))
 
+#define BOX_ON_PLANE_SIDE(emins, emaxs, p)	\
+	(((p)->type < 3)?						\
+	(										\
+		((p)->dist <= (emins)[(p)->type])?	\
+			1								\
+		:									\
+		(									\
+			((p)->dist >= (emaxs)[(p)->type])?\
+				2							\
+			:								\
+				3							\
+		)									\
+	)										\
+	:										\
+		BoxOnPlaneSide( (emins), (emaxs), (p)))
+
 void ProjectPointOnPlane( vec3_t dst, const vec3_t p, const vec3_t normal );
 void PerpendicularVector( vec3_t dst, const vec3_t src );
 void RotatePointAroundVector( vec3_t dst, const vec3_t dir, const vec3_t point, float degrees );
 
-void Matrix4_Identity (mat4_t mat);
-void Matrix4_Copy (mat4_t a, mat4_t b);
-qboolean Matrix3_Compare (mat3_t a, mat3_t b);
-void Matrix4_Multiply(mat4_t a, mat4_t b, mat4_t product);
-void Matrix4_MultiplyFast(mat4_t b, mat4_t c, mat4_t a);
-void Matrix4_Transpose (mat4_t m, mat4_t ret);
-void Matrix4_Rotate (mat4_t a, float angle, float x, float y, float z);
-void Matrix4_Translate (mat4_t m, float x, float y, float z);
-void Matrix4_Scale (mat4_t m, float x, float y, float z);
-float Matrix4_Det (mat4_t mr);
-void Matrix4_Inverse (mat4_t mr, mat4_t ma);
-void Matrix4_Matrix3 (mat4_t in, mat3_t out);
-void Matrix4_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product);
-
-void Matrix3_Identity (mat3_t mat);
-void Matrix3_Copy (mat3_t a, mat3_t b);
-qboolean Matrix4_Compare (mat4_t a, mat4_t b);
-void Matrix3_Multiply (mat3_t in1, mat3_t in2, mat3_t out);
-void Matrix3_Transpose (mat3_t in, mat3_t out);
-void Matrix3_Multiply_Vec3 (mat3_t a, vec3_t b, vec3_t product);
-float Matrix3_Det (mat3_t mat);
-void Matrix3_Inverse (mat3_t mr, mat3_t ma);
-void Matrix3_EulerAngles (mat3_t mat, vec3_t angles);
-void Matrix3_Rotate (mat3_t a, float angle, float x, float y, float z);
-
-void Matrix_Multiply_Vec2 (mat4_t a, vec2_t b, vec2_t product);
-void Matrix_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product);
-void Matrix_Multiply_Vec4 (mat4_t a, vec4_t b, vec4_t product);
+void Matrix_Identity( vec3_t m[3] );
+void Matrix_Copy( vec3_t m1[3], vec3_t m2[3] );
+qboolean Matrix_Compare( vec3_t m1[3], vec3_t m2[3] );
+void Matrix_Multiply( vec3_t m1[3], vec3_t m2[3], vec3_t out[3] );
+void Matrix_TransformVector( vec3_t m[3], vec3_t v, vec3_t out );
+void Matrix_Transpose( vec3_t in[3], vec3_t out[3] );
+void Matrix_EulerAngles( vec3_t m[3], vec3_t angles );
+void Matrix_Rotate( vec3_t m[3], vec_t angle, vec_t x, vec_t y, vec_t z );
+void Matrix_FromPoints( const vec3_t v1, const vec3_t v2, const vec3_t v3, vec3_t m[3] );
 
 //=============================================
 
@@ -390,17 +385,12 @@ void COM_FileBase (char *in, char *out);
 void COM_FilePath (char *in, char *out);
 void COM_DefaultExtension (char *path, char *extension);
 
+// data is an in/out parm, returns a parsed out token
 char *COM_ParseExt (char **data_p, qboolean nl);
-
 #define COM_Parse(data_p)	COM_ParseExt(data_p,qtrue)
 
-// data is an in/out parm, returns a parsed out token
-
-void Com_sprintf (char *dest, int size, char *fmt, ...);
-
-void Com_PageInMemory (qbyte *buffer, int size);
-
 //=============================================
+
 extern	vec4_t		colorBlack;
 extern	vec4_t		colorRed;
 extern	vec4_t		colorGreen;
@@ -446,7 +436,10 @@ extern vec4_t	color_table[8];
 
 //=============================================
 
-void Q_strncpyz (char *dest, char *src, int size);
+void Q_strncpyz( char *dest, const char *src, size_t size );
+void Q_strncatz( char *dest, const char *src, size_t size );
+void Q_snprintfz( char *dest, size_t size, const char *fmt, ... );
+char *Q_strlwr( char *s );
 
 //=============================================
 #if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
@@ -469,7 +462,7 @@ float FloatSwap (float f);
 # define LittleLong(l) (l)
 # define BigFloat(l) FloatSwap(l)
 # define LittleFloat(l) (l)
-#elif ENDIAN_BIG
+#elif defined(ENDIAN_BIG)
 // big endian
 # define BigShort(l) (l)
 # define LittleShort(l) ShortSwap(l)
@@ -521,6 +514,22 @@ void Com_Printf (char *msg, ...);
 
 
 /*
+==============================================================
+
+FILESYSTEM
+
+==============================================================
+*/
+
+#define FS_READ		0
+#define FS_WRITE	1
+#define FS_APPEND	2
+
+#define FS_SEEK_CUR	0
+#define FS_SEEK_SET	1
+#define FS_SEEK_END	2
+
+/*
 ==========================================================
 
 CVARS (console variables)
@@ -550,7 +559,9 @@ typedef struct cvar_s
 	int			flags;
 	qboolean	modified;	// set each time the cvar is changed
 	float		value;
+	int			integer;
 	struct cvar_s *next;
+	struct cvar_s *hash_next;
 } cvar_t;
 
 #endif		// CVAR
@@ -681,10 +692,10 @@ typedef struct
 
 	int			origin[3];		// 12.3
 	int			velocity[3];	// 12.3
-	qbyte		pm_flags;		// ducked, jump_held, etc
-	qbyte		pm_time;		// each unit = 8 ms
-	short		gravity;
-	short		delta_angles[3];	// add to command angles to get view direction
+	int			pm_flags;		// ducked, jump_held, etc
+	int			pm_time;		// each unit = 8 ms
+	int			gravity;
+	int			delta_angles[3];	// add to command angles to get view direction
 									// changed by spawns, rotating objects, and teleporters
 } pmove_state_t;
 
@@ -743,40 +754,29 @@ typedef struct
 // that happen constantly on the given entity.
 // An entity that has effects will be sent to the client
 // even if it has a zero index model.
-#define	EF_ROTATE			0x00000001		// rotate (bonus items)
-#define EF_BOB				0x00000002		// bobbing (bonus items)
-#define	EF_GIB				0x00000004		// leave a trail
-#define	EF_BLASTER			0x00000008		// redlight + trail
-#define	EF_ROCKET			0x00000010		// redlight + trail
-#define	EF_GRENADE			0x00000020
-#define	EF_HYPERBLASTER		0x00000040
-#define	EF_BFG				0x00000080
-#define EF_POWERSCREEN		0x00000100
-#define	EF_FLIES			0x00000200
-#define	EF_QUAD				0x00000400
-#define	EF_PENT				0x00000800
-#define EF_FLAG1			0x00001000
-#define EF_FLAG2			0x00002000
-#define EF_CORPSE			0x00004000		// treat as CONTENTS_CORPSE for collision
-#define EF_PORTALENTITY		0x00008000		// treat as CONTENTS_EMPTY for collision
+#define	EF_ROTATE_AND_BOB	1		// rotate and bob (bonus items)
+#define EF_POWERSCREEN		2
+#define EF_CORPSE			4		// treat as CONTENTS_CORPSE for collision
+#define	EF_QUAD				8
+#define	EF_PENT				16
+#define EF_FLAG1			32
+#define EF_FLAG2			64
 
 // entity_state_t->renderfx flags
 #define	RF_MINLIGHT			1		// always have some light (viewmodel)
-#define	RF_VIEWERMODEL		2		// don't draw through eyes, only mirrors
-#define	RF_WEAPONMODEL		4		// only draw through eyes
-#define	RF_FULLBRIGHT		8		// always draw full intensity
-#define	RF_DEPTHHACK		16		// for view weapon Z crunching
-#define	RF_FRAMELERP		32
-#define RF_SHELL_RED		64
-#define	RF_SHELL_GREEN		128
-#define RF_SHELL_BLUE		256
-#define RF_NOSHADOW			512
-#define RF_SCALEHACK		1024	// scale 1.5 times (weapons)
-#define RF_LEFTHAND			2048
+#define	RF_FULLBRIGHT		2		// always draw full intensity
+#define	RF_FRAMELERP		4
+#define RF_SHELL_RED		8
+#define	RF_SHELL_GREEN		16
+#define RF_SHELL_BLUE		32
+#define RF_NOSHADOW			64
+#define RF_SCALEHACK		128		// scale 1.5 times (weapons)
 
-// player_state_t->refdef flags
-#define	RDF_UNDERWATER		1		// warp the screen as apropriate
-#define RDF_NOWORLDMODEL	2		// used for player configuration screen
+// these flags are set locally by client
+#define	RF_VIEWERMODEL		256		// don't draw through eyes, only mirrors
+#define	RF_WEAPONMODEL		512		// only draw through eyes and depth hack
+#define RF_CULLHACK			1024
+#define RF_FORCENOLOD		2048
 
 // sound channels
 // channel 0 never willingly overrides
@@ -790,14 +790,12 @@ typedef struct
 #define	CHAN_NO_PHS_ADD			8	// send to all clients, not just ones in PHS (ATTN 0 will also do this)
 #define	CHAN_RELIABLE			16	// send by reliable message, not datagram
 
-
 // sound attenuation values
 #define	ATTN_NONE               0	// full volume the entire level
 #define	ATTN_NORM               1
 #define	ATTN_IDLE               2
 #define	ATTN_STATIC             3	// diminish very rapidly with distance
 
-// cls.key_dest
 typedef enum
 {
 	key_game, 
@@ -923,6 +921,7 @@ typedef enum
 	ca_disconnected, 	// not talking to a server
 	ca_connecting,		// sending request packets to the server
 	ca_connected,		// netchan_t established, waiting for svc_serverdata
+	ca_loading,
 	ca_active			// game views should be displayed
 } connstate_t;
 
@@ -945,12 +944,11 @@ typedef struct
 	vec3_t		kick_angles;	// add to view direction to get render angles
 								// set by weapon kicks, pain effects, etc
 
-	vec3_t		gunangles;
 	int			gunindex;
 	int			gunframe;
 
 	float		blend[4];		// rgba full screen effect
-	
+
 	float		fov;			// horizontal field of view
 
 	short		stats[MAX_STATS];		// fast status bar updates

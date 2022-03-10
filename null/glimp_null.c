@@ -17,9 +17,9 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
-#include "../ref_gl/gl_local.h"
+#include "../ref_gl/r_local.h"
 
-void		GLimp_BeginFrame( float camera_separation )
+void		GLimp_BeginFrame( void )
 {
 }
 
@@ -35,7 +35,7 @@ void		GLimp_Shutdown( void )
 {
 }
 
-int     	GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
+int     	GLimp_SetMode( int mode, qboolean fullscreen )
 {
 }
 

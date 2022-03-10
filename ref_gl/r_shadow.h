@@ -18,15 +18,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#ifdef SHADOW_VOLUMES
+#if SHADOW_VOLUMES
 
 #define MAX_SHADOWVOLUME_INDEXES	MAX_ARRAY_INDEXES*4
 
 struct mesh_s;
 
+void R_ShadowBlend( void );
 void R_BuildTriangleNeighbors (int *neighbors, index_t *indexes, int numtris);
 int R_BuildShadowVolumeTriangles (void);
-void R_DrawShadowVolumes (struct mesh_s *mesh);
+void R_DrawShadowVolumes( struct mesh_s *mesh, vec3_t mins, vec3_t maxs, float radius );
 
 #endif
 

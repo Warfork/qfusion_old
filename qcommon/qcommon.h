@@ -21,24 +21,32 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // qcommon.h -- definitions common between client and server, but not game.dll
 
 #include "../game/q_shared.h"
+#include "qfiles.h"
+#include "cmodel.h"
+#include "mdfour.h"
 
 //define	PARANOID			// speed sapping error checking
 
-#define	VERSION		3.05
+#ifndef VERSION
+# define VERSION		3.06
+#endif
 
-#define APPLICATION	"QFusion"
-#define	BASEDIRNAME	"baseq3"
+#ifndef APPLICATION
+# define APPLICATION	"QFusion"
+#endif
+
+#define	BASEDIRNAME		"baseq3"
 
 //============================================================================
 
-typedef struct sizebuf_s
+typedef struct
 {
 	qboolean	allowoverflow;	// if false, do a Com_Error
 	qboolean	overflowed;		// set to true if the buffer size failed
 	qbyte		*data;
-	int		maxsize;
-	int		cursize;
-	int		readcount;
+	int			maxsize;
+	int			cursize;
+	int			readcount;
 } sizebuf_t;
 
 void SZ_Init (sizebuf_t *buf, qbyte *data, int length);
@@ -59,35 +67,34 @@ void MSG_WriteInt3 (sizebuf_t *sb, int c);
 void MSG_WriteLong (sizebuf_t *sb, int c);
 void MSG_WriteFloat (sizebuf_t *sb, float f);
 void MSG_WriteString (sizebuf_t *sb, char *s);
-void MSG_WriteCoord (sizebuf_t *sb, float f);
-void MSG_WritePos (sizebuf_t *sb, vec3_t pos);
-void MSG_WriteAngle (sizebuf_t *sb, float f);
-void MSG_WriteAngle16 (sizebuf_t *sb, float f);
+#define MSG_WriteCoord(sb,f) (MSG_WriteInt3((sb), Q_rint((f))))
+#define MSG_WritePos(sb,pos) (MSG_WriteCoord((sb),(pos)[0]), MSG_WriteCoord(sb,(pos)[1]), MSG_WriteCoord(sb,(pos)[2]))
+#define MSG_WriteAngle(sb,f) (MSG_WriteByte((sb), ANGLE2BYTE((f))))
+#define MSG_WriteAngle16(sb,f) (MSG_WriteShort((sb), ANGLE2SHORT((f))))
 void MSG_WriteDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
 void MSG_WriteDeltaEntity (struct entity_state_s *from, struct entity_state_s *to, sizebuf_t *msg, qboolean force, qboolean newentity);
 void MSG_WriteDir (sizebuf_t *sb, vec3_t vector);
 
 
-void	MSG_BeginReading (sizebuf_t *sb);
+void MSG_BeginReading (sizebuf_t *sb);
 
-int	MSG_ReadChar (sizebuf_t *sb);
-int	MSG_ReadByte (sizebuf_t *sb);
+// returns -1 if no more characters are available
+#define MSG_ReadChar(sb) (((sb)->readcount+1 > (sb)->cursize) ? -1 : (signed char)(sb)->data[(sb)->readcount++])
+#define MSG_ReadByte(sb) (((sb)->readcount+1 > (sb)->cursize) ? -1 : (unsigned char)(sb)->data[(sb)->readcount++])
 int	MSG_ReadShort (sizebuf_t *sb);
 int	MSG_ReadInt3 (sizebuf_t *sb);
 int	MSG_ReadLong (sizebuf_t *sb);
-float	MSG_ReadFloat (sizebuf_t *sb);
-char	*MSG_ReadString (sizebuf_t *sb);
-char	*MSG_ReadStringLine (sizebuf_t *sb);
+float MSG_ReadFloat (sizebuf_t *sb);
+char *MSG_ReadString (sizebuf_t *sb);
+char *MSG_ReadStringLine (sizebuf_t *sb);
+#define MSG_ReadCoord(sb) ((float)MSG_ReadInt3((sb)))
+#define MSG_ReadPos(sb,pos) ((pos)[0]=MSG_ReadCoord((sb)),(pos)[1]=MSG_ReadCoord((sb)),(pos)[2]=MSG_ReadCoord((sb)))
+#define MSG_ReadAngle(sb) (BYTE2ANGLE(MSG_ReadByte((sb))))
+#define MSG_ReadAngle16(sb) (SHORT2ANGLE(MSG_ReadShort((sb))))
+void MSG_ReadDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
 
-float	MSG_ReadCoord (sizebuf_t *sb);
-void	MSG_ReadPos (sizebuf_t *sb, vec3_t pos);
-float	MSG_ReadAngle (sizebuf_t *sb);
-float	MSG_ReadAngle16 (sizebuf_t *sb);
-void	MSG_ReadDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
-
-void	MSG_ReadDir (sizebuf_t *sb, vec3_t vector);
-
-void	MSG_ReadData (sizebuf_t *sb, void *buffer, int size);
+void MSG_ReadDir (sizebuf_t *sb, vec3_t vector);
+void MSG_ReadData (sizebuf_t *sb, void *buffer, int size);
 
 //============================================================================
 
@@ -108,16 +115,14 @@ void Info_Print (char *s);
 
 
 /* crc.h */
-
 void CRC_Init(unsigned short *crcvalue);
 void CRC_ProcessByte(unsigned short *crcvalue, qbyte data);
 unsigned short CRC_Value(unsigned short crcvalue);
 unsigned short CRC_Block (qbyte *start, int count);
 
 /* patch.h */
-
-void Patch_GetFlatness ( float maxflat, vec4_t *points, int *patch_cp, int *flat );
-void Patch_Evaluate ( vec4_t *p, int *numcp, int *tess, vec4_t *dest );
+void Patch_GetFlatness( float maxflat, vec3_t *points, int *patch_cp, int *flat );
+void Patch_Evaluate( vec_t *p, int *numcp, int *tess, vec_t *dest, int comp );
 
 /* huff.h */
 void Huff_Init (void);
@@ -135,13 +140,13 @@ PROTOCOL
 
 // protocol.h -- communications protocols
 
-#define	PROTOCOL_VERSION	40
+#define	PROTOCOL_VERSION	41
 
 //=========================================
 
-#define	PORT_MASTER	27900
-#define	PORT_CLIENT	(rand()%11000)+5000
-#define	PORT_SERVER	27910
+#define	PORT_MASTER			27900
+#define	PORT_CLIENT			(rand()%11000)+5000
+#define	PORT_SERVER			27910
 
 //=========================================
 
@@ -208,20 +213,19 @@ enum clc_ops_e
 
 #define	PS_M_TIME			(1<<8)
 #define	PS_M_FLAGS			(1<<9)
-#define	PS_M_GRAVITY		(1<<10)
-#define	PS_M_DELTA_ANGLES0	(1<<11)
-#define	PS_M_DELTA_ANGLES1	(1<<12)
-#define	PS_M_DELTA_ANGLES2	(1<<13)
-#define	PS_VIEWOFFSET		(1<<14)
+#define	PS_M_DELTA_ANGLES0	(1<<10)
+#define	PS_M_DELTA_ANGLES1	(1<<11)
+#define	PS_M_DELTA_ANGLES2	(1<<12)
+#define	PS_WEAPONFRAME		(1<<13)
+#define	PS_VIEWANGLES		(1<<14)
 #define PS_MOREBITS2		(1<<15)
 
-#define	PS_VIEWANGLES		(1<<16)
+#define	PS_M_GRAVITY		(1<<16)
 #define	PS_KICKANGLES		(1<<17)
 #define	PS_BLEND			(1<<18)
 #define	PS_FOV				(1<<19)
 #define	PS_WEAPONINDEX		(1<<20)
-#define	PS_WEAPONFRAME		(1<<21)
-#define PS_WEAPONANGLES		(1<<22)
+#define	PS_VIEWOFFSET		(1<<21)
 #define PS_MOREBITS3		(1<<23)
 
 //==============================================
@@ -259,7 +263,7 @@ enum clc_ops_e
 // try to pack the common update flags into the first byte
 #define	U_ORIGIN1	(1<<0)
 #define	U_ORIGIN2	(1<<1)
-#define	U_ORIGIN3	(1<<2)		// frame is a byte
+#define	U_ORIGIN3	(1<<2)
 #define	U_ANGLE2	(1<<3)
 #define	U_ANGLE3	(1<<4)
 #define	U_EVENT		(1<<5)
@@ -270,29 +274,29 @@ enum clc_ops_e
 #define	U_NUMBER16	(1<<8)		// NUMBER8 is implicit if not set
 #define	U_FRAME8	(1<<9)		// frame is a byte
 #define	U_ANGLE1	(1<<10)
-#define	U_MODEL		(1<<11)		// fullbright, etc
-#define U_RENDERFX8	(1<<12)
-#define	U_EFFECTS8	(1<<14)		// autorotate, trails, etc
+#define	U_MODEL		(1<<11)
+#define U_TYPE		(1<<12)
+#define	U_OLDORIGIN	(1<<13)		// FIXME: get rid of this
+#define U_EVENT2	(1<<14)
 #define	U_MOREBITS2	(1<<15)		// read one additional byte
 
 // third byte
-#define	U_SKIN8		(1<<16)
-#define	U_FRAME16	(1<<17)		// frame is a short
-#define	U_EFFECTS16	(1<<18)		// 8 + 16 = 32
+#define	U_EFFECTS8	(1<<16)		// autorotate, trails, etc
+#define U_WEAPON	(1<<17)
+#define	U_SOUND		(1<<18)
 #define	U_MODEL2	(1<<19)		// weapons, flags, etc
-#define	U_RENDERFX16 (1<<20)	// 8 + 16 = 32
+#define	U_RENDERFX8 (1<<20)
 #define	U_SOLID		(1<<21)		// angles are short if bmodel (precise)
-#define	U_OLDORIGIN	(1<<22)		// FIXME: get rid of this
+#define	U_SKIN8		(1<<22)
 #define	U_MOREBITS3	(1<<23)		// read one additional byte
 
 // fourth byte
 #define	U_SKIN16	(1<<24)
 #define	U_MODEL3	(1<<25)
-#define	U_SOUND		(1<<26)
-#define U_LIGHT		(1<<27)
-#define U_TYPE		(1<<28)
-#define U_EVENT2	(1<<29)
-#define U_WEAPON	(1<<30)
+#define U_LIGHT		(1<<26)
+#define	U_EFFECTS16	(1<<27)
+#define U_RENDERFX16 (1<<28)
+#define	U_FRAME16	(1<<29)		// frame is a short
 
 /*
 ==============================================================
@@ -380,13 +384,13 @@ char 	*Cmd_CompleteCommand (char *partial);
 
 void	Cmd_WriteAliases (FILE *f);
 
-int	Cmd_CompleteAliasCountPossible (char *partial);
+int		Cmd_CompleteAliasCountPossible (char *partial);
 char	**Cmd_CompleteAliasBuildList (char *partial);
-int	Cmd_CompleteCountPossible (char *partial);
+int		Cmd_CompleteCountPossible (char *partial);
 char	**Cmd_CompleteBuildList (char *partial);
 char	*Cmd_CompleteAlias (char *partial);
 
-int	Cmd_Argc (void);
+int		Cmd_Argc (void);
 char	*Cmd_Argv (int arg);
 char	*Cmd_Args (void);
 // The functions that execute commands get their parameters with these
@@ -501,8 +505,8 @@ NET
 
 #define	PORT_ANY	-1
 
-#define MAX_PACKETLEN	1400
-#define	PACKET_HEADER	13			// two ints, short and a byte
+#define	PACKET_HEADER	10			// two ints, and a short
+#define MAX_PACKETLEN	1440
 
 #define	MAX_MSGLEN		2000		// max length of a message
 #define MAX_DEMO_MSGLEN	32768		// max length of a faked demo message
@@ -537,8 +541,6 @@ qboolean	NET_StringToAdr (char *s, netadr_t *a);
 void		NET_Sleep(int msec);
 
 //============================================================================
-
-enum { DATA_RAW, DATA_COMPRESSED };
 
 typedef struct
 {
@@ -592,70 +594,6 @@ void Netchan_OutOfBand (int net_socket, netadr_t adr, int length, qbyte *data);
 void Netchan_OutOfBandPrint (int net_socket, netadr_t adr, char *format, ...);
 qboolean Netchan_Process (netchan_t *chan, sizebuf_t *recieved, sizebuf_t *msg);
 
-qboolean Netchan_CanReliable (netchan_t *chan);
-
-
-/*
-==============================================================
-
-CMODEL
-
-==============================================================
-*/
-
-
-#include "../qcommon/qfiles.h"
-
-struct cmodel_s	*CM_LoadMap (char *name, qboolean clientload, unsigned *checksum);
-struct cmodel_s	*CM_InlineModel (int num);	// 1, 2, etc
-qboolean CM_ClientLoad (void);
-
-int		CM_NumClusters (void);
-int		CM_NumInlineModels (void);
-char		*CM_EntityString (void);
-
-// creates a clipping hull for an arbitrary bounding box
-struct cmodel_s	*CM_ModelForBBox (vec3_t mins, vec3_t maxs);
-void		CM_InlineModelBounds (struct cmodel_s *cmodel, vec3_t mins, vec3_t maxs);
-
-
-// returns an ORed contents mask
-int		CM_PointContents (vec3_t p, struct cmodel_s *cmodel);
-int		CM_TransformedPointContents (vec3_t p, struct cmodel_s *cmodel, vec3_t origin, vec3_t angles);
-
-void		CM_BoxTrace (trace_t *tr, vec3_t start, vec3_t end,
-						  vec3_t mins, vec3_t maxs,
-						  struct cmodel_s *cmodel, int brushmask);
-void		CM_TransformedBoxTrace (trace_t *tr, vec3_t start, vec3_t end,
-						  vec3_t mins, vec3_t maxs,
-		    				  struct cmodel_s *cmodel, int brushmask,
-			    			  vec3_t origin, vec3_t angles);
-
-qbyte		*CM_ClusterPVS (int cluster);
-qbyte		*CM_ClusterPHS (int cluster);
-int		CM_ClusterSize (void);
-
-int		CM_PointLeafnum (vec3_t p);
-
-// call with topnode set to the headnode, returns with topnode
-// set to the first node that splits the box
-int		CM_BoxLeafnums (vec3_t mins, vec3_t maxs, int *list,
-						int listsize, int *topnode);
-
-int		CM_LeafContents (int leafnum);
-int		CM_LeafCluster (int leafnum);
-int		CM_LeafArea (int leafnum);
-
-void		CM_SetAreaPortalState (int portalnum, int area, int otherarea, qboolean open);
-qboolean	CM_AreasConnected (int area1, int area2);
-
-int		CM_WriteAreaBits (qbyte *buffer, int area);
-void		CM_MergeAreaBits (qbyte *buffer, int area);
-qboolean	CM_HeadnodeVisible (int headnode, qbyte *visbits);
-
-void		CM_WritePortalState (FILE *f);
-void		CM_ReadPortalState (FILE *f);
-
 /*
 ==============================================================
 
@@ -664,30 +602,35 @@ FILESYSTEM
 ==============================================================
 */
 
-void	FS_InitFilesystem (void);
-void	FS_SetGamedir (char *dir);
-char	*FS_Gamedir (void);
-char	*FS_NextPath (char *prevpath);
-void	FS_ExecAutoexec (void);
+void	FS_InitFilesystem( void );
+void	FS_SetGamedir( char *dir );
+void	FS_CreatePath( const char *path );
+char	*FS_NextPath( char *prevpath );
+void	FS_ExecAutoexec( void );
 
-int	FS_FOpenFile (const char *filename, int *file);
-int	FS_FileExists (const char *path);
-void	FS_FCloseFile (int file);
-int	FS_GetFileList (const char *dir, const char *extension, char *buf, int bufsize);
-int	FS_GetFileListExt (const char *dir, const char *extension, char *buf, int bufsize, char *buf2, int buf2size);
+// these functions are public and may be called from another DLL
+int		FS_FOpenFile( const char *filename, int *filenum, int mode );
+int		FS_Read( void *buffer, size_t len, int file );
+int		FS_Write( const void *buffer, size_t len, int file );
+int		FS_Tell( int file );
+int		FS_Seek( int file, int offset, int whence );
+int		FS_Eof( int file );
+int		FS_Flush( int file );
+void	FS_FCloseFile( int file );
+void	FS_CopyFile( const char *src, const char *dst );
+void	FS_RemoveFile( const char *name );
+int		FS_RenameFile( const char *src, const char *dst );
+int		FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize );
+char	*FS_Gamedir( void );
 
-// note: this can't be called from another DLL, due to MS libc issues
+// private engine functions
+int		FS_LoadFile( const char *path, void **buffer );	// a null buffer will just return the file length without loading
+														// a -1 length is not present
+														// note: this can't be called from another DLL, due to MS libc issues
+void	FS_FreeFile( void *buffer );
 
-int	FS_LoadFile (const char *path, void **buffer);
-// a null buffer will just return the file length without loading
-// a -1 length is not present
-
-void	FS_Read (void *buffer, int len, int f);
-// properly handles partial reads
-
-void	FS_FreeFile (void *buffer);
-
-void	FS_CreatePath (char *path);
+int		FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t *bufsize, char *buf2, size_t *buf2size );
+char	**FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned canthave );
 
 
 /*
@@ -706,6 +649,8 @@ MISC
 #define	PRINT_ALL		0
 #define PRINT_DEVELOPER	1	// only print when "developer 1"
 
+#define MAX_PRINTMSG	2048
+
 void		Com_BeginRedirect (int target, char *buffer, int buffersize, void (*flush));
 void		Com_EndRedirect (void);
 void 		Com_Printf (char *fmt, ...);
@@ -721,6 +666,8 @@ void		Com_SetServerState (int state);
 
 unsigned	Com_BlockChecksum (void *buffer, int length);
 qbyte		COM_BlockSequenceCRCByte (qbyte *base, int length, int sequence);
+
+void		Com_PageInMemory (qbyte *buffer, int size);
 
 unsigned int Com_HashKey (char *name, int hashsize);
 
@@ -739,7 +686,7 @@ extern	int		time_after_ref;
 
 
 // LordHavoc: this is pointless with a good C library
-//#define MEMCLUMPING
+//#define MEMCLUMPING 1
 
 #define POOLNAMESIZE 128
 
@@ -867,6 +814,7 @@ void Memory_Init (void);
 void Memory_InitCommands (void);
 void Memory_Shutdown (void);
 
+void *_Mem_AllocExt ( mempool_t *pool, int size, int z, int musthave, int canthave, const char *filename, int fileline );
 void *_Mem_Alloc ( mempool_t *pool, int size, int musthave, int canthave, const char *filename, int fileline );
 void *_Mem_Realloc ( void *data, int size, const char *filename, int fileline );
 void _Mem_Free ( void *data, int musthave, int canthave, const char *filename, int fileline );
@@ -878,6 +826,7 @@ void _Mem_EmptyPool ( mempool_t *pool, int musthave, int canthave, const char *f
 void _Mem_CheckSentinels ( void *data, const char *filename, int fileline );
 void _Mem_CheckSentinelsGlobal ( const char *filename, int fileline );
 
+#define Mem_AllocExt(pool,size,z) _Mem_AllocExt(pool,size,z,0,0,__FILE__,__LINE__)
 #define Mem_Alloc(pool,size) _Mem_Alloc(pool,size,0,0,__FILE__,__LINE__)
 #define Mem_Realloc(data,size) _Mem_Realloc(data,size,__FILE__,__LINE__)
 #define Mem_Free(mem) _Mem_Free(mem,0,0,__FILE__,__LINE__)
@@ -893,9 +842,11 @@ void _Mem_CheckSentinelsGlobal ( const char *filename, int fileline );
 extern mempool_t *tempMemPool;
 extern mempool_t *zoneMemPool;
 
+#define Mem_ZoneMallocExt(size,z) Mem_AllocExt(zoneMemPool,size,z)
 #define Mem_ZoneMalloc(size) Mem_Alloc(zoneMemPool,size)
 #define Mem_ZoneFree(data) Mem_Free(data)
 
+#define Mem_TempMallocExt(size,z) Mem_AllocExt(tempMemPool,size,z)
 #define Mem_TempMalloc(size) Mem_Alloc(tempMemPool,size)
 #define Mem_TempFree(data) Mem_Free(data)
 
@@ -925,17 +876,22 @@ extern	int	curtime;		// time returned by last Sys_Milliseconds
 
 typedef enum { LIB_GAME, LIB_CGAME, LIB_UI } gamelib_t;
 
+typedef struct { char *name; void **funcPointer; } dllfunc_t;
+
 void	Sys_Init (void);
 
 void	Sys_AppActivate (void);
 
-void	Sys_UnloadLibrary (gamelib_t gamelib);
-void	*Sys_LoadLibrary (gamelib_t gamelib, void *parms);
+void	Sys_UnloadGameLibrary (gamelib_t gamelib);
+void	*Sys_LoadGameLibrary (gamelib_t gamelib, void *parms);
 // loads the game dll and calls the api init function
 
+void	Sys_UnloadLibrary( void **lib );
+void	*Sys_LoadLibrary( char *name, dllfunc_t *funcs );	// NULL-terminated array of functions
+
 void	Sys_InitTimer (void);
-int	Sys_Milliseconds (void);
-void	Sys_Mkdir (char *path);
+int		Sys_Milliseconds (void);
+void	Sys_Mkdir (const char *path);
 
 char	*Sys_ConsoleInput (void);
 void	Sys_ConsoleOutput (char *string);
@@ -964,7 +920,7 @@ CLIENT / SERVER SYSTEMS
 */
 
 void CL_Init (void);
-void CL_Drop (void);
+void CL_Disconnect (void);
 void CL_Shutdown (void);
 void CL_Frame (int msec);
 void Con_Print (char *text);

@@ -31,7 +31,7 @@ void CL_Init (void)
 {
 }
 
-void CL_Drop (void)
+void CL_Disconnect (void)
 {
 }
 

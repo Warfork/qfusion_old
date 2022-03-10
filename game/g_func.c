@@ -1130,7 +1130,7 @@ void Think_SpawnDoorTrigger (edict_t *ent)
 	other->touch = Touch_DoorTrigger;
 	trap_LinkEntity (other);
 
-	if ( ent->spawnflags & DOOR_START_OPEN ) {
+	if( ent->spawnflags & DOOR_START_OPEN ) {
 		door_use_areaportals (ent, qtrue);
 	}
 	
@@ -1334,9 +1334,8 @@ void SP_func_door_rotating (edict_t *ent)
 
 	if (!st.distance)
 	{
-		if ( developer->value )
+		if (developer->integer)
 			G_Printf ("%s at %s with no distance set\n", ent->classname, vtos(ent->s.origin));
-
 		st.distance = 90;
 	}
 
@@ -1594,7 +1593,7 @@ again:
 	ent = G_PickTarget (self->target);
 	if (!ent)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("train_next: bad target %s\n", self->target);
 		return;
 	}
@@ -1606,7 +1605,7 @@ again:
 	{
 		if (!first)
 		{
-			if (developer->value)
+			if (developer->integer)
 				G_Printf ("connected teleport path_corners, see %s at %s\n", ent->classname, vtos(ent->s.origin));
 
 			return;
@@ -1659,7 +1658,7 @@ void func_train_find (edict_t *self)
 
 	if (!self->target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("train_find: no target\n");
 		return;
 	}
@@ -1667,7 +1666,7 @@ void func_train_find (edict_t *self)
 	ent = G_PickTarget (self->target);
 	if (!ent)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("train_find: target %s not found\n", self->target);
 		return;
 	}
@@ -1746,7 +1745,7 @@ void SP_func_train (edict_t *self)
 	}
 	else
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("func_train without a target at %s\n", vtos(self->r.absmin));
 	}
 }
@@ -1766,7 +1765,7 @@ void trigger_elevator_use (edict_t *self, edict_t *other, edict_t *activator)
 
 	if (!other->pathtarget)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("elevator used with no pathtarget\n");
 		return;
 	}
@@ -1774,7 +1773,7 @@ void trigger_elevator_use (edict_t *self, edict_t *other, edict_t *activator)
 	target = G_PickTarget (other->pathtarget);
 	if (!target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("elevator used with bad pathtarget: %s\n", other->pathtarget);
 		return;
 	}
@@ -1787,20 +1786,20 @@ void trigger_elevator_init (edict_t *self)
 {
 	if (!self->target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("trigger_elevator has no target\n");
 		return;
 	}
 	self->movetarget = G_PickTarget (self->target);
 	if (!self->movetarget)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("trigger_elevator unable to find target %s\n", self->target);
 		return;
 	}
 	if (strcmp(self->movetarget->classname, "func_train") != 0)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("trigger_elevator target %s is not a train\n", self->target);
 		return;
 	}
@@ -1868,7 +1867,7 @@ void SP_func_timer (edict_t *self)
 	if (self->random >= self->wait)
 	{
 		self->random = self->wait - FRAMETIME;
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("func_timer at %s has random >= wait\n", vtos(self->s.origin));
 	}
 
@@ -2147,6 +2146,7 @@ void func_bobbing_think ( edict_t *ent )
 	float phase;
 
 	delta = ( level.time - ent->speed * ent->moveinfo.phase ) / ent->speed;
+	delta = delta - (int)delta;
 	phase = sin( delta * M_TWOPI );
 
 	VectorMA( ent->moveinfo.start_origin, phase, ent->moveinfo.dir, ent->velocity );
@@ -2172,19 +2172,19 @@ void SP_func_bobbing ( edict_t *ent )
 		st.height = 32;
 
 	ent->moveinfo.phase = st.phase;
-	VectorClear ( ent->moveinfo.dir );
+	VectorClear( ent->moveinfo.dir );
 
 	// set the axis of bobbing
-	if ( ent->spawnflags & 1 ) {
+	if( ent->spawnflags & 1 )
 		ent->moveinfo.dir[0] = st.height;
-	} else if ( ent->spawnflags & 2 ) {
+	else if ( ent->spawnflags & 2 )
 		ent->moveinfo.dir[1] = st.height;
-	} else {
+	else
 		ent->moveinfo.dir[2] = st.height;
-	}
 
-	VectorClear ( ent->s.angles );
-	VectorCopy ( ent->s.origin, ent->moveinfo.start_origin );
+	VectorClear( ent->s.angles );
+	VectorClear( ent->velocity );
+	VectorCopy( ent->s.origin, ent->moveinfo.start_origin );
 
 	ent->think = func_bobbing_think;
 	ent->nextthink = level.time + FRAMETIME;
@@ -2239,6 +2239,7 @@ void func_pendulum_think ( edict_t *ent )
 	float phase;
 
 	delta = ( level.time + ent->moveinfo.wait ) * ent->moveinfo.phase;
+	delta = delta - (int)delta;
 	phase = sin( delta * M_TWOPI );
 	VectorMA( ent->moveinfo.start_angles, phase, ent->moveinfo.dir, ent->avelocity );
 	VectorSubtract( ent->avelocity, ent->s.angles, ent->avelocity );

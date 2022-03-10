@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 check_dodge
 
 This is a support routine used when a client is firing
-a non-instant attack weapon.  It checks to see if a
+a non-instant attack weapon. It checks to see if a
 monster's dodge function should be called.
 =================
 */
@@ -37,7 +37,7 @@ static void check_dodge (edict_t *self, vec3_t start, vec3_t dir, int speed)
 	float	eta;
 
 	// easy mode only ducks one quarter the time
-	if (skill->value == 0)
+	if (skill->integer == 0)
 	{
 		if (random() > 0.25)
 			return;
@@ -293,7 +293,7 @@ void blaster_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlag
 	G_FreeEdict (self);
 }
 
-void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int effect, int mod)
+void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int type, int mod)
 {
 	edict_t	*bolt;
 	trace_t	tr;
@@ -309,7 +309,7 @@ void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 	bolt->movetype = MOVETYPE_FLYMISSILE;
 	bolt->r.clipmask = MASK_SHOT;
 	bolt->r.solid = SOLID_BBOX;
-	bolt->s.effects |= effect;
+	bolt->s.type = type;
 	bolt->s.renderfx |= RF_NOSHADOW;
 	VectorClear (bolt->r.mins);
 	VectorClear (bolt->r.maxs);
@@ -324,14 +324,14 @@ void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 	bolt->style = mod;
 	trap_LinkEntity (bolt);
 
-	if (self->r.client)
+	if (self->r.client && !deathmatch->integer)
 		check_dodge (self, bolt->s.origin, dir, speed);
 
 	trap_Trace (&tr, self->s.origin, NULL, NULL, bolt->s.origin, bolt, MASK_SHOT);
 	if (tr.fraction < 1.0)
 	{
 		VectorMA (bolt->s.origin, -10, dir, bolt->s.origin);
-		bolt->touch (bolt, &game.edicts[tr.ent], NULL, 0);
+		bolt->touch (bolt, &game.edicts[tr.ent], &tr.plane, 0);
 	}
 }	
 
@@ -421,7 +421,7 @@ static void LaserGrenade_SetupLaser (edict_t *ent)
 	laser->count = MOD_LASER_TRAP;
 	laser->spawnflags = 1;
 
-	if ( !ctf->value || !owner->r.client || owner->r.client->resp.ctf_team == CTF_TEAM1 ) {
+	if ( !ctf->integer || !owner->r.client || owner->r.client->resp.ctf_team == CTF_TEAM1 ) {
 		laser->spawnflags |= 2;		// red
 	} else {		
 		laser->spawnflags |= 8;		// blue
@@ -492,7 +492,7 @@ void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int s
 	grenade->movetype = MOVETYPE_BOUNCEGRENADE;
 	grenade->r.clipmask = MASK_SHOT;
 	grenade->r.solid = SOLID_BBOX;
-	grenade->s.effects |= EF_GRENADE;
+	grenade->s.type = ET_GRENADE;
 	grenade->s.renderfx |= RF_NOSHADOW;
 	VectorClear (grenade->r.mins);
 	VectorClear (grenade->r.maxs);
@@ -595,7 +595,7 @@ void fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed
 	rocket->movetype = MOVETYPE_FLYMISSILE;
 	rocket->r.clipmask = MASK_SHOT;
 	rocket->r.solid = SOLID_BBOX;
-	rocket->s.effects |= EF_ROCKET;
+	rocket->s.type = ET_ROCKET;
 	rocket->s.renderfx |= RF_NOSHADOW;
 	VectorClear (rocket->r.mins);
 	VectorClear (rocket->r.maxs);
@@ -610,7 +610,7 @@ void fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed
 	rocket->s.sound = trap_SoundIndex ("sound/weapons/rocket/rockfly.wav");
 	rocket->classname = "rocket";
 
-	if (self->r.client)
+	if (self->r.client && !deathmatch->integer)
 		check_dodge (self, rocket->s.origin, dir, speed);
 
 	trap_LinkEntity (rocket);
@@ -753,7 +753,7 @@ void bfg_think (edict_t *self)
 	int		dmg;
 	trace_t	tr;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 		dmg = 5;
 	else
 		dmg = 10;
@@ -772,7 +772,7 @@ void bfg_think (edict_t *self)
 
 //ZOID
 		//don't target players in CTF
-		if (ctf->value && ent->r.client &&
+		if (ctf->integer && ent->r.client &&
 			self->r.owner->r.client &&
 			ent->r.client->resp.ctf_team == self->r.owner->r.client->resp.ctf_team)
 			continue;
@@ -833,7 +833,7 @@ void fire_bfg (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, f
 	bfg->movetype = MOVETYPE_FLYMISSILE;
 	bfg->r.clipmask = MASK_SHOT;
 	bfg->r.solid = SOLID_BBOX;
-	bfg->s.effects |= EF_BFG;
+	bfg->s.type = ET_BFG;
 	VectorClear (bfg->r.mins);
 	VectorClear (bfg->r.maxs);
 	bfg->s.modelindex = trap_ModelIndex ("sprites/s_bfg1.sp2");
@@ -851,7 +851,7 @@ void fire_bfg (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, f
 	bfg->teammaster = bfg;
 	bfg->teamchain = NULL;
 
-	if (self->r.client)
+	if (self->r.client && !deathmatch->integer)
 		check_dodge (self, bfg->s.origin, dir, speed);
 
 	trap_LinkEntity (bfg);

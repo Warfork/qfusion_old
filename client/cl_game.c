@@ -28,8 +28,8 @@ static mempool_t *cl_gamemodulepool;
 CL_GameModule_Error
 ===============
 */
-static void CL_GameModule_Error ( char *msg ) {
-	Com_Error ( ERR_DROP, "%s", msg );
+static void CL_GameModule_Error( char *msg ) {
+	Com_Error( ERR_DROP, "%s", msg );
 }
 
 /*
@@ -37,8 +37,8 @@ static void CL_GameModule_Error ( char *msg ) {
 CL_GameModule_Print
 ===============
 */
-static void CL_GameModule_Print ( char *msg ) {
-	Com_Printf ( "%s", msg );
+static void CL_GameModule_Print( char *msg ) {
+	Com_Printf( "%s", msg );
 }
 
 /*
@@ -46,16 +46,13 @@ static void CL_GameModule_Print ( char *msg ) {
 CL_GameModule_GetConfigString
 ===============
 */
-static void CL_GameModule_GetConfigString ( int i, char *str, int size )
+static void CL_GameModule_GetConfigString( int i, char *str, int size )
 {
-	if ( i < 0 || i >= MAX_CONFIGSTRINGS ) {
-		Com_Error ( ERR_DROP, "CL_GameModule_GetConfigString: i > MAX_CONFIGSTRINGS" );
-	}
-	if ( !str || size <= 0 ) {
-		Com_Error ( ERR_DROP, "CL_GameModule_GetConfigString: NULL string" );
-	}
-
-	Q_strncpyz ( str, cl.configstrings[i], size );
+	if( i < 0 || i >= MAX_CONFIGSTRINGS )
+		Com_DPrintf( S_COLOR_RED "CL_GameModule_GetConfigString: i > MAX_CONFIGSTRINGS" );
+	if( !str || size <= 0 )
+		Com_DPrintf( S_COLOR_RED "CL_GameModule_GetConfigString: NULL string" );
+	Q_strncpyz( str, cl.configstrings[i], size );
 }
 
 /*
@@ -63,45 +60,40 @@ static void CL_GameModule_GetConfigString ( int i, char *str, int size )
 CL_GameModule_NET_GetCurrentState
 ===============
 */
-static void CL_GameModule_NET_GetCurrentState ( int *incomingAcknowledged, int *outgoingSequence )
+static void CL_GameModule_NET_GetCurrentState( int *incomingAcknowledged, int *outgoingSequence )
 {  
-	if ( incomingAcknowledged ) {
+	if( incomingAcknowledged )
 		*incomingAcknowledged = cls.netchan.incoming_acknowledged;
-	}
-	if ( outgoingSequence ) {
+	if( outgoingSequence )
 		*outgoingSequence = cls.netchan.outgoing_sequence;
-	}
 }
 
 /*
 ===============
-CL_GameModule_NET_GetUserCommand
+CL_GameModule_NET_GetUserCmd
 ===============
 */
-static void CL_GameModule_NET_GetUserCommand ( int frame, usercmd_t *cmd ) {
-	if ( cmd ) {
+static void CL_GameModule_NET_GetUserCmd( int frame, usercmd_t *cmd ) {
+	if( cmd )
 		*cmd = cl.cmds[frame & CMD_MASK];
-	}
 } 
 
 /*
 ===============
-CL_GameModule_NET_GetCurrentUserCommand
+CL_GameModule_NET_GetCurrentUserCmdNum
 ===============
 */
-static void CL_GameModule_NET_GetCurrentUserCommand ( usercmd_t *cmd ) {
-	if ( cmd ) {
-		*cmd = cl.cmd;
-	}
-}
+static int CL_GameModule_NET_GetCurrentUserCmdNum( void ) {
+	return cl.cmdNum;
+} 
 
 /*
 ===============
 CL_GameModule_MemAlloc
 ===============
 */
-static void *CL_GameModule_MemAlloc ( mempool_t *pool, int size, const char *filename, int fileline ) {
-	return _Mem_Alloc ( pool, size, MEMPOOL_CLIENTGAME, 0, filename, fileline );
+static void *CL_GameModule_MemAlloc( mempool_t *pool, int size, const char *filename, int fileline ) {
+	return _Mem_Alloc( pool, size, MEMPOOL_CLIENTGAME, 0, filename, fileline );
 }
 
 /*
@@ -109,8 +101,8 @@ static void *CL_GameModule_MemAlloc ( mempool_t *pool, int size, const char *fil
 CL_GameModule_MemFree
 ===============
 */
-static void CL_GameModule_MemFree ( void *data, const char *filename, int fileline ) {
-	_Mem_Free ( data, MEMPOOL_CLIENTGAME, 0, filename, fileline );
+static void CL_GameModule_MemFree( void *data, const char *filename, int fileline ) {
+	_Mem_Free( data, MEMPOOL_CLIENTGAME, 0, filename, fileline );
 }
 
 /*
@@ -118,8 +110,8 @@ static void CL_GameModule_MemFree ( void *data, const char *filename, int fileli
 CL_GameModule_MemAllocPool
 ===============
 */
-static mempool_t *CL_GameModule_MemAllocPool ( const char *name, const char *filename, int fileline ) {
-	return _Mem_AllocPool ( cl_gamemodulepool, name, MEMPOOL_CLIENTGAME, filename, fileline );
+static mempool_t *CL_GameModule_MemAllocPool( const char *name, const char *filename, int fileline ) {
+	return _Mem_AllocPool( cl_gamemodulepool, name, MEMPOOL_CLIENTGAME, filename, fileline );
 }
 
 /*
@@ -127,8 +119,8 @@ static mempool_t *CL_GameModule_MemAllocPool ( const char *name, const char *fil
 CL_GameModule_MemFreePool
 ===============
 */
-static void CL_GameModule_MemFreePool ( mempool_t **pool, const char *filename, int fileline ) {
-	_Mem_FreePool ( pool, MEMPOOL_CLIENTGAME, 0, filename, fileline );
+static void CL_GameModule_MemFreePool( mempool_t **pool, const char *filename, int fileline ) {
+	_Mem_FreePool( pool, MEMPOOL_CLIENTGAME, 0, filename, fileline );
 }
 
 /*
@@ -136,8 +128,8 @@ static void CL_GameModule_MemFreePool ( mempool_t **pool, const char *filename, 
 CL_GameModule_MemEmptyPool
 ===============
 */
-static void CL_GameModule_MemEmptyPool ( mempool_t *pool, const char *filename, int fileline ) {
-	_Mem_EmptyPool ( pool, MEMPOOL_CLIENTGAME, 0, filename, fileline );
+static void CL_GameModule_MemEmptyPool( mempool_t *pool, const char *filename, int fileline ) {
+	_Mem_EmptyPool( pool, MEMPOOL_CLIENTGAME, 0, filename, fileline );
 }
 
 /*
@@ -148,6 +140,7 @@ CL_GameModule_Init
 void CL_GameModule_Init (void)
 {
 	int apiversion;
+	int oldState, start;
 	cgame_import_t import;
 
 	// unload anything we have now
@@ -174,10 +167,15 @@ void CL_GameModule_Init (void)
 	import.Cmd_ExecuteText = Cbuf_ExecuteText;
 	import.Cmd_Execute = Cbuf_Execute;
 
-	import.FS_LoadFile = FS_LoadFile;
-	import.FS_FreeFile = FS_FreeFile;
-	import.FS_FileExists = FS_FileExists;
-	import.FS_ListFiles = FS_GetFileList;
+	import.FS_FOpenFile = FS_FOpenFile;
+	import.FS_Read = FS_Read;
+	import.FS_Write = FS_Write;
+	import.FS_Tell = FS_Tell;
+	import.FS_Seek = FS_Seek;
+	import.FS_Eof = FS_Eof;
+	import.FS_Flush = FS_Flush;
+	import.FS_FCloseFile = FS_FCloseFile;
+	import.FS_GetFileList = FS_GetFileList;
 	import.FS_Gamedir = FS_Gamedir;
 
 	import.Key_GetBindingBuf = Key_GetBindingBuf;
@@ -185,13 +183,19 @@ void CL_GameModule_Init (void)
 
 	import.GetConfigString = CL_GameModule_GetConfigString;
 
-	import.NET_GetUserCommand = CL_GameModule_NET_GetUserCommand;
-	import.NET_GetCurrentUserCommand = CL_GameModule_NET_GetCurrentUserCommand;
+	import.Milliseconds = Sys_Milliseconds;
+
+	import.NET_GetUserCmd = CL_GameModule_NET_GetUserCmd;
+	import.NET_GetCurrentUserCmdNum = CL_GameModule_NET_GetCurrentUserCmdNum;
 	import.NET_GetCurrentState = CL_GameModule_NET_GetCurrentState;
 
 	import.R_UpdateScreen = SCR_UpdateScreen;
 	import.R_GetClippedFragments = R_GetClippedFragments;
-	import.R_RenderFrame = R_RenderFrame;
+	import.R_ClearScene = R_ClearScene;
+	import.R_AddEntityToScene = R_AddEntityToScene;
+	import.R_AddLightToScene = R_AddLightToScene;
+	import.R_AddPolyToScene = R_AddPolyToScene;
+	import.R_RenderScene = R_RenderScene;
 	import.R_RegisterWorldModel = R_RegisterWorldModel;
 	import.R_ModelBounds = R_ModelBounds;
 	import.R_RegisterModel = R_RegisterModel;
@@ -199,8 +203,7 @@ void CL_GameModule_Init (void)
 	import.R_RegisterSkin = R_RegisterSkin;
 	import.R_RegisterSkinFile = R_RegisterSkinFile;
 	import.R_LerpAttachment = R_LerpAttachment;
-
-	import.Draw_StretchPic = Draw_StretchPic;
+	import.R_DrawStretchPic = R_DrawStretchPic;
 
 	import.CM_NumInlineModels = CM_NumInlineModels;
 	import.CM_InlineModel = CM_InlineModel;
@@ -215,6 +218,8 @@ void CL_GameModule_Init (void)
 	import.S_StartSound = S_StartSound;
 	import.S_Update = S_Update;
 	import.S_AddLoopSound = S_AddLoopSound;
+	import.S_StartBackgroundTrack = S_StartBackgroundTrack;
+	import.S_StopBackgroundTrack = S_StopBackgroundTrack;
 
 	import.Mem_Alloc = CL_GameModule_MemAlloc;
 	import.Mem_Free = CL_GameModule_MemFree;
@@ -222,21 +227,34 @@ void CL_GameModule_Init (void)
 	import.Mem_FreePool = CL_GameModule_MemFreePool;
 	import.Mem_EmptyPool = CL_GameModule_MemEmptyPool;
 
-	cge = ( cgame_export_t * )Sys_LoadLibrary ( LIB_CGAME, &import );
-	if ( !cge ) {
-		Com_Error ( ERR_DROP, "failed to load client game DLL" );
-	}
+	cge = ( cgame_export_t * )Sys_LoadGameLibrary( LIB_CGAME, &import );
+	if( !cge )
+		Com_Error( ERR_DROP, "failed to load client game DLL" );
 
 	apiversion = cge->API ();
 	if ( apiversion != CGAME_API_VERSION ) {
-		Sys_UnloadLibrary ( LIB_CGAME );
-		Mem_FreePool ( &cl_gamemodulepool );
+		Sys_UnloadGameLibrary( LIB_CGAME );
+		Mem_FreePool( &cl_gamemodulepool );
 		cge = NULL;
-
-		Com_Error ( ERR_DROP, "client game is version %i, not %i", apiversion, CGAME_API_VERSION );
+		Com_Error( ERR_DROP, "client game is version %i, not %i", apiversion, CGAME_API_VERSION );
 	}
 
-	cge->Init ( cl.playernum, cl.attractloop, viddef.width, viddef.height );
+	oldState = cls.state;
+	cls.state = ca_loading;
+
+	start = Sys_Milliseconds ();
+	cge->Init( cl.playernum, cl.attractloop, viddef.width, viddef.height );
+	Com_DPrintf( "CL_GameModule_Init: %.2f seconds\n", (float)(Sys_Milliseconds () - start) * 0.001f );
+
+	cls.state = oldState;
+	cls.cgameActive = qtrue;
+
+	// check memory integrity
+	Mem_CheckSentinelsGlobal ();
+
+	S_SoundsInMemory ();
+
+	Sys_SendKeyEvents ();	// pump message loop
 }
 
 /*
@@ -246,13 +264,14 @@ CL_GameModule_Shutdown
 */
 void CL_GameModule_Shutdown (void)
 {
-	if ( !cge ) {
+	if ( !cge )
 		return;
-	}
+
+	cls.cgameActive = qfalse;
 
 	cge->Shutdown ();
-	Sys_UnloadLibrary ( LIB_CGAME );
-	Mem_FreePool ( &cl_gamemodulepool );
+	Sys_UnloadGameLibrary( LIB_CGAME );
+	Mem_FreePool( &cl_gamemodulepool );
 	cge = NULL;
 }
 
@@ -261,11 +280,10 @@ void CL_GameModule_Shutdown (void)
 CL_GameModule_LoadLayout
 ==============
 */
-void CL_GameModule_LoadLayout ( char *s )
+void CL_GameModule_LoadLayout( char *s )
 {
-	if ( cge ) {
-		cge->LoadLayout ( s );
-	}
+	if( cge )
+		cge->LoadLayout( s );
 }
 
 /*
@@ -273,11 +291,10 @@ void CL_GameModule_LoadLayout ( char *s )
 CG_Module_BeginFrameSequence
 ==============
 */
-void CL_GameModule_BeginFrameSequence (void)
+void CL_GameModule_BeginFrameSequence( void )
 {
-	if ( cge ) {
-		cge->BeginFrameSequence ( cl.frame );
-	}
+	if( cge )
+		cge->BeginFrameSequence( cl.frame );
 }
 
 /*
@@ -285,11 +302,10 @@ void CL_GameModule_BeginFrameSequence (void)
 CL_GameModule_NewPacketEntityState
 ==============
 */
-void CL_GameModule_NewPacketEntityState ( int entnum, entity_state_t *state )
+void CL_GameModule_NewPacketEntityState( int entnum, entity_state_t *state )
 {
-	if ( cge ) {
-		cge->NewPacketEntityState ( entnum, *state );
-	}
+	if( cge )
+		cge->NewPacketEntityState( entnum, *state );
 }
 
 /*
@@ -297,11 +313,10 @@ void CL_GameModule_NewPacketEntityState ( int entnum, entity_state_t *state )
 CL_GameModule_EndFrameSequence
 ==============
 */
-void CL_GameModule_EndFrameSequence (void)
+void CL_GameModule_EndFrameSequence( void )
 {
-	if ( cge ) {
-		cge->EndFrameSequence ( cl.frame.numEntities );
-	}
+	if( cge )
+		cge->EndFrameSequence( cl.frame.numEntities );
 }
 
 /*
@@ -309,11 +324,10 @@ void CL_GameModule_EndFrameSequence (void)
 CL_GameModule_GetEntitySoundOrigin
 ==============
 */
-void CL_GameModule_GetEntitySoundOrigin ( int entnum, vec3_t origin )
+void CL_GameModule_GetEntitySoundOrigin( int entnum, vec3_t origin )
 {
-	if ( cge ) {
-		cge->GetEntitySoundOrigin ( entnum, origin );
-	}
+	if( cge )
+		cge->GetEntitySoundOrigin( entnum, origin );
 }
 
 /*
@@ -321,11 +335,10 @@ void CL_GameModule_GetEntitySoundOrigin ( int entnum, vec3_t origin )
 CL_GameModule_ServerCommand
 ===============
 */
-void CL_GameModule_ServerCommand (void)
+void CL_GameModule_ServerCommand( void )
 {
-	if ( cge ) {
+	if( cge )
 		cge->ServerCommand ();
-	}
 }
 
 /*
@@ -333,11 +346,10 @@ void CL_GameModule_ServerCommand (void)
 CL_GameModule_RenderView
 ===============
 */
-void CL_GameModule_RenderView ( float stereo_separation )
+void CL_GameModule_RenderView( float stereo_separation )
 {
-	if ( cge ) {
-		cge->RenderView ( cls.trueframetime, cls.realtime, stereo_separation, cl.force_refdef );
-	}
+	if( cge )
+		cge->RenderView( cls.trueframetime, cls.realtime, stereo_separation, qfalse );
 }
 
 /*
@@ -345,9 +357,8 @@ void CL_GameModule_RenderView ( float stereo_separation )
 CL_GameModule_Trace
 ===============
 */
-void CL_GameModule_Trace ( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int passent, int contentmask )
+void CL_GameModule_Trace( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int passent, int contentmask )
 {
-	if ( tr && cge ) {
-		cge->Trace ( tr, start, mins, maxs, end, passent, contentmask );
-	}
+	if( tr && cge )
+		cge->Trace( tr, start, mins, maxs, end, passent, contentmask );
 }

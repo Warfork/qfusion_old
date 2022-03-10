@@ -133,7 +133,7 @@ char	*NET_AdrToString (netadr_t *a)
 {
 	static	char	s[64];
 	
-	Com_sprintf (s, sizeof(s), "%i.%i.%i.%i:%i", a->ip[0], a->ip[1], a->ip[2], a->ip[3], ntohs(a->port));
+	Q_snprintfz (s, sizeof(s), "%i.%i.%i.%i:%i", a->ip[0], a->ip[1], a->ip[2], a->ip[3], ntohs(a->port));
 
 	return s;
 }
@@ -142,7 +142,7 @@ char	*NET_BaseAdrToString (netadr_t *a)
 {
 	static	char	s[64];
 	
-	Com_sprintf (s, sizeof(s), "%i.%i.%i.%i", a->ip[0], a->ip[1], a->ip[2], a->ip[3]);
+	Q_snprintfz (s, sizeof(s), "%i.%i.%i.%i", a->ip[0], a->ip[1], a->ip[2], a->ip[3]);
 
 	return s;
 }
@@ -411,7 +411,7 @@ void NET_OpenIP (void)
 	ip = Cvar_Get ("ip", "localhost", CVAR_NOSET);
 
 	if (!ip_sockets[NS_SERVER])
-		ip_sockets[NS_SERVER] = NET_Socket (ip->string, port->value);
+		ip_sockets[NS_SERVER] = NET_Socket (ip->string, port->integer);
 	if (!ip_sockets[NS_CLIENT])
 		ip_sockets[NS_CLIENT] = NET_Socket (ip->string, PORT_ANY);
 }
@@ -561,7 +561,7 @@ void NET_Sleep(int msec)
 	extern cvar_t *dedicated;
 	extern qboolean stdin_active;
 
-	if (!ip_sockets[NS_SERVER] || (dedicated && !dedicated->value))
+	if (!ip_sockets[NS_SERVER] || (dedicated && !dedicated->integer))
 		return; // we're not a server, just run full speed
 
 	FD_ZERO(&fdset);

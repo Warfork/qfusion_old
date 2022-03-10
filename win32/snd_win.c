@@ -308,9 +308,9 @@ sndinitstat SNDDMA_InitDirect (void)
 	dma.channels = 2;
 	dma.samplebits = 16;
 
-	if (s_khz->value == 44)
+	if (s_khz->integer == 44)
 		dma.speed = 44100;
-	else if (s_khz->value == 22)
+	else if (s_khz->integer == 22)
 		dma.speed = 22050;
 	else
 		dma.speed = 11025;
@@ -405,9 +405,9 @@ qboolean SNDDMA_InitWav (void)
 	dma.channels = 2;
 	dma.samplebits = 16;
 
-	if (s_khz->value == 44)
+	if (s_khz->integer == 44)
 		dma.speed = 44100;
-	else if (s_khz->value == 22)
+	else if (s_khz->integer == 22)
 		dma.speed = 22050;
 	else
 		dma.speed = 11025;
@@ -553,7 +553,7 @@ qboolean SNDDMA_Init(void)
 	stat = SIS_FAILURE;	// assume DirectSound won't initialize
 
 	/* Init DirectSound */
-	if (!s_wavonly->value)
+	if (!s_wavonly->integer)
 	{
 		if (snd_firsttime || snd_isdirect)
 		{

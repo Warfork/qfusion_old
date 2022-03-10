@@ -21,139 +21,193 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "g_local.h"
 
 static game_import_t gi;
-static game_export_t globals;
 
-void trap_Print ( char *msg ) {
-	gi.Print ( msg );
+void trap_Print( char *msg ) {
+	gi.Print( msg );
 }
 
-void trap_Error ( char *msg ) {
-	gi.Error ( msg );
+void trap_Error( char *msg ) {
+	gi.Error( msg );
 }
 
-void trap_Sound ( vec3_t origin, struct edict_s *ent, int channel, int soundIndex, float volume, float attenuation ) {
-	gi.Sound ( origin, ent, channel, soundIndex, volume, attenuation );
+void trap_Sound( vec3_t origin, struct edict_s *ent, int channel, int soundIndex, float volume, float attenuation ) {
+	gi.Sound( origin, ent, channel, soundIndex, volume, attenuation );
 }
 
-void trap_ServerCmd ( struct edict_s *ent, char *cmd ) {
-	gi.ServerCmd ( ent, cmd );
+void trap_ServerCmd( struct edict_s *ent, char *cmd ) {
+	gi.ServerCmd( ent, cmd );
 }
 
-void trap_ConfigString ( int num, char *string ) {
-	gi.ConfigString ( num, string );
+void trap_ConfigString( int num, char *string ) {
+	gi.ConfigString( num, string );
 }
 
-void trap_Layout ( struct edict_s *ent, char *string ) {
-	gi.Layout ( ent, string );
+void trap_Layout( struct edict_s *ent, char *string ) {
+	gi.Layout( ent, string );
 }
 
-void trap_StuffCmd ( struct edict_s *ent, char *string ) {
-	gi.StuffCmd ( ent, string );
+void trap_StuffCmd( struct edict_s *ent, char *string ) {
+	gi.StuffCmd( ent, string );
 }
 
-int trap_ModelIndex ( char *name ) {
-	return gi.ModelIndex ( name );
+int trap_ModelIndex( char *name ) {
+	return gi.ModelIndex( name );
 }
 
-int trap_SoundIndex ( char *name ) {
-	return gi.SoundIndex ( name );
+int trap_SoundIndex( char *name ) {
+	return gi.SoundIndex( name );
 }
 
-int trap_ImageIndex ( char *name ) {
-	return gi.ImageIndex ( name );
+int trap_ImageIndex( char *name ) {
+	return gi.ImageIndex( name );
 }
 
-void trap_SetBrushModel ( struct edict_s *ent, char *name ) {
-	gi.SetBrushModel ( ent, name );
+void trap_SetBrushModel( struct edict_s *ent, char *name ) {
+	gi.SetBrushModel( ent, name );
 }
 
-void trap_Trace ( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, struct edict_s *passent, int contentmask ) {
-	gi.Trace ( tr, start, mins, maxs, end, passent, contentmask );
+int trap_Milliseconds( void ) {
+	return gi.Milliseconds ();
 }
 
-int trap_PointContents ( vec3_t point ) {
-	return gi.PointContents ( point );
+void trap_Trace( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, struct edict_s *passent, int contentmask ) {
+	gi.Trace( tr, start, mins, maxs, end, passent, contentmask );
 }
 
-qboolean trap_inPVS ( vec3_t p1, vec3_t p2 ) {
-	return gi.inPVS ( p1, p2 );
+int trap_PointContents( vec3_t point ) {
+	return gi.PointContents( point );
 }
 
-qboolean trap_inPHS ( vec3_t p1, vec3_t p2 ) {
-	return gi.inPHS ( p1, p2 );
+qboolean trap_inPVS( vec3_t p1, vec3_t p2 ) {
+	return gi.inPVS( p1, p2 );
 }
 
-void trap_SetAreaPortalState ( struct edict_s *ent, qboolean open ) {
-	gi.SetAreaPortalState ( ent, open );
+qboolean trap_inPHS( vec3_t p1, vec3_t p2 ) {
+	return gi.inPHS( p1, p2 );
 }
 
-qboolean trap_AreasConnected ( int area1, int area2 ) {
-	return gi.AreasConnected ( area1, area2 );
+void trap_SetAreaPortalState( struct edict_s *ent, qboolean open ) {
+	gi.SetAreaPortalState( ent, open );
 }
 
-void trap_LinkEntity ( struct edict_s *ent ) {
-	gi.LinkEntity ( ent );
+qboolean trap_AreasConnected( int area1, int area2 ) {
+	return gi.AreasConnected( area1, area2 );
 }
 
-void trap_UnlinkEntity ( struct edict_s *ent ) {
-	gi.UnlinkEntity ( ent );
+void trap_LinkEntity( struct edict_s *ent ) {
+	gi.LinkEntity( ent );
 }
 
-int trap_BoxEdicts ( vec3_t mins, vec3_t maxs, struct edict_s **list, int maxcount, int areatype ) {
-	return gi.BoxEdicts ( mins, maxs, list, maxcount, areatype );
+void trap_UnlinkEntity( struct edict_s *ent ) {
+	gi.UnlinkEntity( ent );
 }
 
-struct mempool_s *trap_MemAllocPool ( const char *name, const char *filename, int fileline ) {
-	return gi.Mem_AllocPool ( name, filename, fileline );
+int trap_BoxEdicts( vec3_t mins, vec3_t maxs, struct edict_s **list, int maxcount, int areatype ) {
+	return gi.BoxEdicts( mins, maxs, list, maxcount, areatype );
 }
 
-void *trap_MemAlloc ( struct mempool_s *pool, int size, const char *filename, int fileline ) {
-	return gi.Mem_Alloc ( pool, size, filename, fileline );
+qboolean trap_EntityContact( vec3_t mins, vec3_t maxs, edict_t *ent ) {
+	return gi.EntityContact( mins, maxs, ent );
 }
 
-void trap_MemFree ( void *data, const char *filename, int fileline ) {
-	gi.Mem_Free ( data, filename, fileline );
+struct mempool_s *trap_MemAllocPool( const char *name, const char *filename, int fileline ) {
+	return gi.Mem_AllocPool( name, filename, fileline );
 }
 
-
-void trap_MemFreePool ( struct mempool_s **pool, const char *filename, int fileline ) {
-	gi.Mem_FreePool ( pool, filename, fileline );
+void *trap_MemAlloc( struct mempool_s *pool, int size, const char *filename, int fileline ) {
+	return gi.Mem_Alloc( pool, size, filename, fileline );
 }
 
-void trap_MemEmptyPool ( struct mempool_s *pool, const char *filename, int fileline ) {
-	gi.Mem_EmptyPool ( pool, filename, fileline );
+void trap_MemFree( void *data, const char *filename, int fileline ) {
+	gi.Mem_Free( data, filename, fileline );
 }
 
-cvar_t *trap_Cvar_Get ( char *name, char *value, int flags ) {
-	return gi.Cvar_Get ( name, value, flags );
+void trap_MemFreePool( struct mempool_s **pool, const char *filename, int fileline ) {
+	gi.Mem_FreePool( pool, filename, fileline );
 }
 
-cvar_t *trap_Cvar_Set ( char *name, char *value ) {
-	return gi.Cvar_Set ( name, value );
+void trap_MemEmptyPool( struct mempool_s *pool, const char *filename, int fileline ) {
+	gi.Mem_EmptyPool( pool, filename, fileline );
 }
 
-cvar_t *trap_Cvar_ForceSet ( char *name, char *value ) {
-	return gi.Cvar_ForceSet ( name, value );
+cvar_t *trap_Cvar_Get( char *name, char *value, int flags ) {
+	return gi.Cvar_Get( name, value, flags );
 }
 
-int	trap_Cmd_Argc (void) {
+cvar_t *trap_Cvar_Set( char *name, char *value ) {
+	return gi.Cvar_Set( name, value );
+}
+
+cvar_t *trap_Cvar_ForceSet( char *name, char *value ) {
+	return gi.Cvar_ForceSet( name, value );
+}
+
+int	trap_Cmd_Argc( void ) {
 	return gi.Cmd_Argc ();
 }
 
-char *trap_Cmd_Argv ( int arg ) {
-	return gi.Cmd_Argv ( arg );
+char *trap_Cmd_Argv( int arg ) {
+	return gi.Cmd_Argv( arg );
 }
 
-char *trap_Cmd_Args (void) {
+char *trap_Cmd_Args( void ) {
 	return gi.Cmd_Args ();
 }
 
-void trap_AddCommandString ( char *text ) {
-	gi.AddCommandString ( text );
+int	trap_FS_FOpenFile( const char *filename, int *filenum, int mode ) {
+	return gi.FS_FOpenFile( filename, filenum, mode );
 }
 
-void trap_LocateEntities ( struct edict_s *edicts, int edict_size, int num_edicts, int max_edicts ) {
-	gi.LocateEntities ( edicts, edict_size, num_edicts, max_edicts );
+int	trap_FS_Read( void *buffer, size_t len, int file ) {
+	return gi.FS_Read( buffer, len, file );
+}
+
+int	trap_FS_Write( const void *buffer, size_t len, int file ) {
+	return gi.FS_Write( buffer, len, file );
+}
+
+int	trap_FS_Tell( int file ) {
+	return gi.FS_Tell( file );
+}
+
+int	trap_FS_Seek( int file, int offset, int whence ) {
+	return gi.FS_Seek( file, offset, whence );
+}
+
+int	trap_FS_Eof( int file ) {
+	return gi.FS_Eof( file );
+}
+
+int	trap_FS_Flush( int file ) {
+	return gi.FS_Flush( file );
+}
+
+void trap_FS_FCloseFile( int file ) { 
+	gi.FS_FCloseFile( file );
+}
+
+int	trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize ) {
+	return gi.FS_GetFileList( dir, extension, buf, bufsize );
+}
+
+char *trap_FS_Gamedir( void ) {
+	return gi.FS_Gamedir ();
+}
+
+void trap_AddCommandString( char *text ) {
+	gi.AddCommandString( text );
+}
+
+void trap_FakeClientConnect( char *fakeUserinfo, char *fakeIP ) {
+	gi.FakeClientConnect( fakeUserinfo, fakeIP );
+}
+
+void trap_DropClient( edict_t *ent ) {
+	gi.DropClient( ent );
+}
+
+void trap_LocateEntities( struct edict_s *edicts, int edict_size, int num_edicts, int max_edicts ) {
+	gi.LocateEntities( edicts, edict_size, num_edicts, max_edicts );
 }
 
 //======================================================================
@@ -165,8 +219,10 @@ GetGameAPI
 Returns a pointer to the structure with all entry points
 =================
 */
-game_export_t *GetGameAPI (game_import_t *import)
+game_export_t *GetGameAPI( game_import_t *import )
 {
+	static game_export_t globals;
+
 	gi = *import;
 
 	globals.API = G_API;
@@ -194,8 +250,8 @@ game_export_t *GetGameAPI (game_import_t *import)
 	return &globals;
 }
 
-#if defined(HAS_DLLMAIN) && !defined(GAME_HARD_LINKED)
-int _stdcall DLLMain (void *hinstDll, unsigned long dwReason, void *reserved)
+#if defined(HAVE_DLLMAIN) && !defined(GAME_HARD_LINKED)
+int _stdcall DLLMain( void *hinstDll, unsigned long dwReason, void *reserved )
 {
 	return 1;
 }

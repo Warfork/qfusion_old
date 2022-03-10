@@ -37,9 +37,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <sys/mman.h>
 #include <errno.h>
 #include <dlfcn.h>
+#include <dirent.h>
+
+#if defined(__FreeBSD__)
+#include <machine/param.h>
+#endif
 
 #include "../qcommon/qcommon.h"
-
+#include "glob.h"
 
 cvar_t *nostdout;
 
@@ -54,7 +59,7 @@ qboolean stdin_active = qtrue;
 
 void Sys_ConsoleOutput (char *string)
 {
-	if (nostdout && nostdout->value)
+	if (nostdout && nostdout->integer)
 		return;
 
 	fputs (string, stdout);
@@ -75,7 +80,7 @@ void Sys_Printf (char *fmt, ...)
 	vsnprintf (text, 1024, fmt, argptr);
 	va_end (argptr);
 
-	if (nostdout && nostdout->value)
+	if (nostdout && nostdout->integer)
 		return;
 
 	for (p = (unsigned char *)text; *p; p++) {
@@ -136,20 +141,33 @@ void Sys_Error (char *error, ...)
 } 
 
 /*
-============
-Sys_FileTime
-
-returns -1 if not present
-============
+================
+Sys_Milliseconds
+================
 */
-int Sys_FileTime (char *path)
+int curtime;
+int Sys_Milliseconds (void)
 {
-	struct	stat	buf;
+	struct timeval tp;
+	struct timezone tzp;
+	static int		secbase;
+
+	gettimeofday(&tp, &tzp);
 	
-	if (stat (path, &buf) == -1)
-		return -1;
+	if (!secbase)
+	{
+		secbase = tp.tv_sec;
+		return tp.tv_usec/1000;
+	}
+
+	curtime = (tp.tv_sec - secbase)*1000 + tp.tv_usec/1000;
 	
-	return buf.st_mtime;
+	return curtime;
+}
+
+void Sys_Mkdir (const char *path)
+{
+    mkdir (path, 0777);
 }
 
 void floating_point_exception_handler (int whatever)
@@ -164,7 +182,7 @@ char *Sys_ConsoleInput(void)
 	fd_set	fdset;
 	struct timeval timeout;
 
-	if (!dedicated || !dedicated->value)
+	if (!dedicated || !dedicated->integer)
 		return NULL;
 
 	if (!stdin_active)
@@ -191,6 +209,60 @@ char *Sys_ConsoleInput(void)
 	return text;
 }
 
+
+/*
+========================================================================
+
+DLL
+
+========================================================================
+*/
+
+/*
+=================
+Sys_UnloadLibrary
+=================
+*/
+void Sys_UnloadLibrary( void **lib )
+{
+	if( lib && *lib ) {
+		if( dlclose( *lib ) )
+			Com_Error( ERR_FATAL, "dlclose failed" );
+		*lib = NULL;
+	}
+}
+
+/*
+=================
+Sys_LoadLibrary
+=================
+*/
+void *Sys_LoadLibrary( char *name, dllfunc_t *funcs )
+{
+	void *lib;
+	dllfunc_t *func;
+
+	if( !name || !name[0] || !funcs )
+		return NULL;
+
+	Com_DPrintf( "LoadLibrary (%s)\n", name );
+
+	lib = dlopen( name, RTLD_NOW );
+	if( !lib )
+		return NULL;
+
+	for( func = funcs; func->name; func++ ) {
+		*(func->funcPointer) = ( void * )dlsym( lib, func->name );
+
+		if( !(*(func->funcPointer)) ) {
+			Sys_UnloadLibrary( &lib );
+			Com_Error( ERR_FATAL, "%s: dlsym failed for %s", name, func->name );
+		}
+	}
+
+	return lib;
+}
+
 /*****************************************************************************/
 
 static void *game_library = NULL;
@@ -199,43 +271,47 @@ static void *ui_library = NULL;
 
 /*
 =================
-Sys_UnloadLibrary
+Sys_UnloadGameLibrary
 =================
 */
-void Sys_UnloadLibrary (gamelib_t gamelib)
+void Sys_UnloadGameLibrary (gamelib_t gamelib)
 {
-	void *lib;
+	void **lib;
 
-	switch (gamelib) 
-	{
-		case LIB_GAME: lib = &game_library;	break;
-		case LIB_CGAME:	lib = &cgame_library; break;
-		case LIB_UI: lib = &ui_library;	break;
+	switch( gamelib ) {
+		case LIB_GAME:
+			lib = &game_library;
+			break;
+		case LIB_CGAME:
+			lib = &cgame_library;
+			break;
+		case LIB_UI:
+			lib = &ui_library;
+			break;
 		default:
 			return;
 	}
 
-	if (lib)
-	{
-		if (dlclose (lib))
+	if( *lib ) {
+		if( dlclose (*lib) )
 			Com_Error (ERR_FATAL, "dlclose failed");
 	}
 
-	lib = NULL;
+	*lib = NULL;
 }
 
 /*
 =================
-Sys_LoadLibrary
+Sys_LoadGameLibrary
 =================
 */
-void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
+void *Sys_LoadGameLibrary (gamelib_t gamelib, void *parms)
 {
 	char name[MAX_OSPATH];
 	char cwd[MAX_OSPATH];
 	char *path;
 	void *(*APIfunc) (void *);
-	void *lib;
+	void **lib;
 	char *libname;
 	char *apifuncname;
 
@@ -302,13 +378,13 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 
 	// check the current debug directory first for development purposes
 	getcwd (cwd, sizeof(cwd));
-	Com_sprintf (name, sizeof(name), "%s/%s/%s", cwd, debugdir, libname);
+	Q_snprintfz (name, sizeof(name), "%s/%s/%s", cwd, debugdir, libname);
 
-	lib = dlopen (name, RTLD_NOW);
+	*lib = dlopen (name, RTLD_NOW);
 
-	if (lib)
+	if (*lib)
 	{
-		Com_Printf ("LoadLibrary (%s)\n", name);
+		Com_DPrintf ("LoadLibrary (%s)\n", name);
 	}
 	else
 	{
@@ -322,27 +398,119 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 			if (!path) 
 				return NULL; // couldn't find one anywhere
 
-			Com_sprintf (name, sizeof(name), "%s/%s", path, libname);
-			lib = dlopen (name, RTLD_NOW);
+			Q_snprintfz (name, sizeof(name), "%s/%s", path, libname);
+			*lib = dlopen (name, RTLD_NOW);
 
-			if (lib)
+			if (*lib)
 			{
-				Com_Printf ("LoadLibrary (%s)\n", name);
+				Com_DPrintf ("LoadLibrary (%s)\n", name);
 				break;
 			}
 		}
 		
 	}
 
-	APIfunc = (void *)dlsym (lib, apifuncname);
+	APIfunc = (void *)dlsym (*lib, apifuncname);
 
 	if (!APIfunc)
 	{
-		Sys_UnloadLibrary (gamelib);
+		Sys_UnloadGameLibrary (gamelib);
 		return NULL;
 	}
 
 	return APIfunc(parms);
+}
+
+//===============================================================================
+
+static	char	findbase[MAX_OSPATH];
+static	char	findpath[MAX_OSPATH];
+static	char	findpattern[MAX_OSPATH];
+static	DIR	*fdir;
+
+static qboolean CompareAttributes(char *path, char *name,
+	unsigned musthave, unsigned canthave )
+{
+	struct stat st;
+	char fn[MAX_OSPATH];
+
+// . and .. never match
+	if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+		return qfalse;
+
+	return qtrue;
+
+	if (stat(fn, &st) == -1)
+		return qfalse; // shouldn't happen
+
+	if ( ( st.st_mode & S_IFDIR ) && ( canthave & SFF_SUBDIR ) )
+		return qfalse;
+
+	if ( ( musthave & SFF_SUBDIR ) && !( st.st_mode & S_IFDIR ) )
+		return qfalse;
+
+	return qtrue;
+}
+
+char *Sys_FindFirst (char *path, unsigned musthave, unsigned canhave)
+{
+	struct dirent *d;
+	char *p;
+
+	if (fdir)
+		Sys_Error ("Sys_BeginFind without close");
+
+//	COM_FilePath (path, findbase);
+	strcpy(findbase, path);
+
+	if ((p = strrchr(findbase, '/')) != NULL) {
+		*p = 0;
+		strcpy(findpattern, p + 1);
+	} else
+		strcpy(findpattern, "*");
+
+	if (strcmp(findpattern, "*.*") == 0)
+		strcpy(findpattern, "*");
+	
+	if ((fdir = opendir(findbase)) == NULL)
+		return NULL;
+	while ((d = readdir(fdir)) != NULL) {
+		if (!*findpattern || glob_match(findpattern, d->d_name)) {
+//			if (*findpattern)
+//				printf("%s matched %s\n", findpattern, d->d_name);
+			if (CompareAttributes(findbase, d->d_name, musthave, canhave)) {
+				sprintf (findpath, "%s/%s", findbase, d->d_name);
+				return findpath;
+			}
+		}
+	}
+	return NULL;
+}
+
+char *Sys_FindNext (unsigned musthave, unsigned canhave)
+{
+	struct dirent *d;
+
+	if (fdir == NULL)
+		return NULL;
+	while ((d = readdir(fdir)) != NULL) {
+		if (!*findpattern || glob_match(findpattern, d->d_name)) {
+//			if (*findpattern)
+//				printf("%s matched %s\n", findpattern, d->d_name);
+			if (CompareAttributes(findbase, d->d_name, musthave, canhave)) {
+				sprintf (findpath, "%s/%s", findbase, d->d_name);
+				return findpath;
+			}
+		}
+	}
+	return NULL;
+}
+
+void Sys_FindClose (void)
+{
+	if (fdir != NULL)
+		closedir(fdir);
+	fdir = NULL;
 }
 
 /*
@@ -354,6 +522,19 @@ char *Sys_GetHomeDirectory (void)
 {
 	return getenv ( "HOME" );
 }
+
+//===============================================================================
+
+/*
+=================
+Sys_PrintCPUInfo
+================
+*/
+void Sys_PrintCPUInfo (void)
+{
+}
+
+//===============================================================================
 
 /*
 =================
@@ -392,7 +573,7 @@ int main (int argc, char **argv)
 	fcntl(0, F_SETFL, fcntl (0, F_GETFL, 0) | FNDELAY);
 
 	nostdout = Cvar_Get ("nostdout", "0", 0);
-	if (!nostdout->value) {
+	if (!nostdout->integer) {
 		fcntl(0, F_SETFL, fcntl (0, F_GETFL, 0) | FNDELAY);	
 	}
 

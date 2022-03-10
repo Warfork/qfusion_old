@@ -25,7 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // the code below was initially taken from the Wine project
 #include "winsock.h"
 
-#ifdef HAS_WSIPX
+#ifdef HAVE_WSIPX
 # include "wsipx.h"
 #else
 # if __GNUC__ >=3

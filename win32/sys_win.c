@@ -61,7 +61,6 @@ SYSTEM IO
 ===============================================================================
 */
 
-
 void Sys_Error (char *error, ...)
 {
 	va_list		argptr;
@@ -93,7 +92,7 @@ void Sys_Quit (void)
 	CL_Shutdown();
 
 	CloseHandle (qwclsemaphore);
-	if (dedicated && dedicated->value)
+	if (dedicated && dedicated->integer)
 		FreeConsole ();
 
 // shut down QHOST hooks if necessary
@@ -104,31 +103,126 @@ void Sys_Quit (void)
 	exit (0);
 }
 
-
-void WinError (void)
-{
-	LPVOID lpMsgBuf;
-
-	FormatMessage( 
-		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-		NULL,
-		GetLastError(),
-		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-		(LPTSTR) &lpMsgBuf,
-		0,
-		NULL 
-	);
-
-	// Display the string.
-	MessageBox( NULL, lpMsgBuf, "GetLastError", MB_OK|MB_ICONINFORMATION );
-
-	// Free the buffer.
-	LocalFree( lpMsgBuf );
-}
-
-
 //================================================================
 
+/*
+================
+Sys_Milliseconds
+================
+*/
+int	curtime;
+
+int Sys_Milliseconds (void)
+{
+	static int		base;
+	static qboolean	initialized = qfalse;
+
+	if (!initialized)
+	{	// let base retain 16 bits of effectively random data
+		base = timeGetTime() & 0xffff0000;
+		initialized = qtrue;
+	}
+	curtime = timeGetTime() - base;
+
+	return curtime;
+}
+
+void Sys_Mkdir (const char *path)
+{
+	_mkdir (path);
+}
+
+//===============================================================================
+
+char	findbase[MAX_OSPATH];
+char	findpath[MAX_OSPATH];
+int		findhandle = -1;
+
+static qboolean CompareAttributes( unsigned found, unsigned musthave, unsigned canthave )
+{
+	if ( ( found & _A_RDONLY ) && ( canthave & SFF_RDONLY ) )
+		return qfalse;
+	if ( ( found & _A_HIDDEN ) && ( canthave & SFF_HIDDEN ) )
+		return qfalse;
+	if ( ( found & _A_SYSTEM ) && ( canthave & SFF_SYSTEM ) )
+		return qfalse;
+	if ( ( found & _A_SUBDIR ) && ( canthave & SFF_SUBDIR ) )
+		return qfalse;
+	if ( ( found & _A_ARCH ) && ( canthave & SFF_ARCH ) )
+		return qfalse;
+
+	if ( ( musthave & SFF_RDONLY ) && !( found & _A_RDONLY ) )
+		return qfalse;
+	if ( ( musthave & SFF_HIDDEN ) && !( found & _A_HIDDEN ) )
+		return qfalse;
+	if ( ( musthave & SFF_SYSTEM ) && !( found & _A_SYSTEM ) )
+		return qfalse;
+	if ( ( musthave & SFF_SUBDIR ) && !( found & _A_SUBDIR ) )
+		return qfalse;
+	if ( ( musthave & SFF_ARCH ) && !( found & _A_ARCH ) )
+		return qfalse;
+
+	return qtrue;
+}
+
+char *Sys_FindFirst (char *path, unsigned musthave, unsigned canthave )
+{
+	struct _finddata_t findinfo;
+
+	if (findhandle != -1)
+		Sys_Error ("Sys_BeginFind without close");
+
+	COM_FilePath (path, findbase);
+	findhandle = _findfirst (path, &findinfo);
+
+	while (findhandle != -1) {
+		if ( !CompareAttributes( findinfo.attrib, musthave, canthave ) ) {
+			_findclose ( findhandle );
+			findhandle = _findnext ( findhandle, &findinfo );
+		} else {
+			Q_snprintfz (findpath, sizeof(findpath), "%s/%s", findbase, findinfo.name);
+			return findpath;
+		}
+	}
+
+	return NULL;
+}
+
+char *Sys_FindNext ( unsigned musthave, unsigned canthave )
+{
+	struct _finddata_t findinfo;
+
+	if (findhandle == -1)
+		return NULL;
+	while (_findnext (findhandle, &findinfo) != -1) {
+		if ( CompareAttributes( findinfo.attrib, musthave, canthave ) ) {
+			Q_snprintfz (findpath, sizeof(findpath), "%s/%s", findbase, findinfo.name);
+			return findpath;
+		}
+	}
+
+	return NULL;
+}
+
+void Sys_FindClose (void)
+{
+	if (findhandle != -1)
+		_findclose (findhandle);
+	findhandle = -1;
+}
+
+/*
+=================
+Sys_GetHomeDirectory
+
+=================
+*/
+char *Sys_GetHomeDirectory (void)
+{
+	return NULL;
+}
+
+//===============================================================================
 
 /*
 ================
@@ -153,7 +247,7 @@ void Sys_Init (void)
 	else if ( vinfo.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS )
 		s_win95 = qtrue;
 
-	if (dedicated->value)
+	if (dedicated->integer)
 	{
 		SetPriorityClass (GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
@@ -182,7 +276,7 @@ char *Sys_ConsoleInput (void)
 	int		dummy;
 	int		ch, numread, numevents;
 
-	if (!dedicated || !dedicated->value)
+	if (!dedicated || !dedicated->integer)
 		return NULL;
 
 	for ( ;; )
@@ -260,7 +354,7 @@ void Sys_ConsoleOutput (char *string)
 	int		dummy;
 	char	text[256];
 
-	if (!dedicated || !dedicated->value)
+	if (!dedicated || !dedicated->integer)
 		return;
 
 	if (console_textlen)
@@ -358,6 +452,59 @@ void Sys_AppActivate (void)
 /*
 ========================================================================
 
+DLL
+
+========================================================================
+*/
+
+/*
+=================
+Sys_UnloadLibrary
+=================
+*/
+void Sys_UnloadLibrary( void **lib )
+{
+	if( lib && *lib ) {
+		if( !FreeLibrary( *lib ) )
+			Com_Error( ERR_FATAL, "FreeLibrary failed" );
+		*lib = NULL;
+	}
+}
+
+/*
+=================
+Sys_LoadLibrary
+=================
+*/
+void *Sys_LoadLibrary( char *name, dllfunc_t *funcs )
+{
+	HINSTANCE lib;
+	dllfunc_t *func;
+
+	if( !name || !name[0] || !funcs )
+		return NULL;
+
+	Com_DPrintf( "LoadLibrary (%s)\n", name );
+
+	lib = LoadLibrary( name );
+	if( !lib )
+		return NULL;
+
+	for( func = funcs; func->name; func++ ) {
+		*(func->funcPointer) = ( void * )GetProcAddress( lib, func->name );
+
+		if( !(*(func->funcPointer)) ) {
+			Sys_UnloadLibrary( &lib );
+			Com_Error( ERR_FATAL, "%s: GetProcAddress failed for %s", name, func->name );
+		}
+	}
+
+	return lib;
+}
+
+/*
+========================================================================
+
 GAME DLL
 
 ========================================================================
@@ -367,10 +514,10 @@ static HINSTANCE	game_library, cgame_library, ui_library;
 
 /*
 =================
-Sys_UnloadLibrary
+Sys_UnloadGameLibrary
 =================
 */
-void Sys_UnloadLibrary ( gamelib_t gamelib )
+void Sys_UnloadGameLibrary( gamelib_t gamelib )
 {
 	HINSTANCE *lib;
 
@@ -388,12 +535,12 @@ void Sys_UnloadLibrary ( gamelib_t gamelib )
 
 /*
 =================
-Sys_LoadLibrary
+Sys_LoadGameLibrary
 
 Loads the game dll
 =================
 */
-void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
+void *Sys_LoadGameLibrary( gamelib_t gamelib, void *parms )
 {
 	char	name[MAX_OSPATH];
 	char	cwd[MAX_OSPATH];
@@ -439,26 +586,26 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 	}
 
 	if (*lib)
-		Com_Error (ERR_FATAL, "Sys_LoadLibrary without Sys_UnloadLibrary");
+		Com_Error (ERR_FATAL, "Sys_LoadGameLibrary without Sys_UnloadGameLibrary");
 
 	// check the current debug directory first for development purposes
 	_getcwd (cwd, sizeof(cwd));
-	Com_sprintf (name, sizeof(name), "%s/%s/%s", cwd, debugdir, libname);
+	Q_snprintfz (name, sizeof(name), "%s/%s/%s", cwd, debugdir, libname);
 
 	*lib = LoadLibrary ( name );
 	if (*lib)
 	{
-		Com_DPrintf ("LoadLibrary (%s)\n", name);
+		Com_DPrintf ("LoadGameLibrary (%s)\n", name);
 	}
 	else
 	{
 #ifdef DEBUG
 		// check the current directory for other development purposes
-		Com_sprintf (name, sizeof(name), "%s/%s", cwd, gamename);
+		Q_snprintfz (name, sizeof(name), "%s/%s", cwd, gamename);
 		*lib = LoadLibrary ( name );
 		if (*lib)
 		{
-			Com_DPrintf ("LoadLibrary (%s)\n", name);
+			Com_DPrintf ("LoadGameLibrary (%s)\n", name);
 		}
 		else
 #endif
@@ -470,11 +617,11 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 				path = FS_NextPath (path);
 				if (!path)
 					return NULL;		// couldn't find one anywhere
-				Com_sprintf (name, sizeof(name), "%s/%s", path, libname);
+				Q_snprintfz (name, sizeof(name), "%s/%s", path, libname);
 				*lib = LoadLibrary (name);
 				if (*lib)
 				{
-					Com_DPrintf ("LoadLibrary (%s)\n",name);
+					Com_DPrintf ("LoadGameLibrary (%s)\n",name);
 					break;
 				}
 			}
@@ -484,23 +631,219 @@ void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 	APIfunc = (void *)GetProcAddress (*lib, apifuncname);
 	if (!APIfunc)
 	{
-		Sys_UnloadLibrary (gamelib);
+		Sys_UnloadGameLibrary (gamelib);
 		return NULL;
 	}
 
 	return APIfunc (parms);
 }
 
-/*
-=================
-Sys_GetHomeDirectory
+//===============================================================================
 
-=================
-*/
-char *Sys_GetHomeDirectory (void)
+int MHz, CPUfamily, Mem, InstCache, DataCache, L2Cache;
+char VendorID[16];
+unsigned char SupportCMOVs, Support3DNow, Support3DNowExt, SupportMMX, SupportMMXext, SupportSSE;
+
+#ifdef id386
+#pragma warning(disable: 4035)
+#if _MSC_VER || __BORLANDC__
+inline __int64 GetCycleNumber()
+#else
+inline long long GetCycleNumber()
+#endif
 {
-	return NULL;
+	__asm 
+	{
+		RDTSC
+	}
 }
+
+static void GetMHz (void)
+{
+	LARGE_INTEGER t1, t2, tf;
+#if _MSC_VER || __BORLANDC__
+	__int64     c1, c2;
+#else
+	long long   c1, c2;
+#endif
+
+	QueryPerformanceFrequency (&tf);
+	QueryPerformanceCounter (&t1);
+	c1 = GetCycleNumber ();
+
+	_asm {
+		MOV  EBX, 5000000
+		WaitAlittle:
+			DEC		EBX
+		JNZ	WaitAlittle
+	}
+
+	QueryPerformanceCounter (&t2);
+	c2 = GetCycleNumber ();
+	
+	Com_Printf ("Detecting CPU Speed: %d MHz\n", (int) ((c2 - c1) * tf.QuadPart / (t2.QuadPart - t1.QuadPart) / 1000000));
+}
+
+static void GetSysInfo (void)
+{
+	MEMORYSTATUS ms;
+
+	ms.dwLength = sizeof(MEMORYSTATUS);
+	GlobalMemoryStatus(&ms);
+	Mem = ms.dwTotalPhys >> 10;
+
+	__asm {
+		PUSHFD
+		POP		EAX
+		MOV		EBX, EAX
+		XOR		EAX, 00200000h
+		PUSH	EAX
+		POPFD
+		PUSHFD
+		POP		EAX
+		CMP		EAX, EBX
+		JZ		ExitCpuTest
+
+			XOR		EAX, EAX
+			CPUID
+
+			MOV		DWORD PTR [VendorID],		EBX
+			MOV		DWORD PTR [VendorID + 4],	EDX
+			MOV		DWORD PTR [VendorID + 8],	ECX
+			MOV		DWORD PTR [VendorID + 12],	0
+
+			MOV		EAX, 1
+			CPUID
+			TEST	EDX, 0x00008000
+			SETNZ	AL
+			MOV		SupportCMOVs, AL
+			TEST	EDX, 0x00800000
+			SETNZ	AL
+			MOV		SupportMMX, AL
+	
+			TEST	EDX, 0x02000000
+			SETNZ	AL
+			MOV		SupportSSE, AL
+
+			SHR		EAX, 8
+			AND		EAX, 0x0000000F
+			MOV		CPUfamily, EAX
+	
+			MOV		MHz, 0
+			TEST	EDX, 0x00000008
+			JZ		NoTimeStampCounter
+				CALL	GetMHz
+				MOV		MHz, EAX
+			NoTimeStampCounter:
+
+			MOV		Support3DNow, 0
+			MOV		EAX, 80000000h
+			CPUID
+			CMP		EAX, 80000000h
+			JBE		NoExtendedFunction
+				MOV		EAX, 80000001h
+				CPUID
+				TEST	EDX, 80000000h
+				SETNZ	AL
+				MOV		Support3DNow, AL
+
+				TEST	EDX, 40000000h
+				SETNZ	AL
+				MOV		Support3DNowExt, AL
+
+				TEST	EDX, 0x00400000
+				SETNZ	AL
+				MOV		SupportMMXext, AL
+
+				MOV		EAX, 80000005h
+				CPUID
+				SHR		ECX, 24
+				MOV		DataCache, ECX
+				SHR		EDX, 24
+				MOV		InstCache, EDX
+				
+				MOV		EAX, 80000006h
+				CPUID
+				SHR		ECX, 16
+				MOV		L2Cache, ECX
+
+				
+			JMP		ExitCpuTest
+
+			NoExtendedFunction:
+			MOV		EAX, 2
+			CPUID
+
+			MOV		ESI, 4
+			TestCache:
+				CMP		DL, 0x40
+				JNA		NotL2
+					MOV		CL, DL
+					SUB		CL, 0x40
+					SETZ	CH
+					DEC		CH
+					AND		CL, CH
+					MOV		EBX, 64
+					SHL		EBX, CL
+					MOV		L2Cache, EBX
+				NotL2:
+				CMP		DL, 0x06
+				JNE		Next1
+					MOV		InstCache, 8
+				Next1:
+				CMP		DL, 0x08
+				JNE		Next2
+					MOV		InstCache, 16
+				Next2:
+				CMP		DL, 0x0A
+				JNE		Next3
+					MOV		DataCache, 8
+				Next3:
+				CMP		DL, 0x0C
+				JNE		Next4
+					MOV		DataCache, 16
+				Next4:
+				SHR		EDX, 8
+				DEC		ESI
+			JNZ	TestCache
+
+		ExitCpuTest:
+	}
+}
+
+void Sys_PrintCPUInfo (void)
+{
+	GetSysInfo ();
+
+	Com_Printf ( "CPU Vendor: %s\n", VendorID );
+	Com_Printf ( "CPU Family: %i\n", CPUfamily );
+	Com_Printf ( "Detecting CPU extensions:\n" );
+
+	if ( Support3DNow ) {
+		Com_Printf ( "3DNow!" );
+		if ( Support3DNowExt ) {
+			Com_Printf ( "(extended)" );
+		}
+		Com_Printf ( " " );
+	}
+	if ( SupportMMX ) {
+		Com_Printf ( "MMX" );
+		if ( SupportMMXext ) {
+			Com_Printf ( "(extended)" );
+		}
+		Com_Printf ( " " );
+	}
+	if ( SupportSSE ) {
+		Com_Printf ( "SSE " );
+	}
+
+	Com_Printf ( "\n" );
+}
+#else
+void Sys_PrintCPUInfo (void)
+{
+}
+#endif
 
 //=======================================================================
 
@@ -571,7 +914,7 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	while (1)
 	{
 		// if at a full screen console, don't update unless needed
-		if (Minimized || (dedicated && dedicated->value) )
+		if (Minimized || (dedicated && dedicated->integer) )
 		{
 			Sleep (1);
 		}

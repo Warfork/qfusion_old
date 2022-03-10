@@ -21,8 +21,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // 02/21/97 JCB Added extended DirectInput code to support external controllers.
 
 #include "../client/client.h"
-#include <dinput.h>
 #include "winquake.h"
+#include <dinput.h>
 
 #define DINPUT_BUFFERSIZE           16
 #define iDirectInputCreate(a,b,c,d)	pDirectInputCreate(a,b,c,d)
@@ -119,7 +119,7 @@ qboolean	mlooking;
 void IN_MLookDown (void) { mlooking = qtrue; }
 void IN_MLookUp (void) {
 mlooking = qfalse;
-if (!cl_freelook->value && lookspring->value)
+if (!cl_freelook->integer && lookspring->integer)
 		IN_CenterView ();
 }
 
@@ -193,7 +193,7 @@ void IN_ActivateMouse (void)
 
 	if (!mouseinitialized)
 		return;
-	if (!in_mouse->value)
+	if (!in_mouse->integer)
 	{
 		mouseactive = qfalse;
 		return;
@@ -210,7 +210,7 @@ void IN_ActivateMouse (void)
 			if (cl_hwnd)
 				if (FAILED(IDirectInputDevice_SetCooperativeLevel(g_pMouse, cl_hwnd, DISCL_EXCLUSIVE | DISCL_FOREGROUND)))
 				{
-					Com_Printf ("Couldn't set DI coop level\n");
+					Com_DPrintf ("Couldn't set DI coop level\n");
 					return;
 				}
 
@@ -283,7 +283,7 @@ void IN_DeactivateMouse (void)
 			if (cl_hwnd)
 				if (FAILED(IDirectInputDevice_SetCooperativeLevel(g_pMouse, cl_hwnd, DISCL_EXCLUSIVE | DISCL_BACKGROUND)))
 				{
-					Com_Printf ("Couldn't set DI coop level\n");
+					Com_DPrintf ("Couldn't set DI coop level\n");
 					return;
 				}
 		}
@@ -321,7 +321,7 @@ qboolean IN_InitDInput (void)
 	if (!hInstDI)
 	{
 		hInstDI = LoadLibrary("dinput.dll");
-		
+
 		if (hInstDI == NULL)
 		{
 			Com_Printf ("Couldn't load dinput.dll\n");
@@ -376,14 +376,13 @@ qboolean IN_InitDInput (void)
 		return qfalse;
 	}
 
-
 // set the buffer size to DINPUT_BUFFERSIZE elements.
 // the buffer size is a DWORD property associated with the device
 	hr = IDirectInputDevice_SetProperty(g_pMouse, DIPROP_BUFFERSIZE, &dipdw.diph);
 
 	if (FAILED(hr))
 	{
-		Com_Printf ("Couldn't set DI buffersize\n");
+		Com_DPrintf ("Couldn't set DI buffersize\n");
 		return qfalse;
 	}
 
@@ -397,18 +396,16 @@ IN_ShutdownDInput
 */
 void IN_ShutdownDInput (void)
 {
-	if ( g_pMouse ) {
-		IDirectInputDevice_SetCooperativeLevel ( g_pMouse, cl_hwnd, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND );
-		IDirectInputDevice_Release ( g_pMouse );
+	if( g_pMouse ) {
+		IDirectInputDevice_SetCooperativeLevel( g_pMouse, cl_hwnd, DISCL_NONEXCLUSIVE | DISCL_BACKGROUND );
+		IDirectInputDevice_Release( g_pMouse );
 	}
 
-	if ( g_pdi ) {
-		IDirectInput_Release ( g_pdi );
-	}
+	if( g_pdi )
+		IDirectInput_Release( g_pdi );
 
-	if ( hInstDI ) {
-		FreeLibrary ( hInstDI );
-	}
+	if( hInstDI )
+		FreeLibrary( hInstDI );
 
 	g_pMouse = NULL;
 	g_pdi = NULL;
@@ -425,13 +422,13 @@ void IN_StartupMouse (void)
 	cvar_t		*cv;
 
 	cv = Cvar_Get ("in_initmouse", "1", CVAR_NOSET);
-	if ( !cv->value )
+	if ( !cv->integer )
 		return;
 
 	dinput = qfalse;
 
 	cv = Cvar_Get ("in_dinput", "1", CVAR_ARCHIVE);
-	if ( cv->value )
+	if ( cv->integer )
 		dinput = IN_InitDInput ();
 
 	if (dinput)
@@ -470,8 +467,8 @@ void IN_MouseEvent (int mstate)
 		{
 				Key_Event (K_MOUSE1 + i, qfalse, sys_msg_time);
 		}
-	}	
-		
+	}
+
 	mouse_oldbuttonstate = mstate;
 }
 
@@ -593,7 +590,7 @@ void IN_MouseMove (usercmd_t *cmd)
 		return;
 #endif
 
-	if (m_filter->value)
+	if (m_filter->integer)
 	{
 		mouse_x = (mx + old_mouse_x) * 0.5;
 		mouse_y = (my + old_mouse_y) * 0.5;
@@ -611,12 +608,12 @@ void IN_MouseMove (usercmd_t *cmd)
 	mouse_y *= sensitivity->value;
 
 // add mouse X/Y movement to cmd
-	if ( (in_strafe.state & 1) || (lookstrafe->value && mlooking ))
+	if ( (in_strafe.state & 1) || (lookstrafe->integer && mlooking ))
 		cmd->sidemove += m_side->value * mouse_x;
 	else
 		cl.viewangles[YAW] -= m_yaw->value * mouse_x;
 
-	if ( (mlooking || cl_freelook->value) && !(in_strafe.state & 1))
+	if ( (mlooking || cl_freelook->integer) && !(in_strafe.state & 1))
 	{
 		cl.viewangles[PITCH] += m_pitch->value * mouse_y;
 	}
@@ -807,7 +804,7 @@ void IN_StartupJoystick (void)
 
 	// abort startup if user requests no joystick
 	cv = Cvar_Get ("in_initjoy", "1", CVAR_NOSET);
-	if ( !cv->value ) 
+	if ( !cv->integer ) 
 		return; 
  
 	// verify joystick driver is present
@@ -826,7 +823,7 @@ void IN_StartupJoystick (void)
 
 		if ((mmr = joyGetPosEx (joy_id, &ji)) == JOYERR_NOERROR)
 			break;
-	} 
+	}
 
 	// abort startup if we didn't find a valid joystick
 	if (mmr != JOYERR_NOERROR)
@@ -895,7 +892,6 @@ Joy_AdvancedUpdate_f
 */
 void Joy_AdvancedUpdate_f (void)
 {
-
 	// called once by IN_ReadJoystick and by user whenever an update is needed
 	// cvars are now available
 	int	i;
@@ -909,7 +905,7 @@ void Joy_AdvancedUpdate_f (void)
 		pdwRawValue[i] = RawValuePointer(i);
 	}
 
-	if( joy_advanced->value == 0.0)
+	if( joy_advanced->integer == 0)
 	{
 		// default joystick initialization
 		// 2 axes only with joystick control
@@ -928,22 +924,22 @@ void Joy_AdvancedUpdate_f (void)
 
 		// advanced initialization here
 		// data supplied by user via joy_axisn cvars
-		dwTemp = (DWORD) joy_advaxisx->value;
+		dwTemp = (DWORD) joy_advaxisx->integer;
 		dwAxisMap[JOY_AXIS_X] = dwTemp & 0x0000000f;
 		dwControlMap[JOY_AXIS_X] = dwTemp & JOY_RELATIVE_AXIS;
-		dwTemp = (DWORD) joy_advaxisy->value;
+		dwTemp = (DWORD) joy_advaxisy->integer;
 		dwAxisMap[JOY_AXIS_Y] = dwTemp & 0x0000000f;
 		dwControlMap[JOY_AXIS_Y] = dwTemp & JOY_RELATIVE_AXIS;
-		dwTemp = (DWORD) joy_advaxisz->value;
+		dwTemp = (DWORD) joy_advaxisz->integer;
 		dwAxisMap[JOY_AXIS_Z] = dwTemp & 0x0000000f;
 		dwControlMap[JOY_AXIS_Z] = dwTemp & JOY_RELATIVE_AXIS;
-		dwTemp = (DWORD) joy_advaxisr->value;
+		dwTemp = (DWORD) joy_advaxisr->integer;
 		dwAxisMap[JOY_AXIS_R] = dwTemp & 0x0000000f;
 		dwControlMap[JOY_AXIS_R] = dwTemp & JOY_RELATIVE_AXIS;
-		dwTemp = (DWORD) joy_advaxisu->value;
+		dwTemp = (DWORD) joy_advaxisu->integer;
 		dwAxisMap[JOY_AXIS_U] = dwTemp & 0x0000000f;
 		dwControlMap[JOY_AXIS_U] = dwTemp & JOY_RELATIVE_AXIS;
-		dwTemp = (DWORD) joy_advaxisv->value;
+		dwTemp = (DWORD) joy_advaxisv->integer;
 		dwAxisMap[JOY_AXIS_V] = dwTemp & 0x0000000f;
 		dwControlMap[JOY_AXIS_V] = dwTemp & JOY_RELATIVE_AXIS;
 	}
@@ -974,7 +970,7 @@ void IN_Commands (void)
 	{
 		return;
 	}
-	
+
 	// loop through the joystick buttons
 	// key a joystick event or auxillary event for higher number buttons for each state change
 	buttonstate = ji.dwButtons;
@@ -1036,7 +1032,6 @@ IN_ReadJoystick
 */  
 qboolean IN_ReadJoystick (void)
 {
-
 	memset (&ji, 0, sizeof(ji));
 	ji.dwSize = sizeof(ji);
 	ji.dwFlags = joy_flags;
@@ -1077,7 +1072,7 @@ void IN_JoyMove (usercmd_t *cmd)
 	}
 
 	// verify joystick is available and that the user wants to use it
-	if (!joy_avail || !in_joystick->value)
+	if (!joy_avail || !in_joystick->integer)
 	{
 		return; 
 	}
@@ -1088,7 +1083,7 @@ void IN_JoyMove (usercmd_t *cmd)
 		return;
 	}
 
-	if ( (in_speed.state & 1) ^ (int)cl_run->value)
+	if ( (in_speed.state & 1) ^ (int)cl_run->integer)
 		speed = 2;
 	else
 		speed = 1;
@@ -1108,7 +1103,7 @@ void IN_JoyMove (usercmd_t *cmd)
 		switch (dwAxisMap[i])
 		{
 		case AxisForward:
-			if ((joy_advanced->value == 0.0) && mlooking)
+			if ((joy_advanced->integer == 0) && mlooking)
 			{
 				// user wants forward control to become look control
 				if (fabs(fAxisValue) > joy_pitchthreshold->value)

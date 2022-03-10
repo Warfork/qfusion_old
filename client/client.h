@@ -43,16 +43,11 @@ typedef struct
 	int			timedemo_frames;
 	int			timedemo_start;
 
-	qboolean	cgame_active;
-	qboolean	cgame_loading;
-	qboolean	sound_prepped;		// ambient sounds can start
-	qboolean	force_refdef;		// vid has changed, so we can't use a paused refdef
-
-	qboolean	refresh_active;
+	qboolean	soundPrepped;		// ambient sounds can start
 
 	int			parse_entities;		// index (not anded off) into cl_parse_entities[]
 
-	usercmd_t	cmd;				// current cmd
+	int			cmdNum;				// current cmd
 	usercmd_t	cmds[CMD_BACKUP];	// each mesage will send several old cmds
 	int			cmd_time[CMD_BACKUP];	// time sent, for calculating pings
 
@@ -101,6 +96,7 @@ typedef struct
 {
 	connstate_t	state;				// only set through CL_SetClientState
 	keydest_t	key_dest;
+	keydest_t	old_key_dest;
 
 	int			framecount;
 	int			realtime;			// always increasing, no clamping, etc
@@ -108,7 +104,10 @@ typedef struct
 	float		frametime;			// seconds since last frame
 
 // screen rendering information
-	float		disable_screen;		// showing loading plaque between levels
+	qboolean	cgameActive;
+	qboolean	mediaInitialized;
+
+	int			disable_screen;		// showing loading plaque between levels
 									// or changing rendering dlls
 									// if time gets > 30 seconds ahead, break it
 	int			disable_servercount;	// when we receive a frame and cl.servercount
@@ -222,6 +221,7 @@ void CL_PingServers_f (void);
 void CL_RequestNextDownload (void);
 void CL_GetClipboardData (char *string, int size);
 void CL_SetKeyDest (int key_dest);
+void CL_SetOldKeyDest (int key_dest);
 void CL_ResetServerCount (void);
 void CL_SetClientState (int state);
 void CL_ClearState (void);
@@ -282,9 +282,6 @@ void CL_BaseMove (usercmd_t *cmd);
 
 void IN_CenterView (void);
 
-float CL_KeyState (kbutton_t *key);
-char *Key_KeynumToString (int keynum);
-
 //
 // cl_demo.c
 //
@@ -320,8 +317,11 @@ void SCR_BeginLoadingPlaque (void);
 void SCR_EndLoadingPlaque (void);
 void SCR_DebugGraph (float value, float r, float g, float b);
 void SCR_RunConsole (void);
-void SCR_PrepRefresh (void);
 void SCR_RegisterConsoleMedia (void);
+
+void CL_InitMedia( void );
+void CL_ShutdownMedia( void );
+void CL_RestartMedia( void );
 
 void CL_AddNetgraph (void);
 

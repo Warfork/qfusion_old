@@ -121,26 +121,26 @@ void Com_Printf (char *fmt, ...)
 	}
 
 	Con_Print (msg);
-		
+
 	// also echo to debugging console
 	Sys_ConsoleOutput (msg);
 
 	// logfile
-	if (logfile_active && logfile_active->value)
+	if (logfile_active && logfile_active->integer)
 	{
 		char	name[MAX_QPATH];
-		
+
 		if (!logfile)
 		{
-			Com_sprintf (name, sizeof(name), "%s/qconsole.log", FS_Gamedir ());
-			if (logfile_active->value > 2)
+			Q_snprintfz (name, sizeof(name), "%s/qconsole.log", FS_Gamedir ());
+			if (logfile_active->integer > 2)
 				logfile = fopen (name, "a");
 			else
 				logfile = fopen (name, "w");
 		}
 		if (logfile)
 			fprintf (logfile, "%s", msg);
-		if (logfile_active->value > 1)
+		if (logfile_active->integer > 1)
 			fflush (logfile);		// force it to save every time
 	}
 }
@@ -157,14 +157,14 @@ void Com_DPrintf (char *fmt, ...)
 {
 	va_list		argptr;
 	char		msg[MAXPRINTMSG];
-		
-	if (!developer || !developer->value)
+
+	if (!developer || !developer->integer)
 		return;			// don't confuse non-developers with techie stuff...
 
 	va_start (argptr,fmt);
 	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
-	
+
 	Com_Printf ("%s", msg);
 }
 
@@ -190,10 +190,10 @@ void Com_Error (int code, char *fmt, ...)
 	va_start (argptr, fmt);
 	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
-	
+
 	if (code == ERR_DISCONNECT)
 	{
-		CL_Drop ();
+		CL_Disconnect ();
 		recursive = qfalse;
 		if (!com_initialized)
 			Sys_Error ("%s", msg);
@@ -203,7 +203,7 @@ void Com_Error (int code, char *fmt, ...)
 	{
 		Com_Printf ("********************\nERROR: %s\n********************\n", msg);
 		SV_Shutdown (va("Server crashed: %s\n", msg), qfalse);
-		CL_Drop ();
+		CL_Disconnect ();
 		recursive = qfalse;
 		if (!com_initialized)
 			Sys_Error ("%s", msg);
@@ -293,17 +293,14 @@ unsigned int Com_HashKey (char *name, int hashsize)
 	unsigned int c;
 
 	v = 0;
-	for ( i = 0; name[i]; i++ )
-	{
+	for( i = 0; name[i]; i++ ) {
 		c = name[i];
-		if ( c == '\\' ) {
+		if( c == '\\' )
 			c = '/';
-		}
-
-		v = (v + i) * 37 + tolower (c);	// case insensitivity
+		v = (v + i) * 37 + tolower( c );	// case insensitivity
 	}
 
-	return v & (hashsize - 1);
+	return v % hashsize;
 }
 
 /*
@@ -322,7 +319,7 @@ Handles byte ordering and avoids alignment errors
 void MSG_WriteChar (sizebuf_t *sb, int c)
 {
 	qbyte	*buf;
-	
+
 #ifdef PARANOID
 	if (c < -128 || c > 127)
 		Com_Error (ERR_FATAL, "MSG_WriteChar: range error");
@@ -335,7 +332,7 @@ void MSG_WriteChar (sizebuf_t *sb, int c)
 void MSG_WriteByte (sizebuf_t *sb, int c)
 {
 	qbyte	*buf;
-	
+
 #ifdef PARANOID
 	if (c < 0 || c > 255)
 		Com_Error (ERR_FATAL, "MSG_WriteByte: range error");
@@ -348,7 +345,7 @@ void MSG_WriteByte (sizebuf_t *sb, int c)
 void MSG_WriteShort (sizebuf_t *sb, int c)
 {
 	qbyte	*buf;
-	
+
 #ifdef PARANOID
 	if (c < ((short)0x8000) || c > (short)0x7fff)
 		Com_Error (ERR_FATAL, "MSG_WriteShort: range error");
@@ -362,7 +359,7 @@ void MSG_WriteShort (sizebuf_t *sb, int c)
 void MSG_WriteLong (sizebuf_t *sb, int c)
 {
 	qbyte	*buf;
-	
+
 	buf = SZ_GetSpace (sb, 4);
 	buf[0] = c&0xff;
 	buf[1] = (c>>8)&0xff;
@@ -377,11 +374,10 @@ void MSG_WriteFloat (sizebuf_t *sb, float f)
 		float	f;
 		int	l;
 	} dat;
-	
-	
+
 	dat.f = f;
 	dat.l = LittleLong (dat.l);
-	
+
 	SZ_Write (sb, &dat.l, 4);
 }
 
@@ -396,35 +392,12 @@ void MSG_WriteString (sizebuf_t *sb, char *s)
 void MSG_WriteInt3 (sizebuf_t *sb, int c)
 {
 	qbyte	*buf;
-	
+
 	buf = SZ_GetSpace (sb, 3);
 	buf[0] = c&0xff;
 	buf[1] = (c>>8)&0xff;
 	buf[2] = (c>>16)&0xff;
 }
-
-void MSG_WriteCoord (sizebuf_t *sb, float f)
-{
-	MSG_WriteInt3 (sb, Q_rint(f));
-}
-
-void MSG_WritePos (sizebuf_t *sb, vec3_t pos)
-{
-	MSG_WriteCoord (sb, pos[0]);
-	MSG_WriteCoord (sb, pos[1]);
-	MSG_WriteCoord (sb, pos[2]);
-}
-
-void MSG_WriteAngle (sizebuf_t *sb, float f)
-{
-	MSG_WriteByte (sb, ANGLE2BYTE(f));
-}
-
-void MSG_WriteAngle16 (sizebuf_t *sb, float f)
-{
-	MSG_WriteShort (sb, ANGLE2SHORT(f));
-}
-
 
 void MSG_WriteDeltaUsercmd (sizebuf_t *buf, usercmd_t *from, usercmd_t *cmd)
 {
@@ -483,13 +456,6 @@ void MSG_WriteDir (sizebuf_t *sb, vec3_t dir)
 	MSG_WriteByte (sb, DirToByte(dir));
 }
 
-
-void MSG_ReadDir (sizebuf_t *sb, vec3_t dir)
-{
-	ByteToDir (MSG_ReadByte (sb), dir);
-}
-
-
 /*
 ==================
 MSG_WriteDeltaEntity
@@ -526,7 +492,7 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		bits |= U_ANGLE2;
 	if ( to->angles[2] != from->angles[2] )
 		bits |= U_ANGLE3;
-		
+
 	if ( to->skinnum != from->skinnum )
 	{
 		if ((unsigned)to->skinnum < 256)
@@ -536,7 +502,7 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		else
 			bits |= (U_SKIN8|U_SKIN16);
 	}
-		
+
 	if ( to->frame != from->frame )
 	{
 		if (to->frame < 256)
@@ -554,7 +520,7 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		else
 			bits |= U_EFFECTS8|U_EFFECTS16;
 	}
-	
+
 	if ( to->renderfx != from->renderfx )
 	{
 		if (to->renderfx < 256)
@@ -564,7 +530,7 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		else
 			bits |= U_RENDERFX8|U_RENDERFX16;
 	}
-	
+
 	if ( to->solid != from->solid )
 		bits |= U_SOLID;
 
@@ -573,7 +539,7 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		bits |= U_EVENT;
 	if ( to->events[1] )
 		bits |= U_EVENT2;
-	
+
 	if ( to->modelindex != from->modelindex )
 		bits |= U_MODEL;
 	if ( to->modelindex2 != from->modelindex2 )
@@ -739,52 +705,25 @@ void MSG_BeginReading (sizebuf_t *msg)
 	msg->readcount = 0;
 }
 
-// returns -1 if no more characters are available
-int MSG_ReadChar (sizebuf_t *msg_read)
-{
-	int	c;
-	
-	if (msg_read->readcount+1 > msg_read->cursize)
-		c = -1;
-	else
-		c = (signed char)msg_read->data[msg_read->readcount];
-	msg_read->readcount++;
-	
-	return c;
-}
-
-int MSG_ReadByte (sizebuf_t *msg_read)
-{
-	int	c;
-	
-	if (msg_read->readcount+1 > msg_read->cursize)
-		c = -1;
-	else
-		c = (unsigned char)msg_read->data[msg_read->readcount];
-	msg_read->readcount++;
-	
-	return c;
-}
-
 int MSG_ReadShort (sizebuf_t *msg_read)
 {
 	int	c;
-	
+
 	if (msg_read->readcount+2 > msg_read->cursize)
 		c = -1;
 	else		
 		c = (short)(msg_read->data[msg_read->readcount]
 		+ (msg_read->data[msg_read->readcount+1]<<8));
-	
+
 	msg_read->readcount += 2;
-	
+
 	return c;
 }
 
 int MSG_ReadInt3 (sizebuf_t *msg_read)
 {
 	int	c;
-	
+
 	if (msg_read->readcount+3 > msg_read->cursize)
 		c = -1;
 	else
@@ -792,7 +731,7 @@ int MSG_ReadInt3 (sizebuf_t *msg_read)
 			(msg_read->data[msg_read->readcount+1]<<8) | 
 			(msg_read->data[msg_read->readcount+2]<<16) | 
 			((msg_read->data[msg_read->readcount+2] & 0x80) ? ~0xFFFFFF : 0);
-	
+
 	msg_read->readcount += 3;
 
 	return c;
@@ -801,7 +740,7 @@ int MSG_ReadInt3 (sizebuf_t *msg_read)
 int MSG_ReadLong (sizebuf_t *msg_read)
 {
 	int	c;
-	
+
 	if (msg_read->readcount+4 > msg_read->cursize)
 		c = -1;
 	else
@@ -809,9 +748,9 @@ int MSG_ReadLong (sizebuf_t *msg_read)
 		+ (msg_read->data[msg_read->readcount+1]<<8)
 		+ (msg_read->data[msg_read->readcount+2]<<16)
 		+ (msg_read->data[msg_read->readcount+3]<<24);
-	
+
 	msg_read->readcount += 4;
-	
+
 	return c;
 }
 
@@ -823,7 +762,7 @@ float MSG_ReadFloat (sizebuf_t *msg_read)
 		float	f;
 		int	l;
 	} dat;
-	
+
 	if (msg_read->readcount+4 > msg_read->cursize)
 		dat.f = -1;
 	else
@@ -834,7 +773,7 @@ float MSG_ReadFloat (sizebuf_t *msg_read)
 		dat.b[3] =	msg_read->data[msg_read->readcount+3];
 	}
 	msg_read->readcount += 4;
-	
+
 	dat.l = LittleLong (dat.l);
 
 	return dat.f;	
@@ -842,64 +781,51 @@ float MSG_ReadFloat (sizebuf_t *msg_read)
 
 char *MSG_ReadString (sizebuf_t *msg_read)
 {
+	int		l, c;
 	static char	string[2048];
-	int		l,c;
-	
+
 	l = 0;
 	do
 	{
 		c = MSG_ReadByte (msg_read);
+		if (c == 255)
+			continue;
 		if (c == -1 || c == 0)
 			break;
 		string[l] = c;
 		l++;
 	} while (l < sizeof(string)-1);
-	
+
 	string[l] = 0;
-	
+
 	return string;
 }
 
 char *MSG_ReadStringLine (sizebuf_t *msg_read)
 {
+	int		l, c;
 	static char	string[2048];
-	int		l,c;
-	
+
 	l = 0;
 	do
 	{
 		c = MSG_ReadByte (msg_read);
+		if (c == 255)
+			continue;
 		if (c == -1 || c == 0 || c == '\n')
 			break;
 		string[l] = c;
 		l++;
 	} while (l < sizeof(string)-1);
-	
+
 	string[l] = 0;
-	
+
 	return string;
 }
 
-float MSG_ReadCoord (sizebuf_t *msg_read)
+void MSG_ReadDir (sizebuf_t *sb, vec3_t dir)
 {
-	return MSG_ReadInt3( msg_read );
-}
-
-void MSG_ReadPos (sizebuf_t *msg_read, vec3_t pos)
-{
-	pos[0] = MSG_ReadCoord ( msg_read );
-	pos[1] = MSG_ReadCoord ( msg_read );
-	pos[2] = MSG_ReadCoord ( msg_read );
-}
-
-float MSG_ReadAngle (sizebuf_t *msg_read)
-{
-	return BYTE2ANGLE(MSG_ReadByte(msg_read));
-}
-
-float MSG_ReadAngle16 (sizebuf_t *msg_read)
-{
-	return SHORT2ANGLE(MSG_ReadShort(msg_read));
+	ByteToDir (MSG_ReadByte (sb), dir);
 }
 
 void MSG_ReadDeltaUsercmd (sizebuf_t *msg_read, usercmd_t *from, usercmd_t *move)
@@ -962,15 +888,15 @@ void SZ_Clear (sizebuf_t *buf)
 void *SZ_GetSpace (sizebuf_t *buf, int length)
 {
 	void	*data;
-	
+
 	if (buf->cursize + length > buf->maxsize)
 	{
 		if (!buf->allowoverflow)
 			Com_Error (ERR_FATAL, "SZ_GetSpace: overflow without allowoverflow set");
-		
+
 		if (length > buf->maxsize)
 			Com_Error (ERR_FATAL, "SZ_GetSpace: %i is > full buffer size", length);
-			
+
 		Com_Printf ("SZ_GetSpace: overflow\n");
 		SZ_Clear (buf); 
 		buf->overflowed = qtrue;
@@ -978,19 +904,19 @@ void *SZ_GetSpace (sizebuf_t *buf, int length)
 
 	data = buf->data + buf->cursize;
 	buf->cursize += length;
-	
+
 	return data;
 }
 
 void SZ_Write (sizebuf_t *buf, void *data, int length)
 {
-	memcpy (SZ_GetSpace(buf,length),data,length);		
+	memcpy (SZ_GetSpace(buf, length), data, length);		
 }
 
 void SZ_Print (sizebuf_t *buf, char *data)
 {
 	int		len;
-	
+
 	len = strlen(data)+1;
 
 	if (buf->cursize)
@@ -998,10 +924,14 @@ void SZ_Print (sizebuf_t *buf, char *data)
 		if (buf->data[buf->cursize-1])
 			memcpy ((qbyte *)SZ_GetSpace(buf, len), data, len); // no trailing 0
 		else
-			memcpy ((qbyte *)SZ_GetSpace(buf, len-1)-1, data, len); // write over trailing 0
+		{
+			qbyte *dest = (qbyte *)SZ_GetSpace(buf, len-1);
+			if (!buf->overflowed)
+				memcpy (dest-1, data, len); // write over trailing 0
+		}
 	}
 	else
-		memcpy ((qbyte *)SZ_GetSpace(buf, len),data,len);
+		memcpy ((qbyte *)SZ_GetSpace(buf, len), data, len);
 }
 
 
@@ -1019,13 +949,13 @@ where the given parameter apears, or 0 if not present
 int COM_CheckParm (char *parm)
 {
 	int		i;
-	
+
 	for (i=1 ; i<com_argc ; i++)
 	{
 		if (!strcmp (parm,com_argv[i]))
 			return i;
 	}
-		
+
 	return 0;
 }
 
@@ -1087,8 +1017,8 @@ void COM_AddParm (char *parm)
 char *CopyString (char *in)
 {
 	char	*out;
-	
-	out = Mem_ZoneMalloc (strlen(in)+1);
+
+	out = Mem_ZoneMallocExt (strlen(in)+1, 0);
 	strcpy (out, in);
 
 	return out;
@@ -1301,6 +1231,42 @@ qbyte COM_BlockSequenceCRCByte (qbyte *base, int length, int sequence)
 	return crc;
 }
 
+///////////////////////////////////////////////////////////////
+//	MD4-based checksum utility functions
+//
+//	Copyright (C) 2000       Jeff Teunissen <d2deek@pmail.net>
+//
+//	Author: Jeff Teunissen	<d2deek@pmail.net>
+//	Date: 01 Jan 2000
+
+unsigned Com_BlockChecksum (void *buffer, int length)
+{
+	int				digest[4];
+	unsigned 		val;
+
+	mdfour ( (unsigned char *) digest, (unsigned char *) buffer, length );
+
+	val = digest[0] ^ digest[1] ^ digest[2] ^ digest[3];
+
+	return val;
+}
+
+
+/*
+===============
+Com_PageInMemory
+===============
+*/
+int	paged_total;
+
+void Com_PageInMemory (qbyte *buffer, int size)
+{
+	int		i;
+
+	for (i=size-1 ; i>0 ; i-=4096)
+		paged_total += buffer[i];
+}
+
 //========================================================
 
 void Key_Init (void);
@@ -1344,11 +1310,8 @@ Q_free
 */
 void Q_free (void *buf)
 {
-	if (!buf) {
-		return;
-	}
-
-	free (buf);
+	if( buf )
+		free( buf );
 }
 
 /*
@@ -1409,6 +1372,9 @@ void Qcommon_Init (int argc, char **argv)
 	fixedtime = Cvar_Get ("fixedtime", "0", 0);
 	logfile_active = Cvar_Get ("logfile", "0", 0);
 	com_showtrace = Cvar_Get ("com_showtrace", "0", 0);
+	cm_noAreas = Cvar_Get ("cm_noAreas", "0", CVAR_CHEAT);
+	cm_noCurves = Cvar_Get ("cm_noCurves", "0", CVAR_CHEAT);
+
 #ifdef DEDICATED_ONLY
 	dedicated = Cvar_Get ("dedicated", "1", CVAR_NOSET);
 #else
@@ -1419,10 +1385,13 @@ void Qcommon_Init (int argc, char **argv)
 	Cvar_Get ("version", s, CVAR_SERVERINFO|CVAR_NOSET);
 
 
-	if (dedicated->value)
+	if (dedicated->integer)
 		Cmd_AddCommand ("quit", Com_Quit);
 
 	Sys_Init ();
+
+	if (dedicated->integer)
+		Sys_PrintCPUInfo ();
 
 	NET_Init ();
 	Netchan_Init ();
@@ -1430,14 +1399,12 @@ void Qcommon_Init (int argc, char **argv)
 	SV_Init ();
 	CL_Init ();
 
-	Sys_PrintCPUInfo ();
-
 	SCR_EndLoadingPlaque ();
 
 	// add + commands from command line
 	if (!Cbuf_AddLateCommands ())
 	{	// if the user didn't give any commands, run default action
-		if (!dedicated->value)
+		if (!dedicated->integer)
 			Cbuf_AddText ("d1\n");
 		else
 			Cbuf_AddText ("dedicated_start\n");
@@ -1449,7 +1416,7 @@ void Qcommon_Init (int argc, char **argv)
 		SCR_EndLoadingPlaque ();
 	}
 
-	Com_Printf ("====== %s Initialized ======\n\n", APPLICATION);	
+	Com_Printf ("====== %s Initialized ======\n", APPLICATION);	
 
 	com_initialized = qtrue;
 }
@@ -1470,7 +1437,7 @@ void Qcommon_Frame (int msec)
 	if ( log_stats->modified )
 	{
 		log_stats->modified = qfalse;
-		if ( log_stats->value )
+		if ( log_stats->integer )
 		{
 			if ( log_stats_file )
 			{
@@ -1491,8 +1458,8 @@ void Qcommon_Frame (int msec)
 		}
 	}
 
-	if (fixedtime->value)
-		msec = fixedtime->value;
+	if (fixedtime->integer)
+		msec = fixedtime->integer;
 	else if (timescale->value)
 	{
 		msec *= timescale->value;
@@ -1500,18 +1467,15 @@ void Qcommon_Frame (int msec)
 			msec = 1;
 	}
 
-	if (com_showtrace->value)
+	if (com_showtrace->integer)
 	{
-		extern	int c_traces, c_brush_traces;
-		extern	int	c_pointcontents;
-
-		Com_Printf ("%4i traces  %4i points\n", c_traces, c_pointcontents);
+		Com_Printf ("%4i traces %4i brush traces %4i points\n", c_traces, c_brush_traces, c_pointcontents);
 		c_traces = 0;
 		c_brush_traces = 0;
 		c_pointcontents = 0;
 	}
 
-	if ( dedicated->value ) {
+	if ( dedicated->integer ) {
 		do
 		{
 			s = Sys_ConsoleInput ();
@@ -1522,21 +1486,20 @@ void Qcommon_Frame (int msec)
 		Cbuf_Execute ();
 	}
 
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_before = Sys_Milliseconds ();
 
 	SV_Frame (msec);
 
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_between = Sys_Milliseconds ();		
 
 	CL_Frame (msec);
 
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_after = Sys_Milliseconds ();		
 
-
-	if (host_speeds->value)
+	if (host_speeds->integer)
 	{
 		int			all, sv, gm, cl, rf;
 
@@ -1559,5 +1522,6 @@ Qcommon_Shutdown
 */
 void Qcommon_Shutdown (void)
 {
+	NET_Shutdown ();
 	Memory_Shutdown ();
 }

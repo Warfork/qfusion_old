@@ -41,8 +41,8 @@ void SV_BeginDemoserver (void)
 {
 	char		name[MAX_OSPATH];
 
-	Com_sprintf (name, sizeof(name), "demos/%s", sv.name);
-	sv.demolen = FS_FOpenFile (name, &sv.demofile);
+	Q_snprintfz (name, sizeof(name), "demos/%s", sv.name);
+	sv.demolen = FS_FOpenFile (name, &sv.demofile, FS_READ);
 	if (!sv.demofile)
 		Com_Error (ERR_DROP, "Couldn't open %s", name);
 }
@@ -140,8 +140,10 @@ void SV_Configstrings_f (void)
 		SV_New_f ();
 		return;
 	}
-	
+
 	start = atoi(Cmd_Argv(2));
+	if( start < 0 )
+		start = 0;
 
 	// write a packet full of data
 
@@ -188,7 +190,7 @@ void SV_Baselines_f (void)
 		Com_Printf ("baselines not valid -- already spawned\n");
 		return;
 	}
-	
+
 	// handle the case of a level changing while a client was connecting
 	if ( atoi(Cmd_Argv(1)) != svs.spawncount )
 	{
@@ -196,15 +198,17 @@ void SV_Baselines_f (void)
 		SV_New_f ();
 		return;
 	}
-	
+
 	start = atoi(Cmd_Argv(2));
+	if( start < 0 )
+		start = 0;
 
 	memset (&nullstate, 0, sizeof(nullstate));
 
 	// write a packet full of data
 
 	while ( sv_client->netchan.message.cursize < MAX_MSGLEN/2
-		&& start < MAX_EDICTS)
+		&& start < MAX_EDICTS )
 	{
 		base = &sv.baselines[start];
 		if (base->modelindex || base->sound || base->effects)
@@ -247,7 +251,7 @@ void SV_Begin_f (void)
 	}
 
 	sv_client->state = cs_spawned;
-	
+
 	// call the game begin function
 	ge->ClientBegin (sv_player);
 
@@ -316,19 +320,19 @@ void SV_BeginDownload_f(void)
 
 	// hacked by zoid to allow more conrol over download
 	// first off, no .. or global allow check
-	if (strstr (name, "..") || !allow_download->value
+	if (strstr (name, "..") || !allow_download->integer
 		// leading dot is no good
 		|| *name == '.' 
 		// leading slash bad as well, must be in subdir
 		|| *name == '/'
 		// next up, skin check
-		|| (strncmp(name, "players/", 8) == 0 && !allow_download_players->value)
+		|| (strncmp(name, "players/", 8) == 0 && !allow_download_players->integer)
 		// now models
-		|| (strncmp(name, "models/", 7) == 0 && !allow_download_models->value)
+		|| (strncmp(name, "models/", 7) == 0 && !allow_download_models->integer)
 		// now sounds
-		|| (strncmp(name, "sound/", 6) == 0 && !allow_download_sounds->value)
+		|| (strncmp(name, "sound/", 6) == 0 && !allow_download_sounds->integer)
 		// now maps (note special case for maps, must not be in pak)
-		|| (strncmp(name, "maps/", 5) == 0 && !allow_download_maps->value)
+		|| (strncmp(name, "maps/", 5) == 0 && !allow_download_maps->integer)
 		// MUST be in a subdirectory	
 		|| !strstr (name, "/") )	
 	{	// don't allow anything with .. path
@@ -506,7 +510,7 @@ void SV_ClientThink (client_t *cl, usercmd_t *cmd)
 {
 	cl->commandMsec -= cmd->msec;
 
-	if (cl->commandMsec < 0 && sv_enforcetime->value )
+	if (cl->commandMsec < 0 && sv_enforcetime->integer)
 	{
 		Com_DPrintf ("commandMsec underflow from %s\n", cl->name);
 		return;
@@ -614,7 +618,7 @@ void SV_ExecuteClientMessage (client_t *cl)
 				return;
 			}
 
-			if (!sv_paused->value)
+			if (!sv_paused->integer)
 			{
 				net_drop = cl->netchan.dropped;
 				if (net_drop < 20)

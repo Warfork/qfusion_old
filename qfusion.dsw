@@ -27,6 +27,21 @@ Package=<4>
 
 ###############################################################################
 
+Project: "qfds"=.\qfds.dsp - Package Owner=<4>
+
+Package=<5>
+{{{
+}}}
+
+Package=<4>
+{{{
+    Begin Project Dependency
+    Project_Dep_Name game
+    End Project Dependency
+}}}
+
+###############################################################################
+
 Project: "qfusion"=.\qfusion.dsp - Package Owner=<4>
 
 Package=<5>

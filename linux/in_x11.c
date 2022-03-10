@@ -55,7 +55,7 @@ void IN_Move (usercmd_t *cmd)
 		return;
 	}
 
-	if (m_filter->value)
+	if (m_filter->integer)
 	{
 		mx = (mx + old_mouse_x) * 0.5;
 		my = (my + old_mouse_y) * 0.5;
@@ -139,6 +139,10 @@ void IN_Shutdown (void)
 
 void IN_Frame (void)
 {
-	IN_Activate (qtrue);
+//	if ( cls.key_dest == key_console || cls.key_dest == key_menu)
+//		IN_Activate (qfalse);
+//	else
+		IN_Activate (qtrue);
+
 	HandleEvents();
 }

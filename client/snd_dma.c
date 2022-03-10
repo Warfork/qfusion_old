@@ -27,6 +27,8 @@ void S_SoundList(void);
 void S_Update_();
 void S_StopAllSounds(void);
 void S_Restart (qboolean noVideo);
+void S_Music( void );
+void S_StopBackgroundTrack( void );
 
 // =======================================================================
 // Internal sound data & structures
@@ -36,8 +38,6 @@ void S_Restart (qboolean noVideo);
 #define		SOUND_FULLVOLUME	80
 
 #define		SOUND_LOOPATTENUATE	0.003
-
-int			s_registration_sequence;
 
 channel_t   channels[MAX_CHANNELS];
 
@@ -50,8 +50,6 @@ vec3_t		listener_origin;
 vec3_t		listener_forward;
 vec3_t		listener_right;
 vec3_t		listener_up;
-
-qboolean	s_registering;
 
 int			soundtime;		// sample PAIRS
 int   		paintedtime; 	// sample PAIRS
@@ -88,31 +86,41 @@ mempool_t	*s_mempool;
 int		s_rawend;
 portable_samplepair_t	s_rawsamples[MAX_RAW_SAMPLES];
 
+bgTrack_t	*s_bgTrack;
+bgTrack_t	s_bgTrackIntro;
+bgTrack_t	s_bgTrackLoop;
 
 // ====================================================================
 // User-setable variables
 // ====================================================================
 
-
-void S_SoundInfo_f(void)
+/*
+================
+S_SoundInfo_f
+================
+*/
+void S_SoundInfo_f( void )
 {
-	if (!sound_started)
-	{
-		Com_Printf ("sound system not started\n");
+	if( !sound_started ) {
+		Com_Printf( "S_SoundInfo_f: sound system not started\n" );
 		return;
 	}
-	
-    Com_Printf ("%5d stereo\n", dma.channels - 1);
-    Com_Printf ("%5d samples\n", dma.samples);
-    Com_Printf ("%5d samplepos\n", dma.samplepos);
-    Com_Printf ("%5d samplebits\n", dma.samplebits);
-    Com_Printf ("%5d submission_chunk\n", dma.submission_chunk);
-    Com_Printf ("%5d speed\n", dma.speed);
-    Com_Printf ("0x%x dma buffer\n", dma.buffer);
+
+    Com_Printf( "%5d stereo\n", dma.channels - 1 );
+    Com_Printf( "%5d samples\n", dma.samples );
+    Com_Printf( "%5d samplepos\n", dma.samplepos );
+    Com_Printf( "%5d samplebits\n", dma.samplebits );
+    Com_Printf( "%5d submission_chunk\n", dma.submission_chunk );
+    Com_Printf( "%5d speed\n", dma.speed );
+    Com_Printf( "0x%x dma buffer\n", dma.buffer );
 }
 
-void S_SoundRestart_f (void)
-{
+/*
+================
+S_SoundRestart_f
+================
+*/
+void S_SoundRestart_f( void ) {
 	S_Restart ( qfalse );
 }
 
@@ -121,36 +129,39 @@ void S_SoundRestart_f (void)
 S_Init
 ================
 */
-void S_Init (void)
+void S_Init( void )
 {
 	cvar_t	*cv;
 
-	Com_Printf ("\n------- sound initialization -------\n");
+	Com_Printf( "\n------- sound initialization -------\n" );
 
-	cv = Cvar_Get ("s_initsound", "1", 0);
-	if (!cv->value)
-		Com_Printf ("not initializing.\n");
-	else
-	{
-		s_volume = Cvar_Get ("s_volume", "0.7", CVAR_ARCHIVE);
-		s_musicvolume = Cvar_Get ("s_musicvolume", "0.25", CVAR_ARCHIVE);
-		s_khz = Cvar_Get ("s_khz", "11", CVAR_ARCHIVE);
-		s_mixahead = Cvar_Get ("s_mixahead", "0.2", CVAR_ARCHIVE);
-		s_show = Cvar_Get ("s_show", "0", CVAR_CHEAT);
-		s_testsound = Cvar_Get ("s_testsound", "0", 0);
-		s_swapstereo = Cvar_Get ("s_swapstereo", "0", CVAR_ARCHIVE);
+	Cmd_AddCommand( "snd_restart", S_SoundRestart_f );
 
-		Cmd_AddCommand ("play", S_Play);
-		Cmd_AddCommand ("stopsound", S_StopAllSounds);
-		Cmd_AddCommand ("soundlist", S_SoundList);
-		Cmd_AddCommand ("soundinfo", S_SoundInfo_f);
-		Cmd_AddCommand ("snd_restart", S_SoundRestart_f);
+	cv = Cvar_Get( "s_initsound", "1", 0 );
+	if( !cv->integer ) {
+		Com_Printf( "not initializing.\n" );
+	} else {
+		s_volume = Cvar_Get( "s_volume", "0.7", CVAR_ARCHIVE );
+		s_musicvolume = Cvar_Get( "s_musicvolume", "0.25", CVAR_ARCHIVE );
+		s_khz = Cvar_Get( "s_khz", "22", CVAR_ARCHIVE );
+		s_mixahead = Cvar_Get( "s_mixahead", "0.2", CVAR_ARCHIVE );
+		s_show = Cvar_Get( "s_show", "0", CVAR_CHEAT );
+		s_testsound = Cvar_Get( "s_testsound", "0", 0 );
+		s_swapstereo = Cvar_Get( "s_swapstereo", "0", CVAR_ARCHIVE );
 
-		if (!SNDDMA_Init())
+		Cmd_AddCommand( "play", S_Play );
+		Cmd_AddCommand( "music", S_Music );
+		Cmd_AddCommand( "stopsound", S_StopAllSounds );
+		Cmd_AddCommand( "stopmusic", S_StopBackgroundTrack );
+		Cmd_AddCommand( "soundlist", S_SoundList );
+		Cmd_AddCommand( "soundinfo", S_SoundInfo_f );
+
+		if( !SNDDMA_Init() )
 			return;
 
+		SNDOGG_Init ();
+
 		S_InitScaletable ();
-		S_InitMusicScaletable ();
 
 		sound_started = 1;
 		num_sfx = 0;
@@ -159,7 +170,7 @@ void S_Init (void)
 		soundtime = 0;
 		paintedtime = 0;
 
-		Com_Printf ("sound sampling rate: %i\n", dma.speed);
+		Com_Printf( "sound sampling rate: %i\n", dma.speed );
 
 		s_mempool = Mem_AllocPool ( NULL, "Sounds" );
 
@@ -174,35 +185,29 @@ void S_Init (void)
 // Shutdown sound engine
 // =======================================================================
 
-void S_Shutdown(void)
+void S_Shutdown( void )
 {
-	int		i;
-	sfx_t	*sfx;
+	Cmd_RemoveCommand( "snd_restart" );
 
-	if (!sound_started)
+	if( !sound_started )
 		return;
 
-	SNDDMA_Shutdown();
+	// free all sounds
+	S_FreeSounds ();
+
+	SNDDMA_Shutdown ();
+	SNDOGG_Shutdown ();
 
 	sound_started = 0;
 
-	Cmd_RemoveCommand ("play");
-	Cmd_RemoveCommand ("stopsound");
-	Cmd_RemoveCommand ("soundlist");
-	Cmd_RemoveCommand ("soundinfo");
-	Cmd_RemoveCommand ("snd_restart");
+	Cmd_RemoveCommand( "play" );
+	Cmd_RemoveCommand( "music" );
+	Cmd_RemoveCommand( "stopsound" );
+	Cmd_RemoveCommand( "stopmusic" );
+	Cmd_RemoveCommand( "soundlist" );
+	Cmd_RemoveCommand( "soundinfo" );
 
-	// free all sounds
-	for (i=0, sfx=known_sfx ; i < num_sfx ; i++,sfx++)
-	{
-		if (!sfx->name[0])
-			continue;
-		if (sfx->cache)
-			S_Free (sfx->cache);
-		memset (sfx, 0, sizeof(*sfx));
-	}
-
-	Mem_FreePool (&s_mempool);
+	Mem_FreePool( &s_mempool );
 
 	num_sfx = 0;
 	num_loopsfx = 0;
@@ -216,13 +221,13 @@ S_Restart
 Restart the sound subsystem so it can pick up new parameters and flush all sounds
 =================
 */
-void S_Restart (qboolean noVideo)
+void S_Restart( qboolean noVideo )
 {
 	S_Shutdown ();
 	S_Init ();
 
-	if (!noVideo)
-		Cbuf_AddText ( "vid_restart\n" );
+	if( !noVideo )
+		VID_Restart ();
 }
 
 // =======================================================================
@@ -264,7 +269,6 @@ sfx_t *S_FindName (char *name, qboolean create)
 	// find a free sfx
 	for (i=0 ; i < num_sfx ; i++)
 		if (!known_sfx[i].name[0])
-//			registration_sequence < s_registration_sequence)
 			break;
 
 	if (i == num_sfx)
@@ -273,26 +277,12 @@ sfx_t *S_FindName (char *name, qboolean create)
 			Com_Error (ERR_FATAL, "S_FindName: out of sfx_t");
 		num_sfx++;
 	}
-	
+
 	sfx = &known_sfx[i];
 	memset (sfx, 0, sizeof(*sfx));
 	Q_strncpyz (sfx->name, name, sizeof(sfx->name));
-	sfx->registration_sequence = s_registration_sequence;
-	
+
 	return sfx;
-}
-
-
-/*
-=====================
-S_BeginRegistration
-
-=====================
-*/
-void S_BeginRegistration (void)
-{
-	s_registration_sequence++;
-	s_registering = qtrue;
 }
 
 /*
@@ -309,10 +299,7 @@ sfx_t *S_RegisterSound (char *name)
 		return NULL;
 
 	sfx = S_FindName (name, qtrue);
-	sfx->registration_sequence = s_registration_sequence;
-
-	if (!s_registering)
-		S_LoadSound (sfx);
+	S_LoadSound (sfx);
 
 	return sfx;
 }
@@ -320,11 +307,35 @@ sfx_t *S_RegisterSound (char *name)
 
 /*
 =====================
-S_EndRegistration
+S_FreeSounds
 
 =====================
 */
-void S_EndRegistration (void)
+void S_FreeSounds (void)
+{
+	int		i;
+	sfx_t	*sfx;
+
+	// free all sounds
+	for (i=0, sfx=known_sfx ; i < num_sfx ; i++,sfx++)
+	{
+		if (!sfx->name[0])
+			continue;
+		if (sfx->cache)
+			S_Free (sfx->cache);
+		memset (sfx, 0, sizeof(*sfx));
+	}
+
+	S_StopBackgroundTrack ();
+}
+
+/*
+=====================
+S_SoundsInMemory
+
+=====================
+*/
+void S_SoundsInMemory (void)
 {
 	int		i;
 	sfx_t	*sfx;
@@ -335,34 +346,15 @@ void S_EndRegistration (void)
 	{
 		if (!sfx->name[0])
 			continue;
-		if (sfx->registration_sequence != s_registration_sequence)
-		{	// don't need this sound
-			if (sfx->cache)	// it is possible to have a leftover
-				S_Free (sfx->cache);	// from a server that didn't finish loading
-			memset (sfx, 0, sizeof(*sfx));
+
+		// make sure it is paged in
+		if (sfx->cache)
+		{
+			size = sfx->cache->length*sfx->cache->width;
+			Com_PageInMemory ((qbyte *)sfx->cache, size);
 		}
-		else
-		{	// make sure it is paged in
-			if (sfx->cache)
-			{
-				size = sfx->cache->length*sfx->cache->width;
-				Com_PageInMemory ((qbyte *)sfx->cache, size);
-			}
-		}
-
 	}
-
-	// load everything in
-	for (i=0, sfx=known_sfx ; i < num_sfx ; i++,sfx++)
-	{
-		if (!sfx->name[0])
-			continue;
-		S_LoadSound (sfx);
-	}
-
-	s_registering = qfalse;
 }
-
 
 //=============================================================================
 
@@ -412,7 +404,7 @@ channel_t *S_PickChannel(int entnum, int entchannel)
 	memset (ch, 0, sizeof(*ch));
 
     return ch;
-}       
+}
 
 /*
 =================
@@ -442,7 +434,7 @@ void S_SpatializeOrigin (vec3_t origin, float master_vol, float dist_mult, int *
 	if (dist < 0)
 		dist = 0;			// close enough to be at full volume
 	dist *= dist_mult;		// different attenuation levels
-	
+
 	dot = DotProduct (listener_right, source_vec);
 
 	if (dma.channels == 1 || !dist_mult)
@@ -491,7 +483,7 @@ void S_Spatialize(channel_t *ch)
 		CL_GameModule_GetEntitySoundOrigin (ch->entnum, origin);
 
 	S_SpatializeOrigin (origin, ch->master_vol, ch->dist_mult, &ch->leftvol, &ch->rightvol);
-}           
+}
 
 
 /*
@@ -510,7 +502,7 @@ playsound_t *S_AllocPlaysound (void)
 	// unlink from freelist
 	ps->prev->next = ps->next;
 	ps->next->prev = ps->prev;
-	
+
 	return ps;
 }
 
@@ -549,7 +541,7 @@ void S_IssuePlaysound (playsound_t *ps)
 	channel_t	*ch;
 	sfxcache_t	*sc;
 
-	if (s_show->value)
+	if (s_show->integer)
 		Com_Printf ("Issue %i\n", ps->begin);
 	// pick a channel to play on
 	ch = S_PickChannel(ps->entnum, ps->entchannel);
@@ -751,6 +743,7 @@ void S_StopAllSounds(void)
 	memset(channels, 0, sizeof(channels));
 
 	S_ClearBuffer ();
+	S_StopBackgroundTrack ();
 }
 
 /*
@@ -785,7 +778,7 @@ void S_AddLoopSounds (void)
 	sfx_t		*sfx;
 	sfxcache_t	*sc;
 
-	if (cl_paused->value || cls.state != ca_active || !cl.sound_prepped)
+	if (cl_paused->integer || cls.state != ca_active || !cl.soundPrepped)
 	{
 		num_loopsfx = 0;
 		return;
@@ -848,89 +841,336 @@ S_RawSamples
 Cinematic streaming and voice over network
 ============
 */
-void S_RawSamples (int samples, int rate, int width, int channels, qbyte *data)
+void S_RawSamples (int samples, int rate, int width, int channels, qbyte *data, qboolean music)
 {
 	int		i;
 	int		src, dst;
 	float	scale;
-	int		snd_vol = (int)(s_volume->value*256);
+	int		snd_vol;
 
-	if (!sound_started)
+	if( !sound_started )
 		return;
 
-	if (s_rawend < paintedtime)
+	if( music )
+		snd_vol = (int)(s_musicvolume->value * 256);
+	else
+		snd_vol = (int)(s_volume->value * 256);
+
+	if( s_rawend < paintedtime )
 		s_rawend = paintedtime;
 	scale = (float)rate / dma.speed;
 
-	if (channels == 2 && width == 2)
-	{
-		if (scale == 1.0)
-		{	// optimized case
-			for (i=0 ; i<samples ; i++)
-			{
-				dst = s_rawend&(MAX_RAW_SAMPLES-1);
+	if( scale == 1.0 ) {	// optimized case
+		if( channels == 2 && width == 2 ) {
+			for( i = 0; i < samples; i++ ) {
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
 				s_rawend++;
-				s_rawsamples[dst].left = ((short *)data)[i*2] * snd_vol;
-				s_rawsamples[dst].right = ((short *)data)[i*2+1] * snd_vol;
+				s_rawsamples[dst].left = LittleShort( ((short *)data)[i*2] ) * snd_vol;
+				s_rawsamples[dst].right = LittleShort( ((short *)data)[i*2+1] ) * snd_vol;
+			}
+		} else if( channels == 1 && width == 2 ) {
+			for( i = 0; i < samples; i++ ) {
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
+				s_rawend++;
+				s_rawsamples[dst].left = s_rawsamples[dst].right = LittleShort( ((short *)data)[i] ) * snd_vol;
+			}
+		} else if( channels == 2 && width == 1 ) {
+			for( i = 0; i < samples; i++ ) {
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
+				s_rawend++;
+				s_rawsamples[dst].left = ((char *)data)[i*2] << 8 * snd_vol;
+				s_rawsamples[dst].right = ((char *)data)[i*2+1] << 8 * snd_vol;
+			}
+		} else if( channels == 1 && width == 1 ) {
+			for( i = 0; i < samples; i++ ) {
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
+				s_rawend++;
+				s_rawsamples[dst].left = s_rawsamples[dst].right = (((qbyte *)data)[i]-128) << 8 * snd_vol;
 			}
 		}
-		else
-		{
-			for (i=0 ; ; i++)
-			{
-				src = i*scale;
-				if (src >= samples)
+	} else {
+		if( channels == 2 && width == 2 ) {
+			for( i = 0; ; i++ ) {
+				src = i * scale;
+				if( src >= samples )
 					break;
-				dst = s_rawend&(MAX_RAW_SAMPLES-1);
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
 				s_rawend++;
-				s_rawsamples[dst].left = ((short *)data)[src*2] * snd_vol;
-				s_rawsamples[dst].right = ((short *)data)[src*2+1] * snd_vol;
+				s_rawsamples[dst].left = LittleShort( ((short *)data)[src*2] ) * snd_vol;
+				s_rawsamples[dst].right = LittleShort( ((short *)data)[src*2+1] ) * snd_vol;
 			}
 		}
-	}
-	else if (channels == 1 && width == 2)
-	{
-		for (i=0 ; ; i++)
-		{
-			src = i*scale;
-			if (src >= samples)
-				break;
-			dst = s_rawend&(MAX_RAW_SAMPLES-1);
-			s_rawend++;
-			s_rawsamples[dst].left = ((short *)data)[src] * snd_vol;
-			s_rawsamples[dst].right = ((short *)data)[src] * snd_vol;
-		}
-	}
-	else if (channels == 2 && width == 1)
-	{
-		for (i=0 ; ; i++)
-		{
-			src = i*scale;
-			if (src >= samples)
-				break;
-			dst = s_rawend&(MAX_RAW_SAMPLES-1);
-			s_rawend++;
-			s_rawsamples[dst].left = ((char *)data)[src*2] << 8 * snd_vol;
-			s_rawsamples[dst].right = ((char *)data)[src*2+1] << 8 * snd_vol;
-		}
-	}
-	else if (channels == 1 && width == 1)
-	{
-		for (i=0 ; ; i++)
-		{
-			src = i*scale;
-			if (src >= samples)
-				break;
-			dst = s_rawend&(MAX_RAW_SAMPLES-1);
-			s_rawend++;
-			s_rawsamples[dst].left =
-			    (((qbyte *)data)[src]-128) << 8 * snd_vol;
-			s_rawsamples[dst].right = (((qbyte *)data)[src]-128) << 8 * snd_vol;
+		else if( channels == 1 && width == 2 ) {
+			for( i = 0; ; i++ ) {
+				src = i * scale;
+				if( src >= samples )
+					break;
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
+				s_rawend++;
+				s_rawsamples[dst].left = s_rawsamples[dst].right = LittleShort( ((short *)data)[src] ) * snd_vol;
+			}
+		} else if( channels == 2 && width == 1 ) {
+			for( i = 0; ; i++ ) {
+				src = i * scale;
+				if( src >= samples )
+					break;
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
+				s_rawend++;
+				s_rawsamples[dst].left = ((char *)data)[src*2] << 8 * snd_vol;
+				s_rawsamples[dst].right = ((char *)data)[src*2+1] << 8 * snd_vol;
+			}
+		} else if( channels == 1 && width == 1 ) {
+			for( i = 0; ; i++ ) {
+				src = i * scale;
+				if( src >= samples )
+					break;
+				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
+				s_rawend++;
+				s_rawsamples[dst].left = s_rawsamples[dst].right = (((qbyte *)data)[src]-128) << 8 * snd_vol;
+			}
 		}
 	}
 }
 
 //=============================================================================
+
+/*
+============
+S_BackgroundTrack_FindNextChunk
+============
+*/
+qboolean S_BackgroundTrack_FindNextChunk( char *name, int *last_chunk, int file )
+{
+	char chunkName[4];
+	int iff_chunk_len;
+
+	while( 1 ) {
+		FS_Seek( file, *last_chunk, FS_SEEK_SET );
+
+		if( FS_Eof( file ) )
+			return qfalse;	// didn't find the chunk
+
+		FS_Seek( file, 4, FS_SEEK_CUR );
+		FS_Read( &iff_chunk_len, sizeof( iff_chunk_len ), file );
+		iff_chunk_len = LittleLong( iff_chunk_len );
+		if( iff_chunk_len < 0 )
+			return qfalse;	// didn't find the chunk
+
+		FS_Seek( file, -8, FS_SEEK_CUR );
+		*last_chunk = FS_Tell( file ) + 8 + ( (iff_chunk_len + 1) & ~1 );
+		FS_Read( chunkName, 4, file );
+		if( !strncmp( chunkName, name, 4 ) )
+			return qtrue;
+	}
+}
+
+/*
+============
+S_BackgroundTrack_GetWavinfo
+============
+*/
+int S_BackgroundTrack_GetWavinfo( char *name, wavinfo_t *info )
+{
+	short	t;
+	int		samples, file;
+	int 	iff_data, last_chunk;
+	char	chunkName[4];
+
+	last_chunk = 0;
+	memset( info, 0, sizeof( wavinfo_t ) );
+
+	if( FS_FOpenFile( name, &file, FS_READ ) == -1 )
+		return 0;
+
+	// find "RIFF" chunk
+	if( !S_BackgroundTrack_FindNextChunk( "RIFF", &last_chunk, file ) ) {
+		Com_Printf( "Missing RIFF chunk\n" );
+		return 0;
+	}
+
+	FS_Read( chunkName, 4, file );
+	if( !strncmp( chunkName, "WAVE", 4 ) ) {
+		Com_Printf( "Missing WAVE chunk\n" );
+		return 0;
+	}
+
+	// get "fmt " chunk
+	iff_data = FS_Tell( file ) + 4;
+	last_chunk = iff_data;
+	if( !S_BackgroundTrack_FindNextChunk( "fmt ", &last_chunk, file ) ) {
+		Com_Printf( "Missing fmt chunk\n" );
+		return 0;
+	}
+
+	FS_Read( chunkName, 4, file );
+
+	FS_Read( &t, sizeof( t ), file );
+	if( LittleShort( t ) != 1 ) {
+		Com_Printf("Microsoft PCM format only\n");
+		return 0;
+	}
+
+	FS_Read( &t, sizeof( t ), file );
+	info->channels = LittleShort( t );
+
+	FS_Read( &info->rate, sizeof( info->rate ), file );
+	info->rate = LittleLong( info->rate );
+
+	FS_Seek( file, 4 + 2, FS_SEEK_CUR );
+
+	FS_Read( &t, sizeof( t ), file );
+	info->width = LittleShort( t ) / 8;
+
+	info->loopstart = 0;
+
+	// find data chunk
+	last_chunk = iff_data;
+	if( !S_BackgroundTrack_FindNextChunk( "data", &last_chunk, file ) ) {
+		Com_Printf( "Missing data chunk\n" );
+		return 0;
+	}
+
+	FS_Read( &samples, sizeof( samples ), file );
+	info->samples = LittleLong( samples ) / info->width / info->channels;
+
+	info->dataofs = FS_Tell( file );
+
+	return file;
+}
+
+/*
+============
+S_StartBackgroundTrack
+============
+*/
+void S_StartBackgroundTrack( char *intro, char *loop )
+{
+	if( !sound_started )
+		return;
+
+	S_StopBackgroundTrack ();
+
+	if( !intro || !intro[0] )
+		return;
+
+	if( !SNDOGG_OpenTrack( intro, &s_bgTrackIntro ) ) {
+		s_bgTrackIntro.file = S_BackgroundTrack_GetWavinfo( intro, &s_bgTrackIntro.info );
+
+		if( !s_bgTrackIntro.file || !s_bgTrackIntro.info.samples )
+			return;
+	}
+
+	if( loop && loop[0] && Q_stricmp( intro, loop ) ) {
+		if( !SNDOGG_OpenTrack( loop, &s_bgTrackLoop ) )
+			s_bgTrackLoop.file = S_BackgroundTrack_GetWavinfo( loop, &s_bgTrackLoop.info );
+	}
+
+	if( !s_bgTrackLoop.file || !s_bgTrackLoop.info.samples )
+		s_bgTrackLoop = s_bgTrackIntro;
+	s_bgTrack = &s_bgTrackIntro;
+}
+
+/*
+============
+S_StopBackgroundTrack
+============
+*/
+void S_StopBackgroundTrack( void )
+{
+	if( !sound_started || !s_bgTrack )
+		return;
+
+	if( s_bgTrackIntro.file != s_bgTrackLoop.file ) {
+		if( s_bgTrackIntro.close )
+			s_bgTrackIntro.close( &s_bgTrackIntro );
+		else
+			FS_FCloseFile( s_bgTrackIntro.file );
+	}
+
+	if( s_bgTrackLoop.close )
+		s_bgTrackLoop.close( &s_bgTrackLoop );
+	else
+		FS_FCloseFile( s_bgTrackLoop.file );
+
+	s_bgTrack = NULL;
+	memset( &s_bgTrackIntro, 0, sizeof( bgTrack_t ) );
+	memset( &s_bgTrackLoop, 0, sizeof( bgTrack_t ) );
+}
+
+/*
+============
+S_Music
+============
+*/
+void S_Music( void )
+{
+	if( Cmd_Argc () < 2 ) {
+		Com_Printf( "music: <introfile> [loopfile]\n" );
+		return;
+	}
+
+	S_StartBackgroundTrack( Cmd_Argv( 1 ), Cmd_Argv( 2 ) );
+}
+
+//=============================================================================
+
+/*
+============
+S_UpdateBackgroundTrack
+============
+*/
+void S_UpdateBackgroundTrack( void )
+{
+	int		samples, maxSamples;
+	int		read, maxRead, total;
+	float	scale;
+	qbyte	data[MAX_RAW_SAMPLES*4];
+
+	if( !s_bgTrack || !s_musicvolume->value )
+		return;
+
+	if( s_rawend < paintedtime )
+		s_rawend = paintedtime;
+	scale = (float)s_bgTrack->info.rate / dma.speed;
+	maxSamples = sizeof( data ) / s_bgTrack->info.channels / s_bgTrack->info.width;
+
+	while( 1 ) {
+		samples = ( paintedtime + MAX_RAW_SAMPLES - s_rawend ) * scale;
+		if( samples <= 0 )
+			return;
+		if( samples > maxSamples )
+			samples = maxSamples;
+		maxRead = samples * s_bgTrack->info.channels * s_bgTrack->info.width;
+
+		total = 0;
+		while( total < maxRead ) {
+			if( s_bgTrack->read )
+				read = s_bgTrack->read( s_bgTrack, data + total, maxRead - total );
+			else
+				read = FS_Read( data + total, maxRead - total, s_bgTrack->file );
+
+			if( !read ){
+				if( s_bgTrackIntro.file != s_bgTrackLoop.file ) {
+					if( s_bgTrackIntro.close )
+						s_bgTrackIntro.close( &s_bgTrackIntro );
+					else
+						FS_FCloseFile( s_bgTrackIntro.file );
+					s_bgTrackIntro = s_bgTrackLoop;
+				}
+
+				s_bgTrack = &s_bgTrackLoop;
+				if( s_bgTrack->seek )
+					s_bgTrack->seek( s_bgTrack, s_bgTrack->info.dataofs );
+				else
+					FS_Seek( s_bgTrack->file, s_bgTrack->info.dataofs, FS_SEEK_SET );
+			}
+
+			total += read;
+		}
+
+		S_RawSamples( samples, s_bgTrack->info.rate, s_bgTrack->info.width, s_bgTrack->info.channels, data, qtrue );
+	}
+}
 
 /*
 ============
@@ -961,9 +1201,6 @@ void S_Update(vec3_t origin, vec3_t forward, vec3_t right, vec3_t up)
 	// rebuild scale tables if volume is modified
 	if (s_volume->modified)
 		S_InitScaletable ();
-
-	if (s_musicvolume->modified)
-		S_InitMusicScaletable ();
 
 	VectorCopy (origin, listener_origin);
 	VectorCopy (forward, listener_forward);
@@ -997,7 +1234,7 @@ void S_Update(vec3_t origin, vec3_t forward, vec3_t right, vec3_t up)
 	//
 	// debugging output
 	//
-	if (s_show->value)
+	if (s_show->integer)
 	{
 		total = 0;
 		ch = channels;
@@ -1012,6 +1249,8 @@ void S_Update(vec3_t origin, vec3_t forward, vec3_t right, vec3_t up)
 	}
 
 // mix some sound
+	S_UpdateBackgroundTrack ();
+
 	S_Update_();
 }
 
@@ -1021,7 +1260,7 @@ void GetSoundtime(void)
 	static	int		buffers;
 	static	int		oldsamplepos;
 	int		fullsamples;
-	
+
 	fullsamples = dma.samples / dma.channels;
 
 // it is possible to miscount buffers if it has wrapped twice between
@@ -1123,12 +1362,12 @@ void S_SoundList(void)
 	total = 0;
 	for (sfx=known_sfx, i=0 ; i<num_sfx ; i++, sfx++)
 	{
-		if (!sfx->registration_sequence)
+		if (!sfx->name[0])
 			continue;
 		sc = sfx->cache;
 		if (sc)
 		{
-			size = sc->length*sc->width*(sc->stereo+1);
+			size = sc->length*sc->width*sc->channels;
 			total += size;
 			if (sc->loopstart >= 0)
 				Com_Printf ("L");
@@ -1146,4 +1385,3 @@ void S_SoundList(void)
 	}
 	Com_Printf ("Total resident: %i\n", total);
 }
-

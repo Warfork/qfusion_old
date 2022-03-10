@@ -34,7 +34,7 @@ void MoveClientToIntermission (edict_t *ent)
 	gclient_t *client;
 
 	client = ent->r.client;
-	if (deathmatch->value || coop->value)
+	if (deathmatch->integer || coop->integer)
 		ent->r.client->showscores = qtrue;
 	VectorCopy (level.intermission_origin, ent->s.origin);
 	client->ps.pmove.origin[0] = level.intermission_origin[0]*16;
@@ -64,7 +64,7 @@ void MoveClientToIntermission (edict_t *ent)
 	ent->r.solid = SOLID_NOT;
 
 	// add the layout
-	if (deathmatch->value || coop->value)
+	if (deathmatch->integer || coop->integer)
 		DeathmatchScoreboardMessage (ent, NULL);
 }
 
@@ -77,14 +77,14 @@ void BeginIntermission (edict_t *targ)
 		return;		// already activated
 
 //ZOID
-	if (deathmatch->value && ctf->value)
+	if (deathmatch->integer && ctf->integer)
 		CTFCalcScores();
 //ZOID
 
 	game.autosaved = qfalse;
 
 	// respawn any dead clients
-	for (i=0 ; i<maxclients->value ; i++)
+	for (i=0 ; i<game.maxclients ; i++)
 	{
 		client = game.edicts + 1 + i;
 		if (!client->r.inuse)
@@ -98,7 +98,7 @@ void BeginIntermission (edict_t *targ)
 
 	if (!strstr(level.changemap, "*"))
 	{
-		if (!deathmatch->value)
+		if (!deathmatch->integer)
 		{
 			level.exitintermission = 1;		// go immediately to the next level
 			return;
@@ -130,7 +130,7 @@ void BeginIntermission (edict_t *targ)
 	VectorCopy (ent->s.angles, level.intermission_angle);
 
 	// move all clients to the intermission point
-	for (i=0 ; i<maxclients->value ; i++)
+	for (i=0 ; i<game.maxclients ; i++)
 	{
 		client = game.edicts + 1 + i;
 		if (!client->r.inuse)
@@ -162,7 +162,7 @@ char *DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 	int		tag;
 
 //ZOID
-	if (ctf->value) {
+	if (ctf->integer) {
 		return CTFScoreboardMessage (ent, killer);
 	}
 //ZOID
@@ -217,7 +217,7 @@ char *DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 			tag = 2;
 
 		// send the layout
-		Com_sprintf (entry, sizeof(entry),
+		Q_snprintfz (entry, sizeof(entry),
 			"client %i %i %i %i %i %i %i ",
 			x, y, tag, sorted[i], cl->resp.score, cl->r.ping, (level.framenum - cl->resp.enterframe)/600);
 		j = strlen(entry);
@@ -260,7 +260,7 @@ void Cmd_Score_f (edict_t *ent)
 		PMenu_Close(ent);
 //ZOID
 
-	if (!deathmatch->value && !coop->value)
+	if (!deathmatch->integer && !coop->integer)
 		return;
 
 	if (ent->r.client->showscores)
@@ -288,17 +288,17 @@ void HelpComputer (edict_t *ent)
 	char	string[MAX_STRING_CHARS];
 	char	*sk;
 
-	if (skill->value == 0)
+	if (skill->integer == 0)
 		sk = "easy";
-	else if (skill->value == 1)
+	else if (skill->integer == 1)
 		sk = "medium";
-	else if (skill->value == 2)
+	else if (skill->integer == 2)
 		sk = "hard";
 	else
 		sk = "hard+";
 
 	// send the layout
-	Com_sprintf (string, sizeof(string),
+	Q_snprintfz (string, sizeof(string),
 		"size 32 32 "
 		"xv 32 yv 8 picn pics/help "	// background
 		"xv 202 yv 12 string \"%s%s\" "		// skill
@@ -329,7 +329,7 @@ Display the current help message
 void Cmd_Help_f (edict_t *ent)
 {
 	// this is for backwards compatibility
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		Cmd_Score_f (ent);
 		return;
@@ -473,7 +473,7 @@ void G_SetStats (edict_t *ent)
 	//
 	client->ps.stats[STAT_LAYOUTS] = 0;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		if (client->pers.health <= 0 || level.intermissiontime
 			|| client->showscores)

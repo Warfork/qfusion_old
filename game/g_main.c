@@ -42,13 +42,14 @@ cvar_t	*capturelimit;
 cvar_t	*instantweap;
 //ZOID
 cvar_t	*password;
-cvar_t	*maxclients;
-cvar_t	*maxentities;
 cvar_t	*g_select_empty;
 cvar_t	*dedicated;
 cvar_t	*developer;
 
 cvar_t	*filterban;
+
+cvar_t	*sv_maxclients;
+cvar_t	*sv_maxentities;
 
 cvar_t	*sv_maxvelocity;
 cvar_t	*sv_gravity;
@@ -57,19 +58,19 @@ cvar_t	*sv_airaccelerate;
 cvar_t	*sv_rollspeed;
 cvar_t	*sv_rollangle;
 
+cvar_t	*sv_cheats;
+
+cvar_t	*sv_maplist;
+
 cvar_t	*run_pitch;
 cvar_t	*run_roll;
 cvar_t	*bob_up;
 cvar_t	*bob_pitch;
 cvar_t	*bob_roll;
 
-cvar_t	*sv_cheats;
-
 cvar_t	*flood_msgs;
 cvar_t	*flood_persecond;
 cvar_t	*flood_waitdelay;
-
-cvar_t	*sv_maplist;
 
 //===================================================================
 
@@ -94,11 +95,10 @@ void G_Error ( char *fmt, ... )
 	char		msg[1024];
 	va_list		argptr;
 
-	va_start (argptr, fmt);
-	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
-		trap_Error ( "G_Error: Buffer overflow" );
-	}
-	va_end (argptr);
+	va_start( argptr, fmt );
+	vsnprintf( msg, sizeof(msg), fmt, argptr );
+	va_end( argptr );
+	msg[sizeof(msg)-1] = 0;
 
 	trap_Error ( msg );
 }
@@ -115,11 +115,10 @@ void G_Printf ( char *fmt, ... )
 	char		msg[1024];
 	va_list		argptr;
 
-	va_start (argptr, fmt);
-	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
-		trap_Error ( "G_Print: Buffer overflow" );
-	}
-	va_end (argptr);
+	va_start( argptr, fmt );
+	vsnprintf( msg, sizeof(msg), fmt, argptr );
+	va_end( argptr );
+	msg[sizeof(msg)-1] = 0;
 
 	trap_Print ( msg );
 }
@@ -158,13 +157,14 @@ void G_Init (unsigned int seed)
 	trap_Cvar_Get ("gamename", GAMENAME , CVAR_SERVERINFO | CVAR_LATCH);
 	trap_Cvar_Get ("gamedate", __DATE__ , CVAR_SERVERINFO | CVAR_LATCH);
 
-	maxclients = trap_Cvar_Get ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
+	sv_maxclients = trap_Cvar_Get ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
+	sv_maxentities = trap_Cvar_Get ("sv_maxentities", "1024", CVAR_LATCH);
+
 	deathmatch = trap_Cvar_Get ("deathmatch", "1", CVAR_LATCH);
 	coop = trap_Cvar_Get ("coop", "0", CVAR_LATCH);
 	skill = trap_Cvar_Get ("skill", "1", CVAR_LATCH);
-	maxentities = trap_Cvar_Get ("maxentities", "1024", CVAR_LATCH);
 
-	if (!deathmatch->value) {
+	if (!deathmatch->integer) {
 		// force ctf off
 		trap_Cvar_Set ("ctf", "0");
 	}
@@ -207,16 +207,16 @@ void G_Init (unsigned int seed)
 	// items
 	InitItems ();
 
-	Com_sprintf (game.helpmessage1, sizeof(game.helpmessage1), "");
+	Q_snprintfz (game.helpmessage1, sizeof(game.helpmessage1), "");
 
-	Com_sprintf (game.helpmessage2, sizeof(game.helpmessage2), "");
+	Q_snprintfz (game.helpmessage2, sizeof(game.helpmessage2), "");
 
 	// initialize all entities for this game
-	game.maxentities = maxentities->value;
+	game.maxentities = sv_maxentities->integer;
 	game.edicts = G_GameMalloc (game.maxentities * sizeof(game.edicts[0]));
 
 	// initialize all clients for this game
-	game.maxclients = maxclients->value;
+	game.maxclients = sv_maxclients->integer;
 	game.clients = G_GameMalloc (game.maxclients * sizeof(game.clients[0]));
 
 	game.numentities = game.maxclients+1;
@@ -255,7 +255,7 @@ void ClientEndServerFrames (void)
 
 	// calc the player views now that all pushing
 	// and damage has been added
-	for (i=0 ; i<maxclients->value ; i++)
+	for (i=0 ; i<game.maxclients ; i++)
 	{
 		ent = game.edicts + 1 + i;
 		if (!ent->r.inuse || !ent->r.client)
@@ -277,7 +277,7 @@ edict_t *CreateTargetChangeLevel(char *map)
 
 	ent = G_Spawn ();
 	ent->classname = "target_changelevel";
-	Com_sprintf(level.nextmap, sizeof(level.nextmap), "%s", map);
+	Q_strncpyz (level.nextmap, map, sizeof(level.nextmap));
 	ent->map = level.nextmap;
 	return ent;
 }
@@ -296,7 +296,7 @@ void G_EndDMLevel (void)
 	static const char *seps = " ,\n\r";
 
 	// stay on same level flag
-	if ((int)dmflags->value & DF_SAME_LEVEL)
+	if (dmflags->integer & DF_SAME_LEVEL)
 	{
 		BeginIntermission (CreateTargetChangeLevel (level.mapname) );
 		return;
@@ -360,11 +360,11 @@ void CheckDMRules (void)
 	if (level.intermissiontime)
 		return;
 
-	if (!deathmatch->value)
+	if (!deathmatch->integer)
 		return;
 
 //ZOID
-	if (ctf->value && CTFCheckRules()) {
+	if (ctf->integer && CTFCheckRules()) {
 		G_EndDMLevel ();
 		return;
 	}
@@ -382,14 +382,14 @@ void CheckDMRules (void)
 		}
 	}
 
-	if (fraglimit->value)
-		for (i=0 ; i<maxclients->value ; i++)
+	if (fraglimit->integer)
+		for (i=0 ; i<game.maxclients ; i++)
 		{
 			cl = game.clients + i;
 			if (!game.edicts[i+1].r.inuse)
 				continue;
 
-			if (cl->resp.score >= fraglimit->value)
+			if (cl->resp.score >= fraglimit->integer)
 			{
 				G_PrintMsg (NULL, PRINT_HIGH, "Fraglimit hit.\n");
 				G_EndDMLevel ();
@@ -416,14 +416,14 @@ void ExitLevel (void)
 	if (CTFNextMap())
 		return;
 
-	Com_sprintf (command, sizeof(command), "gamemap \"%s\"\n", level.changemap);
+	Q_snprintfz (command, sizeof(command), "gamemap \"%s\"\n", level.changemap);
 	trap_AddCommandString (command);
 	ClientEndServerFrames ();
 
 	level.changemap = NULL;
 
 	// clear some things before going to next level
-	for (i=0 ; i<maxclients->value ; i++)
+	for (i=0 ; i<game.maxclients ; i++)
 	{
 		ent = game.edicts + 1 + i;
 		if (!ent->r.inuse)
@@ -507,7 +507,7 @@ void G_RunFrame (void)
 			}
 		}
 
-		if (i > 0 && i <= maxclients->value)
+		if (i > 0 && i <= game.maxclients)
 		{
 			ClientBeginServerFrame (ent);
 			continue;
@@ -549,6 +549,7 @@ void Sys_Error (char *error, ...)
 	va_start (argptr, error);
 	vsnprintf (text, sizeof(text), error, argptr);
 	va_end (argptr);
+	text[sizeof(text)-1] = 0;
 
 	G_Error ("%s", text);
 }
@@ -561,6 +562,7 @@ void Com_Printf (char *msg, ...)
 	va_start (argptr, msg);
 	vsnprintf (text, sizeof(text), msg, argptr);
 	va_end (argptr);
+	text[sizeof(text)-1] = 0;
 
 	G_Printf ("%s", text);
 }

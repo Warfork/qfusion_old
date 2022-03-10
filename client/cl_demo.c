@@ -81,10 +81,10 @@ Begins recording a demo from the current position
 */
 void CL_Record_f (void)
 {
-	char	name[MAX_OSPATH];
-	char	buf_data[MAX_MSGLEN];
-	sizebuf_t	buf;
 	int		i;
+	char	name[MAX_OSPATH];
+	char	buf_data[MAX_PACKETLEN-PACKET_HEADER];
+	sizebuf_t	buf;
 	int		len;
 	entity_state_t	*ent;
 	entity_state_t	nullstate;
@@ -110,7 +110,7 @@ void CL_Record_f (void)
 	//
 	// open the demo file
 	//
-	Com_sprintf (name, sizeof(name)-4, "%s/demos/%s", FS_Gamedir(), Cmd_Argv(1));
+	Q_snprintfz (name, sizeof(name)-4, "%s/demos/%s", FS_Gamedir(), Cmd_Argv(1));
 	COM_DefaultExtension (name, ".dqf");
 
 	Com_Printf ("recording to %s.\n", name);
@@ -142,21 +142,26 @@ void CL_Record_f (void)
 
 	MSG_WriteString (&buf, cl.servermessage);
 
+	len = LittleLong (buf.cursize);
+	fwrite (&len, 4, 1, cls.demofile);
+	fwrite (buf.data, buf.cursize, 1, cls.demofile);
+	buf.cursize = 0;
+
 	// configstrings
 	for (i=0 ; i<MAX_CONFIGSTRINGS ; i++)
 	{
 		if (cl.configstrings[i][0])
 		{
-			if (buf.cursize + strlen (cl.configstrings[i]) + 32 > buf.maxsize)
+			MSG_WriteByte (&buf, svc_servercmd);
+			MSG_WriteString (&buf, va("cs %i \"%s\"", i, cl.configstrings[i]));
+
+			if (buf.cursize > buf.maxsize / 2)
 			{	// write it out
 				len = LittleLong (buf.cursize);
 				fwrite (&len, 4, 1, cls.demofile);
 				fwrite (buf.data, buf.cursize, 1, cls.demofile);
 				buf.cursize = 0;
 			}
-
-			MSG_WriteByte (&buf, svc_servercmd);
-			MSG_WriteString (&buf, va("cs %i \"%s\"", i, cl.configstrings[i]));
 		}
 	}
 
@@ -168,16 +173,16 @@ void CL_Record_f (void)
 		if (!ent->modelindex && !ent->sound && !ent->effects)
 			continue;
 
-		if (buf.cursize + 64 > buf.maxsize)
+		MSG_WriteByte (&buf, svc_spawnbaseline);		
+		MSG_WriteDeltaEntity (&nullstate, &cl_baselines[i], &buf, qtrue, qtrue);
+
+		if (buf.cursize > buf.maxsize / 2)
 		{	// write it out
 			len = LittleLong (buf.cursize);
 			fwrite (&len, 4, 1, cls.demofile);
 			fwrite (buf.data, buf.cursize, 1, cls.demofile);
 			buf.cursize = 0;
 		}
-
-		MSG_WriteByte (&buf, svc_spawnbaseline);		
-		MSG_WriteDeltaEntity (&nullstate, &cl_baselines[i], &buf, qtrue, qtrue);
 	}
 
 	MSG_WriteByte (&buf, svc_stringcmd);

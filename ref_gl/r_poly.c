@@ -20,55 +20,23 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "r_local.h"
 
 // r_poly.c - handles fragments and arbitrary polygons
-static	vec4_t			poly_xyz[MAX_ARRAY_VERTS];
+static	vec3_t			poly_xyz[MAX_ARRAY_VERTS];
 static	vec2_t			poly_st[MAX_ARRAY_VERTS];
 static	byte_vec4_t		poly_color[MAX_ARRAY_VERTS];
-static	index_t			poly_indexes[(MAX_ARRAY_VERTS-2)*3];
 
-entity_t				r_polyent;
 static	mesh_t			poly_mesh;
-static	meshbuffer_t	poly_mbuffer;
-
-/*
-=================
-R_InitPolys
-=================
-*/
-void R_InitPolys (void)
-{
-	int i;
-	index_t *index;
-
-	// build trifan indexes
-	index = poly_indexes;
-	for ( i = 0; i < MAX_ARRAY_VERTS-2; i++, index += 3 ) {
-		index[0] = 0;
-		index[1] = i + 1;
-		index[2] = i + 2;
-	}
-
-	poly_mesh.xyz_array = poly_xyz;
-	poly_mesh.st_array = poly_st;
-	poly_mesh.colors_array = poly_color;
-	poly_mesh.indexes = poly_indexes;
-
-	r_polyent.rtype = RT_POLY;
-	Matrix3_Identity ( r_polyent.axis );
-
-	poly_mbuffer.entity = &r_polyent;
-}
 
 /*
 =================
 R_PolyOverflow
 =================
 */
-qboolean R_PolyOverflow ( meshbuffer_t *mb )
+qboolean R_PolyOverflow( meshbuffer_t *mb )
 {
 	poly_t *p;
 
-	p = &r_newrefdef.polys[-mb->infokey-1];
-	return ( numVerts + p->numverts > MAX_ARRAY_VERTS/* || 
+	p = &r_polys[-mb->infokey-1];
+	return( numVerts + p->numverts > MAX_ARRAY_VERTS/* || 
 		numIndexes + (p->numverts - 2) * 3 > MAX_ARRAY_INDEXES*/ );
 }
 
@@ -77,26 +45,29 @@ qboolean R_PolyOverflow ( meshbuffer_t *mb )
 R_PushPoly
 =================
 */
-void R_PushPoly ( meshbuffer_t *mb )
+void R_PushPoly( meshbuffer_t *mb )
 {
 	int i;
 	poly_t *p;
 
-	p = &r_newrefdef.polys[-mb->infokey-1];
+	p = &r_polys[-mb->infokey-1];
+	if( p->numverts > MAX_ARRAY_VERTS )
+		return;
 
-	for ( i = 0; i < p->numverts; i++ ) {
-		VectorCopy ( p->verts[i], poly_mesh.xyz_array[i] );
-		Vector2Copy ( p->stcoords[i], poly_mesh.st_array[i] );
-		*(int *)poly_mesh.colors_array[i] = *(int *)p->colors[i];
+	for( i = 0; i < p->numverts; i++ ) {
+		VectorCopy( p->verts[i], poly_xyz[i] );
+		Vector2Copy( p->stcoords[i], poly_st[i] );
+		*(int *)poly_color[i] = *(int *)p->colors[i];
 	}
 
-	poly_mesh.numvertexes = p->numverts;
-	poly_mesh.numindexes = (p->numverts - 2) * 3;
+	poly_mesh.numVertexes = p->numverts;
+	poly_mesh.numIndexes = (p->numverts - 2) * 3;
+	poly_mesh.xyzArray = poly_xyz;
+	poly_mesh.stArray = poly_st;
+	poly_mesh.colorsArray = poly_color;
+	poly_mesh.indexes = r_trifan_indexes;
 
-	poly_mbuffer.fog = mb->fog;
-	poly_mbuffer.shader = mb->shader;
-
-	R_PushMesh ( &poly_mesh, poly_mbuffer.shader->features );
+	R_PushMesh( &poly_mesh, mb->shader->features );
 }
 
 /*
@@ -104,10 +75,10 @@ void R_PushPoly ( meshbuffer_t *mb )
 R_DrawPoly
 =================
 */
-void R_DrawPoly (void)
+void R_DrawPoly( meshbuffer_t *mb )
 {
-	R_TranslateForEntity ( &r_polyent );
-	R_RenderMeshBuffer ( &poly_mbuffer, qfalse );
+	R_TranslateForEntity( &r_worldent );
+	R_RenderMeshBuffer( mb, qfalse );
 }
 
 /*
@@ -115,16 +86,16 @@ void R_DrawPoly (void)
 R_AddPolysToList
 =================
 */
-void R_AddPolysToList (void)
+void R_AddPolysToList( void )
 {
 	int i;
 	poly_t *p;
 	mfog_t *fog;
 
-	currententity = &r_polyent;
-	for ( i = 0, p = r_newrefdef.polys; i < r_newrefdef.num_polys; i++, p++ ) {
-		fog = R_FogForSphere ( p->verts[0], 0 );	// FIXME: this is a gross hack
-		R_AddMeshToList ( fog, p->shader, -(i+1) );		
+	currententity = &r_worldent;
+	for( i = 0, p = r_polys; i < r_numPolys; i++, p++ ) {
+		fog = R_FogForSphere( p->verts[0], 0 );	// FIXME: this is a gross hack
+		R_AddMeshToList( MB_POLY, fog, p->shader, -(i+1) );		
 	}
 }
 
@@ -139,107 +110,104 @@ static fragment_t *clippedFragments;
 static int		fragmentFrame;
 static cplane_t fragmentPlanes[6];
 
-#define	MAX_FRAGMENT_VERTS	128
+#define	MAX_FRAGMENT_VERTS	64
 
 /*
 =================
-R_ClipPoly
+R_ClipTriangle
 =================
 */
-void R_ClipPoly ( int nump, vec4_t vecs, int stage, fragment_t *fr )
+void R_ClipTriangle( vec3_t a, vec3_t b, vec3_t c, fragment_t *fr )
 {
-	cplane_t *plane;
+	int			i, j;
+	int			stage, newc, numv;
+	cplane_t	*plane;
 	qboolean	front;
-	float	*v, d;
-	float	dists[MAX_FRAGMENT_VERTS];
-	int		sides[MAX_FRAGMENT_VERTS];
-	vec4_t	newv[MAX_FRAGMENT_VERTS];
-	int		newc;
-	int		i, j;
+	float		*v, d;
+	float		dists[MAX_FRAGMENT_VERTS+1];
+	int			sides[MAX_FRAGMENT_VERTS+1];
+	vec3_t		*verts, *newverts, newv[2][MAX_FRAGMENT_VERTS+1];
 
-	if (nump > MAX_FRAGMENT_VERTS-2)
-		Com_Error (ERR_DROP, "R_ClipPoly: MAX_FRAGMENT_VERTS");
+	numv = 3;
+	verts = newv[1];
+	VectorCopy( a, verts[0] );
+	VectorCopy( b, verts[1] );
+	VectorCopy( c, verts[2] );
 
-	if (stage == 6)
-	{	// fully clipped
-		if ( nump > 2 ) {
-			fr->numverts = nump;
-			fr->firstvert = numFragmentVerts;
+	for( stage = 0, plane = fragmentPlanes; stage < 6; stage++, plane++ ) {
+		for( i = 0, v = verts[0], front = qfalse; i < numv; i++, v += 3 ) {
+			d = PlaneDiff( v, plane );
 
-			if ( numFragmentVerts+nump > maxFragmentVerts ) {
-				nump = maxFragmentVerts - numFragmentVerts;
+			if( d > ON_EPSILON ) {
+				front = qtrue;
+				sides[i] = SIDE_FRONT;
+			} else if( d < -ON_EPSILON ) {
+				sides[i] = SIDE_BACK;
+			} else {
+				front = qtrue;
+				sides[i] = SIDE_ON;
+			}
+			dists[i] = d;
+		}
+
+		if( !front )
+			return;
+
+		// clip it
+		sides[i] = sides[0];
+		dists[i] = dists[0];
+		VectorCopy( verts[0], (verts[0] + (i * 3)) );
+
+		newc = 0;
+		newverts = newv[stage & 1];
+
+		for( i = 0, v = verts[0]; i < numv; i++, v += 3 ) {
+			switch( sides[i] ) {
+				case SIDE_FRONT:
+					if( newc == MAX_FRAGMENT_VERTS )
+						return;
+					VectorCopy( v, newverts[newc] );
+					newc++;
+					break;
+				case SIDE_BACK:
+					break;
+				case SIDE_ON:
+					if( newc == MAX_FRAGMENT_VERTS )
+						return;
+					VectorCopy( v, newverts[newc] );
+					newc++;
+					break;
 			}
 
-			for ( i = 0, v = vecs; i < nump; i++, v += 4 ) {
-				VectorCopy ( v, fragmentVerts[numFragmentVerts+i] );
-			}
+			if( sides[i] == SIDE_ON || sides[i+1] == SIDE_ON || sides[i+1] == sides[i] )
+				continue;
+			if( newc == MAX_FRAGMENT_VERTS )
+				return;
 
-			numFragmentVerts += nump;
-		}
-
-		return;
-	}
-
-	front = qfalse;
-	plane = &fragmentPlanes[stage];
-	for ( i = 0, v = vecs; i < nump; i++, v += 4 )
-	{
-		d = PlaneDiff ( v, plane );
-		if (d > ON_EPSILON)
-		{
-			front = qtrue;
-			sides[i] = SIDE_FRONT;
-		}
-		else if (d < -ON_EPSILON)
-		{
-			sides[i] = SIDE_BACK;
-		}
-		else
-		{
-			front = qtrue;
-			sides[i] = SIDE_ON;
-		}
-
-		dists[i] = d;
-	}
-
-	if ( !front ) {
-		return;
-	}
-
-	// clip it
-	sides[i] = sides[0];
-	dists[i] = dists[0];
-	VectorCopy (vecs, (vecs+(i*4)) );
-	newc = 0;
-
-	for ( i = 0, v = vecs; i < nump; i++, v += 4 )
-	{
-		switch (sides[i])
-		{
-		case SIDE_FRONT:
-			VectorCopy (v, newv[newc]);
+			d = dists[i] / (dists[i] - dists[i+1]);
+			for( j = 0; j < 3; j++ )
+				newverts[newc][j] = v[j] + d * (v[j+3] - v[j]);
 			newc++;
-			break;
-		case SIDE_BACK:
-			break;
-		case SIDE_ON:
-			VectorCopy (v, newv[newc]);
-			newc++;
-			break;
 		}
 
-		if (sides[i] == SIDE_ON || sides[i+1] == SIDE_ON || sides[i+1] == sides[i])
-			continue;
+		if( newc <= 2 )
+			return;
 
-		d = dists[i] / (dists[i] - dists[i+1]);
-		for (j=0 ; j<3 ; j++)
-			newv[newc][j] = v[j] + d * (v[j+4] - v[j]);
-		newc++;
+		// continue with new verts
+		numv = newc;
+		verts = newverts;
 	}
 
-	// continue
-	R_ClipPoly ( newc, newv[0], stage+1, fr );
+	// fully clipped
+	if( numFragmentVerts + numv > maxFragmentVerts )
+		return;
+
+	fr->numverts = numv;
+	fr->firstvert = numFragmentVerts;
+
+	for( i = 0, v = verts[0]; i < numv; i++, v += 3 )
+		VectorCopy( v, fragmentVerts[numFragmentVerts + i] );
+	numFragmentVerts += numv;
 }
 
 /*
@@ -247,40 +215,33 @@ void R_ClipPoly ( int nump, vec4_t vecs, int stage, fragment_t *fr )
 R_PlanarSurfClipFragment
 =================
 */
-void R_PlanarSurfClipFragment ( msurface_t *surf, vec3_t normal )
+void R_PlanarSurfClipFragment( msurface_t *surf, vec3_t normal )
 {
 	int			i;
 	fragment_t	*fr;
-	vec4_t		*vert;
+	vec3_t		*vert;
 	index_t		*index;
 	mesh_t		*mesh;
-	vec4_t		verts[MAX_FRAGMENT_VERTS];
 
 	// greater than 60 degrees
-	if ( DotProduct (normal, surf->origin) < 0.5 ) {
+	if( DotProduct( normal, surf->origin ) < 0.5 )
 		return;
-	}
 
 	// copy vertex data and clip to each triangle
 	mesh = surf->mesh;
 	index = mesh->indexes;
-	vert = mesh->xyz_array;
-	for ( i = 0; i < mesh->numindexes; i += 3, index += 3 ) {
-		fr = &clippedFragments[numClippedFragments];
-		fr->numverts = 0;
+	vert = mesh->xyzArray;
 
-		VectorCopy ( vert[index[0]], verts[0] );
-		VectorCopy ( vert[index[1]], verts[1] );
-		VectorCopy ( vert[index[2]], verts[2] );
-		R_ClipPoly ( 3, verts[0], 0, fr );
+	fr = &clippedFragments[numClippedFragments];
+	fr->numverts = 0;
 
-		if ( fr->numverts ) {
-			numClippedFragments++;
+	for( i = 0; i < mesh->numIndexes; i += 3, index += 3 ) {
+		R_ClipTriangle( vert[index[0]], vert[index[1]], vert[index[2]], fr );
 
-			if ( numFragmentVerts >= maxFragmentVerts ||
-				numClippedFragments >= maxClippedFragments ) {
+		if( fr->numverts ) {
+			if( numFragmentVerts == maxFragmentVerts ||	++numClippedFragments == maxClippedFragments )
 				return;
-			}
+			(++fr)->numverts = 0;
 		}
 	}
 }
@@ -290,51 +251,48 @@ void R_PlanarSurfClipFragment ( msurface_t *surf, vec3_t normal )
 R_PatchSurfClipFragment
 =================
 */
-void R_PatchSurfClipFragment ( msurface_t *surf, vec3_t normal )
+void R_PatchSurfClipFragment( msurface_t *surf, vec3_t normal )
 {
 	int			i;
 	fragment_t	*fr;
-	vec4_t		*vert;
+	vec3_t		*vert;
 	index_t		*index;
 	mesh_t		*mesh;
-	vec4_t		verts[MAX_FRAGMENT_VERTS];
+	vec3_t		verts[3];
 	vec3_t		dir1, dir2, snorm;
 
 	// copy vertex data and clip to each triangle
 	mesh = surf->mesh;
 	index = mesh->indexes;
-	vert = mesh->xyz_array;
-	for ( i = 0; i < mesh->numindexes; i += 3, index += 3 ) {
-		fr = &clippedFragments[numClippedFragments];
-		fr->numverts = 0;
+	vert = mesh->xyzArray;
 
-		VectorCopy ( vert[index[0]], verts[0] );
-		VectorCopy ( vert[index[1]], verts[1] );
-		VectorCopy ( vert[index[2]], verts[2] );
-		
+	fr = &clippedFragments[numClippedFragments];
+	fr->numverts = 0;
+
+	for( i = 0; i < mesh->numIndexes; i += 3, index += 3 ) {
+		VectorCopy( vert[index[0]], verts[0] );
+		VectorCopy( vert[index[1]], verts[1] );
+		VectorCopy( vert[index[2]], verts[2] );
+
 		// calculate two mostly perpendicular edge directions
-		VectorSubtract ( verts[0], verts[1], dir1 );
-		VectorSubtract ( verts[2], verts[1], dir2 );
-			
+		VectorSubtract( verts[0], verts[1], dir1 );
+		VectorSubtract( verts[2], verts[1], dir2 );
+
 		// we have two edge directions, we can calculate a third vector from
 		// them, which is the direction of the surface normal
-		CrossProduct ( dir1, dir2, snorm );
+		CrossProduct( dir1, dir2, snorm );
 
 		// greater than 60 degrees
 		// we multiply 0.5 by length of snorm to avoid normalizing
-		if ( DotProduct (normal, snorm) < 0.5 * VectorLength (snorm) ) {
+		if( DotProduct( normal, snorm ) < 0.5 * VectorLength( snorm ) )
 			continue;
-		}
 
-		R_ClipPoly ( 3, verts[0], 0, fr );
+		R_ClipTriangle( verts[0], verts[1], verts[2], fr );
 
-		if ( fr->numverts ) {
-			numClippedFragments++;
-
-			if ( numFragmentVerts >= maxFragmentVerts ||
-				numClippedFragments >= maxClippedFragments ) {
+		if( fr->numverts ) {
+			if( numFragmentVerts == maxFragmentVerts ||	++numClippedFragments == maxClippedFragments )
 				return;
-			}
+			(++fr)->numverts = 0;
 		}
 	}
 }
@@ -344,77 +302,52 @@ void R_PatchSurfClipFragment ( msurface_t *surf, vec3_t normal )
 R_RecursiveFragmentNode
 =================
 */
-void R_RecursiveFragmentNode ( mnode_t *node, vec3_t origin, float radius, vec3_t normal )
+void R_RecursiveFragmentNode( mnode_t *node, vec3_t origin, float radius, vec3_t normal )
 {
-	float dist;
-	cplane_t *plane;
+	int				c;
+	float			dist;
+	mleaf_t			*leaf;
+	msurface_t		*surf, **mark;
 
-mark0:
-	if ( numFragmentVerts >= maxFragmentVerts ||
-		numClippedFragments >= maxClippedFragments) {
-		return;			// already reached the limit somewhere else
-	}
+	while( node->plane != NULL ) {
+		if( numFragmentVerts == maxFragmentVerts ||	numClippedFragments == maxClippedFragments )
+			return;		// already reached the limit somewhere else
 
-	if ( node->plane == NULL ) {	// leaf
-		int c;
-		mleaf_t *leaf;
-		msurface_t *surf, **mark;
-		mshaderref_t *shaderref;
-
-		leaf = (mleaf_t *)node;
-		if ( !(c = leaf->nummarksurfaces) ) {
-			return;
+		dist = PlaneDiff( origin, node->plane );
+		if( dist > radius ) {
+			node = node->children[0];
+			continue;
 		}
 
-		mark = leaf->firstmarksurface;
-		do
-		{
-			if ( numFragmentVerts >= maxFragmentVerts ||
-				numClippedFragments >= maxClippedFragments ) {
-				return;
-			}
-
-			surf = *mark++;
-			if ( surf->fragmentframe == fragmentFrame ) {
-				continue;
-			}
-
-			surf->fragmentframe = fragmentFrame;
-			if ( !(shaderref = surf->shaderref) ) {
-				continue;
-			}
-			if ( shaderref->flags & (SURF_NOMARKS|SURF_NOIMPACT) ) {
-				continue;
-			}
-
-			if ( surf->facetype == FACETYPE_PLANAR ) {
-				if ( shaderref->contents & CONTENTS_SOLID ) {
-					R_PlanarSurfClipFragment ( surf, normal );
-				}
-			} else if ( surf->facetype == FACETYPE_PATCH ) {
-				R_PatchSurfClipFragment ( surf, normal );
-			}
-		} while (--c);
-
-		return;
-	}
-
-	plane = node->plane;
-	dist = PlaneDiff ( origin, plane );
-
-	if ( dist > radius )
-	{
-		node = node->children[0];
-		goto mark0;
-	}
-	if ( dist < -radius )
-	{
+		if( dist >= -radius )
+			R_RecursiveFragmentNode( node->children[0], origin, radius, normal );
 		node = node->children[1];
-		goto mark0;
 	}
 
-	R_RecursiveFragmentNode ( node->children[0], origin, radius, normal );
-	R_RecursiveFragmentNode ( node->children[1], origin, radius, normal );
+	leaf = (mleaf_t *)node;
+	if( !( c = leaf->nummarksurfaces ) )
+		return;
+
+	mark = leaf->firstmarksurface;
+	do {
+		if( numFragmentVerts == maxFragmentVerts ||	numClippedFragments == maxClippedFragments )
+			return;
+
+		surf = *mark++;
+		if( surf->fragmentframe == fragmentFrame )
+			continue;
+
+		surf->fragmentframe = fragmentFrame;
+		if( surf->shaderref->flags & (SURF_NOMARKS|SURF_NOIMPACT|SURF_NODRAW) )
+			continue;
+
+		if( surf->facetype == FACETYPE_PLANAR ) {
+			if( surf->shaderref->contents & CONTENTS_SOLID )
+				R_PlanarSurfClipFragment( surf, normal );
+		} else if( surf->facetype == FACETYPE_PATCH ) {
+			R_PatchSurfClipFragment( surf, normal );
+		}
+	} while( --c );
 }
 
 /*
@@ -422,10 +355,10 @@ mark0:
 R_GetClippedFragments
 =================
 */
-int R_GetClippedFragments ( vec3_t origin, float radius, mat3_t axis, int maxfverts, vec3_t *fverts, int maxfragments, fragment_t *fragments )
+int R_GetClippedFragments( vec3_t origin, float radius, vec3_t axis[3], int maxfverts, vec3_t *fverts, int maxfragments, fragment_t *fragments )
 {
-	int i;
-	float d;
+	int		i;
+	float	d;
 
 	fragmentFrame++;
 
@@ -439,25 +372,19 @@ int R_GetClippedFragments ( vec3_t origin, float radius, mat3_t axis, int maxfve
 	clippedFragments = fragments;
 
 	// calculate clipping planes
-	for ( i = 0; i < 3; i++ ) {
-		d = DotProduct ( origin, axis[i] );
+	for( i = 0; i < 3; i++ ) {
+		d = DotProduct( origin, axis[i] );
 
-		VectorCopy ( axis[i], fragmentPlanes[i*2].normal );
+		VectorCopy( axis[i], fragmentPlanes[i*2].normal );
 		fragmentPlanes[i*2].dist = d - radius;
-		fragmentPlanes[i*2].type = PlaneTypeForNormal ( fragmentPlanes[i*2].normal );
+		fragmentPlanes[i*2].type = PlaneTypeForNormal( fragmentPlanes[i*2].normal );
 
-		VectorNegate ( axis[i], fragmentPlanes[i*2+1].normal);
+		VectorNegate( axis[i], fragmentPlanes[i*2+1].normal );
 		fragmentPlanes[i*2+1].dist = -d - radius;
-		fragmentPlanes[i*2+1].type = PlaneTypeForNormal ( fragmentPlanes[i*2+1].normal );
+		fragmentPlanes[i*2+1].type = PlaneTypeForNormal( fragmentPlanes[i*2+1].normal );
 	}
 
-	R_RecursiveFragmentNode ( r_worldbmodel->nodes, origin, radius, axis[0] );
-
-	// assume we missed some verts
-	if ( numFragmentVerts >= maxfverts || numClippedFragments >= maxfragments ) {
-		numFragmentVerts = 0;
-		numClippedFragments = 0;
-	}
+	R_RecursiveFragmentNode( r_worldmodel->nodes, origin, radius, axis[0] );
 
 	return numClippedFragments;
 }

@@ -20,16 +20,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "cg_local.h"
 
-cgs_media_sfx_t *sfx_headnode;
+cgs_media_handle_t *sfx_headnode;
 
 /*
 =================
 CG_RegisterMediaSfx
 =================
 */
-static cgs_media_sfx_t *CG_RegisterMediaSfx ( char *name )
+static cgs_media_handle_t *CG_RegisterMediaSfx ( char *name )
 {
-	cgs_media_sfx_t *mediasfx;
+	cgs_media_handle_t *mediasfx;
 
 	for ( mediasfx = sfx_headnode; mediasfx ; mediasfx = mediasfx->next )
 	{
@@ -38,7 +38,7 @@ static cgs_media_sfx_t *CG_RegisterMediaSfx ( char *name )
 		}
 	}
 
-	mediasfx = CG_Malloc ( sizeof(cgs_media_sfx_t) );
+	mediasfx = CG_Malloc ( sizeof(cgs_media_handle_t) );
 	mediasfx->name = CG_CopyString ( name );
 	mediasfx->next = sfx_headnode;
 	sfx_headnode = mediasfx;
@@ -51,12 +51,12 @@ static cgs_media_sfx_t *CG_RegisterMediaSfx ( char *name )
 CG_MediaSfx
 =================
 */
-struct sfx_s *CG_MediaSfx ( cgs_media_sfx_t *mediasfx )
+struct sfx_s *CG_MediaSfx ( cgs_media_handle_t *mediasfx )
 {
-	if ( !mediasfx->sfx ) {
-		mediasfx->sfx = trap_S_RegisterSound ( mediasfx->name );
+	if ( !mediasfx->data ) {
+		mediasfx->data = ( void * )trap_S_RegisterSound ( mediasfx->name );
 	}
-	return mediasfx->sfx;
+	return ( struct sfx_s * )mediasfx->data;
 }
 
 /*
@@ -141,16 +141,16 @@ void CG_RegisterMediaSounds (void)
 
 //======================================================================
 
-cgs_media_model_t *model_headnode;
+cgs_media_handle_t *model_headnode;
 
 /*
 =================
 CG_RegisterMediaModel
 =================
 */
-static cgs_media_model_t *CG_RegisterMediaModel ( char *name )
+static cgs_media_handle_t *CG_RegisterMediaModel ( char *name )
 {
-	cgs_media_model_t *mediamodel;
+	cgs_media_handle_t *mediamodel;
 
 	for ( mediamodel = model_headnode; mediamodel ; mediamodel = mediamodel->next )
 	{
@@ -159,7 +159,7 @@ static cgs_media_model_t *CG_RegisterMediaModel ( char *name )
 		}
 	}
 
-	mediamodel = CG_Malloc ( sizeof(cgs_media_model_t) );
+	mediamodel = CG_Malloc ( sizeof(cgs_media_handle_t) );
 	mediamodel->name = CG_CopyString ( name );
 	mediamodel->next = model_headnode;
 	model_headnode = mediamodel;
@@ -172,12 +172,12 @@ static cgs_media_model_t *CG_RegisterMediaModel ( char *name )
 CG_MediaModel
 =================
 */
-struct model_s *CG_MediaModel ( cgs_media_model_t *mediamodel )
+struct model_s *CG_MediaModel ( cgs_media_handle_t *mediamodel )
 {
-	if ( !mediamodel->model ) {
-		mediamodel->model = trap_R_RegisterModel ( mediamodel->name );
+	if ( !mediamodel->data ) {
+		mediamodel->data = ( void * )trap_R_RegisterModel ( mediamodel->name );
 	}
-	return mediamodel->model;
+	return ( struct model_s * )mediamodel->data;
 }
 
 /*
@@ -202,16 +202,16 @@ void CG_RegisterMediaModels (void)
 
 //======================================================================
 
-cgs_media_shader_t *shader_headnode;
+cgs_media_handle_t *shader_headnode;
 
 /*
 =================
 CG_RegisterMediaShader
 =================
 */
-static cgs_media_shader_t *CG_RegisterMediaShader ( char *name )
+static cgs_media_handle_t *CG_RegisterMediaShader ( char *name )
 {
-	cgs_media_shader_t *mediashader;
+	cgs_media_handle_t *mediashader;
 
 	for ( mediashader = shader_headnode; mediashader ; mediashader = mediashader->next )
 	{
@@ -220,7 +220,7 @@ static cgs_media_shader_t *CG_RegisterMediaShader ( char *name )
 		}
 	}
 
-	mediashader = CG_Malloc ( sizeof(cgs_media_model_t) );
+	mediashader = CG_Malloc ( sizeof(cgs_media_handle_t) );
 	mediashader->name = CG_CopyString ( name );
 	mediashader->next = shader_headnode;
 	shader_headnode = mediashader;
@@ -233,12 +233,12 @@ static cgs_media_shader_t *CG_RegisterMediaShader ( char *name )
 CG_MediaShader
 =================
 */
-struct shader_s *CG_MediaShader ( cgs_media_shader_t *mediashader )
+struct shader_s *CG_MediaShader ( cgs_media_handle_t *mediashader )
 {
-	if ( !mediashader->shader ) {
-		mediashader->shader = trap_R_RegisterPic ( mediashader->name );
+	if ( !mediashader->data ) {
+		mediashader->data = ( void * )trap_R_RegisterPic ( mediashader->name );
 	}
-	return mediashader->shader;
+	return ( struct shader_s * )mediashader->data;
 }
 
 char *sb_nums[11] = 
@@ -302,13 +302,13 @@ void CG_RegisterLevelShot (void)
 
 	name = cgs.configStrings[CS_MAPNAME];
 
-	Com_sprintf ( levelshot, sizeof(levelshot), "levelshots/%s.jpg", name );
+	Q_snprintfz ( levelshot, sizeof(levelshot), "levelshots/%s.jpg", name );
 
-	if ( !trap_FS_FileExists ( levelshot ) ) 
-		Com_sprintf ( levelshot, sizeof(levelshot), "levelshots/%s.tga", name );
+	if ( trap_FS_FOpenFile( levelshot, NULL, FS_READ ) == -1 ) 
+		Q_snprintfz ( levelshot, sizeof(levelshot), "levelshots/%s.tga", name );
 
-	if ( !trap_FS_FileExists ( levelshot ) ) 
-		Com_sprintf ( levelshot, sizeof(levelshot), "menu/art/unknownmap" );
+	if ( trap_FS_FOpenFile( levelshot, NULL, FS_READ ) == -1 ) 
+		Q_snprintfz ( levelshot, sizeof(levelshot), "menu/art/unknownmap" );
 
 	cgs.shaderLevelshot = trap_R_RegisterPic ( levelshot );
 	cgs.shaderLevelshotDetail = trap_R_RegisterPic ( "levelShotDetail" );

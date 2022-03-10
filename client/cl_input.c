@@ -53,14 +53,13 @@ Key_Event (int key, qboolean down, unsigned time);
 ===============================================================================
 */
 
-
 kbutton_t	in_klook;
 kbutton_t	in_left, in_right, in_forward, in_back;
 kbutton_t	in_lookup, in_lookdown, in_moveleft, in_moveright;
 kbutton_t	in_strafe, in_speed, in_use, in_attack;
 kbutton_t	in_up, in_down;
 
-void KeyDown (kbutton_t *b)
+static void KeyDown (kbutton_t *b)
 {
 	int		k;
 	char	*c;
@@ -96,7 +95,7 @@ void KeyDown (kbutton_t *b)
 	b->state |= 1 + 2;	// down + impulse down
 }
 
-void KeyUp (kbutton_t *b)
+static void KeyUp (kbutton_t *b)
 {
 	int		k;
 	char	*c;
@@ -226,7 +225,7 @@ void CL_AdjustAngles (void)
 {
 	float	speed;
 	float	up, down;
-	
+
 	if (in_speed.state & 1)
 		speed = cls.frametime * cl_anglespeedkey->value;
 	else
@@ -234,18 +233,18 @@ void CL_AdjustAngles (void)
 
 	if (!(in_strafe.state & 1))
 	{
-		cl.viewangles[YAW] -= speed*cl_yawspeed->value*CL_KeyState (&in_right);
-		cl.viewangles[YAW] += speed*cl_yawspeed->value*CL_KeyState (&in_left);
+		cl.viewangles[YAW] -= speed * cl_yawspeed->value * CL_KeyState (&in_right);
+		cl.viewangles[YAW] += speed * cl_yawspeed->value * CL_KeyState (&in_left);
 	}
 	if (in_klook.state & 1)
 	{
-		cl.viewangles[PITCH] -= speed*cl_pitchspeed->value * CL_KeyState (&in_forward);
-		cl.viewangles[PITCH] += speed*cl_pitchspeed->value * CL_KeyState (&in_back);
+		cl.viewangles[PITCH] -= speed * cl_pitchspeed->value * CL_KeyState (&in_forward);
+		cl.viewangles[PITCH] += speed * cl_pitchspeed->value * CL_KeyState (&in_back);
 	}
-	
+
 	up = CL_KeyState (&in_lookup);
-	down = CL_KeyState(&in_lookdown);
-	
+	down = CL_KeyState (&in_lookdown);
+
 	cl.viewangles[PITCH] -= speed*cl_pitchspeed->value * up;
 	cl.viewangles[PITCH] += speed*cl_pitchspeed->value * down;
 }
@@ -258,11 +257,11 @@ Send the intended movement message to the server
 ================
 */
 void CL_BaseMove (usercmd_t *cmd)
-{	
+{
 	CL_AdjustAngles ();
-	
+
 	memset (cmd, 0, sizeof(*cmd));
-	
+
 	VectorCopy (cl.viewangles, cmd->angles);
 	if (in_strafe.state & 1)
 	{
@@ -277,20 +276,20 @@ void CL_BaseMove (usercmd_t *cmd)
 	cmd->upmove -= cl_upspeed->value * CL_KeyState (&in_down);
 
 	if (! (in_klook.state & 1) )
-	{	
+	{
 		cmd->forwardmove += cl_forwardspeed->value * CL_KeyState (&in_forward);
 		cmd->forwardmove -= cl_forwardspeed->value * CL_KeyState (&in_back);
-	}	
+	}
 
 //
 // adjust for speed key / running
 //
-	if ( (in_speed.state & 1) ^ (int)(cl_run->value) )
+	if ( (in_speed.state & 1) ^ cl_run->integer )
 	{
 		cmd->forwardmove *= 2;
 		cmd->sidemove *= 2;
 		cmd->upmove *= 2;
-	}	
+	}
 }
 
 void CL_ClampPitch (void)
@@ -325,11 +324,11 @@ void CL_FinishMove (usercmd_t *cmd)
 
 //
 // figure button bits
-//	
+//
 	if ( in_attack.state & 3 )
 		cmd->buttons |= BUTTON_ATTACK;
 	in_attack.state &= ~2;
-	
+
 	if (in_use.state & 3)
 		cmd->buttons |= BUTTON_USE;
 	in_use.state &= ~2;
@@ -346,6 +345,7 @@ void CL_FinishMove (usercmd_t *cmd)
 	cmd->msec = ms;
 
 	CL_ClampPitch ();
+
 	for (i=0 ; i<3 ; i++)
 		cmd->angles[i] = ANGLE2SHORT(cl.viewangles[i]);
 }
@@ -361,7 +361,7 @@ usercmd_t CL_CreateCmd (void)
 
 	frame_msec = sys_frame_time - old_sys_frame_time;
 	clamp ( frame_msec, 1, 200 );
-	
+
 	// get basic movement from keyboard
 	CL_BaseMove (&cmd);
 
@@ -443,11 +443,11 @@ void CL_SendCmd (void)
 	// build a command even if not connected
 
 	// save this command off for prediction
-	i = cls.netchan.outgoing_sequence & CMD_MASK;
+	i = cl.cmdNum = cls.netchan.outgoing_sequence & CMD_MASK;
 	cmd = &cl.cmds[i];
 	cl.cmd_time[i] = cls.realtime;	// for netgraph ping calculation
 
-	*cmd = cl.cmd = CL_CreateCmd ();
+	*cmd = CL_CreateCmd ();
 
 	if (cls.state == ca_disconnected || cls.state == ca_connecting)
 		return;
@@ -487,26 +487,23 @@ void CL_SendCmd (void)
 
 	// let the server know what the last frame we
 	// got was, so the next message can be delta compressed
-	if (cl_nodelta->value || !cl.frame.valid || cls.demowaiting)
+	if (cl_nodelta->integer || !cl.frame.valid || cls.demowaiting)
 		MSG_WriteLong (&buf, -1);	// no compression
 	else
 		MSG_WriteLong (&buf, cl.frame.serverFrame);
 
 	// send this and the previous cmds in the message, so
 	// if the last packet was dropped, it can be recovered
-	i = (cls.netchan.outgoing_sequence-2) & CMD_MASK;
-	cmd = &cl.cmds[i];
+	cmd = &cl.cmds[(cls.netchan.outgoing_sequence-2) & CMD_MASK];
 	memset (&nullcmd, 0, sizeof(nullcmd));
 	MSG_WriteDeltaUsercmd (&buf, &nullcmd, cmd);
 	oldcmd = cmd;
 
-	i = (cls.netchan.outgoing_sequence-1) & CMD_MASK;
-	cmd = &cl.cmds[i];
+	cmd = &cl.cmds[(cls.netchan.outgoing_sequence-1) & CMD_MASK];
 	MSG_WriteDeltaUsercmd (&buf, oldcmd, cmd);
 	oldcmd = cmd;
 
-	i = (cls.netchan.outgoing_sequence) & CMD_MASK;
-	cmd = &cl.cmds[i];
+	cmd = &cl.cmds[(cls.netchan.outgoing_sequence) & CMD_MASK];
 	MSG_WriteDeltaUsercmd (&buf, oldcmd, cmd);
 
 	// calculate a checksum over the move commands
@@ -519,5 +516,3 @@ void CL_SendCmd (void)
 	//
 	Netchan_Transmit (&cls.netchan, buf.cursize, buf.data);	
 }
-
-

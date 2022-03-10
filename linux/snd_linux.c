@@ -125,7 +125,7 @@ qboolean SNDDMA_Init (void)
 	}
     
 // set sample bits & speed
-	dma.samplebits = (int)sndbits->value;
+	dma.samplebits = sndbits->integer;
 	if (dma.samplebits != 16 && dma.samplebits != 8)
 	{
 		ioctl (audio_fd, SNDCTL_DSP_GETFMTS, &fmt);
@@ -173,7 +173,7 @@ qboolean SNDDMA_Init (void)
 		return 0;
 	}
 
-	dma.speed = (int)sndspeed->value;
+	dma.speed = sndspeed->integer;
 	if (!dma.speed)
 	{
 		for (i=0 ; i<sizeof(tryrates)/4 ; i++)
@@ -182,7 +182,7 @@ qboolean SNDDMA_Init (void)
 		dma.speed = tryrates[i];
 	}
 
-	dma.channels = (int)sndchannels->value;
+	dma.channels = sndchannels->integer;
 	if (dma.channels < 1 || dma.channels > 2)
 		dma.channels = 2;
         

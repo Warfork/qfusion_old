@@ -22,7 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "q_shared.h"
 #include "gs_public.h"
 #include "g_public.h"
-#include "g_syscalls.h"
+#include "g_syscalls.h"
+
 
 //ZOID
 #include "p_menu.h"
@@ -490,7 +491,7 @@ extern	cvar_t	*bob_pitch;
 extern	cvar_t	*bob_roll;
 
 extern	cvar_t	*sv_cheats;
-extern	cvar_t	*maxclients;
+extern	cvar_t	*sv_maxclients;
 
 extern	cvar_t	*flood_msgs;
 extern	cvar_t	*flood_persecond;
@@ -633,7 +634,7 @@ void T_RadiusDamage (edict_t *inflictor, edict_t *attacker, float damage, edict_
 //
 void monster_fire_bullet (edict_t *self, vec3_t start, vec3_t dir, int damage, int kick, int flashtype);
 void monster_fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int flashtype);
-void monster_fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype, int effect);
+void monster_fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype, int type);
 void monster_fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int flashtype);
 void monster_fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype);
 void monster_fire_railgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int flashtype);
@@ -648,7 +649,6 @@ void AttackFinished (edict_t *self, float time);
 void monster_death_use (edict_t *self);
 void M_CategorizePosition (edict_t *ent);
 qboolean M_CheckAttack (edict_t *self);
-void M_FlyCheck (edict_t *self);
 void M_CheckGround (edict_t *ent);
 
 //
@@ -684,7 +684,7 @@ void ThrowDebris (edict_t *self, char *modelname, float speed, vec3_t origin);
 qboolean fire_hit (edict_t *self, vec3_t aim, int damage, int kick);
 void fire_bullet (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int mod);
 void fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick, int count, int mod);
-void fire_blaster (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int effect, int mod);
+void fire_blaster (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, int type, int mod);
 void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius);
 void fire_grenade2 (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius, qboolean held);
 void fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, float damage_radius, int radius_damage);
@@ -714,7 +714,7 @@ void InitBodyQue (void);
 void ClientBeginServerFrame (edict_t *ent);
 void ClientUserinfoChanged (edict_t *ent, char *userinfo);
 void ClientThink (edict_t *ent, usercmd_t *cmd);
-qboolean ClientConnect (edict_t *ent, char *userinfo);
+qboolean ClientConnect (edict_t *ent, char *userinfo, qboolean fakeClient);
 void ClientDisconnect (edict_t *ent);
 void ClientBegin (edict_t *ent);
 void ClientCommand (edict_t *ent);

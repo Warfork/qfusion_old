@@ -23,21 +23,21 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 /*
 ==================
-GL_StopCinematic
+R_StopCinematic
 ==================
 */
-void GL_StopCinematic ( cinematics_t *cin )
+void R_StopCinematic( cinematics_t *cin )
 {
 	cin->time = 0;	// done
 	cin->pic = NULL;
 	cin->pic_pending = NULL;
 
-	if ( cin->file ) {
-		FS_FCloseFile ( cin->file );
+	if( cin->file ) {
+		FS_FCloseFile( cin->file );
 		cin->file = 0;
 	}
-	if ( cin->vid_buffer ) {
-		Mem_ZoneFree ( cin->vid_buffer );
+	if( cin->vid_buffer ) {
+		Mem_ZoneFree( cin->vid_buffer );
 		cin->vid_buffer = NULL;
 	}
 }
@@ -46,33 +46,29 @@ void GL_StopCinematic ( cinematics_t *cin )
 
 /*
 ==================
-GL_ReadNextFrame
+R_ReadNextCinematicFrame
 ==================
 */
-qbyte *GL_ReadNextFrame ( cinematics_t *cin )
+static qbyte *R_ReadNextCinematicFrame( cinematics_t *cin )
 {
 	roq_chunk_t *chunk = &cin->chunk;
 
-	while ( cin->remaining > 0 ) 
-	{
-		RoQ_ReadChunk ( cin );
+	while( !FS_Eof( cin->file ) ) {
+		RoQ_ReadChunk( cin );
 
-		if ( cin->remaining <= 0 || chunk->size > cin->remaining ) {
+		if( FS_Eof( cin->file ) )
 			return NULL;
-		}
-		if ( chunk->size <= 0 ) {
+		if( chunk->size <= 0 )
 			continue;
-		}
 
-		if ( chunk->id == RoQ_INFO ) {
-			RoQ_ReadInfo ( cin );
-		} else if ( chunk->id == RoQ_QUAD_VQ ) {
-			return RoQ_ReadVideo ( cin );
-		} else if ( chunk->id == RoQ_QUAD_CODEBOOK ) {
-			RoQ_ReadCodebook ( cin );
-		} else {
-			RoQ_SkipChunk ( cin );
-		}
+		if( chunk->id == RoQ_INFO )
+			RoQ_ReadInfo( cin );
+		else if( chunk->id == RoQ_QUAD_VQ )
+			return RoQ_ReadVideo( cin );
+		else if( chunk->id == RoQ_QUAD_CODEBOOK )
+			RoQ_ReadCodebook( cin );
+		else
+			RoQ_SkipChunk( cin );
 	}
 
 	return NULL;
@@ -80,114 +76,92 @@ qbyte *GL_ReadNextFrame ( cinematics_t *cin )
 
 /*
 ==================
-GL_ResampleCinematicFrame
-
+R_ResampleCinematicFrame
 ==================
 */
-image_t *GL_ResampleCinematicFrame ( shaderpass_t *pass )
+image_t *R_ResampleCinematicFrame( shaderpass_t *pass )
 {
 	image_t			*image;
 	cinematics_t	*cin = pass->cin;
 
-	if (!cin->pic)
+	if( !cin->pic )
 		return NULL;
 
-	if ( !pass->anim_frames[0] ) {
-		image = GL_LoadPic ( cin->name, cin->pic, cin->width, cin->height, IT_CINEMATICS|IT_NOPICMIP|IT_NOMIPMAP, 8 );
-	} else {
+	if( pass->anim_frames[0] ) {
 		image = pass->anim_frames[0];
-	}
-
-	if ( !cin->restart_sound ) {
-		return image;
-	}
-	cin->restart_sound = qfalse;
-
-	GL_EnableMultitexture ( qfalse );
-	GL_Bind ( image->texnum );
-
-	if ( pass->anim_frames[0] ) {
-		qglTexSubImage2D ( GL_TEXTURE_2D, 
-			0, 0, 0,
-			image->upload_width, image->upload_height, 
-			GL_RGBA, GL_UNSIGNED_BYTE, cin->pic );
 	} else {
-		qglTexImage2D ( GL_TEXTURE_2D, 
-			0, GL_RGB, 
-			image->upload_width, image->upload_height, 
-			0, GL_RGBA, GL_UNSIGNED_BYTE, cin->pic );
+		image = R_LoadPic( cin->name, &cin->pic, cin->width, cin->height, IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP, 3 );
+		cin->new_frame = qfalse;
 	}
 
-	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
-	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+	if( !cin->new_frame )
+		return image;
+	cin->new_frame = qfalse;
+
+	GL_Bind( 0, image );
+	R_Upload32( &cin->pic, image->width, image->height, IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP, &image->upload_width, &image->upload_height, 3 );
 
 	return image;
 }
 
 /*
 ==================
-GL_RunCinematic
-
+R_RunCinematic
 ==================
 */
-void GL_RunCinematic ( cinematics_t *cin )
+void R_RunCinematic( cinematics_t *cin )
 {
 	int		frame;
 
-	frame = (Sys_Milliseconds() - cin->time)*RoQ_FRAMERATE/1000;
-	if (frame <= cin->frame)
+	frame = (Sys_Milliseconds () - cin->time) * (float)(RoQ_FRAMERATE) / 1000;
+	if( frame <= cin->frame )
 		return;
-	if (frame > cin->frame+1)
-		cin->time = Sys_Milliseconds() - cin->frame*1000/RoQ_FRAMERATE;
+	if( frame > cin->frame + 1 )
+		cin->time = Sys_Milliseconds () - cin->frame * 1000 / RoQ_FRAMERATE;
 
 	cin->pic = cin->pic_pending;
-	cin->pic_pending = GL_ReadNextFrame ( cin );
+	cin->pic_pending = R_ReadNextCinematicFrame( cin );
 
-	if (!cin->pic_pending)
-	{
-		FS_FCloseFile ( cin->file );
-		cin->remaining = FS_FOpenFile ( cin->name, &cin->file );
-
-		// skip header
-		RoQ_ReadChunk ( cin );
-
+	if( !cin->pic_pending ) {
+		FS_Seek( cin->file, cin->headerlen, FS_SEEK_SET );
 		cin->frame = 0;
-		cin->pic_pending = GL_ReadNextFrame ( cin );
-		cin->time = Sys_Milliseconds();
+		cin->pic_pending = R_ReadNextCinematicFrame( cin );
+		cin->time = Sys_Milliseconds ();
 	}
 
-	cin->restart_sound = qtrue;
+	cin->new_frame = qtrue;
 }
 
 /*
 ==================
-GL_PlayCinematic
-
+R_PlayCinematic
 ==================
 */
-void GL_PlayCinematic ( cinematics_t *cin )
+void R_PlayCinematic( cinematics_t *cin )
 {
+	int len;
 	roq_chunk_t *chunk = &cin->chunk;
 
-	cin->remaining = FS_FOpenFile ( cin->name, &cin->file );
-	if (!cin->file || !cin->remaining)
-	{
-		cin->time = 0;	// done
+	cin->width = cin->height = 0;
+	len = FS_FOpenFile( cin->name, &cin->file, FS_READ );
+	if( !cin->file || len < 1 ) {
+		cin->time = 0;		// done
 		return;
 	}
 
 	// read header
-	RoQ_ReadChunk ( cin );
+	RoQ_ReadChunk( cin );
 
-	if ( LittleShort ( chunk->id ) != RoQ_HEADER1 || LittleLong ( chunk->size ) != RoQ_HEADER2 || LittleShort ( chunk->argument ) != RoQ_HEADER3 ) {
-		GL_StopCinematic ( cin );
-		cin->time = 0;	// done
+	if( LittleShort( chunk->id ) != RoQ_HEADER1 || LittleLong( chunk->size ) != RoQ_HEADER2 || LittleShort( chunk->argument ) != RoQ_HEADER3 ) {
+		R_StopCinematic( cin );
+		cin->time = 0;		// done
 		return;
 	}
 
+	cin->headerlen = FS_Tell( cin->file );
 	cin->frame = 0;
-	cin->pic = GL_ReadNextFrame ( cin );
+	cin->pic = cin->pic_pending = R_ReadNextCinematicFrame( cin );
 	cin->time = Sys_Milliseconds ();
 
-	cin->restart_sound = qtrue;
+	cin->new_frame = qtrue;
 }

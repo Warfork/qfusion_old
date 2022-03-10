@@ -32,30 +32,23 @@ ROQ PLAYING
 SCR_StopCinematic
 ==================
 */
-void SCR_StopCinematic (void)
+void SCR_StopCinematic( void )
 {
 	cinematics_t *cin = &cl.cin;
 
-	if ( !cin->file ) {
+	if( !cin->file )
 		return;
-	}
 
 	cin->time = 0;	// done
 	cin->pic = NULL;
 	cin->pic_pending = NULL;
 
-	FS_FCloseFile (cin->file);
+	FS_FCloseFile( cin->file );
 	cin->file = 0;
 
-	if ( cin->vid_buffer ) {
-		Mem_ZoneFree ( cin->vid_buffer );
+	if( cin->vid_buffer ) {
+		Mem_ZoneFree( cin->vid_buffer );
 		cin->vid_buffer = NULL;
-	}
-
-	// switch back if necessary
-	if ( cin->restart_sound ) {
-		cin->restart_sound = qfalse;
-		S_Restart ( qtrue );
 	}
 }
 
@@ -66,95 +59,86 @@ SCR_FinishCinematic
 Called when either the cinematic completes, or it is aborted
 ====================
 */
-void SCR_FinishCinematic (void)
+void SCR_FinishCinematic( void )
 {
 	// tell the server to advance to the next map / cinematic
-	MSG_WriteByte (&cls.netchan.message, clc_stringcmd);
-	SZ_Print (&cls.netchan.message, va("nextserver %i\n", cl.servercount));
-	CL_SetClientState (ca_connected);
+	MSG_WriteByte( &cls.netchan.message, clc_stringcmd );
+	SZ_Print( &cls.netchan.message, va("nextserver %i\n", cl.servercount) );
+	CL_SetClientState( ca_connected );
 }
 
 //==========================================================================
 
 /*
 ==================
-SCR_ReadNextFrame
+SCR_ReadNextCinematicFrame
 ==================
 */
-qbyte *SCR_ReadNextFrame (void)
+static qbyte *SCR_ReadNextCinematicFrame( void )
 {
 	cinematics_t *cin = &cl.cin;
 	roq_chunk_t *chunk = &cin->chunk;
 
-	while ( cin->remaining > 0 ) 
-	{
-		RoQ_ReadChunk ( cin );
+	while( !FS_Eof( cin->file ) ) {
+		RoQ_ReadChunk( cin );
 
-		if ( cin->remaining <= 0 || chunk->size > cin->remaining ) {
+		if( FS_Eof( cin->file ) )
 			return NULL;
-		}
-		if ( chunk->size <= 0 ) {
+		if( chunk->size <= 0 )
 			continue;
-		}
 
-		if ( chunk->id == RoQ_INFO ) {
-			RoQ_ReadInfo ( cin );
-		} else if ( chunk->id == RoQ_SOUND_MONO || chunk->id == RoQ_SOUND_STEREO ) {
-			RoQ_ReadAudio ( cin );
-		} else if ( chunk->id == RoQ_QUAD_VQ ) {
-			return RoQ_ReadVideo ( cin );
-		} else if ( chunk->id == RoQ_QUAD_CODEBOOK ) {
-			RoQ_ReadCodebook ( cin );
-		} else {
-			RoQ_SkipChunk ( cin );
-		}
+		if( chunk->id == RoQ_INFO )
+			RoQ_ReadInfo( cin );
+		else if( chunk->id == RoQ_SOUND_MONO || chunk->id == RoQ_SOUND_STEREO )
+			RoQ_ReadAudio( cin );
+		else if( chunk->id == RoQ_QUAD_VQ )
+			return RoQ_ReadVideo( cin );
+		else if( chunk->id == RoQ_QUAD_CODEBOOK )
+			RoQ_ReadCodebook( cin );
+		else
+			RoQ_SkipChunk( cin );
 	}
 
 	return NULL;
 }
 
-
 /*
 ==================
 SCR_RunCinematic
-
 ==================
 */
-void SCR_RunCinematic (void)
+void SCR_RunCinematic( void )
 {
 	int		frame;
 	cinematics_t *cin = &cl.cin;
 
-	if (cin->time <= 0)
-	{
+	if( cin->time <= 0 ) {
 		SCR_StopCinematic ();
 		return;
 	}
 
-	if (cls.key_dest != key_game)
-	{	// stop if menu or console is up
+	if( cls.key_dest != key_game ) {
+		// stop if menu or console is up
 		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
 		return;
 	}
 
-	if (cin->frame == -1)
+	if( cin->frame == -1 )
 		return;
 
-	frame = (cls.realtime - cin->time)*(float)(RoQ_FRAMERATE)/1000;
-	if (frame <= cin->frame)
+	frame = (cls.realtime - cin->time) * (float)(RoQ_FRAMERATE) / 1000;
+	if( frame <= cin->frame )
 		return;
-	if (frame > cin->frame+1)
-	{
-		Com_Printf ("Dropped frame: %i > %i\n", frame, cin->frame+1);
-		cin->time = cls.realtime - cin->frame*1000/RoQ_FRAMERATE;
+	if( frame > cin->frame + 1 ) {
+		Com_Printf( "Dropped frame: %i > %i\n", frame, cin->frame + 1 );
+		cin->time = cls.realtime - cin->frame * 1000 / RoQ_FRAMERATE;
 	}
 
 	cin->pic = cin->pic_pending;
-	cin->pic_pending = SCR_ReadNextFrame ();
+	cin->pic_pending = SCR_ReadNextCinematicFrame ();
 
-	if (!cin->pic_pending)
-	{
+	if( !cin->pic_pending ) {
 		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
 		return;
@@ -169,17 +153,16 @@ Returns true if a cinematic is active, meaning the view rendering
 should be skipped
 ==================
 */
-qboolean SCR_DrawCinematic (void)
+qboolean SCR_DrawCinematic( void )
 {
 	cinematics_t *cin = &cl.cin;
 
-	if (cin->time <= 0)
+	if( cin->time <= 0 )
 		return qfalse;
-
-	if (!cin->pic)
+	if( !cin->pic )
 		return qtrue;
 
-	Draw_StretchRaw (0, 0, viddef.width, viddef.height, cin->width, cin->height, cin->frame, cin->pic);
+	R_DrawStretchRaw( 0, 0, viddef.width, viddef.height, cin->width, cin->height, cin->frame, cin->pic );
 
 	return qtrue;
 }
@@ -187,24 +170,24 @@ qboolean SCR_DrawCinematic (void)
 /*
 ==================
 SCR_PlayCinematic
-
 ==================
 */
-void SCR_PlayCinematic (char *arg)
+void SCR_PlayCinematic( char *arg )
 {
-	int	old_khz;
+	int	len;
 	cinematics_t *cin = &cl.cin;
 	roq_chunk_t *chunk = &cin->chunk;
 
-	Com_sprintf (cin->name, sizeof(cin->name), "video/%s", arg);
+	Q_snprintfz( cin->name, sizeof(cin->name), "video/%s", arg );
 
 	// nasty hack
 	cin->s_rate = 22050;
 	cin->s_width = 2;
+	cin->width = cin->height = 0;
 
 	cin->frame = 0;
-	cin->remaining = FS_FOpenFile (cin->name, &cin->file);
-	if ( !cin->file || !cin->remaining ) {
+	len = FS_FOpenFile( cin->name, &cin->file, FS_READ );
+	if( !cin->file || len < 1 ) {
 		SCR_FinishCinematic ();
 		cin->file = 0;
 		cin->time = 0;	// done
@@ -213,28 +196,19 @@ void SCR_PlayCinematic (char *arg)
 
 	SCR_EndLoadingPlaque ();
 
-	CL_SetKeyDest (key_game);
-	CL_SetClientState (ca_active);
-
-	// switch up to 22 khz sound if necessary
-	old_khz = Cvar_VariableValue ("s_khz");
-	if ( old_khz != cin->s_rate/1000 ) {
-		cin->restart_sound = qtrue;
-		Cvar_SetValue ( "s_khz", cin->s_rate/1000 );
-		S_Restart ( qtrue );
-		Cvar_SetValue ( "s_khz", old_khz );
-	}
+	CL_SetClientState( ca_active );
 
 	// read header
-	RoQ_ReadChunk ( cin );
+	RoQ_ReadChunk( cin );
 
-	if ( LittleShort ( chunk->id ) != RoQ_HEADER1 || LittleLong ( chunk->size ) != RoQ_HEADER2 || LittleShort ( chunk->argument ) != RoQ_HEADER3 ) {
+	if( LittleShort( chunk->id ) != RoQ_HEADER1 || LittleLong( chunk->size ) != RoQ_HEADER2 || LittleShort( chunk->argument ) != RoQ_HEADER3 ) {
 		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
 		return;
 	}
 
+	cin->headerlen = FS_Tell( cin->file );
 	cin->frame = 0;
-	cin->pic = SCR_ReadNextFrame ();
+	cin->pic = cin->pic_pending = SCR_ReadNextCinematicFrame ();
 	cin->time = Sys_Milliseconds ();
 }

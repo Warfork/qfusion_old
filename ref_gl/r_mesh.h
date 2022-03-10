@@ -17,30 +17,53 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 #define MAX_RENDER_MESHES			16384
 #define MAX_RENDER_ADDITIVE_MESHES	MAX_RENDER_MESHES >> 1
 
+enum
+{
+	MF_NONE				= 0,
+	MF_NONBATCHED		= 1 << 0,
+	MF_NORMALS			= 1 << 1,
+	MF_STCOORDS			= 1 << 2,
+	MF_LMCOORDS			= 1 << 3,
+	MF_COLORS			= 1 << 4,
+	MF_TRNORMALS		= 1 << 5,
+	MF_NOCULL			= 1 << 6,
+	MF_DEFORMVS			= 1 << 7
+};
+
+enum
+{
+	MB_MODEL,
+	MB_SPRITE,
+	MB_POLY,
+
+	MB_MAXTYPES	= 4
+};
+
 typedef struct mesh_s
 {
-    int				numvertexes;
-	vec4_t			*xyz_array;
-	vec3_t			*normals_array;
-	vec2_t			*st_array;
-	vec2_t			*lmst_array;
-	byte_vec4_t		*colors_array;
+    int					numVertexes;
+	vec3_t				*xyzArray;
+	vec3_t				*normalsArray;
+	vec2_t				*stArray;
+	vec2_t				*lmstArray;
+	byte_vec4_t			*colorsArray;
 
-    int				numindexes;
-    index_t			*indexes;
+    int					numIndexes;
+    index_t				*indexes;
 
-#ifdef SHADOW_VOLUMES
-	int				*trneighbors;
-	vec3_t			*trnormals;
+#if SHADOW_VOLUMES
+	int					*trneighbors;
+	vec3_t				*trnormals;
 #endif
 } mesh_t;
 
-typedef struct meshbuffer_s
+typedef struct
 {
-	int					sortkey;
+	unsigned int		sortkey;
 	int					infokey;		// surface number or mesh number
 	unsigned int		dlightbits;
 	entity_t			*entity;
@@ -74,19 +97,22 @@ enum
 
 typedef struct
 {
-	mesh_t			meshes[6];
+	mesh_t			*meshes;
 	vec2_t			*sphereStCoords[5];
 	vec2_t			*linearStCoords[6];
 
-	struct shader_s	*farbox_shaders[6];
-	struct shader_s *nearbox_shaders[6];
+	struct shader_s	*farboxShaders[6];
+	struct shader_s *nearboxShaders[6];
 } skydome_t;
 
-meshbuffer_t *R_AddMeshToList ( struct mfog_s *fog, struct shader_s *shader, int infokey );
+meshbuffer_t *R_AddMeshToList( int type, struct mfog_s *fog, struct shader_s *shader, int infokey );
 
-void R_SortMeshes (void);
-void R_DrawMeshes ( qboolean triangleOutlines );
-void R_DrawTriangleOutlines (void);
+void R_SortMeshes( void );
+void R_DrawMeshes( qboolean triangleOutlines );
+void R_DrawTriangleOutlines( void );
+
+void R_DrawPortalSurface( meshbuffer_t *mb );
+void R_DrawCubemapView( vec3_t origin, vec3_t angles, int size );
 
 extern	meshlist_t	r_worldlist;
 extern	meshlist_t	*r_currentlist;

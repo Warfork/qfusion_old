@@ -68,7 +68,8 @@ or crashing.
 void SV_DropClient (client_t *drop)
 {
 	// add the disconnect
-	MSG_WriteByte (&drop->netchan.message, svc_disconnect);
+	if( !(drop->edict && (drop->edict->r.svflags & SVF_FAKECLIENT)) )
+		MSG_WriteByte (&drop->netchan.message, svc_disconnect);
 
 	if (drop->state == cs_spawned)
 	{
@@ -104,7 +105,7 @@ SV_StatusString
 Builds the string that is sent as heartbeats and status replies
 ===============
 */
-char	*SV_StatusString (void)
+char *SV_StatusString (void)
 {
 	char	tempstr[1024];
 	static char	status[MAX_MSGLEN - 16];
@@ -113,30 +114,30 @@ char	*SV_StatusString (void)
 	int		statusLength;
 	int		tempstrLength;
 
-	strcpy (status, Cvar_Serverinfo());
+	Q_strncpyz (status, Cvar_Serverinfo(), sizeof(status));
 	statusLength = strlen(status);
 
 	count = 0;
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 	{
 		cl = &svs.clients[i];
 		if (cl->state >= cs_connected )
 			count++;
 	}
 
-	Com_sprintf (tempstr, sizeof(tempstr), "\\clients\\%i\n", count);
+	Q_snprintfz (tempstr, sizeof(tempstr), "\\clients\\%i\n", count);
 	tempstrLength = strlen(tempstr);
 	if (statusLength + tempstrLength >= sizeof(status) )
 		return status;		// can't hold any more
 	strcpy (status + statusLength, tempstr);
 	statusLength += tempstrLength;
 
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 	{
 		cl = &svs.clients[i];
 		if (cl->state == cs_connected || cl->state == cs_spawned )
 		{
-			Com_sprintf (tempstr, sizeof(tempstr), "%i %i \"%s\"\n", 
+			Q_snprintfz (tempstr, sizeof(tempstr), "%i %i \"%s\"\n", 
 				cl->edict->r.client->r.frags, cl->ping, cl->name);
 			tempstrLength = strlen(tempstr);
 			if (statusLength + tempstrLength >= sizeof(status) )
@@ -175,23 +176,23 @@ void SVC_Info (void)
 	int		version;
 	qboolean no_empty, no_full;
 
-	if (sv_maxclients->value == 1)
+	if (sv_maxclients->integer == 1)
 		return;		// ignore in single player
 
 	version = atoi (Cmd_Argv(1));
 
 	if ( version != PROTOCOL_VERSION ) {
-		Com_sprintf ( string, sizeof(string), "%s: wrong version\n", sv_hostname->string, sizeof(string) );
+		Q_snprintfz ( string, sizeof(string), "%s: wrong version\n", sv_hostname->string, sizeof(string) );
 		return;
 	}
 
 	count = 0;
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 		if (svs.clients[i].state >= cs_connected)
 			count++;
 
 	no_full = strcmp (Cmd_Argv(2), "full") && strcmp (Cmd_Argv(3), "full" );
-	if ( (count == sv_maxclients->value) && no_full ) {
+	if ( (count == sv_maxclients->integer) && no_full ) {
 		return;
 	}
 
@@ -200,7 +201,7 @@ void SVC_Info (void)
 		return;
 	}
 
-	Com_sprintf (string, sizeof(string), "%16s %8s %2i/%2i\n", sv_hostname->string, sv.name, count, (int)sv_maxclients->value);
+	Q_snprintfz (string, sizeof(string), "%16s %8s %2i/%2i\n", sv_hostname->string, sv.name, count, sv_maxclients->integer);
 	Netchan_OutOfBandPrint (NS_SERVER, net_from, "info\n%s", string);
 }
 
@@ -264,6 +265,30 @@ void SVC_GetChallenge (void)
 
 /*
 ==================
+SVC_ClientConnect
+==================
+*/
+qboolean SVC_ClientConnect( client_t *cl, char *userinfo, int challenge, qboolean fakeClient )
+{
+	edict_t		*ent;
+	int			edictnum;
+
+	// build a new connection
+	// accept the new client
+	// this is the only place a client_t is ever initialized
+	memset( cl, 0, sizeof( *cl ) );
+	sv_client = cl;
+	edictnum = (cl - svs.clients) + 1;
+	ent = EDICT_NUM (edictnum);
+	cl->edict = ent;
+	cl->challenge = challenge; // save challenge for checksumming
+
+	// get the game a chance to reject this connection or modify the userinfo
+	return ge->ClientConnect( ent, userinfo, fakeClient );
+}
+
+/*
+==================
 SVC_DirectConnect
 
 A connection request that did not come from the master
@@ -271,13 +296,10 @@ A connection request that did not come from the master
 */
 void SVC_DirectConnect (void)
 {
+	int			i;
 	char		userinfo[MAX_INFO_STRING];
 	netadr_t	adr;
-	int			i;
 	client_t	*cl, *newcl;
-	client_t	temp;
-	edict_t		*ent;
-	int			edictnum;
 	int			version;
 	int			qport;
 	int			challenge;
@@ -334,11 +356,8 @@ void SVC_DirectConnect (void)
 		}
 	}
 
-	newcl = &temp;
-	memset (newcl, 0, sizeof(client_t));
-
 	// if there is already a slot for this ip, reuse it
-	for (i=0,cl=svs.clients ; i<sv_maxclients->value ; i++,cl++)
+	for (i=0,cl=svs.clients ; i<sv_maxclients->integer ; i++,cl++)
 	{
 		if (cl->state == cs_free)
 			continue;
@@ -359,7 +378,7 @@ void SVC_DirectConnect (void)
 
 	// find a client slot
 	newcl = NULL;
-	for (i=0,cl=svs.clients ; i<sv_maxclients->value ; i++,cl++)
+	for (i=0,cl=svs.clients ; i<sv_maxclients->integer ; i++,cl++)
 	{
 		if (cl->state == cs_free)
 		{
@@ -374,19 +393,9 @@ void SVC_DirectConnect (void)
 		return;
 	}
 
-gotnewcl:	
-	// build a new connection
-	// accept the new client
-	// this is the only place a client_t is ever initialized
-	*newcl = temp;
-	sv_client = newcl;
-	edictnum = (newcl-svs.clients)+1;
-	ent = EDICT_NUM (edictnum);
-	newcl->edict = ent;
-	newcl->challenge = challenge; // save challenge for checksumming
-
+gotnewcl:
 	// get the game a chance to reject this connection or modify the userinfo
-	if (!(ge->ClientConnect (ent, userinfo)))
+	if (!SVC_ClientConnect (newcl, userinfo, challenge, qfalse))
 	{
 		if (*Info_ValueForKey (userinfo, "rejmsg")) 
 			Netchan_OutOfBandPrint (NS_SERVER, adr, "print\n%s\nConnection refused.\n",  
@@ -412,6 +421,73 @@ gotnewcl:
 	newcl->datagram.allowoverflow = qtrue;
 	newcl->lastmessage = svs.realtime;	// don't timeout
 	newcl->lastconnect = svs.realtime;
+}
+
+/*
+==================
+SVC_FakeConnect
+
+A connection request that came from the game module
+==================
+*/
+void SVC_FakeConnect( char *fakeUserinfo, char *fakeIP )
+{
+	int			i;
+	char		userinfo[MAX_INFO_STRING];
+	client_t	*cl, *newcl;
+
+	Com_DPrintf ("SVC_FakeConnect ()\n");
+
+	if( !fakeUserinfo )
+		fakeUserinfo = "";
+	if( !fakeIP )
+		fakeIP = "127.0.0.1";
+
+	Q_strncpyz (userinfo, fakeUserinfo, sizeof(userinfo));
+
+	// force the IP key/value pair so the game can filter based on ip
+	Info_SetValueForKey (userinfo, "ip", fakeIP);
+
+	// attractloop servers are ONLY for local clients
+	if (sv.attractloop)
+	{
+		Com_Printf ("Fake connect in attract loop.  Ignored.\n");
+		return;
+	}
+
+	// find a client slot
+	newcl = NULL;
+	for (i=0,cl=svs.clients ; i<sv_maxclients->integer ; i++,cl++)
+	{
+		if (cl->state == cs_free)
+		{
+			newcl = cl;
+			break;
+		}
+	}
+	if (!newcl)
+	{
+		Com_DPrintf ("Rejected a connection.\n");
+		return;
+	}
+
+	// get the game a chance to reject this connection or modify the userinfo
+	if (!SVC_ClientConnect (newcl, userinfo, -1, qtrue))
+	{
+		Com_DPrintf ("Game rejected a connection.\n");
+		return;
+	}
+
+	// parse some info from the info strings
+	Q_strncpyz (newcl->userinfo, userinfo, sizeof(newcl->userinfo));
+	SV_UserinfoChanged (newcl);
+
+	newcl->state = cs_spawned;
+	newcl->lastmessage = svs.realtime;	// don't timeout
+	newcl->lastconnect = svs.realtime;
+
+	// call the game begin function
+	ge->ClientBegin (newcl->edict);
 }
 
 int Rcon_Validate (void)
@@ -528,7 +604,7 @@ void SV_CalcPings (void)
 	client_t	*cl;
 	int			total, count;
 
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 	{
 		cl = &svs.clients[i];
 		if (cl->state != cs_spawned )
@@ -575,7 +651,7 @@ void SV_GiveMsec (void)
 	if (sv.framenum & 15)
 		return;
 
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 	{
 		cl = &svs.clients[i];
 		if (cl->state == cs_free )
@@ -615,7 +691,7 @@ void SV_ReadPackets (void)
 		// data follows
 
 		// check for packets from connected clients
-		for (i=0, cl=svs.clients ; i<sv_maxclients->value ; i++,cl++)
+		for (i=0, cl=svs.clients ; i<sv_maxclients->integer ; i++,cl++)
 		{
 			if (cl->state == cs_free)
 				continue;
@@ -642,7 +718,7 @@ void SV_ReadPackets (void)
 			break;
 		}
 		
-		if (i != sv_maxclients->value)
+		if (i != sv_maxclients->integer)
 			continue;
 	}
 }
@@ -670,10 +746,13 @@ void SV_CheckTimeouts (void)
 	droppoint = svs.realtime - 1000*sv_timeout->value;
 	zombiepoint = svs.realtime - 1000*sv_zombietime->value;
 
-	for (i=0,cl=svs.clients ; i<sv_maxclients->value ; i++,cl++)
+	for (i=0,cl=svs.clients ; i<sv_maxclients->integer ; i++,cl++)
 	{
+		// fake clients do not timeout
+		if (cl->edict && (cl->edict->r.svflags & SVF_FAKECLIENT))
+			cl->lastmessage = svs.realtime;
 		// message times may be wrong across a changelevel
-		if (cl->lastmessage > svs.realtime)
+		else if (cl->lastmessage > svs.realtime)
 			cl->lastmessage = svs.realtime;
 
 		if (cl->state == cs_zombie
@@ -682,8 +761,8 @@ void SV_CheckTimeouts (void)
 			cl->state = cs_free;	// can now be reused
 			continue;
 		}
-		if ( (cl->state == cs_connected || cl->state == cs_spawned) 
-			&& cl->lastmessage < droppoint)
+
+		if ( (cl->state == cs_connected || cl->state == cs_spawned) && (cl->lastmessage < droppoint))
 		{
 			SV_BroadcastPrintf (PRINT_HIGH, "%s timed out\n", cl->name);
 			SV_DropClient (cl); 
@@ -723,7 +802,7 @@ SV_RunGameFrame
 */
 void SV_RunGameFrame (void)
 {
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_before_game = Sys_Milliseconds ();
 
 	// we always need to bump framenum, even if we
@@ -734,20 +813,20 @@ void SV_RunGameFrame (void)
 	sv.time = sv.framenum*100;
 
 	// don't run if paused
-	if (!sv_paused->value || sv_maxclients->value > 1)
+	if (!sv_paused->integer || sv_maxclients->integer > 1)
 	{
 		ge->RunFrame ();
 
 		// never get more than one tic behind
 		if (sv.time < svs.realtime)
 		{
-			if (sv_showclamp->value)
+			if (sv_showclamp->integer)
 				Com_Printf ("sv highclamp\n");
 			svs.realtime = sv.time;
 		}
 	}
 
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_after_game = Sys_Milliseconds ();
 }
 
@@ -777,12 +856,12 @@ void SV_Frame (int msec)
 	SV_ReadPackets ();
 
 	// move autonomous things around if enough time has passed
-	if (!sv_timedemo->value && svs.realtime < sv.time)
+	if (!sv_timedemo->integer && svs.realtime < sv.time)
 	{
 		// never let the time get too far off
 		if (sv.time - svs.realtime > 100)
 		{
-			if (sv_showclamp->value)
+			if (sv_showclamp->integer)
 				Com_Printf ("sv lowclamp\n");
 			svs.realtime = sv.time - 100;
 		}
@@ -828,11 +907,11 @@ void Master_Heartbeat (void)
 	int			i;
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
-	if (!dedicated || !dedicated->value)
+	if (!dedicated || !dedicated->integer)
 		return;		// only dedicated servers send heartbeats
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
-	if (!sv_public || !sv_public->value)
+	if (!sv_public || !sv_public->integer)
 		return;		// a private dedicated game
 
 	// check for time wraparound
@@ -864,11 +943,11 @@ void SVC_MasterInfoResponse (void)
 	char		*string;
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
-	if (!dedicated || !dedicated->value)
+	if (!dedicated || !dedicated->integer)
 		return;		// only dedicated servers send heartbeats
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
-	if (!sv_public || !sv_public->value)
+	if (!sv_public || !sv_public->integer)
 		return;		// a private dedicated game
 
 	// send the same string that we would give for a status OOB command
@@ -895,7 +974,7 @@ void SV_UserinfoChanged (client_t *cl)
 
 	// call prog code to allow overrides
 	ge->ClientUserinfoChanged (cl->edict, cl->userinfo);
-	
+
 	// name for C code
 	Q_strncpyz (cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name));
 	// mask off high bit
@@ -988,7 +1067,7 @@ void SV_FinalMessage (char *message, qboolean reconnect)
 {
 	int			i;
 	client_t	*cl;
-	
+
 	SZ_Clear (&net_message);
 	MSG_WriteByte (&net_message, svc_servercmd);
 	MSG_WriteString (&net_message, va ("pr %i \"%s\"", PRINT_HIGH, message));
@@ -1001,13 +1080,13 @@ void SV_FinalMessage (char *message, qboolean reconnect)
 	// send it twice
 	// stagger the packets to crutch operating system limited buffers
 
-	for (i=0, cl = svs.clients ; i<sv_maxclients->value ; i++, cl++)
-		if (cl->state >= cs_connected)
+	for (i=0, cl = svs.clients ; i<sv_maxclients->integer ; i++, cl++)
+		if (cl->state >= cs_connected && !(cl->edict && cl->edict->r.svflags & SVF_FAKECLIENT))
 			Netchan_Transmit (&cl->netchan, net_message.cursize
 			, net_message.data);
 
-	for (i=0, cl = svs.clients ; i<sv_maxclients->value ; i++, cl++)
-		if (cl->state >= cs_connected)
+	for (i=0, cl = svs.clients ; i<sv_maxclients->integer ; i++, cl++)
+		if (cl->state >= cs_connected && !(cl->edict && cl->edict->r.svflags & SVF_FAKECLIENT))
 			Netchan_Transmit (&cl->netchan, net_message.cursize
 			, net_message.data);
 }
@@ -1041,7 +1120,8 @@ void SV_Shutdown (char *finalmsg, qboolean reconnect)
 	// free server static data
 	if (svs.demofile)
 		fclose (svs.demofile);
-	Mem_EmptyPool (sv_mempool);
+	if (sv_mempool)
+		Mem_EmptyPool (sv_mempool);
 	memset (&svs, 0, sizeof(svs));
 }
 

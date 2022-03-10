@@ -25,7 +25,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define	PAINTBUFFER_SIZE	2048
 portable_samplepair_t paintbuffer[PAINTBUFFER_SIZE];
 int		snd_scaletable[32][256];
-int		snd_musicscaletable[32][256];
 int 	*snd_p, snd_linear_count, snd_vol, music_vol;
 short	*snd_out;
 
@@ -37,21 +36,11 @@ void S_WriteLinearBlastStereo16 (void)
 	
 	for (i=0 ; i<snd_linear_count ; i+=2)
 	{
-		val = snd_p[i]>>8;
-		if (val > 0x7fff)
-			snd_out[i] = 0x7fff;
-		else if (val < (short)0x8000)
-			snd_out[i] = (short)0x8000;
-		else
-			snd_out[i] = val;
-		
+		val = snd_p[i  ]>>8;
+		snd_out[i] = bound ((short)0x8000, val, 0x7fff);
+
 		val = snd_p[i+1]>>8;
-		if (val > 0x7fff)
-			snd_out[i+1] = 0x7fff;
-		else if (val < (short)0x8000)
-			snd_out[i+1] = (short)0x8000;
-		else
-			snd_out[i+1] = val;
+		snd_out[i+1] = bound ((short)0x8000, val, 0x7fff);
 	}
 }
 
@@ -63,23 +52,13 @@ void S_WriteSwappedLinearBlastStereo16 (void)
 	for (i=0 ; i<snd_linear_count ; i+=2)
 	{
 		val = snd_p[i+1]>>8;
-		if (val > 0x7fff)
-			snd_out[i] = 0x7fff;
-		else if (val < (short)0x8000)
-			snd_out[i] = (short)0x8000;
-		else
-			snd_out[i] = val;
-		
-		val = snd_p[i]>>8;
-		if (val > 0x7fff)
-			snd_out[i+1] = 0x7fff;
-		else if (val < (short)0x8000)
-			snd_out[i+1] = (short)0x8000;
-		else
-			snd_out[i+1] = val;
+		snd_out[i] = bound ((short)0x8000, val, 0x7fff);
+
+		val = snd_p[i  ]>>8;
+		snd_out[i+1] = bound ((short)0x8000, val, 0x7fff);
 	}
 }
-#else
+#elif defined(_WIN32)
 __declspec( naked ) void S_WriteLinearBlastStereo16 (void)
 {
 	__asm {
@@ -189,11 +168,10 @@ void S_TransferStereo16 (unsigned long *pbuf, int endtime)
 		snd_linear_count <<= 1;
 
 	// write a linear blast of samples
-		if ( s_swapstereo->value ) {
+		if( s_swapstereo->integer )
 			S_WriteSwappedLinearBlastStereo16 ();
-		} else {
+		else
 			S_WriteLinearBlastStereo16 ();
-		}
 
 		snd_p += snd_linear_count;
 		lpaintedtime += (snd_linear_count>>1);
@@ -203,7 +181,6 @@ void S_TransferStereo16 (unsigned long *pbuf, int endtime)
 /*
 ===================
 S_TransferPaintBuffer
-
 ===================
 */
 void S_TransferPaintBuffer(int endtime)
@@ -218,7 +195,7 @@ void S_TransferPaintBuffer(int endtime)
 
 	pbuf = (unsigned long *)dma.buffer;
 
-	if (s_testsound->value)
+	if (s_testsound->integer)
 	{
 		int		i;
 		int		count;
@@ -248,11 +225,7 @@ void S_TransferPaintBuffer(int endtime)
 			{
 				val = *p >> 8;
 				p += step;
-				if (val > 0x7fff)
-					val = 0x7fff;
-				else if (val < (short)0x8000)
-					val = (short)0x8000;
-				out[out_idx] = val;
+				out[out_idx] = bound ((short)0x8000, val, 0x7fff);
 				out_idx = (out_idx + 1) & out_mask;
 			}
 		}
@@ -263,11 +236,7 @@ void S_TransferPaintBuffer(int endtime)
 			{
 				val = *p >> 8;
 				p += step;
-				if (val > 0x7fff)
-					val = 0x7fff;
-				else if (val < (short)0x8000)
-					val = (short)0x8000;
-				out[out_idx] = (val>>8) + 128;
+				out[out_idx] = (bound ((short)0x8000, val, 0x7fff)>>8) + 128;
 				out_idx = (out_idx + 1) & out_mask;
 			}
 		}
@@ -421,20 +390,6 @@ void S_InitScaletable (void)
 	}
 }
 
-void S_InitMusicScaletable (void)
-{
-	int		i, j;
-	int		scale;
-
-	s_musicvolume->modified = qfalse;
-	for (i=0 ; i<32 ; i++)
-	{
-		scale = i * 8 * 256 * s_musicvolume->value;
-		for (j=0 ; j<256 ; j++)
-			snd_musicscaletable[i][j] = ((signed char)j) * scale;
-	}
-}
-
 void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 {
 	int		i, j;
@@ -447,27 +402,17 @@ void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 	if (ch->rightvol > 255)
 		ch->rightvol = 255;
 
-	if ( sc->music ) {
-		if ( !s_musicvolume->value ) {
-			ch->pos += count;
-			return;
-		}
-
-		lscale = snd_musicscaletable[ch->leftvol >> 3];
-		rscale = snd_musicscaletable[ch->rightvol >> 3];
-	} else {
-		if ( !s_volume->value ) {
-			ch->pos += count;
-			return;
-		}
-
-		lscale = snd_scaletable[ch->leftvol >> 3];
-		rscale = snd_scaletable[ch->rightvol >> 3];
+	if ( !s_volume->value ) {
+		ch->pos += count;
+		return;
 	}
+
+	lscale = snd_scaletable[ch->leftvol >> 3];
+	rscale = snd_scaletable[ch->rightvol >> 3];
 
 	samp = &paintbuffer[offset];
 
-	if (sc->stereo)
+	if (sc->channels == 2)
 	{
 		sfx = (unsigned char *)sc->data + ch->pos * 2;
 
@@ -499,27 +444,17 @@ void S_PaintChannelFrom16 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 	signed short *sfx;
 	portable_samplepair_t	*samp;
 
-	if ( sc->music ) {
-		if ( !music_vol ) {
-			ch->pos += count;
-			return;
-		}
-
-		leftvol = ch->leftvol*music_vol;
-		rightvol = ch->rightvol*music_vol;
-	} else {
-		if ( !snd_vol ) {
-			ch->pos += count;
-			return;
-		}
-
-		leftvol = ch->leftvol*snd_vol;
-		rightvol = ch->rightvol*snd_vol;
+	if ( !snd_vol ) {
+		ch->pos += count;
+		return;
 	}
+
+	leftvol = ch->leftvol*snd_vol;
+	rightvol = ch->rightvol*snd_vol;
 
 	samp = &paintbuffer[offset];
 
-	if (sc->stereo)
+	if (sc->channels == 2)
 	{
 		sfx = (signed short *)sc->data + ch->pos * 2;
 

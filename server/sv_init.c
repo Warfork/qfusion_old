@@ -37,7 +37,7 @@ int SV_FindIndex (char *name, int start, int max, qboolean create)
 		return 0;
 
 	for (i=1 ; i<max && sv.configstrings[start+i][0] ; i++)
-		if (!strcmp(sv.configstrings[start+i], name))
+		if (!strncmp(sv.configstrings[start+i], name, sizeof(sv.configstrings[start+i])))
 			return i;
 
 	if (!create)
@@ -119,13 +119,13 @@ void SV_CheckForSavegame (void)
 	FILE		*f;
 	int			i;
 
-	if (sv_noreload->value)
+	if (sv_noreload->integer)
 		return;
 
 	if (Cvar_VariableValue ("deathmatch"))
 		return;
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/%s.sav", FS_Gamedir(), sv.name);
+	Q_snprintfz (name, sizeof(name), "%s/save/current/%s.sav", FS_Gamedir(), sv.name);
 	f = fopen (name, "rb");
 	if (!f)
 		return;		// no savegame
@@ -199,7 +199,7 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	strcpy (sv.name, server);
 
 	// leave slots at start for clients only
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 	{
 		// needs to reconnect
 		if (svs.clients[i].state > cs_connected)
@@ -213,7 +213,7 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 		CM_LoadMap ("", qfalse, &checksum);	// no real map
 	else
 	{
-		Com_sprintf (sv.configstrings[CS_MODELS+1],sizeof(sv.configstrings[CS_MODELS+1]),
+		Q_snprintfz (sv.configstrings[CS_MODELS+1],sizeof(sv.configstrings[CS_MODELS+1]),
 			"maps/%s.bsp", server);
 		CM_LoadMap (sv.configstrings[CS_MODELS+1], qfalse, &checksum);
 
@@ -223,7 +223,7 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 		SV_ClearWorld ();
 	}
 
-	Com_sprintf (sv.configstrings[CS_MAPCHECKSUM],sizeof(sv.configstrings[CS_MAPCHECKSUM]),
+	Q_snprintfz (sv.configstrings[CS_MAPCHECKSUM],sizeof(sv.configstrings[CS_MAPCHECKSUM]),
 		"%i", checksum);
 
 	//
@@ -280,7 +280,7 @@ void SV_InitGame (void)
 	else
 	{
 		// make sure the client is down
-		CL_Drop ();
+		CL_Disconnect ();
 		SCR_BeginLoadingPlaque ();
 
 		// get any latched variable changes (sv_maxclients, etc)
@@ -297,7 +297,7 @@ void SV_InitGame (void)
 
 	// dedicated servers can't be single player and are usually DM
 	// so unless they explicity set coop, force it to deathmatch
-	if (dedicated->value)
+	if (dedicated->integer)
 	{
 		if (!Cvar_VariableValue ("coop"))
 			Cvar_FullSet ("deathmatch", "1",  CVAR_SERVERINFO | CVAR_LATCH);
@@ -306,14 +306,14 @@ void SV_InitGame (void)
 	// init clients
 	if (Cvar_VariableValue ("deathmatch"))
 	{
-		if (sv_maxclients->value <= 1)
+		if (sv_maxclients->integer <= 1)
 			Cvar_FullSet ("sv_maxclients", "8", CVAR_SERVERINFO | CVAR_LATCH);
-		else if (sv_maxclients->value > MAX_CLIENTS)
+		else if (sv_maxclients->integer > MAX_CLIENTS)
 			Cvar_FullSet ("sv_maxclients", va("%i", MAX_CLIENTS), CVAR_SERVERINFO | CVAR_LATCH);
 	}
 	else if (Cvar_VariableValue ("coop"))
 	{
-		if (sv_maxclients->value <= 1 || sv_maxclients->value > 4)
+		if (sv_maxclients->integer <= 1 || sv_maxclients->integer > 4)
 			Cvar_FullSet ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
 	}
 	else	// non-deathmatch, non-coop is one player
@@ -322,18 +322,18 @@ void SV_InitGame (void)
 	}
 
 	svs.spawncount = rand ();
-	svs.clients = Mem_Alloc (sv_mempool, sizeof(client_t)*sv_maxclients->value);
-	svs.num_client_entities = sv_maxclients->value*UPDATE_BACKUP*64;
+	svs.clients = Mem_Alloc (sv_mempool, sizeof(client_t)*sv_maxclients->integer);
+	svs.num_client_entities = sv_maxclients->integer*UPDATE_BACKUP*64;
 	svs.client_entities = Mem_Alloc (sv_mempool, sizeof(entity_state_t)*svs.num_client_entities);
 
 	// init network stuff
-	NET_Config ( (sv_maxclients->value > 1) );
+	NET_Config ( (sv_maxclients->integer > 1) );
 
 	svs.last_heartbeat = -99999;		// send immediately
 
 	// init game
 	SV_InitGameProgs ();
-	for (i=0 ; i<sv_maxclients->value ; i++)
+	for (i=0 ; i<sv_maxclients->integer ; i++)
 	{
 		ent = EDICT_NUM(i+1);
 		ent->s.number = i+1;
@@ -379,7 +379,7 @@ void SV_Map (qboolean attractloop, char *levelstring, qboolean loadgame, qboolea
 	if (ch)
 	{
 		*ch = 0;
-			Cvar_Set ("nextserver", va("gamemap \"%s\"", ch+1));
+		Cvar_Set ("nextserver", va("gamemap \"%s\"", ch+1));
 	}
 	else
 		Cvar_Set ("nextserver", "");
@@ -407,12 +407,14 @@ void SV_Map (qboolean attractloop, char *levelstring, qboolean loadgame, qboolea
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
 		SV_BroadcastCommand ("changing\n");
+		SV_SendClientMessages ();
 		SV_SpawnServer (level, spawnpoint, ss_cinematic, attractloop, loadgame, devmap);
 	}
 	else if (l > 4 && !Q_stricmp (level+l-4, ".dqf") )
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
 		SV_BroadcastCommand ("changing\n");
+		SV_SendClientMessages ();
 		SV_SpawnServer (level, spawnpoint, ss_demo, attractloop, loadgame, devmap);
 	}
 	else

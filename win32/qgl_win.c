@@ -397,16 +397,28 @@ void ( APIENTRY * qglVertex4sv )(const GLshort *v);
 void ( APIENTRY * qglVertexPointer )(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 void ( APIENTRY * qglViewport )(GLint x, GLint y, GLsizei width, GLsizei height);
 
-void ( APIENTRY * qglLockArraysEXT)( int, int);
-void ( APIENTRY * qglUnlockArraysEXT) ( void );
+void ( APIENTRY * qglLockArraysEXT )( int, int );
+void ( APIENTRY * qglUnlockArraysEXT ) ( void );
 
-BOOL ( WINAPI * qwglSwapIntervalEXT)( int interval );
-BOOL ( WINAPI * qwglGetDeviceGammaRamp3DFX)( HDC hDC, WORD *ramp );
-BOOL ( WINAPI * qwglSetDeviceGammaRamp3DFX)( HDC hDC, WORD *ramp );
-void ( APIENTRY * qglSelectTextureSGIS)( GLenum );
-void ( APIENTRY * qglMTexCoord2fSGIS)( GLenum, GLfloat, GLfloat );
-void ( APIENTRY * qglActiveTextureARB) ( GLenum );
-void ( APIENTRY * qglClientActiveTextureARB) ( GLenum );
+BOOL ( WINAPI * qwglSwapIntervalEXT )( int interval );
+BOOL ( WINAPI * qwglGetDeviceGammaRamp3DFX )( HDC hDC, WORD *ramp );
+BOOL ( WINAPI * qwglSetDeviceGammaRamp3DFX )( HDC hDC, WORD *ramp );
+
+void ( APIENTRY * qglSelectTextureSGIS )( GLenum );
+void ( APIENTRY * qglMTexCoord2f )( GLenum, GLfloat, GLfloat );
+void ( APIENTRY * qglActiveTextureARB )( GLenum );
+void ( APIENTRY * qglClientActiveTextureARB )( GLenum );
+
+void ( APIENTRY * qglDrawRangeElementsEXT )( GLenum, GLuint, GLuint, GLsizei, GLenum, const GLvoid *);
+
+void ( APIENTRY * qglBindBufferARB )( GLenum target, GLuint buffer );
+void ( APIENTRY * qglDeleteBuffersARB )( GLsizei n, const GLuint *buffers );
+void ( APIENTRY * qglGenBuffersARB )( GLsizei n, GLuint *buffers );
+GLboolean ( APIENTRY * qglIsBufferARB )( GLuint buffer );
+GLvoid *( APIENTRY * qglMapBufferARB )( GLenum target, GLenum access );
+GLboolean ( APIENTRY * qglUnmapBufferARB )( GLenum target );
+void ( APIENTRY * qglBufferDataARB )( GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage );
+void ( APIENTRY * qglBufferSubDataARB )( GLenum target, GLintptrARB offset, GLsizeiptrARB size, const GLvoid *data );
 
 static void ( APIENTRY * dllAccum )(GLenum op, GLfloat value);
 static void ( APIENTRY * dllAlphaFunc )(GLenum func, GLclampf ref);
@@ -2992,7 +3004,6 @@ void QGL_Shutdown( void )
 	qwglGetCurrentContext        = NULL;
 	qwglGetCurrentDC             = NULL;
 	qwglGetLayerPaletteEntries   = NULL;
-	qwglGetProcAddress           = NULL;
 	qwglMakeCurrent              = NULL;
 	qwglRealizeLayerPalette      = NULL;
 	qwglSetLayerPaletteEntries   = NULL;
@@ -3000,6 +3011,7 @@ void QGL_Shutdown( void )
 	qwglSwapLayerBuffers         = NULL;
 	qwglUseFontBitmaps           = NULL;
 	qwglUseFontOutlines          = NULL;
+	qwglGetProcAddress           = NULL;
 
 	qwglChoosePixelFormat        = NULL;
 	qwglDescribePixelFormat      = NULL;
@@ -3031,8 +3043,6 @@ qboolean QGL_Init( const char *dllname )
 		Com_Printf ( "%s\n", buf );
 		return qfalse;
 	}
-
-	gl_config.allow_cds = qtrue;
 
 	qglAccum                     = dllAccum = GPA( "glAccum" );
 	qglAlphaFunc                 = dllAlphaFunc = GPA( "glAlphaFunc" );
@@ -3394,9 +3404,34 @@ qboolean QGL_Init( const char *dllname )
 	qwglSetPixelFormat           = GPA( "wglSetPixelFormat" );
 	qwglSwapBuffers              = GPA( "wglSwapBuffers" );
 
-	qwglSwapIntervalEXT = 0;
+	qglLockArraysEXT = NULL;
+	qglUnlockArraysEXT = NULL;
+	qglSelectTextureSGIS = NULL;
+	qglMTexCoord2f = NULL;
+	qglActiveTextureARB = NULL;
+	qglClientActiveTextureARB = NULL;
+
+	qglDrawRangeElementsEXT = NULL;
+
+	qglBindBufferARB = NULL;
+	qglDeleteBuffersARB = NULL;
+	qglGenBuffersARB = NULL;
+	qglIsBufferARB = NULL;
+	qglMapBufferARB = NULL;
+	qglUnmapBufferARB = NULL;
+	qglBufferDataARB = NULL;
+	qglBufferSubDataARB = NULL;
+
+	qwglSwapIntervalEXT = NULL;
+	qwglSwapIntervalEXT = NULL;
+	qwglGetDeviceGammaRamp3DFX = NULL;
+	qwglSetDeviceGammaRamp3DFX = NULL;
 
 	return qtrue;
+}
+
+void *qglGetProcAddress( const GLubyte *procName ) {
+	return qwglGetProcAddress( (LPCSTR)procName );
 }
 
 void GLimp_EnableLogging( qboolean enable )
@@ -3414,7 +3449,7 @@ void GLimp_EnableLogging( qboolean enable )
 
 			asctime( newtime );
 
-			Com_sprintf( buffer, sizeof(buffer), "%s/gl.log", FS_Gamedir() ); 
+			Q_snprintfz( buffer, sizeof(buffer), "%s/gl.log", FS_Gamedir() ); 
 			glw_state.log_fp = fopen( buffer, "wt" );
 
 			fprintf( glw_state.log_fp, "%s\n", asctime( newtime ) );

@@ -21,7 +21,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "qcommon.h"
 
+#define CVAR_HASH_SIZE		32
+
 cvar_t	*cvar_vars;
+cvar_t	*cvar_vars_hash[CVAR_HASH_SIZE];
 
 /*
 ============
@@ -48,9 +51,11 @@ Cvar_FindVar
 */
 static cvar_t *Cvar_FindVar (char *var_name)
 {
+	unsigned hash;
 	cvar_t	*var;
-	
-	for (var=cvar_vars ; var ; var=var->next)
+
+	hash = Com_HashKey (var_name, CVAR_HASH_SIZE);
+	for (var=cvar_vars_hash[hash] ; var ; var=var->next)
 		if (!Q_stricmp(var_name, var->name))
 			return var;
 
@@ -65,7 +70,7 @@ Cvar_VariableValue
 float Cvar_VariableValue (char *var_name)
 {
 	cvar_t	*var;
-	
+
 	var = Cvar_FindVar (var_name);
 	if (!var)
 		return 0;
@@ -81,7 +86,7 @@ Cvar_VariableString
 char *Cvar_VariableString (char *var_name)
 {
 	cvar_t *var;
-	
+
 	var = Cvar_FindVar (var_name);
 	if (!var)
 		return "";
@@ -98,12 +103,12 @@ char *Cvar_CompleteVariable (char *partial)
 {
 	cvar_t		*cvar;
 	int			len;
-	
+
 	len = strlen(partial);
-	
+
 	if (!len)
 		return NULL;
-		
+
 	// check exact match
 	for (cvar=cvar_vars ; cvar ; cvar=cvar->next)
 		if (!Q_stricmp(partial,cvar->name))
@@ -128,8 +133,12 @@ The flags will be or'ed and default value overwritten in if the variable exists.
 */
 cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 {
+	unsigned hash;
 	cvar_t	*var;
-	
+
+	if (!var_name || !var_name[0])
+		return NULL;
+
 	if (flags & (CVAR_USERINFO | CVAR_SERVERINFO))
 	{
 		if (!Cvar_InfoValidate (var_name, qtrue))
@@ -139,10 +148,14 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 		}
 	}
 
-	var = Cvar_FindVar (var_name);
+	hash = Com_HashKey (var_name, CVAR_HASH_SIZE);
+	for (var=cvar_vars_hash[hash] ; var ; var=var->hash_next)
+		if (!Q_stricmp (var_name, var->name))
+			break;
+
 	if (var)
 	{
-		if ( var_value ) {
+		if( var_value ) {
 			Mem_ZoneFree (var->dvalue);	// free the old default value string
 			var->dvalue = CopyString (var_value);
 		}
@@ -166,14 +179,18 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 		}
 	}
 
-	var = Mem_ZoneMalloc (sizeof(*var));
-	var->name = CopyString (var_name);
+	var = Mem_ZoneMalloc (sizeof(*var) + strlen(var_name) + 1);
+	var->name = (char *)((qbyte *)var + sizeof(*var));
+	strcpy (var->name, var_name);
 	var->dvalue = CopyString (var_value);
 	var->string = CopyString (var_value);
 	var->modified = qtrue;
 	var->value = atof (var->string);
+	var->integer = Q_rint( var->value );
 
 	// link the variable in
+	var->hash_next = cvar_vars_hash[hash];
+	cvar_vars_hash[hash] = var;
 	var->next = cvar_vars;
 	cvar_vars = var;
 
@@ -255,6 +272,7 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 					Mem_ZoneFree (var->string);	// free the old value string
 					var->string = CopyString(value);
 					var->value = atof (var->string);
+					var->integer = Q_rint( var->value );
 					var->modified = qtrue;
 
 					if (!strcmp (var->name, "fs_game"))
@@ -284,11 +302,12 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 
 	if (var->flags & CVAR_USERINFO)
 		userinfo_modified = qtrue;	// transmit at next oportunity
-	
+
 	Mem_ZoneFree (var->string);	// free the old value string
-	
+
 	var->string = CopyString(value);
 	var->value = atof (var->string);
+	var->integer = Q_rint( var->value );
 
 	return var;
 }
@@ -321,7 +340,7 @@ Cvar_FullSet
 cvar_t *Cvar_FullSet (char *var_name, char *value, int flags)
 {
 	cvar_t	*var;
-	
+
 	var = Cvar_FindVar (var_name);
 	if (!var)
 	{	// create it
@@ -332,11 +351,12 @@ cvar_t *Cvar_FullSet (char *var_name, char *value, int flags)
 
 	if (var->flags & CVAR_USERINFO)
 		userinfo_modified = qtrue;	// transmit at next oportunity
-	
+
 	Mem_ZoneFree (var->string);	// free the old value string
-	
+
 	var->string = CopyString(value);
 	var->value = atof (var->string);
+	var->integer = Q_rint( var->value );
 	var->flags = flags;
 
 	return var;
@@ -351,10 +371,10 @@ void Cvar_SetValue (char *var_name, float value)
 {
 	char	val[32];
 
-	if (value == (int)value)
-		Com_sprintf (val, sizeof(val), "%i",(int)value);
+	if (value == Q_rint(value))
+		Q_snprintfz (val, sizeof(val), "%i", Q_rint(value));
 	else
-		Com_sprintf (val, sizeof(val), "%f", value);
+		Q_snprintfz (val, sizeof(val), "%f", value);
 	Cvar_Set (var_name, val);
 }
 
@@ -384,6 +404,7 @@ void Cvar_GetLatchedVars (int flags)
 		var->string = var->latched_string;
 		var->latched_string = NULL;
 		var->value = atof(var->string);
+		var->integer = Q_rint( var->value );
 		if (!strcmp(var->name, "fs_game"))
 		{
 			FS_SetGamedir (var->string);
@@ -416,6 +437,7 @@ void Cvar_FixCheatVars (void)
 		Mem_ZoneFree (var->string);
 		var->string = CopyString(var->dvalue);
 		var->value = atof(var->string);
+		var->integer = Q_rint( var->value );
 	}
 }
 
@@ -435,7 +457,7 @@ qboolean Cvar_Command (void)
 	v = Cvar_FindVar (Cmd_Argv(0));
 	if (!v)
 		return qfalse;
-		
+
 // perform a variable print or set
 	if (Cmd_Argc() == 1)
 	{
@@ -524,7 +546,7 @@ void Cvar_Toggle_f (void)
 		return;
 	}
 
-	Cvar_Set (var->name, var->value ? "0" : "1");
+	Cvar_Set (var->name, var->integer ? "0" : "1");
 }
 
 /*
@@ -547,13 +569,13 @@ void Cvar_WriteVariables (FILE *f)
 			if (var->flags & (CVAR_LATCH|CVAR_LATCH_VIDEO))
 			{
 				if (var->latched_string)
-					Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->latched_string);
+					Q_snprintfz (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->latched_string);
 				else
-					Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
+					Q_snprintfz (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
 			}
 			else
 			{
-				Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
+				Q_snprintfz (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
 			}
 
 			fprintf (f, "%s", buffer);
@@ -642,17 +664,17 @@ Cvar_CompleteCountPossible (char *partial)
 {
 	cvar_t	*v;
 	int		len, h = 0;
-	
+
 	len = strlen(partial);
-	
+
 	if (!len)
 		return	0;
-	
+
 	// Loop through the cvars and count all possible matches
 	for (v = cvar_vars; v; v = v->next)
 		if (!Q_strnicmp (partial, v->name, len))
 			h++;
-	
+
 	return h;
 }
 

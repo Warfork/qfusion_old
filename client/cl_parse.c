@@ -46,9 +46,9 @@ char *svc_strings[256] =
 void CL_DownloadFileName(char *dest, int destlen, char *fn)
 {
 	if (strncmp(fn, "players", 7) == 0)
-		Com_sprintf (dest, destlen, "%s/%s", BASEDIRNAME, fn);
+		Q_snprintfz (dest, destlen, "%s/%s", BASEDIRNAME, fn);
 	else
-		Com_sprintf (dest, destlen, "%s/%s", FS_Gamedir(), fn);
+		Q_snprintfz (dest, destlen, "%s/%s", FS_Gamedir(), fn);
 }
 
 /*
@@ -59,7 +59,7 @@ Returns true if the file exists, otherwise it attempts
 to start a download from the server.
 ===============
 */
-qboolean	CL_CheckOrDownloadFile (char *filename)
+qboolean CL_CheckOrDownloadFile (char *filename)
 {
 	FILE *fp;
 	char	name[MAX_OSPATH];
@@ -71,7 +71,7 @@ qboolean	CL_CheckOrDownloadFile (char *filename)
 		return qtrue;
 	}
 
-	if ( FS_FileExists ( filename ) )
+	if ( FS_FOpenFile ( filename, NULL, FS_READ ) != -1 )
 	{	// it exists, no need to download
 		return qtrue;
 	}
@@ -123,7 +123,7 @@ CL_Download_f
 Request a download from the server
 ===============
 */
-void	CL_Download_f (void)
+void CL_Download_f (void)
 {
 	char filename[MAX_OSPATH];
 
@@ -132,7 +132,7 @@ void	CL_Download_f (void)
 		return;
 	}
 
-	Com_sprintf(filename, sizeof(filename), "%s", Cmd_Argv(1));
+	Q_snprintfz(filename, sizeof(filename), "%s", Cmd_Argv(1));
 
 	if (strstr (filename, ".."))
 	{
@@ -140,7 +140,7 @@ void	CL_Download_f (void)
 		return;
 	}
 
-	if ( FS_FileExists (filename) )
+	if ( FS_FOpenFile (filename, NULL, FS_READ) != -1 )
 	{	// it exists, no need to download
 		Com_Printf("File already exists.\n");
 		return;
@@ -232,7 +232,7 @@ void CL_ParseDownload (void)
 		// rename the temp file to its final name
 		CL_DownloadFileName(oldn, sizeof(oldn), cls.downloadtempname);
 		CL_DownloadFileName(newn, sizeof(newn), cls.downloadname);
-		r = rename (oldn, newn);
+		r = FS_RenameFile (oldn, newn);
 		if (r)
 			Com_Printf ("failed to rename.\n");
 
@@ -264,7 +264,7 @@ void CL_ParseServerData (void)
 	extern cvar_t	*fs_gamedirvar;
 	char	*str;
 	int		i;
-	
+
 	Com_DPrintf ("Serverdata packet received.\n");
 //
 // wipe the client_state_t struct
@@ -295,7 +295,9 @@ void CL_ParseServerData (void)
 
 	// get the full level name
 	Q_strncpyz (cl.servermessage, MSG_ReadString (&net_message), sizeof(cl.servermessage));
-	
+
+	CL_RestartMedia ();
+
 	if (cl.playernum == -1)
 	{	// playing a cinematic or showing a pic, not a level
 		SCR_PlayCinematic (cl.servermessage);
@@ -303,8 +305,8 @@ void CL_ParseServerData (void)
 	else
 	{
 		// separate the printfs so the server message can have a color
-		Com_Printf ("\n\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n");
-		Com_Printf ("%s%s\n", S_COLOR_RED, cl.servermessage);
+		Com_Printf ("\n%s\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\37\n", S_COLOR_RED);
+		Com_Printf ("%s%s\n\n", S_COLOR_WHITE, cl.servermessage);
 	}
 }
 
@@ -350,10 +352,6 @@ void CL_ParseServerCommand (void)
 		if (i < 0 || i >= MAX_CONFIGSTRINGS)
 			Com_Error (ERR_DROP, "configstring > MAX_CONFIGSTRINGS");
 		Q_strncpyz (cl.configstrings[i], s, sizeof(cl.configstrings[i]));
-
-		// we might want to update the ui
-		if (cls.state != ca_active)
-			SCR_UpdateScreen ();
 	}
 
 	CL_GameModule_ServerCommand ();
@@ -430,7 +428,7 @@ void CL_ParseStartSoundPacket (void)
 
 void SHOWNET(char *s)
 {
-	if (cl_shownet->value>=2)
+	if (cl_shownet->integer>=2)
 		Com_Printf ("%3i:%s\n", net_message.readcount-1, s);
 }
 
@@ -489,9 +487,9 @@ void CL_ParseServerMessage (void)
 //
 // if recording demos, copy the message out
 //
-	if (cl_shownet->value == 1)
+	if (cl_shownet->integer == 1)
 		Com_Printf ("%i ",net_message.cursize);
-	else if (cl_shownet->value >= 2)
+	else if (cl_shownet->integer >= 2)
 		Com_Printf ("------------------\n");
 
 
@@ -514,7 +512,7 @@ void CL_ParseServerMessage (void)
 			break;
 		}
 
-		if (cl_shownet->value>=2)
+		if (cl_shownet->integer>=2)
 		{
 			if (!svc_strings[cmd])
 				Com_Printf ("%3i:BAD CMD %i\n", net_message.readcount-1,cmd);
@@ -544,9 +542,8 @@ void CL_ParseServerMessage (void)
 				fclose (cls.download);
 				cls.download = NULL;
 			}
-			CL_SetClientState (ca_connecting);
 			memset (cl.configstrings, 0, sizeof(cl.configstrings));
-			SCR_UpdateScreen ();
+			CL_SetClientState (ca_connecting);
 			cls.connect_time = -99999;	// CL_CheckForResend() will fire immediately
 			cls.connect_count = 0;
 			break;
@@ -607,5 +604,3 @@ void CL_ParseServerMessage (void)
 	if (cls.demorecording && !cls.demowaiting)
 		CL_WriteDemoMessage ();
 }
-
-

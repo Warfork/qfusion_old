@@ -101,7 +101,7 @@ void Gfx_MenuInit( void )
 
 	static char *dlights_items[] =
 	{
-		"off", "nice", "fast", 0
+		"off", "on", 0
 	};
 
 	static char *lightflares_items[] =
@@ -179,7 +179,7 @@ void Gfx_MenuInit( void )
 	s_dlights_list.generic.callback			= UpdateDynamicLightsFunc;
 	s_dlights_list.itemnames				= dlights_items;
 	s_dlights_list.curvalue					= trap_Cvar_VariableValue( "r_dynamiclight" );
-	clamp ( s_dlights_list.curvalue, 0, 2 );
+	clamp ( s_dlights_list.curvalue, 0, 1 );
 
 	s_lightflares_list.generic.type			= MTYPE_SPINCONTROL;
 	s_lightflares_list.generic.x			= 0;
@@ -234,7 +234,7 @@ void Gfx_MenuDraw (void)
 	Menu_AdjustCursor( &s_gfx_menu, 1 );
 
 	if ( s_crosshair_pic ) {
-		trap_Draw_StretchPic ( (int)(BIG_CHAR_WIDTH*1.2) + s_gfx_menu.x + s_crosshair_box.generic.x,
+		trap_R_DrawStretchPic ( (int)(BIG_CHAR_WIDTH*1.2) + s_gfx_menu.x + s_crosshair_box.generic.x,
 			s_gfx_menu.y + s_crosshair_box.generic.y - BIG_CHAR_WIDTH / 2, 32, 32, 
 			0, 0, 1, 1, colorWhite, s_crosshair_pic );
 	}

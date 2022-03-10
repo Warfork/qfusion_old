@@ -68,7 +68,7 @@ void PlayerNoise(edict_t *who, vec3_t where, int type)
 		}
 	}
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 		return;
 
 	if (who->flags & FL_NOTARGET)
@@ -122,7 +122,7 @@ qboolean Pickup_Weapon (edict_t *ent, edict_t *other)
 
 	index = ITEM_INDEX(ent->item);
 
-	if ( ( ((int)(dmflags->value) & DF_WEAPONS_STAY) || coop->value) 
+	if ( ( (dmflags->integer & DF_WEAPONS_STAY) || coop->integer) 
 		&& other->r.client->pers.inventory[index])
 	{
 		if (!(ent->spawnflags & (DROPPED_ITEM | DROPPED_PLAYER_ITEM) ) )
@@ -135,28 +135,28 @@ qboolean Pickup_Weapon (edict_t *ent, edict_t *other)
 	{
 		// give them some ammo with it
 		ammo = FindItem (ent->item->ammo);
-		if ( (int)dmflags->value & DF_INFINITE_AMMO )
+		if ( dmflags->integer & DF_INFINITE_AMMO )
 			Add_Ammo (other, ammo, 1000);
 		else
 			Add_Ammo (other, ammo, ammo->quantity);
 
 		if (! (ent->spawnflags & DROPPED_PLAYER_ITEM) )
 		{
-			if (deathmatch->value)
+			if (deathmatch->integer)
 			{
-				if ((int)(dmflags->value) & DF_WEAPONS_STAY)
+				if (dmflags->integer & DF_WEAPONS_STAY)
 					ent->flags |= FL_RESPAWN;
 				else
 					SetRespawn (ent, 30);
 			}
-			if (coop->value)
+			if (coop->integer)
 				ent->flags |= FL_RESPAWN;
 		}
 	}
 
 	if (other->r.client->pers.weapon != ent->item && 
 		(other->r.client->pers.inventory[index] == 1) &&
-		( !deathmatch->value || other->r.client->pers.weapon == FindItem("blaster") ) )
+		( !deathmatch->integer || other->r.client->pers.weapon == FindItem("blaster") ) )
 		other->r.client->newweapon = ent->item;
 
 	return qtrue;
@@ -325,7 +325,7 @@ void Use_Weapon (edict_t *ent, gitem_t *item)
 	if (item == ent->r.client->pers.weapon)
 		return;
 
-	if (item->ammo && !g_select_empty->value && !(item->flags & IT_AMMO))
+	if (item->ammo && !g_select_empty->integer && !(item->flags & IT_AMMO))
 	{
 		ammo_item = FindItem(item->ammo);
 		ammo_index = ITEM_INDEX(ammo_item);
@@ -358,7 +358,7 @@ void Drop_Weapon (edict_t *ent, gitem_t *item)
 {
 	int		index;
 
-	if ((int)(dmflags->value) & DF_WEAPONS_STAY)
+	if (dmflags->integer & DF_WEAPONS_STAY)
 		return;
 
 	index = ITEM_INDEX(item);
@@ -423,7 +423,7 @@ static void Weapon_Generic2 (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FI
 
 	if (client->weaponstate == WEAPON_ACTIVATING)
 	{
-		if (client->ps.gunframe == FRAME_ACTIVATE_LAST || instantweap->value)
+		if (client->ps.gunframe == FRAME_ACTIVATE_LAST || instantweap->integer)
 		{
 			client->weaponstate = WEAPON_READY;
 			client->ps.gunframe = FRAME_IDLE_FIRST;
@@ -437,7 +437,7 @@ static void Weapon_Generic2 (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FI
 	if ((client->newweapon) && (client->weaponstate != WEAPON_FIRING))
 	{
 		client->weaponstate = WEAPON_DROPPING;
-		if (instantweap->value) {
+		if (instantweap->integer) {
 			ChangeWeapon(ent);
 			return;
 		} else
@@ -602,7 +602,7 @@ void weapon_grenade_fire (edict_t *ent, qboolean held)
 	speed = GRENADE_MINSPEED + (GRENADE_TIMER - timer) * ((GRENADE_MAXSPEED - GRENADE_MINSPEED) / GRENADE_TIMER);
 	fire_grenade2 (ent, start, forward, damage, speed, timer, radius, held);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
 
 	client->grenade_time = level.time + 1.0;
@@ -760,7 +760,7 @@ void weapon_grenadelauncher_fire (edict_t *ent)
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
 }
 
@@ -818,7 +818,7 @@ void Weapon_RocketLauncher_Fire (edict_t *ent)
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
 }
 
@@ -839,7 +839,7 @@ BLASTER / HYPERBLASTER
 ======================================================================
 */
 
-void Blaster_Fire (edict_t *ent, vec3_t g_offset, int damage, qboolean hyper, int effect)
+void Blaster_Fire (edict_t *ent, vec3_t g_offset, int damage, qboolean hyper, int type)
 {
 	vec3_t	forward, right;
 	vec3_t	start;
@@ -856,7 +856,7 @@ void Blaster_Fire (edict_t *ent, vec3_t g_offset, int damage, qboolean hyper, in
 	VectorScale (forward, -2, client->kick_origin);
 	client->kick_angles[0] = -1;
 
-	fire_blaster (ent, start, forward, damage, 1000, effect, hyper ? MOD_HYPERBLASTER : MOD_BLASTER);
+	fire_blaster (ent, start, forward, damage, 1000, type, hyper ? MOD_HYPERBLASTER : MOD_BLASTER);
 
 	// send muzzle flash
 	G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
@@ -869,11 +869,11 @@ void Weapon_Blaster_Fire (edict_t *ent)
 {
 	int		damage;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 		damage = 15;
 	else
 		damage = 10;
-	Blaster_Fire (ent, vec3_origin, damage, qfalse, EF_BLASTER);
+	Blaster_Fire (ent, vec3_origin, damage, qfalse, ET_BLASTER);
 	ent->r.client->ps.gunframe++;
 }
 
@@ -890,7 +890,7 @@ void Weapon_HyperBlaster_Fire (edict_t *ent)
 {
 	float	rotation;
 	vec3_t	offset;
-	int		effect;
+	int		type;
 	int		damage;
 	gclient_t *client = ent->r.client;
 
@@ -911,15 +911,15 @@ void Weapon_HyperBlaster_Fire (edict_t *ent)
 			offset[2] = 4 * cos(rotation);
 
 			if ((client->ps.gunframe == 6) || (client->ps.gunframe == 9))
-				effect = EF_HYPERBLASTER;
+				type = ET_HYPERBLASTER;
 			else
-				effect = 0;
-			if (deathmatch->value)
+				type = ET_GENERIC;
+			if (deathmatch->integer)
 				damage = 15;
 			else
 				damage = 20;
-			Blaster_Fire (ent, offset, damage, qtrue, effect);
-			if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+			Blaster_Fire (ent, offset, damage, qtrue, type);
+			if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 				client->pers.inventory[client->ammo_index]--;
 
 			client->anim_priority = ANIM_ATTACK;
@@ -1008,7 +1008,7 @@ void Machinegun_Fire (edict_t *ent)
 	client->kick_angles[0] = client->machinegun_shots * -1.5;
 
 	// raise the gun as it is firing
-	if (!deathmatch->value)
+	if (!deathmatch->integer)
 	{
 		client->machinegun_shots++;
 		if (client->machinegun_shots > 9)
@@ -1025,7 +1025,7 @@ void Machinegun_Fire (edict_t *ent)
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
 
 	client->anim_priority = ANIM_ATTACK;
@@ -1061,7 +1061,7 @@ void Chaingun_Fire (edict_t *ent)
 	int			kick = 2;
 	gclient_t	*client = ent->r.client;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 		damage = 6;
 	else
 		damage = 8;
@@ -1158,7 +1158,7 @@ void Chaingun_Fire (edict_t *ent)
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index] -= shots;
 }
 
@@ -1217,7 +1217,7 @@ void weapon_shotgun_fire (edict_t *ent)
 	client->ps.gunframe++;
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
 }
 
@@ -1269,7 +1269,7 @@ void weapon_supershotgun_fire (edict_t *ent)
 	client->ps.gunframe++;
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index] -= 2;
 }
 
@@ -1300,7 +1300,7 @@ void weapon_railgun_fire (edict_t *ent)
 	int			kick;
 	gclient_t	*client = ent->r.client;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// normal damage is too extreme in dm
 		damage = 100;
 		kick = 200;
@@ -1332,7 +1332,7 @@ void weapon_railgun_fire (edict_t *ent)
 	client->ps.gunframe++;
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
 }
 
@@ -1362,7 +1362,7 @@ void weapon_bfg_fire (edict_t *ent)
 	float		damage_radius = 1000;
 	gclient_t	*client = ent->r.client;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 		damage = 200;
 	else
 		damage = 500;
@@ -1406,7 +1406,7 @@ void weapon_bfg_fire (edict_t *ent)
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
-	if (! ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index] -= 50;
 }
 

@@ -63,7 +63,7 @@ typedef struct
 	qbyte		*vid_buffer; 
 	qbyte		*vid_pic[2]; 
 
-	qboolean	restart_sound;
+	qboolean	new_frame;
 
 	int			s_rate;
 	int			s_width;
@@ -73,7 +73,7 @@ typedef struct
 	int			height;
 
 	int			file;
-	int			remaining;
+	int			headerlen;
 
 	int			time;				// Sys_Milliseconds for first cinematic frame
 	int			frame;

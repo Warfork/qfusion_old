@@ -41,8 +41,6 @@ qboolean	scr_initialized;	// ready to draw
 
 int			scr_draw_loading;
 
-vrect_t		scr_vrect;			// position of render window on screen
-
 cvar_t		*scr_conspeed;
 cvar_t		*scr_netgraph;
 cvar_t		*scr_timegraph;
@@ -51,10 +49,8 @@ cvar_t		*scr_graphheight;
 cvar_t		*scr_graphscale;
 cvar_t		*scr_graphshift;
 cvar_t		*scr_debugloading;
-cvar_t		*scr_viewsize;
 
-void SCR_TimeRefresh_f (void);
-void SCR_Loading_f (void);
+void		SCR_TimeRefresh_f (void);
 
 /*
 ===============================================================================
@@ -92,7 +88,7 @@ void Draw_Char ( int x, int y, int num, vec4_t color )
 	frow = (num>>4)*0.0625f;
 	fcol = (num&15)*0.0625f;
 
-	Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, cls.charsetShader );
+	R_DrawStretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, cls.charsetShader );
 }
 
 /*
@@ -129,8 +125,7 @@ void Draw_String ( int x, int y, char *str, vec4_t color )
 		if ( (num&127) != 32 ) {		// not a space
 			frow = (num>>4)*0.0625f;
 			fcol = (num&15)*0.0625f;
-			Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, cls.charsetShader );
-
+			R_DrawStretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, cls.charsetShader );
 		}
 
 		x += width;
@@ -168,7 +163,7 @@ Fills a box of pixels with a single color
 =============
 */
 void Draw_FillRect ( int x, int y, int w, int h, vec4_t color ) {
-	Draw_StretchPic ( x, y, w, h, 0, 0, 1, 1, color, cls.whiteShader );
+	R_DrawStretchPic ( x, y, w, h, 0, 0, 1, 1, color, cls.whiteShader );
 }
 
 /*
@@ -194,7 +189,7 @@ void CL_AddNetgraph (void)
 
 	// if using the debuggraph for something else, don't
 	// add the net lines
-	if (scr_debuggraph->value || scr_timegraph->value)
+	if (scr_timegraph->integer)
 		return;
 
 	for (i=0 ; i<cls.netchan.dropped ; i++)
@@ -252,22 +247,21 @@ void SCR_DrawDebugGraph (void)
 	//
 	// draw the graph
 	//
-	w = scr_vrect.width;
-
-	x = scr_vrect.x;
-	y = scr_vrect.y+scr_vrect.height;
-	Draw_FillRect (x, y-scr_graphheight->value,
-		w, scr_graphheight->value, colorMdGrey);
+	w = viddef.width;
+	x = 0;
+	y = 0+viddef.height;
+	Draw_FillRect (x, y-scr_graphheight->integer,
+		w, scr_graphheight->integer, colorBlack);
 
 	for (a=0 ; a<w ; a++)
 	{
 		i = (current-1-a+1024) & 1023;
 		v = values[i].value;
-		v = v*scr_graphscale->value + scr_graphshift->value;
+		v = v*scr_graphscale->integer + scr_graphshift->integer;
 		
 		if (v < 0)
-			v += scr_graphheight->value * (1+(int)(-v/scr_graphheight->value));
-		h = (int)v % (int)scr_graphheight->value;
+			v += scr_graphheight->integer * (1+(int)(-v/scr_graphheight->integer));
+		h = (int)v % scr_graphheight->integer;
 		Draw_FillRect (x+w-1-a, y - h, 1, h, values[i].color);
 	}
 }
@@ -281,7 +275,6 @@ SCR_Init
 */
 void SCR_Init (void)
 {
-	scr_viewsize = Cvar_Get ("scr_viewSize", "100", CVAR_ARCHIVE);
 	scr_conspeed = Cvar_Get ("scr_conspeed", "3", 0);
 	scr_netgraph = Cvar_Get ("netgraph", "0", 0);
 	scr_timegraph = Cvar_Get ("timegraph", "0", 0);
@@ -294,40 +287,8 @@ void SCR_Init (void)
 // register our commands
 //
 	Cmd_AddCommand ("timerefresh", SCR_TimeRefresh_f);
-	Cmd_AddCommand ("loading", SCR_Loading_f);
 
 	scr_initialized = qtrue;
-
-	SCR_RegisterConsoleMedia ();
-}
-
-/*
-=================
-SCR_CalcVrect
-
-Sets scr_vrect, the coordinates of the rendered window
-=================
-*/
-void SCR_CalcVrect (void)
-{
-	int		size;
-
-	// bound viewsize
-	if (scr_viewsize->value < 40)
-		Cvar_Set ("viewsize", "40");
-	if (scr_viewsize->value > 100)
-		Cvar_Set ("viewsize", "100");
-
-	size = scr_viewsize->value;
-
-	scr_vrect.width = viddef.width*size/100;
-	scr_vrect.width &= ~7;
-
-	scr_vrect.height = viddef.height*size/100;
-	scr_vrect.height &= ~1;
-
-	scr_vrect.x = (viddef.width - scr_vrect.width)/2;
-	scr_vrect.y = (viddef.height - scr_vrect.height)/2;
 }
 
 //=============================================================================
@@ -372,11 +333,6 @@ void SCR_DrawConsole (void)
 {
 	Con_CheckResize ();
 
-	if ( cls.state == ca_disconnected ) {
-		if ( scr_con_current )
-			Con_DrawConsole (scr_con_current);
-		return;
-	}
 	if ( scr_con_current ) {
 		Con_DrawConsole (scr_con_current);
 		return;
@@ -396,12 +352,21 @@ SCR_BeginLoadingPlaque
 void SCR_BeginLoadingPlaque (void)
 {
 	S_StopAllSounds ();
-	cl.sound_prepped = qfalse;		// don't play ambients
+	cl.soundPrepped = qfalse;	// don't play ambients
+
+	// FIXME
+	memset (cl.configstrings, 0, sizeof(cl.configstrings));
+
+	scr_conlines = 0;			// none visible
+	scr_draw_loading = 2;		// clear to black first
+	SCR_UpdateScreen ();
+
+	CL_ShutdownMedia ();
 
 #if 0
 	if (cls.disable_screen)
 		return;
-	if (developer->value)
+	if (developer->integer)
 		return;
 	if (cls.state == ca_disconnected)
 		return;	// if at console, don't bring up the plaque
@@ -426,16 +391,7 @@ void SCR_EndLoadingPlaque (void)
 {
 	cls.disable_screen = 0;
 	Con_ClearNotify ();
-}
-
-/*
-================
-SCR_Loading_f
-================
-*/
-void SCR_Loading_f (void)
-{
-	SCR_BeginLoadingPlaque ();
+	CL_InitMedia ();
 }
 
 /*
@@ -469,9 +425,9 @@ void SCR_TimeRefresh_f (void)
 		for (i=0 ; i<128 ; i++)
 		{
 			refdef.viewangles[1] = i/128.0*360.0;
-			R_RenderFrame (&refdef);
+			R_RenderScene (&refdef);
 		}
-		GLimp_EndFrame();
+		R_EndFrame();
 	}
 	else
 	{
@@ -480,8 +436,8 @@ void SCR_TimeRefresh_f (void)
 			refdef.viewangles[1] = i/128.0*360.0;
 
 			R_BeginFrame( 0 );
-			R_RenderFrame (&refdef);
-			GLimp_EndFrame();
+			R_RenderScene (&refdef);
+			R_EndFrame();
 		}
 	}
 
@@ -499,75 +455,9 @@ SCR_RegisterConsoleMedia
 */
 void SCR_RegisterConsoleMedia (void)
 {
-	cls.whiteShader = R_RegisterPic ( "white" );
-	cls.consoleShader = R_RegisterPic ( "console" );
-	cls.charsetShader = R_RegisterPic ( "gfx/2d/bigchars" );
-}
-
-/*
-=================
-SCR_PrepRefresh
-
-Call before entering a new level, or after changing dlls
-=================
-*/
-void SCR_PrepRefresh (void)
-{
-	if ( !cl.configstrings[CS_MODELS+1][0] ) {
-		if (!cl.cin.time)
-		{
-			R_BeginRegistration ();
-			S_BeginRegistration ();
-
-			SCR_RegisterConsoleMedia ();
-
-			CL_UIModule_Init ();
-			CL_GameModule_Shutdown ();
-
-			S_EndRegistration ();
-			R_EndRegistration ();
-
-			if ( cls.state <= ca_disconnected ) {
-				CL_UIModule_MenuMain ();
-			}
-
-			SCR_UpdateScreen ();
-		}
-
-		return;		// no map loaded
-	}
-
-	cl.cgame_active = qfalse;
-	cl.cgame_loading = qtrue;
-
-	// check memory integrity
-	Mem_CheckSentinelsGlobal ();
-
-	// register models, pics, and skins
-	R_BeginRegistration ();
-	S_BeginRegistration ();
-
-	SCR_RegisterConsoleMedia ();
-
-	CL_GameModule_Init ();
-	CL_UIModule_Init ();
-
-	S_EndRegistration ();
-
-	// the renderer can now free unneeded stuff
-	R_EndRegistration ();
-
-	// check memory integrity
-	Mem_CheckSentinelsGlobal ();
-
-	// clear any lines of console text
-	Con_ClearNotify ();
-
-	SCR_UpdateScreen ();
-
-	cl.sound_prepped = qtrue;
-	cl.cgame_active = qtrue;
-	cl.cgame_loading = qfalse;
+	cls.whiteShader = R_RegisterPic( "white" );
+	cls.consoleShader = R_RegisterPic( "console" );
+	cls.charsetShader = R_RegisterPic( "gfx/2d/bigchars" );
 }
 
 //============================================================================
@@ -580,20 +470,17 @@ SCR_RenderView
 */
 void SCR_RenderView( float stereo_separation )
 {
-	if (cls.state == ca_active)
-	{
-		if (cl_timedemo->value)
-		{
-			if (!cl.timedemo_start)
+	if( cls.state == ca_active ) {
+		if( cl_timedemo->integer ) {
+			if( !cl.timedemo_start )
 				cl.timedemo_start = Sys_Milliseconds ();
 			cl.timedemo_frames++;
 		}
 	}
 
 	// frame is not valid until we load the CM data
-	if ( CM_ClientLoad () ) {
-		CL_GameModule_RenderView ( stereo_separation );
-	}
+	if( CM_ClientLoad () )
+		CL_GameModule_RenderView( stereo_separation );
 }
 
 //============================================================================
@@ -624,7 +511,7 @@ void SCR_UpdateScreen (void)
 		return;
 	}
 
-	if (!scr_initialized || !con.initialized)
+	if (!scr_initialized || !con.initialized || !cls.mediaInitialized)
 		return;				// not initialized yet
 
 	/*
@@ -636,7 +523,7 @@ void SCR_UpdateScreen (void)
 	else if ( cl_stereo_separation->value < 0 )
 		Cvar_SetValue( "cl_stereo_separation", 0.0 );
 
-	if ( cl_stereo->value )
+	if ( cl_stereo->integer )
 	{
 		numframes = 2;
 		separation[0] = -cl_stereo_separation->value / 2;
@@ -649,8 +536,6 @@ void SCR_UpdateScreen (void)
 		numframes = 1;
 	}
 
-	GLimp_EndFrame();
-
 	for ( i = 0; i < numframes; i++ )
 	{
 		R_BeginFrame( separation[i] );
@@ -658,48 +543,43 @@ void SCR_UpdateScreen (void)
 		if (scr_draw_loading == 2)
 		{	// loading plaque over black screen
 			scr_draw_loading = 0;
+			CL_UIModule_DrawConnectScreen( qtrue );
 		}
 		// if a cinematic is supposed to be running, handle menus
 		// and console specially
 		else if (cl.cin.time > 0)
 		{
 			SCR_DrawCinematic ();
+		} 
+		else if ( cls.state == ca_disconnected )
+		{
+			CL_UIModule_Refresh ( qtrue );
+			SCR_DrawConsole ();
+		}
+		else if ( cls.state == ca_connecting || cls.state == ca_connected )
+		{
+			CL_UIModule_DrawConnectScreen ( qtrue );
+		}
+		else if ( cls.state == ca_loading )
+		{
+			SCR_RenderView ( separation[i] );
+			CL_UIModule_DrawConnectScreen ( qfalse );
 		}
 		else if ( cls.state == ca_active )
 		{
-			SCR_RenderView ( separation[i] );
+			SCR_RenderView( separation[i] );
 
-			CL_UIModule_Refresh ( qfalse );
+			CL_UIModule_Refresh( qfalse );
 
-			if ( cl.cgame_active ) {
-				SCR_CalcVrect ();
+			if (scr_timegraph->integer)
+				SCR_DebugGraph (cls.frametime*300, 1, 1, 1);
 
-				if (scr_timegraph->value)
-					SCR_DebugGraph (cls.frametime*300, 0, 0, 0);
+			if (scr_debuggraph->integer || scr_timegraph->integer || scr_netgraph->integer)
+				SCR_DrawDebugGraph ();
 
-				if (scr_debuggraph->value || scr_timegraph->value || scr_netgraph->value)
-					SCR_DrawDebugGraph ();
-
-				SCR_DrawConsole ();
-			}
+			SCR_DrawConsole ();
 		}
-		else
-		{
-			if ( cls.state == ca_disconnected ) {
-				CL_UIModule_Refresh ( qtrue );
-				SCR_DrawConsole ();
-			} else {
-				if ( cl.cgame_loading ) {
-					SCR_RenderView ( separation[i] );
-					CL_UIModule_DrawConnectScreen ( qfalse );
-				} else {
-					CL_UIModule_DrawConnectScreen ( qtrue );
-				}
-			}
-		}
+
+		R_EndFrame ();
 	}
-
-	R_ApplySoftwareGamma ();
-
-	R_Flush ();
 }

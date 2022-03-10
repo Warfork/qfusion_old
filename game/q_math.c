@@ -20,28 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "q_shared.h"
 
 vec3_t		vec3_origin = { 0, 0, 0 };
-
-mat3_t		mat3_identity = 
-{ 
-	1, 0, 0, 
-	0, 1, 0, 
-	0, 0, 1 
-};
-
-mat4_t		mat4_identity = 
-{ 
-	1, 0, 0, 0, 
-	0, 1, 0, 0, 
-	0, 0, 1, 0, 
-	0, 0, 0, 1 
-};
-
-mat3_t		axis_identity = 
-{ 
-	1, 0, 0, 
-	0, 1, 0, 
-	0, 0, 1 
-};
+vec3_t		axis_identity[3] = { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } };
 
 //============================================================================
 
@@ -55,8 +34,8 @@ int DirToByte (vec3_t dir)
 	int		i, best;
 	float	d, bestd;
 	
-	if (!dir)
-		return 0;
+	if (!dir || VectorCompare(dir, vec3_origin))
+		return NUMVERTEXNORMALS;
 
 	bestd = 0;
 	best = 0;
@@ -76,7 +55,7 @@ int DirToByte (vec3_t dir)
 void ByteToDir (int b, vec3_t dir)
 {
 	if (b < 0 || b >= NUMVERTEXNORMALS)
-		VectorSet (dir, 0, 0, 1);
+		VectorSet (dir, 0, 0, 0);
 	else
 		VectorCopy (bytedirs[b], dir);
 }
@@ -110,14 +89,13 @@ vec4_t	color_table[8] =
 /*
 ===============
 ColorNormalize
-
 ===============
 */
-float ColorNormalize ( const vec3_t in, vec3_t out )
+vec_t ColorNormalize( const vec_t *in, vec_t *out )
 {
-	float f = max ( max (in[0], in[1]), in[2] );
+	vec_t f = max( max( in[0], in[1] ), in[2] );
 
-	if ( f > 1.0f ) {
+	if( f > 1.0f ) {
 		f = 1.0f / f;
 		out[0] = in[0] * f;
 		out[1] = in[1] * f;
@@ -158,12 +136,8 @@ void MakeNormalVectors (const vec3_t forward, vec3_t right, vec3_t up)
 {
 	float		d;
 
-	// this rotate and negate guarantees a vector
-	// not colinear with the original
-	right[1] = -forward[0];
-	right[2] = forward[1];
-	right[0] = forward[2];
-
+	// this rotate and negate guarantees a vector not colinear with the original
+	VectorSet (right, forward[2], -forward[0], forward[1] );
 	d = DotProduct (right, forward);
 	VectorMA (right, -d, forward, right);
 	VectorNormalize (right);
@@ -183,20 +157,20 @@ void RotatePointAroundVector( vec3_t dst, const vec3_t dir, const vec3_t point, 
 	VectorCopy (dir, vf);
 	MakeNormalVectors (vf, vr, vu);
 
-	t0 = vr[0] *  c + vu[0] * -s;
-	t1 = vr[0] *  s + vu[0] *  c;
+	t0 = vr[0] * c + vu[0] * -s;
+	t1 = vr[0] * s + vu[0] *  c;
 	dst[0] = (t0 * vr[0] + t1 * vu[0] + vf[0] * vf[0]) * point[0]
 		+ (t0 * vr[1] + t1 * vu[1] + vf[0] * vf[1]) * point[1]
 		+ (t0 * vr[2] + t1 * vu[2] + vf[0] * vf[2]) * point[2];
 
-	t0 = vr[1] *  c + vu[1] * -s;
-	t1 = vr[1] *  s + vu[1] *  c;
+	t0 = vr[1] * c + vu[1] * -s;
+	t1 = vr[1] * s + vu[1] *  c;
 	dst[1] = (t0 * vr[0] + t1 * vu[0] + vf[1] * vf[0]) * point[0]
 		+ (t0 * vr[1] + t1 * vu[1] + vf[1] * vf[1]) * point[1]
 		+ (t0 * vr[2] + t1 * vu[2] + vf[1] * vf[2]) * point[2];
 
-	t0 = vr[2] *  c + vu[2] * -s;
-	t1 = vr[2] *  s + vu[2] *  c;
+	t0 = vr[2] * c + vu[2] * -s;
+	t1 = vr[2] * s + vu[2] *  c;
 	dst[2] = (t0 * vr[0] + t1 * vu[0] + vf[2] * vf[0]) * point[0]
 		+ (t0 * vr[1] + t1 * vu[1] + vf[2] * vf[1]) * point[1]
 		+ (t0 * vr[2] + t1 * vu[2] + vf[2] * vf[2]) * point[2];
@@ -204,8 +178,8 @@ void RotatePointAroundVector( vec3_t dst, const vec3_t dir, const vec3_t point, 
 
 void AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
 {
-	float				angle;
-	static float		sr, sp, sy, cr, cp, cy, t;
+	float			angle;
+	static float	sr, sp, sy, cr, cp, cy, t;
 	// static to help MS compiler fp bugs
 
 	angle = DEG2RAD ( angles[YAW] );
@@ -275,10 +249,10 @@ void VecToAngles (const vec3_t vec, vec3_t angles)
 	angles[ROLL] = 0;
 }
 
-void AnglesToAxis ( const vec3_t angles, mat3_t axis )
+void AnglesToAxis( const vec3_t angles, vec3_t axis[3] )
 {
-	AngleVectors ( angles, axis[0], axis[1], axis[2] );
-	VectorInverse ( axis[1] );
+	AngleVectors( angles, axis[0], axis[1], axis[2] );
+	VectorInverse( axis[1] );
 }
 
 void ProjectPointOnPlane( vec3_t dst, const vec3_t p, const vec3_t normal )
@@ -333,27 +307,6 @@ void PerpendicularVector( vec3_t dst, const vec3_t src )
 	** normalize the result
 	*/
 	VectorNormalize( dst );
-}
-
-/*
-================
-R_ConcatTransforms
-================
-*/
-void R_ConcatTransforms (const float in1[3*4], const float in2[3*4], float out[3*4])
-{
-	out[0*4+0] = in1[0*4+0] * in2[0*4+0] + in1[0*4+1] * in2[1*4+0] + in1[0*4+2] * in2[2*4+0];
-	out[0*4+1] = in1[0*4+0] * in2[0*4+1] + in1[0*4+1] * in2[1*4+1] + in1[0*4+2] * in2[2*4+1];
-	out[0*4+2] = in1[0*4+0] * in2[0*4+2] + in1[0*4+1] * in2[1*4+2] + in1[0*4+2] * in2[2*4+2];
-	out[0*4+3] = in1[0*4+0] * in2[0*4+3] + in1[0*4+1] * in2[1*4+3] + in1[0*4+2] * in2[2*4+3] + in1[0*4+3];
-	out[1*4+0] = in1[1*4+0] * in2[0*4+0] + in1[1*4+1] * in2[1*4+0] + in1[1*4+2] * in2[2*4+0];
-	out[1*4+1] = in1[1*4+0] * in2[0*4+1] + in1[1*4+1] * in2[1*4+1] + in1[1*4+2] * in2[2*4+1];
-	out[1*4+2] = in1[1*4+0] * in2[0*4+2] + in1[1*4+1] * in2[1*4+2] + in1[1*4+2] * in2[2*4+2];
-	out[1*4+3] = in1[1*4+0] * in2[0*4+3] + in1[1*4+1] * in2[1*4+3] + in1[1*4+2] * in2[2*4+3] + in1[1*4+3];
-	out[2*4+0] = in1[2*4+0] * in2[0*4+0] + in1[2*4+1] * in2[1*4+0] + in1[2*4+2] * in2[2*4+0];
-	out[2*4+1] = in1[2*4+0] * in2[0*4+1] + in1[2*4+1] * in2[1*4+1] + in1[2*4+2] * in2[2*4+1];
-	out[2*4+2] = in1[2*4+0] * in2[0*4+2] + in1[2*4+1] * in2[1*4+2] + in1[2*4+2] * in2[2*4+2];
-	out[2*4+3] = in1[2*4+0] * in2[0*4+3] + in1[2*4+1] * in2[1*4+3] + in1[2*4+2] * in2[2*4+3] + in1[2*4+3];
 }
 
 //============================================================================
@@ -441,7 +394,7 @@ int BoxOnPlaneSide (const vec3_t emins, const vec3_t emaxs, const cplane_t *p)
 			return 2;
 		return 3;
 	}
-	
+
 // general case
 	switch (p->signbits)
 	{
@@ -768,258 +721,61 @@ int Q_log2(int val)
 	return answer;
 }
 
-void Matrix4_Identity (mat4_t mat)
+//============================================================================
+
+void Matrix_Identity( vec3_t m[3] )
 {
-	mat[1] = mat[2] = mat[3] = mat[4] = mat[6] = mat[7] = mat[8] = mat[9] =	mat[11] = mat[12] = mat[13] = mat[14] = 0;
-	mat[0] = mat[5] = mat[10] = mat[15] = 1.0f;
+	int i, j;
+
+	for( i = 0; i < 3; i++ )
+		for( j = 0; j < 3; j++ )
+			if( i == j )
+				m[i][j] = 1.0;
+			else
+				m[i][j] = 0.0;
 }
 
-void Matrix4_Copy (mat4_t a, mat4_t b)
+void Matrix_Copy( vec3_t m1[3], vec3_t m2[3] )
 {
-	b[0] = a[0]; b[1] = a[1]; b[2] = a[2]; b[3] = a[3];
-	b[4] = a[4]; b[5] = a[5]; b[6] = a[6]; b[7] = a[7];
-	b[8] = a[8]; b[9] = a[9]; b[10] = a[10]; b[11] = a[11];
-	b[12] = a[12]; b[13] = a[13]; b[14] = a[14]; b[15] = a[15];
+	int i, j;
+
+	for( i = 0; i < 3; i++ )
+		for( j = 0; j < 3; j++ )
+			m2[i][j] = m1[i][j];
 }
 
-qboolean Matrix4_Compare (mat4_t a, mat4_t b)
+qboolean Matrix_Compare( vec3_t m1[3], vec3_t m2[3] )
 {
-	int i;
+	int i, j;
 
-	for (i = 0; i < 16; i++)
-	{
-		if ( a[i] != b[i] )
-			return qfalse;
-	}
-
+	for( i = 0; i < 3; i++ )
+		for( j = 0; j < 3; j++ )
+			if( m1[i][j] != m2[i][j] )
+				return qfalse;
 	return qtrue;
 }
 
-void Matrix4_Multiply (mat4_t a, mat4_t b, mat4_t product)
+void Matrix_Multiply( vec3_t m1[3], vec3_t m2[3], vec3_t out[3] )
 {
-	product[0]  = a[0] * b[0] + a[4] * b[1] + a[8] * b[2] + a[12] * b[3];
-	product[1]  = a[1] * b[0] + a[5] * b[1] + a[9] * b[2] + a[13] * b[3];
-	product[2]  = a[2] * b[0] + a[6] * b[1] + a[10] * b[2] + a[14] * b[3];
-	product[3]  = a[3] * b[0] + a[7] * b[1] + a[11] * b[2] + a[15] * b[3];
-	product[4]  = a[0] * b[4] + a[4] * b[5] + a[8] * b[6] + a[12] * b[7];
-	product[5]  = a[1] * b[4] + a[5] * b[5] + a[9] * b[6] + a[13] * b[7];
-	product[6]  = a[2] * b[4] + a[6] * b[5] + a[10] * b[6] + a[14] * b[7];
-	product[7]  = a[3] * b[4] + a[7] * b[5] + a[11] * b[6] + a[15] * b[7];
-	product[8]  = a[0] * b[8] + a[4] * b[9] + a[8] * b[10] + a[12] * b[11];
-	product[9]  = a[1] * b[8] + a[5] * b[9] + a[9] * b[10] + a[13] * b[11];
-	product[10] = a[2] * b[8] + a[6] * b[9] + a[10] * b[10] + a[14] * b[11];
-	product[11] = a[3] * b[8] + a[7] * b[9] + a[11] * b[10] + a[15] * b[11];
-	product[12] = a[0] * b[12] + a[4] * b[13] + a[8] * b[14] + a[12] * b[15];
-	product[13] = a[1] * b[12] + a[5] * b[13] + a[9] * b[14] + a[13] * b[15];
-	product[14] = a[2] * b[12] + a[6] * b[13] + a[10] * b[14] + a[14] * b[15];
-	product[15] = a[3] * b[12] + a[7] * b[13] + a[11] * b[14] + a[15] * b[15];
+	out[0][0] = m1[0][0]*m2[0][0] + m1[0][1]*m2[1][0] + m1[0][2]*m2[2][0];
+	out[0][1] = m1[0][0]*m2[0][1] + m1[0][1]*m2[1][1] + m1[0][2]*m2[2][1];
+	out[0][2] = m1[0][0]*m2[0][2] + m1[0][1]*m2[1][2] + m1[0][2]*m2[2][2];
+	out[1][0] = m1[1][0]*m2[0][0] + m1[1][1]*m2[1][0] +	m1[1][2]*m2[2][0];
+	out[1][1] = m1[1][0]*m2[0][1] + m1[1][1]*m2[1][1] + m1[1][2]*m2[2][1];
+	out[1][2] = m1[1][0]*m2[0][2] + m1[1][1]*m2[1][2] +	m1[1][2]*m2[2][2];
+	out[2][0] = m1[2][0]*m2[0][0] + m1[2][1]*m2[1][0] +	m1[2][2]*m2[2][0];
+	out[2][1] = m1[2][0]*m2[0][1] + m1[2][1]*m2[1][1] +	m1[2][2]*m2[2][1];
+	out[2][2] = m1[2][0]*m2[0][2] + m1[2][1]*m2[1][2] +	m1[2][2]*m2[2][2];
 }
 
-void Matrix4_MultiplyFast (mat4_t a, mat4_t b, mat4_t product)
+void Matrix_TransformVector( vec3_t m[3], vec3_t v, vec3_t out )
 {
-	product[0]  = a[0] * b[0] + a[4] * b[1] + a[8] * b[2];
-	product[1]  = a[1] * b[0] + a[5] * b[1] + a[9] * b[2];
-	product[2]  = a[2] * b[0] + a[6] * b[1] + a[10] * b[2];
-	product[3]  = 0.0f;
-	product[4]  = a[0] * b[4] + a[4] * b[5] + a[8] * b[6];
-	product[5]  = a[1] * b[4] + a[5] * b[5] + a[9] * b[6];
-	product[6]  = a[2] * b[4] + a[6] * b[5] + a[10] * b[6];
-	product[7]  = 0.0f;
-	product[8]  = a[0] * b[8] + a[4] * b[9] + a[8] * b[10];
-	product[9]  = a[1] * b[8] + a[5] * b[9] + a[9] * b[10];
-	product[10] = a[2] * b[8] + a[6] * b[9] + a[10] * b[10];
-	product[11] = 0.0f;
-	product[12] = a[0] * b[12] + a[4] * b[13] + a[8] * b[14] + a[12];
-	product[13] = a[1] * b[12] + a[5] * b[13] + a[9] * b[14] + a[13];
-	product[14] = a[2] * b[12] + a[6] * b[13] + a[10] * b[14] + a[14];
-	product[15] = 1.0f;
+	out[0] = m[0][0]*v[0] + m[0][1]*v[1] + m[0][2]*v[2];
+	out[1] = m[1][0]*v[0] + m[1][1]*v[1] + m[1][2]*v[2];
+	out[2] = m[2][0]*v[0] + m[2][1]*v[1] + m[2][2]*v[2];
 }
 
-void Matrix4_Rotate (mat4_t a, float angle, float x, float y, float z)
-{
-	mat4_t m, b;
-	float c = cos( DEG2RAD(angle) );
-	float s = sin( DEG2RAD(angle) );
-	float mc = 1 - c, t1, t2;
-	
-	m[0]  = (x * x * mc) + c;
-	m[5]  = (y * y * mc) + c;
-	m[10] = (z * z * mc) + c;
-
-	t1 = y * x * mc;
-	t2 = z * s;
-	m[1] = t1 + t2;
-	m[4] = t1 - t2;
-
-	t1 = x * z * mc;
-	t2 = y * s;
-	m[2] = t1 - t2;
-	m[8] = t1 + t2;
-
-	t1 = y * z * mc;
-	t2 = x * s;
-	m[6] = t1 + t2;
-	m[9] = t1 - t2;
-
-	m[3] = m[7] = m[11] = m[12] = m[13] = m[14] = 0;
-	m[15] = 1;
-
-	Matrix4_Copy ( a, b );
-	Matrix4_MultiplyFast ( b, m, a );
-}
-
-void Matrix4_Translate (mat4_t m, float x, float y, float z)
-{
-	m[12] = m[0] * x + m[4] * y + m[8]  * z + m[12];
-	m[13] = m[1] * x + m[5] * y + m[9]  * z + m[13];
-	m[14] = m[2] * x + m[6] * y + m[10] * z + m[14];
-	m[15] = m[3] * x + m[7] * y + m[11] * z + m[15];
-}
-
-void Matrix4_Scale (mat4_t m, float x, float y, float z)
-{
-	m[0] *= x;   m[4] *= y;   m[8]  *= z;
-	m[1] *= x;   m[5] *= y;   m[9]  *= z;
-	m[2] *= x;   m[6] *= y;   m[10] *= z;
-	m[3] *= x;   m[7] *= y;   m[11] *= z;
-}
-
-void Matrix4_Transpose (mat4_t m, mat4_t ret)
-{
-	ret[0] = m[0]; ret[1] = m[4]; ret[2] = m[8]; ret[3] = m[12];
-	ret[4] = m[1]; ret[5] = m[5]; ret[6] = m[9]; ret[7] = m[13];
-	ret[8] = m[2]; ret[9] = m[6]; ret[10] = m[10]; ret[11] = m[14];
-	ret[12] = m[3]; ret[13] = m[7]; ret[14] = m[11]; ret[15] = m[15];
-}
-
-static void Matrix4_Submat (mat4_t mr, mat3_t mb, int i, int j)
-{
-    int ti, tj, idst, jdst;
-	
-    for ( ti = 0; ti < 4; ti++ )
-	{
-		if ( ti < i )
-			idst = ti;
-		else
-			if ( ti > i )
-				idst = ti-1;
-			
-			for ( tj = 0; tj < 4; tj++ )
-			{
-				if ( tj < j )
-					jdst = tj;
-				else
-					if ( tj > j )
-						jdst = tj-1;
-					
-					if ( ti != i && tj != j )
-						mb[idst][jdst] = mr[ti*4 + tj];
-			}
-	}
-}
-
-float Matrix4_Det (mat4_t mr)
-{
-     float  det, result = 0, i = 1;
-     mat3_t	msub3;
-     int    n;
-
-     for ( n = 0; n < 4; n++, i *= -1 )
-	 {
-		 Matrix4_Submat (mr, msub3, 0, n);
-		 
-		 det     = Matrix3_Det ( msub3 );
-		 result += mr[n] * det * i;
-	 }
-	 
-	 return result;
-}
-
-void Matrix4_Inverse (mat4_t mr, mat4_t ma)
-{
-    float  mdet = Matrix4_Det( mr );
-    mat3_t mtemp;
-	int    i, j, sign;
-	
-	if ( fabs( mdet ) < 0.0005 )
-	{
-		Matrix4_Identity ( ma );
-        return;
-	}
-
-	mdet = 1.0f / mdet;
-	for ( i = 0; i < 4; i++ )
-		for ( j = 0; j < 4; j++ )
-		{
-			sign = 1 - ( (i + j) % 2 ) * 2;
-			
-			Matrix4_Submat( mr, mtemp, i, j );
-			ma[i+j*4] = ( Matrix3_Det( mtemp ) * sign ) * mdet;
-		}
-}
-
-void Matrix4_Matrix3 (mat4_t in, mat3_t out)
-{
-	out[0][0] = in[0];
-	out[0][1] = in[4];
-	out[0][2] = in[8];
-
-	out[1][0] = in[1];
-	out[1][1] = in[5];
-	out[1][2] = in[9];
-
-	out[2][0] = in[2];
-	out[2][1] = in[6];
-	out[2][2] = in[10];
-}
-
-void Matrix4_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product)
-{
-	product[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-	product[1] = a[4]*b[0] + a[5]*b[1] + a[6]*b[2];
-	product[2] = a[8]*b[0] + a[9]*b[1] + a[10]*b[2];
-}
-
-void Matrix3_Identity (mat3_t mat)
-{
-	mat[0][1] = mat[0][2] = mat[1][0] = mat[1][2] = mat[2][0] = mat[2][1] = 0;
-	mat[0][0] = mat[1][1] = mat[2][2] = 1.0f;
-}
-
-void Matrix3_Copy (mat3_t a, mat3_t b)
-{
-	VectorCopy (a[0], b[0]);
-	VectorCopy (a[1], b[1]);
-	VectorCopy (a[2], b[2]);
-}
-
-qboolean Matrix3_Compare (mat3_t a, mat3_t b)
-{
-	return ( VectorCompare (a[0], b[0]) && 
-		VectorCompare (a[1], b[1]) && VectorCompare (a[2], b[2]) );
-}
-
-void Matrix3_Multiply (mat3_t in1, mat3_t in2, mat3_t out)
-{
-	out[0][0] = in1[0][0]*in2[0][0] + in1[0][1]*in2[1][0] + in1[0][2]*in2[2][0];
-	out[0][1] = in1[0][0]*in2[0][1] + in1[0][1]*in2[1][1] + in1[0][2]*in2[2][1];
-	out[0][2] = in1[0][0]*in2[0][2] + in1[0][1]*in2[1][2] + in1[0][2]*in2[2][2];
-	out[1][0] = in1[1][0]*in2[0][0] + in1[1][1]*in2[1][0] +	in1[1][2]*in2[2][0];
-	out[1][1] = in1[1][0]*in2[0][1] + in1[1][1]*in2[1][1] + in1[1][2]*in2[2][1];
-	out[1][2] = in1[1][0]*in2[0][2] + in1[1][1]*in2[1][2] +	in1[1][2]*in2[2][2];
-	out[2][0] = in1[2][0]*in2[0][0] + in1[2][1]*in2[1][0] +	in1[2][2]*in2[2][0];
-	out[2][1] = in1[2][0]*in2[0][1] + in1[2][1]*in2[1][1] +	in1[2][2]*in2[2][1];
-	out[2][2] = in1[2][0]*in2[0][2] + in1[2][1]*in2[1][2] +	in1[2][2]*in2[2][2];
-}
-
-void Matrix3_Multiply_Vec3 (mat3_t a, vec3_t b, vec3_t product)
-{
-	product[0] = a[0][0]*b[0] + a[0][1]*b[1] + a[0][2]*b[2];
-	product[1] = a[1][0]*b[0] + a[1][1]*b[1] + a[1][2]*b[2];
-	product[2] = a[2][0]*b[0] + a[2][1]*b[1] + a[2][2]*b[2];
-}
-
-void Matrix3_Transpose (mat3_t in, mat3_t out)
+void Matrix_Transpose( vec3_t in[3], vec3_t out[3] )
 {
 	out[0][0] = in[0][0];
 	out[1][1] = in[1][1];
@@ -1033,60 +789,28 @@ void Matrix3_Transpose (mat3_t in, mat3_t out)
 	out[2][1] = in[1][2];
 }
 
-float Matrix3_Det (mat3_t mat)
+void Matrix_EulerAngles( vec3_t m[3], vec3_t angles )
 {
-    return (mat[0][0] * (mat[1][1]*mat[2][2] - mat[2][1]*mat[1][2])
-         - mat[0][1] * (mat[1][0]*mat[2][2] - mat[2][0]*mat[1][2])
-         + mat[0][2] * (mat[1][0]*mat[2][1] - mat[2][0]*mat[1][1]));
-}
+	vec_t	c;
+	vec_t	pitch, yaw, roll;
 
-void Matrix3_Inverse (mat3_t mr, mat3_t ma)
-{
-	float det = Matrix3_Det ( mr );
-	
-	if ( fabs( det ) < 0.0005 )
-	{
-		Matrix3_Identity( ma );
-		return;
-	}
-
-	det = 1.0 / det;
-	
-	ma[0][0] =  (mr[1][1]*mr[2][2] - mr[1][2]*mr[2][1]) * det;
-	ma[0][1] = -(mr[0][1]*mr[2][2] - mr[2][1]*mr[0][2]) * det;
-	ma[0][2] =  (mr[0][1]*mr[1][2] - mr[1][1]*mr[0][2]) * det;
-	
-	ma[1][0] = -(mr[1][0]*mr[2][2] - mr[1][2]*mr[2][0]) * det;
-	ma[1][1] =  (mr[0][0]*mr[2][2] - mr[2][0]*mr[0][2]) * det;
-	ma[1][2] = -(mr[0][0]*mr[1][2] - mr[1][0]*mr[0][2]) * det;
-	
-	ma[2][0] =  (mr[1][0]*mr[2][1] - mr[2][0]*mr[1][1]) * det;
-	ma[2][1] = -(mr[0][0]*mr[2][1] - mr[2][0]*mr[0][1]) * det;
-	ma[2][2] =  (mr[0][0]*mr[1][1] - mr[0][1]*mr[1][0]) * det;
-}
-
-void Matrix3_EulerAngles (mat3_t mat, vec3_t angles)
-{
-	float	c;
-	float	pitch, yaw, roll;
-
-	pitch = -asin( mat[0][2] );
+	pitch = -asin( m[0][2] );
 	c = cos ( pitch );
 	pitch = RAD2DEG( pitch );
 
 	if ( fabs( c ) > 0.005 )             // Gimball lock?
 	{
 		c = 1.0f / c;
-		yaw = RAD2DEG( atan2 ( (-1)*-mat[0][1] * c, mat[0][0] * c ) );
-		roll = RAD2DEG( atan2 ( -mat[1][2] * c, mat[2][2] * c ) );
+		yaw = RAD2DEG( atan2 ( m[0][1] * c, m[0][0] * c ) );
+		roll = RAD2DEG( atan2 ( -m[1][2] * c, m[2][2] * c ) );
 	}
 	else
 	{
-		if (mat[0][2] > 0)
+		if (m[0][2] > 0)
 			pitch = -90;
 		else
 			pitch = 90;
-		yaw = RAD2DEG( atan2 ( mat[1][0], (-1)*mat[1][1] ) );
+		yaw = RAD2DEG( atan2 ( m[1][0], -m[1][1] ) );
 		roll = 0;
 	}
 
@@ -1095,53 +819,49 @@ void Matrix3_EulerAngles (mat3_t mat, vec3_t angles)
 	angles[ROLL] = anglemod( roll );
 }
 
-void Matrix_Multiply_Vec2 (mat4_t a, vec2_t b, vec2_t product)
+void Matrix_Rotate( vec3_t m[3], vec_t angle, vec_t x, vec_t y, vec_t z )
 {
-	product[0] = a[0]*b[0] + a[1]*b[1] + a[2] + a[3];
-	product[1] = a[4]*b[0] + a[5]*b[1] + a[6] + a[7];
-}
-
-void Matrix_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product)
-{
-	product[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[12];
-	product[1] = a[4]*b[0] + a[5]*b[1] + a[6]*b[2] + a[13];
-	product[2] = a[8]*b[0] + a[8]*b[1] + a[10]*b[2] + a[14];
-}
-
-void Matrix_Multiply_Vec4 (mat4_t a, vec4_t b, vec4_t product)
-{
-	product[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[12]*b[3];
-	product[1] = a[4]*b[0] + a[5]*b[1] + a[6]*b[2] + a[13]*b[3];
-	product[2] = a[8]*b[0] + a[9]*b[1] + a[10]*b[2] + a[14]*b[3];
-	product[3] = a[3]*b[0] + a[7]*b[1] + a[11]*b[2] + a[15]*b[3];
-}
-
-void Matrix3_Rotate (mat3_t a, float angle, float x, float y, float z)
-{
-	mat3_t m, b;
-	float c = cos( DEG2RAD(angle) );
-	float s = sin( DEG2RAD(angle) );
-	float mc = 1 - c, t1, t2;
+	vec3_t t[3], b[3];
+	vec_t c = cos( DEG2RAD(angle) );
+	vec_t s = sin( DEG2RAD(angle) );
+	vec_t mc = 1 - c, t1, t2;
 	
-	m[0][0] = (x * x * mc) + c;
-	m[1][1] = (y * y * mc) + c;
-	m[2][2] = (z * z * mc) + c;
+	t[0][0] = (x * x * mc) + c;
+	t[1][1] = (y * y * mc) + c;
+	t[2][2] = (z * z * mc) + c;
 
 	t1 = y * x * mc;
 	t2 = z * s;
-	m[0][1] = t1 + t2;
-	m[1][0] = t1 - t2;
+	t[0][1] = t1 + t2;
+	t[1][0] = t1 - t2;
 
 	t1 = x * z * mc;
 	t2 = y * s;
-	m[0][2] = t1 - t2;
-	m[2][0] = t1 + t2;
+	t[0][2] = t1 - t2;
+	t[2][0] = t1 + t2;
 
 	t1 = y * z * mc;
 	t2 = x * s;
-	m[1][2] = t1 + t2;
-	m[2][1] = t1 - t2;
+	t[1][2] = t1 + t2;
+	t[2][1] = t1 - t2;
 
-	Matrix3_Copy ( a, b );
-	Matrix3_Multiply ( b, m, a );
+	Matrix_Copy( m, b );
+	Matrix_Multiply( b, t, m );
+}
+
+void Matrix_FromPoints( const vec3_t v1, const vec3_t v2, const vec3_t v3, vec3_t m[3] )
+{
+	float		d;
+
+	m[2][0] = (v1[1] - v2[1]) * (v3[2] - v2[2]) - (v1[2] - v2[2]) * (v3[1] - v2[1]);
+	m[2][1] = (v1[2] - v2[2]) * (v3[0] - v2[0]) - (v1[0] - v2[0]) * (v3[2] - v2[2]);
+	m[2][2] = (v1[0] - v2[0]) * (v3[1] - v2[1]) - (v1[1] - v2[1]) * (v3[0] - v2[0]);
+	VectorNormalizeFast( m[2] );
+
+	// this rotate and negate guarantees a vector not colinear with the original
+	VectorSet( m[1], m[2][2], -m[2][0], m[2][1] );
+	d = -DotProduct( m[1], m[2] );
+	VectorMA( m[1], d, m[2], m[1] );
+	VectorNormalizeFast( m[1] );
+	CrossProduct( m[1], m[2], m[0] );
 }

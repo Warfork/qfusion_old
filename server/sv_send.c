@@ -68,7 +68,7 @@ void SV_ClientPrintf (client_t *cl, int level, char *fmt, ...)
 {
 	va_list		argptr;
 	char		string[1024];
-	
+
 	if (level < cl->messagelevel)
 		return;
 	if (cl->edict && (cl->edict->r.svflags & SVF_FAKECLIENT))
@@ -77,7 +77,7 @@ void SV_ClientPrintf (client_t *cl, int level, char *fmt, ...)
 	va_start (argptr, fmt);
 	vsnprintf (string, sizeof(string), fmt, argptr);
 	va_end (argptr);
-	
+
 	MSG_WriteByte (&cl->netchan.message, svc_servercmd);
 	MSG_WriteString (&cl->netchan.message, va ("pr %i \"%s\"", level, string));
 }
@@ -92,35 +92,28 @@ Sends text to all active clients
 void SV_BroadcastPrintf (int level, char *fmt, ...)
 {
 	va_list		argptr;
-	char		string[2048];
+	char		string[MAX_PRINTMSG];
 	client_t	*cl;
 	int			i;
 
 	va_start (argptr, fmt);
 	vsnprintf (string, sizeof(string), fmt, argptr);
 	va_end (argptr);
-	
+
 	// echo to console
-	if (dedicated->value)
+	if (dedicated->integer)
 	{
-		char	copy[1024];
-		int		i, j;
+		char	copy[MAX_PRINTMSG];
+		int		i;
 		
 		// mask off high bits and colored strings
-		for (i=0, j=0 ; j<1023 && string[j] ; ) {
-			if ( Q_IsColorString( &string[j] ) ) {
-				j += 2;
-				continue;
-			}
-			
-			copy[i++] = string[j++]&127;
-		}
-
+		for (i=0 ; i<sizeof(copy)-1 && string[i] ; i++ )
+			copy[i] = string[i]&127;
 		copy[i] = 0;
 		Com_Printf ("%s", copy);
 	}
 
-	for (i=0, cl = svs.clients ; i<sv_maxclients->value; i++, cl++)
+	for (i=0, cl = svs.clients ; i<sv_maxclients->integer; i++, cl++)
 	{
 		if (level < cl->messagelevel)
 			continue;
@@ -145,7 +138,7 @@ void SV_BroadcastCommand (char *fmt, ...)
 {
 	va_list		argptr;
 	char		string[1024];
-	
+
 	if (!sv.state)
 		return;
 	va_start (argptr, fmt);
@@ -196,7 +189,7 @@ void SV_Multicast (vec3_t origin, multicast_t to)
 	// if doing a serverrecord, store everything
 	if (svs.demofile)
 		SZ_Write (&svs.demo_multicast, sv.multicast.data, sv.multicast.cursize);
-	
+
 	switch (to)
 	{
 	case MULTICAST_ALL_R:
@@ -228,7 +221,7 @@ void SV_Multicast (vec3_t origin, multicast_t to)
 	}
 
 	// send the data to all relevent clients
-	for (j = 0, client = svs.clients; j < sv_maxclients->value; j++, client++)
+	for (j = 0, client = svs.clients; j < sv_maxclients->integer; j++, client++)
 	{
 		if (client->state == cs_free || client->state == cs_zombie)
 			continue;
@@ -241,10 +234,10 @@ void SV_Multicast (vec3_t origin, multicast_t to)
 		{
 			leafnum = CM_PointLeafnum (client->edict->s.origin);
 			cluster = CM_LeafCluster (leafnum);
+			if ( mask && (!(mask[cluster>>3] & (1<<(cluster&7)) ) ) )
+				continue;
 			area2 = CM_LeafArea (leafnum);
 			if (!CM_AreasConnected (area1, area2))
-				continue;
-			if ( mask && (!(mask[cluster>>3] & (1<<(cluster&7)) ) ) )
 				continue;
 		}
 
@@ -401,7 +394,7 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 		else
 			SV_Multicast (origin, MULTICAST_ALL);
 	}
-}           
+}
 
 
 /*
@@ -526,7 +519,7 @@ void SV_SendClientMessages (void)
 	// read the next demo message if needed
 	if (sv.state == ss_demo && sv.demofile)
 	{
-		if (sv_paused->value)
+		if (sv_paused->integer)
 			msglen = 0;
 		else
 		{
@@ -561,7 +554,7 @@ void SV_SendClientMessages (void)
 	}
 
 	// send a message to each connected client
-	for (i=0, c = svs.clients ; i<sv_maxclients->value; i++, c++)
+	for (i=0, c = svs.clients ; i<sv_maxclients->integer; i++, c++)
 	{
 		if (!c->state)
 			continue;
@@ -580,8 +573,9 @@ void SV_SendClientMessages (void)
 
 		if (sv.state == ss_cinematic 
 			|| sv.state == ss_demo 
-			)
+			) {
 			Netchan_Transmit (&c->netchan, msglen, msgbuf);
+		}
 		else if (c->state == cs_spawned)
 		{
 			// don't overrun bandwidth
@@ -598,4 +592,3 @@ void SV_SendClientMessages (void)
 		}
 	}
 }
-

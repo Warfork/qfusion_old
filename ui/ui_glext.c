@@ -36,9 +36,9 @@ static menulist_s		s_cva_list;
 static menulist_s		s_multitexture_list;
 static menulist_s		s_texenvcombine_list;
 static menulist_s		s_NVtexenvcombine4_list;
-static menulist_s		s_sgismipmap_list;
 static menulist_s		s_compressedtex_list;
-static menulist_s		s_bgra_list;
+static menulist_s		s_cubemap_list;
+static menuslider_s		s_texfilteranisotropic_slider;
 
 static menuaction_s		s_apply_action;
 
@@ -48,16 +48,14 @@ static void ApplyChanges( void *unused )
 	trap_Cvar_SetValue( "gl_ext_swapinterval", s_vsync_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_compiled_vertex_array", s_cva_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_multitexture", s_multitexture_list.curvalue );
-	trap_Cvar_SetValue( "gl_ext_sgis_mipmap", s_sgismipmap_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_texture_env_combine", s_texenvcombine_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_NV_texture_env_combine4", s_NVtexenvcombine4_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_compressed_textures", s_compressedtex_list.curvalue );
-	trap_Cvar_SetValue( "gl_ext_bgra", s_bgra_list.curvalue );
+	trap_Cvar_SetValue( "gl_ext_texture_cube_map", s_cubemap_list.curvalue );
+	trap_Cvar_SetValue( "gl_ext_texture_filter_anisotropic", s_texfilteranisotropic_slider.curvalue );
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "vid_restart\n");
 	trap_Cmd_Execute();
-
-	M_ForceMenuOff();
 }
 
 /*
@@ -65,12 +63,8 @@ static void ApplyChanges( void *unused )
 */
 static void GLExt_MenuInit( void )
 {
-	static char *on_off_names[] =
-	{
-		"off",
-		"on",
-		0
-	};
+	static char *on_off_names[] = {	"off", "on", 0 };
+	static char *sbar = "Note: values below 2 do not make any effect";
 
 	int y = 0;
 	int y_offset = UI_StringHeightOffset ( 0 );
@@ -120,21 +114,12 @@ static void GLExt_MenuInit( void )
 	clamp ( s_texenvcombine_list.curvalue, 0, 1 );
 
 	s_NVtexenvcombine4_list.generic.type	= MTYPE_SPINCONTROL;
-	s_NVtexenvcombine4_list.generic.name	= "NV Env Combine4";
+	s_NVtexenvcombine4_list.generic.name	= "NVidia Env Combine4";
 	s_NVtexenvcombine4_list.generic.x		= 0;
 	s_NVtexenvcombine4_list.generic.y		= y+=y_offset;
 	s_NVtexenvcombine4_list.itemnames		= on_off_names;
 	s_NVtexenvcombine4_list.curvalue		= trap_Cvar_VariableValue( "gl_ext_NV_texture_env_combine4" );
 	clamp ( s_NVtexenvcombine4_list.curvalue, 0, 1 );
-
-	s_sgismipmap_list.generic.type	= MTYPE_SPINCONTROL;
-	s_sgismipmap_list.generic.name	= "SGIS Mipmap";
-	s_sgismipmap_list.generic.x		= 0;
-	s_sgismipmap_list.generic.y		= y+=y_offset;
-	s_sgismipmap_list.itemnames		= on_off_names;
-	s_sgismipmap_list.curvalue		= trap_Cvar_VariableValue( "gl_ext_sgis_mipmap" );
-	s_sgismipmap_list.generic.statusbar = "turn this off if you have an ATI card";
-	clamp ( s_sgismipmap_list.curvalue, 0, 1 );
 
 	s_compressedtex_list.generic.type	= MTYPE_SPINCONTROL;
 	s_compressedtex_list.generic.name	= "Texture compression";
@@ -145,15 +130,25 @@ static void GLExt_MenuInit( void )
 	s_compressedtex_list.generic.statusbar = "trades texture quality for speed";
 	clamp ( s_compressedtex_list.curvalue, 0, 1 );
 
-	s_bgra_list.generic.type			= MTYPE_SPINCONTROL;
-	s_bgra_list.generic.name			= "BGRA byte order";
-	s_bgra_list.generic.x				= 0;
-	s_bgra_list.generic.y				= y+=y_offset;
-	s_bgra_list.itemnames				= on_off_names;
-	s_bgra_list.curvalue				= trap_Cvar_VariableValue( "gl_ext_bgra" );
-	clamp ( s_bgra_list.curvalue, 0, 1 );
-	y += y_offset;
+	s_cubemap_list.generic.type			= MTYPE_SPINCONTROL;
+	s_cubemap_list.generic.name			= "Cubemaps";
+	s_cubemap_list.generic.x			= 0;
+	s_cubemap_list.generic.y			= y+=y_offset;
+	s_cubemap_list.itemnames			= on_off_names;
+	s_cubemap_list.curvalue				= trap_Cvar_VariableValue( "gl_ext_texture_cube_map" );
+	clamp ( s_cubemap_list.curvalue, 0, 1 );
 
+	s_texfilteranisotropic_slider.generic.type	= MTYPE_SLIDER;
+	s_texfilteranisotropic_slider.generic.x		= 0;
+	s_texfilteranisotropic_slider.generic.y		= y += y_offset;
+	s_texfilteranisotropic_slider.generic.name	= "texture anisotropic filter";
+	s_texfilteranisotropic_slider.minvalue		= 0;
+	s_texfilteranisotropic_slider.maxvalue		= trap_Cvar_VariableValue( "gl_ext_max_texture_filter_anisotropic" );
+	s_texfilteranisotropic_slider.curvalue		= trap_Cvar_VariableValue( "gl_ext_texture_filter_anisotropic" );
+	s_texfilteranisotropic_slider.generic.statusbar	= sbar;
+	clamp ( s_texfilteranisotropic_slider.curvalue, s_texfilteranisotropic_slider.minvalue, s_texfilteranisotropic_slider.maxvalue );
+
+	y += y_offset;
 	s_apply_action.generic.type		= MTYPE_ACTION;
 	s_apply_action.generic.flags	= QMF_CENTERED;
 	s_apply_action.generic.name		= "apply changes";
@@ -167,9 +162,9 @@ static void GLExt_MenuInit( void )
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_multitexture_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_texenvcombine_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_NVtexenvcombine4_list );
-	Menu_AddItem( &s_glext_menu, ( void * ) &s_sgismipmap_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_compressedtex_list );
-	Menu_AddItem( &s_glext_menu, ( void * ) &s_bgra_list );
+	Menu_AddItem( &s_glext_menu, ( void * ) &s_cubemap_list );
+	Menu_AddItem( &s_glext_menu, ( void * ) &s_texfilteranisotropic_slider );
 
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_apply_action );
 

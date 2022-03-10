@@ -63,15 +63,12 @@ static void UpdateSoundCompatibilityFunc( void *unused )
 
 static void UpdateSoundQualityFunc( void *unused )
 {
-	trap_Cvar_SetValue( "s_khz", (1<<(int)(s_sound_quality_list.curvalue))*11 );
-
-	M_DrawTextBox( 8, 120 - 48, 36, 3 );
-	M_Print( 16 + 16, 120 - 48 + 8,  "Restarting the sound system. This" );
-	M_Print( 16 + 16, 120 - 48 + 16, "could take up to a minute, so" );
-	M_Print( 16 + 16, 120 - 48 + 24, "please be patient." );
-
-	// the text box won't show up unless we do a buffer swap
-	trap_R_EndFrame();
+	if (s_sound_quality_list.curvalue == 2)
+		trap_Cvar_SetValue( "s_khz", 44 );
+	else if (s_sound_quality_list.curvalue == 1)
+		trap_Cvar_SetValue( "s_khz", 22 );
+	else
+		trap_Cvar_SetValue( "s_khz", 11 );
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "snd_restart\n");
 	trap_Cmd_Execute();
@@ -138,15 +135,13 @@ void Sound_MenuInit( void )
 	s_sound_quality_list.generic.name		= "sound quality";
 	s_sound_quality_list.generic.callback	= UpdateSoundQualityFunc;
 	s_sound_quality_list.itemnames			= quality_items;
-	s_sound_quality_list.curvalue			= (int)trap_Cvar_VariableValue( "s_khz" ) / 11;
-
-	if ( s_sound_quality_list.curvalue == 4 ) {
+	s_sound_quality_list.curvalue			= (int)trap_Cvar_VariableValue( "s_khz" );
+	if (s_sound_quality_list.curvalue == 44)
 		s_sound_quality_list.curvalue = 2;
-	} else if ( s_sound_quality_list.curvalue == 2 ) {
+	else if (s_sound_quality_list.curvalue == 22)
 		s_sound_quality_list.curvalue = 1;
-	} else {
+	else
 		s_sound_quality_list.curvalue = 0;
-	}
 
 	s_sound_swapstereo_list.generic.type	= MTYPE_SPINCONTROL;
 	s_sound_swapstereo_list.generic.x		= 0;

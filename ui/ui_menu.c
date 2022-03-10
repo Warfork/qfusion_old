@@ -123,7 +123,14 @@ int		m_menudepth;
 
 void UI_UpdateMousePosition (void);
 
-void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (int k) )
+void M_Cache( void )
+{
+	uis.whiteShader = trap_R_RegisterPic ( "white" );
+	uis.charsetShader = trap_R_RegisterPic ( "gfx/2d/bigchars" );
+	uis.propfontShader = trap_R_RegisterPic ( "menu/art/font1_prop" );
+}
+
+void M_PushMenu( menuframework_s *m, void (*draw) (void), const char *(*key) (int k) )
 {
 	int		i;
 
@@ -151,6 +158,8 @@ void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (i
 		m_layers[m_menudepth].draw = m_drawfunc;
 		m_layers[m_menudepth].key = m_keyfunc;
 		m_menudepth++;
+
+		M_Cache ();
 	}
 
 	m_drawfunc = draw;
@@ -177,9 +186,12 @@ void M_ForceMenuOff (void)
 
 void M_PopMenu (void)
 {
-	if ( (m_menudepth == 1) && (uis.clientState == ca_disconnected) ) {
+	if ( m_menudepth == 1 ) {
 		// start the demo loop again
-		trap_Cmd_ExecuteText (EXEC_APPEND, "d1\n");
+		if( uis.clientState < ca_connecting )
+//			trap_Cmd_ExecuteText (EXEC_APPEND, "d1\n");
+			return;
+		M_ForceMenuOff ();
 		return;
 	}
 
@@ -196,11 +208,9 @@ void M_PopMenu (void)
 	m_keyfunc = m_layers[m_menudepth].key;
 	m_active = m_layers[m_menudepth].m;
 
-	UI_UpdateMousePosition ();
+	M_Cache ();
 
-	if ( !m_menudepth && (uis.clientState > ca_disconnected) ) {
-		M_ForceMenuOff ();
-	}
+	UI_UpdateMousePosition ();
 }
 
 
@@ -481,10 +491,6 @@ void UI_Init ( int vidWidth, int vidHeight )
 	uis.cursorX = uis.vidWidth / 2;
 	uis.cursorY = uis.vidHeight / 2;
 
-	uis.whiteShader = trap_R_RegisterPic ( "white" );
-	uis.charsetShader = trap_R_RegisterPic ( "gfx/2d/bigchars" );
-	uis.propfontShader = trap_R_RegisterPic ( "menu/art/font1_prop" );
-
 	trap_Cmd_AddCommand ("menu_main", M_Menu_Main_f);
 	trap_Cmd_AddCommand ("menu_game", M_Menu_Game_f);
 		trap_Cmd_AddCommand ("menu_loadgame", M_Menu_LoadGame_f);
@@ -502,6 +508,8 @@ void UI_Init ( int vidWidth, int vidHeight )
 	trap_Cmd_AddCommand ("menu_options", M_Menu_Options_f);
 		trap_Cmd_AddCommand ("menu_keys", M_Menu_Keys_f);
 	trap_Cmd_AddCommand ("menu_quit", M_Menu_Quit_f);
+
+	M_Cache ();
 }
 
 /*
@@ -603,22 +611,24 @@ void UI_DrawConnectScreen ( char *serverName, int connectCount, qboolean backGro
 	char str[MAX_QPATH], levelshot[MAX_QPATH];
 	char mapname[MAX_QPATH], message[MAX_QPATH];
 
-	localhost = !Q_stricmp ( serverName, "localhost" );
+	localhost = !serverName || !serverName[0] || !Q_stricmp ( serverName, "localhost" );
+
+	M_Cache ();
 
 	trap_GetConfigString ( CS_MAPNAME, mapname, sizeof(mapname) );
 	if ( backGround ) {
 		if ( mapname[0] ) {
-			Com_sprintf ( levelshot, sizeof(levelshot), "levelshots/%s.jpg", mapname );
+			Q_snprintfz ( levelshot, sizeof(levelshot), "levelshots/%s.jpg", mapname );
 
-			if ( !trap_FS_FileExists ( levelshot ) ) 
-				Com_sprintf ( levelshot, sizeof(levelshot), "levelshots/%s.tga", mapname );
+			if ( trap_FS_FOpenFile( levelshot, NULL, FS_READ ) == -1 ) 
+				Q_snprintfz ( levelshot, sizeof(levelshot), "levelshots/%s.tga", mapname );
 
-			if ( !trap_FS_FileExists ( levelshot ) ) 
-				Com_sprintf ( levelshot, sizeof(levelshot), "menu/art/unknownmap" );
+			if ( trap_FS_FOpenFile( levelshot, NULL, FS_READ ) == -1 ) 
+				Q_snprintfz ( levelshot, sizeof(levelshot), "menu/art/unknownmap" );
 
-			trap_Draw_StretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+			trap_R_DrawStretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
 				0, 0, 1, 1, colorWhite, trap_R_RegisterPic ( levelshot ) );
-			trap_Draw_StretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+			trap_R_DrawStretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
 				0, 0, 2.5, 2, colorWhite, trap_R_RegisterPic ( "levelShotDetail" ) );
 		} else {
 			UI_FillRect ( 0, 0, uis.vidWidth, uis.vidHeight, colorBlack );
@@ -627,22 +637,22 @@ void UI_DrawConnectScreen ( char *serverName, int connectCount, qboolean backGro
 
 	// draw server name if not local host
 	if ( !localhost ) {
-		Com_sprintf ( str, sizeof(str), "Connecting to %s", serverName );
+		Q_snprintfz ( str, sizeof(str), "Connecting to %s", serverName );
 		UI_DrawPropString ( (uis.vidWidth - UI_PropStringLength (str, fontstyle)) / 2, 64, str, fontstyle, colorWhite );
 	}
 
-	if ( mapname[0] ) {
-		trap_GetConfigString ( CS_MESSAGE, message, sizeof(message) );
+	if( mapname[0] ) {
+		trap_GetConfigString( CS_MESSAGE, message, sizeof(message) );
 
-		if ( message[0] ) {
-			// level name ("message")
-			UI_DrawPropString ( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
-		}
+		if( message[0] )	// level name ("message")
+			UI_DrawPropString( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
 	} else {
-		Q_strncpyz ( message, va("Awaiting connection... %i", connectCount), sizeof(message) );
-
-		if ( !localhost ) {
-			UI_DrawPropString ( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
+		if( !localhost ) {
+			Q_snprintfz ( message, sizeof(message), "Awaiting connection... %i", connectCount );
+			UI_DrawPropString( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
+		} else {
+			Q_strncpyz ( message, "Loading...", sizeof(message) );
+			UI_DrawPropString( (uis.vidWidth - UI_PropStringLength (message, fontstyle)) / 2, 150, message, fontstyle, colorWhite );
 		}
 	}
 }
@@ -660,7 +670,7 @@ void UI_Refresh ( int time, int clientState, int serverState, qboolean backGroun
 
 	// draw background
 	if ( backGround ) {
-		trap_Draw_StretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+		trap_R_DrawStretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
 			0, 0, 1, 1, colorWhite, trap_R_RegisterPic ( "menuback" ) );
 	}
 
@@ -670,7 +680,7 @@ void UI_Refresh ( int time, int clientState, int serverState, qboolean backGroun
 	m_drawfunc ();
 
 	// draw cursor
-	trap_Draw_StretchPic ( uis.cursorX - 16, uis.cursorY - 16, 32, 32, 
+	trap_R_DrawStretchPic ( uis.cursorX - 16, uis.cursorY - 16, 32, 32, 
 		0, 0, 1, 1, colorWhite, trap_R_RegisterPic ( "menu/art/3_cursor2" ) );
 
 	// delay playing the enter sound until after the
@@ -709,6 +719,7 @@ void Sys_Error (char *error, ...)
 	va_start (argptr, error);
 	vsnprintf (text, sizeof(text), error, argptr);
 	va_end (argptr);
+	text[sizeof(text)-1] = 0;
 
 	trap_Error (text);
 }
@@ -721,6 +732,7 @@ void Com_Printf (char *fmt, ...)
 	va_start (argptr, fmt);
 	vsnprintf (text, sizeof(text), fmt, argptr);
 	va_end (argptr);
+	text[sizeof(text)-1] = 0;
 
 	trap_Print (text);
 }

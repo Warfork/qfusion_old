@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #define	NUM_CON_TIMES 4
 
-#define		CON_TEXTSIZE	32768
+#define		CON_TEXTSIZE	65536
 typedef struct
 {
 	qboolean	initialized;
@@ -57,3 +57,4 @@ void Con_DrawNotify (void);
 void Con_ClearNotify (void);
 void Con_ToggleConsole_f (void);
 void Con_CompleteCommandLine (void);
+void Con_Close (void);

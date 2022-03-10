@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // winquake.h: Win32-specific Quake header file
 
 #include <windows.h>
-#ifdef HAS_MMSYSTEM
+#ifdef HAVE_MMSYSTEM
 # include <mmsystem.h>
 #endif
 

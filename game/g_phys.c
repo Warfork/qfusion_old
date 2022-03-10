@@ -403,7 +403,7 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 	edict_t		*check, *block;
 	vec3_t		mins, maxs;
 	pushed_t	*p;
-	mat3_t		axis;
+	vec3_t		axis[3];
 	vec3_t		org, org2, move2;
 
 	// clamp the move to 1/8 units, so the position will
@@ -488,7 +488,7 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 
 			// figure movement due to the pusher's amove
 			VectorSubtract (check->s.origin, pusher->s.origin, org);
-			Matrix3_Multiply_Vec3 (axis, org, org2);
+			Matrix_TransformVector (axis, org, org2);
 			VectorSubtract (org2, org, move2);
 			VectorAdd (check->s.origin, move2, check->s.origin);
 

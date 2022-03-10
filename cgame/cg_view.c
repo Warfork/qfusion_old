@@ -22,73 +22,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // cg_view.c -- player rendering positioning
 
-//=============
-
-int			r_numDlights;
-dlight_t	r_dlights[MAX_DLIGHTS];
-
-int			r_numEntities;
-entity_t	r_entities[MAX_ENTITIES];
-
-int			r_numPolys;
-poly_t		r_polys[MAX_POLYS];
-
-/*
-====================
-CG_ClearScene
-====================
-*/
-void CG_ClearScene (void)
-{
-	r_numDlights = 0;
-	r_numEntities = 0;
-	r_numPolys = 0;
-}
-
-
-/*
-=====================
-CG_AddEntity
-=====================
-*/
-void CG_AddEntity ( entity_t *ent )
-{
-	if ( r_numEntities < MAX_ENTITIES ) {
-		r_entities[r_numEntities++] = *ent;
-	}
-}
-
-/*
-=====================
-CG_AddLight
-=====================
-*/
-void CG_AddLight ( vec3_t org, float intensity, float r, float g, float b )
-{
-	dlight_t	*dl;
-
-	if ( r_numDlights < MAX_DLIGHTS ) {
-		dl = &r_dlights[r_numDlights++];
-		VectorCopy (org, dl->origin);
-		dl->intensity = intensity;
-		dl->color[0] = r;
-		dl->color[1] = g;
-		dl->color[2] = b;
-	}
-}
-
-/*
-=====================
-CG_AddPoly
-=====================
-*/
-void CG_AddPoly ( poly_t *poly )
-{
-	if ( r_numPolys < MAX_POLYS ) {
-		r_polys[r_numPolys++] = *poly;
-	}
-}
-
 /*
 ================
 CG_TestEntities
@@ -96,30 +29,34 @@ CG_TestEntities
 If cg_testEntities is set, create 32 player models
 ================
 */
-void CG_TestEntities (void)
+void CG_TestEntities( void )
 {
 	int			i, j;
 	float		f, r;
-	entity_t	*ent;
+	entity_t	ent;
 
-	r_numEntities = 32;
-	memset ( r_entities, 0, sizeof(r_entities) );
+	memset( &ent, 0, sizeof( ent ) );
 
-	ent = r_entities;
-	for ( i = 0; i < r_numEntities; i++, ent++ )
-	{
+	trap_R_ClearScene ();
+
+	for( i = 0; i < 100; i++ ) {
 		r = 64 * ( (i%4) - 1.5 );
 		f = 64 * (i/4) + 128;
 
 		for ( j = 0; j < 3; j++ )
-			ent->origin[j] = cg.refdef.vieworg[j] + cg.v_forward[j]*f + cg.v_right[j]*r;
+			ent.origin[j] = ent.lightingOrigin[j] = cg.refdef.vieworg[j] + cg.v_forward[j]*f + cg.v_right[j]*r;
 
-		ent->model = cgs.baseClientInfo.model;
-		if ( cgs.baseClientInfo.skin ) {
-			ent->customSkin = cgs.baseClientInfo.skin;
-		} else {
-			ent->customShader = cgs.baseClientInfo.shader;
-		}
+		Matrix_Copy( cg.autorotateAxis, ent.axis );
+
+		ent.scale = 1.0f;
+		ent.rtype = RT_MODEL;
+		ent.model = cgs.baseClientInfo.model;
+		if( cgs.baseClientInfo.skin )
+			ent.customSkin = cgs.baseClientInfo.skin;
+		else
+			ent.customShader = cgs.baseClientInfo.shader;
+
+		trap_R_AddEntityToScene( &ent );
 	}
 }
 
@@ -130,28 +67,19 @@ CG_TestLights
 If cg_testLights is set, create 32 lights models
 ================
 */
-void CG_TestLights (void)
+void CG_TestLights( void )
 {
 	int			i, j;
 	float		f, r;
-	dlight_t	*dl;
+	vec3_t		origin;
 
-	r_numDlights = 32;
-	memset (r_dlights, 0, sizeof(r_dlights));
-
-	dl = r_dlights;
-	for ( i = 0; i < r_numDlights; i++, dl++ )
-	{
+	for( i = 0; i < 32; i++ ) {
 		r = 64 * ((i%4) - 1.5);
 		f = 64 * (i/4) + 128;
 
 		for ( j = 0; j < 3; j++ )
-			dl->origin[j] = cg.refdef.vieworg[j] + cg.v_forward[j]*f + cg.v_right[j]*r;
-
-		dl->color[0] = ((i%6)+1) & 1;
-		dl->color[1] = (((i%6)+1) & 2)>>1;
-		dl->color[2] = (((i%6)+1) & 4)>>2;
-		dl->intensity = 200;
+			origin[j] = cg.refdef.vieworg[j] + cg.v_forward[j]*f + cg.v_right[j]*r;
+		trap_R_AddLightToScene( origin, 200, ((i%6)+1) & 1, (((i%6)+1) & 2)>>1, (((i%6)+1) & 4)>>2 );
 	}
 }
 
@@ -162,7 +90,7 @@ CG_TestBlend
 If cg_testBlend is set, create a debug blend
 ================
 */
-void CG_TestBlend (void)
+void CG_TestBlend( void )
 {
 	cg.refdef.blend[0] = 1;
 	cg.refdef.blend[1] = 0.5;
@@ -183,11 +111,11 @@ void CG_ThirdPerson_CameraUpdate (void)
 	vec3_t	dest, stop;
 	vec3_t	chase_dest;
 	trace_t	trace;
-	static vec3_t mins = { -4, -4, -4 };
-	static vec3_t maxs = { 4, 4, 4 };
+	vec3_t	mins = { -4, -4, -4 };
+	vec3_t	maxs = { 4, 4, 4 };
 
 	// calc exact destination
-	VectorCopy ( cg.refdef.vieworg, chase_dest );
+	VectorCopy( cg.refdef.vieworg, chase_dest );
 	r = DEG2RAD( cg_thirdPersonAngle->value );
 	f = -cos( r );
 	r = -sin( r );
@@ -196,29 +124,61 @@ void CG_ThirdPerson_CameraUpdate (void)
 	chase_dest[2] += 8;
 
 	// find the spot the player is looking at
-	VectorMA ( cg.refdef.vieworg, 512, cg.v_forward, dest );
-	CG_Trace ( &trace, cg.refdef.vieworg, mins, maxs, dest, cgs.playerNum+1, MASK_SOLID );
+	VectorMA( cg.refdef.vieworg, 512, cg.v_forward, dest );
+	CG_Trace( &trace, cg.refdef.vieworg, mins, maxs, dest, cgs.playerNum + 1, MASK_SOLID );
 
 	// calculate pitch to look at the same spot from camera
-	VectorSubtract ( trace.endpos, cg.refdef.vieworg, stop );
-	dist = sqrt ( stop[0] * stop[0] + stop[1] * stop[1] );
-	if (dist < 1)
+	VectorSubtract( trace.endpos, cg.refdef.vieworg, stop );
+	dist = sqrt( stop[0] * stop[0] + stop[1] * stop[1] );
+	if( dist < 1 )
 		dist = 1;
 	cg.refdef.viewangles[PITCH] = RAD2DEG( -atan2(stop[2], dist) );
 	cg.refdef.viewangles[YAW] -= cg_thirdPersonAngle->value;
-	AngleVectors ( cg.refdef.viewangles, cg.v_forward, cg.v_right, cg.v_up );
+	AngleVectors( cg.refdef.viewangles, cg.v_forward, cg.v_right, cg.v_up );
 
 	// move towards destination
-	CG_Trace ( &trace, cg.refdef.vieworg, mins, maxs, chase_dest, cgs.playerNum+1, MASK_SOLID );
+	CG_Trace( &trace, cg.refdef.vieworg, mins, maxs, chase_dest, cgs.playerNum + 1, MASK_SOLID );
 
-	if ( trace.fraction != 1.0 ) {
-		VectorCopy ( trace.endpos, stop );
+	if( trace.fraction != 1.0 ) {
+		VectorCopy( trace.endpos, stop );
 		stop[2] += ( 1.0 - trace.fraction ) * 32;
-		CG_Trace ( &trace, cg.refdef.vieworg, mins, maxs, stop, cgs.playerNum+1, MASK_SOLID );
-		VectorCopy ( trace.endpos, chase_dest );
+		CG_Trace( &trace, cg.refdef.vieworg, mins, maxs, stop, cgs.playerNum + 1, MASK_SOLID );
+		VectorCopy( trace.endpos, chase_dest );
 	}
 
-	VectorCopy ( chase_dest, cg.refdef.vieworg );
+	VectorCopy( chase_dest, cg.refdef.vieworg );
+}
+
+/*
+================
+CG_CalcViewBob
+================
+*/
+void CG_CalcViewBob( void )
+{
+	float bobMove, bobTime;
+
+	if( cg.thirdPerson )
+		return;
+
+	//
+	// calculate speed and cycle to be used for
+	// all cyclic walking effects
+	//
+	cg.xyspeed = sqrt( cg.predictedVelocity[0]*cg.predictedVelocity[0] + cg.predictedVelocity[1]*cg.predictedVelocity[1] );
+
+	bobMove = 0;
+	if( cg.xyspeed < 5 )
+		cg.oldBobTime = 0;			// start at beginning of cycle again
+	else if( cg.groundEntity != -1 )
+		bobMove = cg.frameTime;		// so bobbing only cycles when on ground
+
+	bobTime = (cg.oldBobTime += bobMove);
+	if( cg.frame.playerState.pmove.pm_flags & PMF_DUCKED )
+		bobTime *= 4;
+
+	cg.bobCycle = (int)bobTime;
+	cg.bobFracSin = fabs(sin(bobTime*M_PI));
 }
 
 //============================================================================
@@ -256,7 +216,7 @@ CG_RenderView
 
 void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qboolean forceRefresh )
 {
-	if ( !cg.frame.valid ) {
+	if( !cg.frame.valid ) {
 		SCR_DrawLoading ();
 		return;
 	}
@@ -274,44 +234,39 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 	cg.time += frameTime * 1000;
 
 	// clamp time 
-	clamp ( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
+	clamp( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
 
-	if ( cg.frameTime > (1.0 / 5.0) ) {
+	if( cg.frameTime > (1.0 / 5.0) )
 		cg.frameTime = (1.0 / 5.0);
-	}
 
 	// predict all unacknowledged movements
 	CG_PredictMovement ();
 
 	CG_FixUpGender ();
 
-	if ( !cg_paused->value || forceRefresh )
-	{
-		CG_ClearScene ();
+	if( !cg_paused->integer || forceRefresh ) {
+		trap_R_ClearScene ();
+
+		CG_CalcViewBob ();
 
 		// build a refresh entity list
 		// this also calls CG_CalcViewValues which loads
 		// v_forward, etc.
 		CG_AddEntities ();
 
-		if ( cg_testEntities->value ) {
+		if( cg_testEntities->integer )
 			CG_TestEntities ();
-		}
-		if ( cg_testLights->value ) {
+		if( cg_testLights->integer )
 			CG_TestLights ();
-		}
-		if ( cg_testBlend->value ) {
+		if( cg_testBlend->integer )
 			CG_TestBlend ();
-		}
 
 		// offset vieworg appropriately if we're doing stereo separation
-		if ( stereo_separation != 0 ) {
+		if( stereo_separation != 0 )
 			VectorMA( cg.refdef.vieworg, stereo_separation, cg.v_right, cg.refdef.vieworg );
-		}
 
-		if ( cg.thirdPerson ) {
+		if( cg.thirdPerson )
 			CG_ThirdPerson_CameraUpdate ();
-		}
 
 		// never let it sit exactly on a node line, because a water plane can
 		// dissapear when viewed with the eye exactly on it.
@@ -324,18 +279,10 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 		cg.refdef.y = scr_vrect.y;
 		cg.refdef.width = scr_vrect.width;
 		cg.refdef.height = scr_vrect.height;
-		cg.refdef.fov_x = 90;
-		cg.refdef.fov_y = CalcFov ( cg.refdef.fov_x, cg.refdef.width, cg.refdef.height );
+		cg.refdef.fov_y = CalcFov( cg.refdef.fov_x, cg.refdef.width, cg.refdef.height );
 
 		cg.refdef.time = cg.time * 0.001;
 		cg.refdef.areabits = cg.frame.areabits;
-
-		cg.refdef.num_entities = r_numEntities;
-		cg.refdef.entities = r_entities;
-		cg.refdef.num_dlights = r_numDlights;
-		cg.refdef.dlights = r_dlights;
-		cg.refdef.num_polys = r_numPolys;
-		cg.refdef.polys = r_polys;
 
 		cg.refdef.rdflags = CG_RenderFlags ();
 
@@ -348,14 +295,10 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 		}
 	}
 
-	trap_R_RenderFrame ( &cg.refdef );
+	trap_R_RenderScene( &cg.refdef );
 
 	// update audio
-	trap_S_Update ( cg.refdef.vieworg, cg.v_forward, cg.v_right, cg.v_up );
-
-	if ( cg_stats->value ) {
-		CG_Printf ( "ent:%i  lt:%i  polys:%i\n", r_numEntities, r_numDlights, r_numPolys );
-	}
+	trap_S_Update( cg.refdef.vieworg, cg.v_forward, cg.v_right, cg.v_up );
 
 	if ( 0 ) {		// mirror of back view
 		cg.refdef.x = scr_vrect.x;
@@ -363,12 +306,11 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 		cg.refdef.width = scr_vrect.width / 5;
 		cg.refdef.height = scr_vrect.height / 5;
 		cg.refdef.y += scr_vrect.height / 2 - cg.refdef.height / 2;
-		cg.refdef.viewangles[PITCH] = anglemod ( -cg.refdef.viewangles[PITCH] );
-		cg.refdef.viewangles[YAW] = anglemod ( cg.refdef.viewangles[YAW] + 180 );
+		cg.refdef.viewangles[PITCH] = anglemod( -cg.refdef.viewangles[PITCH] );
+		cg.refdef.viewangles[YAW] = anglemod( cg.refdef.viewangles[YAW] + 180 );
 
-		trap_R_RenderFrame ( &cg.refdef );
+		trap_R_RenderScene( &cg.refdef );
 	}
 
 	SCR_Draw2D ();
 }
-

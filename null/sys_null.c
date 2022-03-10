@@ -85,7 +85,7 @@ int		Sys_Milliseconds (void)
 	return 0;
 }
 
-void	Sys_Mkdir (char *path)
+void	Sys_Mkdir (const char *path)
 {
 }
 

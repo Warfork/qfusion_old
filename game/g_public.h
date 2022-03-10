@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // g_public.h -- game dll information visible to server
 
-#define	GAME_API_VERSION	1
+#define	GAME_API_VERSION	2
 
 // edict->svflags
 #define	SVF_NOCLIENT		0x00000001	// don't send entity to clients, even if it has effects
@@ -29,6 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define	SVF_FORCEOLDORIGIN	0x00000008	// always send old_origin (beams, etc), just check one point for PHS if not SVF_PORTAL (must be non-solid)
 #define	SVF_MONSTER			0x00000010	// treat as CONTENTS_MONSTER for collision
 #define SVF_FAKECLIENT		0x00000020	// do not try to send anything to this client
+#define SVF_BROADCAST		0x00000040	// always transmit
 
 // edict->solid values
 typedef enum
@@ -92,75 +93,100 @@ typedef struct
 typedef struct
 {
 	// special messages
-	void		(*Print) (char *msg);
+	void		(*Print)( char *msg );
 
 	// aborts server with a game error
-	void		(*Error) (char *msg);
+	void		(*Error)( char *msg );
 
 	// hardly encoded sound message
-	void		(*Sound) (vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation);
+	void		(*Sound)( vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation );
 
 	// server commands sent to clients
-	void		(*ServerCmd) (edict_t *ent, char *cmd);
+	void		(*ServerCmd)( edict_t *ent, char *cmd );
 
 	// config strings hold all the index strings,
 	// and misc data like audio track and gridsize.
 	// All of the current configstrings are sent to clients when
 	// they connect, and changes are sent to all connected clients.
-	void		(*ConfigString) (int num, char *string);
+	void		(*ConfigString)( int num, char *string );
 
 	// general 2D layout
-	void		(*Layout) (edict_t *ent, char *string);
+	void		(*Layout)( edict_t *ent, char *string );
 
 	// stuffed into client's console buffer, should be \n terminated
-	void		(*StuffCmd) (edict_t *ent, char *string);
+	void		(*StuffCmd)( edict_t *ent, char *string );
 
 	// the *index functions create configstrings and some internal server state
-	int			(*ModelIndex) (char *name);
-	int			(*SoundIndex) (char *name);
-	int			(*ImageIndex) (char *name);
+	int			(*ModelIndex)( char *name );
+	int			(*SoundIndex)( char *name );
+	int			(*ImageIndex)( char *name );
 
-	void		(*SetBrushModel) (edict_t *ent, char *name);
+	void		(*SetBrushModel)( edict_t *ent, char *name );
+
+	int			(*Milliseconds)( void );
 
 	// collision detection
-	void		(*Trace) (trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, edict_t *passent, int contentmask);
-	int			(*PointContents) (vec3_t point);
-	qboolean	(*inPVS) (vec3_t p1, vec3_t p2);
-	qboolean	(*inPHS) (vec3_t p1, vec3_t p2);
-	void		(*SetAreaPortalState) (edict_t *ent, qboolean open);
-	qboolean	(*AreasConnected) (int area1, int area2);
+	void		(*Trace)( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, edict_t *passent, int contentmask );
+	int			(*PointContents)( vec3_t point );
+
+	qboolean	(*inPVS)( vec3_t p1, vec3_t p2 );
+	qboolean	(*inPHS)( vec3_t p1, vec3_t p2 );
+	void		(*SetAreaPortalState)( edict_t *ent, qboolean open );
+	qboolean	(*AreasConnected)( int area1, int area2 );
 
 	// an entity will never be sent to a client or used for collision
 	// if it is not passed to linkentity.  If the size, position, or
 	// solidity changes, it must be relinked.
-	void		(*LinkEntity) (edict_t *ent);
-	void		(*UnlinkEntity) (edict_t *ent);		// call before removing an interactive edict
-	int			(*BoxEdicts) (vec3_t mins, vec3_t maxs, edict_t **list,	int maxcount, int areatype);
+	void		(*LinkEntity)( edict_t *ent );
+	void		(*UnlinkEntity)( edict_t *ent );	// call before removing an interactive edict
+	int			(*BoxEdicts)( vec3_t mins, vec3_t maxs, edict_t **list,	int maxcount, int areatype );
+	qboolean	(*EntityContact)( vec3_t mins, vec3_t maxs, edict_t *ent );
 
 	// managed memory allocation
-	struct mempool_s *(*Mem_AllocPool) ( const char *name, const char *filename, int fileline );	
-	void		*(*Mem_Alloc) ( struct mempool_s *pool, int size, const char *filename, int fileline );
-	void		(*Mem_Free) ( void *data, const char *filename, int fileline );
-	void		(*Mem_FreePool) ( struct mempool_s **pool, const char *filename, int fileline );
-	void		(*Mem_EmptyPool) ( struct mempool_s *pool, const char *filename, int fileline );
+	struct mempool_s *(*Mem_AllocPool)( const char *name, const char *filename, int fileline );	
+	void		*(*Mem_Alloc)( struct mempool_s *pool, int size, const char *filename, int fileline );
+	void		(*Mem_Free)( void *data, const char *filename, int fileline );
+	void		(*Mem_FreePool)( struct mempool_s **pool, const char *filename, int fileline );
+	void		(*Mem_EmptyPool)( struct mempool_s *pool, const char *filename, int fileline );
 
 	// console variable interaction
-	cvar_t		*(*Cvar_Get) ( char *name, char *value, int flags );
-	cvar_t		*(*Cvar_Set) ( char *name, char *value );
-	cvar_t		*(*Cvar_ForceSet) ( char *name, char *value );	// will return 0 0 if not found
+	cvar_t		*(*Cvar_Get)( char *name, char *value, int flags );
+	cvar_t		*(*Cvar_Set)( char *name, char *value );
+	cvar_t		*(*Cvar_ForceSet)( char *name, char *value );	// will return 0 0 if not found
 
 	// ClientCommand and ServerCommand parameter access
-	int			(*Cmd_Argc) (void);
-	char		*(*Cmd_Argv) ( int arg );
-	char		*(*Cmd_Args) (void);		// concatenation of all argv >= 1
+	int			(*Cmd_Argc)( void );
+	char		*(*Cmd_Argv)( int arg );
+	char		*(*Cmd_Args)( void );		// concatenation of all argv >= 1
+
+	// files will be memory mapped read only
+	// the returned buffer may be part of a larger pak file,
+	// or a discrete file from anywhere in the quake search path
+	// a -1 return means the file does not exist
+	// NULL can be passed for buf to just determine existance
+	int			(*FS_FOpenFile)( const char *filename, int *filenum, int mode );
+	int			(*FS_Read)( void *buffer, size_t len, int file );
+	int			(*FS_Write)( const void *buffer, size_t len, int file );
+	int			(*FS_Tell)( int file );
+	int			(*FS_Seek)( int file, int offset, int whence );
+	int			(*FS_Eof)( int file );
+	int			(*FS_Flush)( int file );
+	void		(*FS_FCloseFile)( int file );
+	int			(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize );
+	char		*(*FS_Gamedir)( void );
 
 	// add commands to the server console as if they were typed in
 	// for map changing, etc
-	void		(*AddCommandString) (char *text);
+	void		(*AddCommandString)( char *text );
+
+	// a fake client connection, ClientConnect is called afterwords
+	// with fakeClient set to true
+	void		(*FakeClientConnect)( char *fakeUserinfo, char *fakeIP );
+	void		(*DropClient)( struct edict_s *ent );
 
 	// The edict array is allocated in the game dll so it
 	// can vary in size from one game to another.
-	void		(*LocateEntities) (struct edict_s *edicts, int edict_size, int num_edicts, int max_edicts);
+	void		(*LocateEntities)( struct edict_s *edicts, int edict_size, int num_edicts, int max_edicts );
 } game_import_t;
 
 //
@@ -169,41 +195,41 @@ typedef struct
 typedef struct
 {
 	// if API is different, the dll cannot be used
-	int			(*API) (void);
+	int			(*API)( void );
 
 	// the init function will only be called when a game starts,
 	// not each time a level is loaded.  Persistant data for clients
 	// and the server can be allocated in init
-	void		(*Init) (unsigned int seed);
-	void		(*Shutdown) (void);
+	void		(*Init)( unsigned int seed );
+	void		(*Shutdown)( void );
 
 	// each new level entered will cause a call to SpawnEntities
-	void		(*SpawnEntities) (char *mapname, char *entstring, char *spawnpoint);
+	void		(*SpawnEntities)( char *mapname, char *entstring, char *spawnpoint );
 
 	// Read/Write Game is for storing persistant cross level information
 	// about the world state and the clients.
 	// WriteGame is called every time a level is exited.
 	// ReadGame is called on a loadgame.
-	void		(*WriteGame) (char *filename, qboolean autosave);
-	void		(*ReadGame) (char *filename);
+	void		(*WriteGame)( char *filename, qboolean autosave );
+	void		(*ReadGame)( char *filename );
 
 	// ReadLevel is called after the default map information has been
 	// loaded with SpawnEntities
-	void		(*WriteLevel) (char *filename);
-	void		(*ReadLevel) (char *filename);
+	void		(*WriteLevel)( char *filename );
+	void		(*ReadLevel)( char *filename );
 
-	qboolean	(*ClientConnect) (edict_t *ent, char *userinfo);
-	void		(*ClientBegin) (edict_t *ent);
-	void		(*ClientUserinfoChanged) (edict_t *ent, char *userinfo);
-	void		(*ClientDisconnect) (edict_t *ent);
-	void		(*ClientCommand) (edict_t *ent);
-	void		(*ClientThink) (edict_t *ent, usercmd_t *cmd);
+	qboolean	(*ClientConnect)( edict_t *ent, char *userinfo, qboolean fakeClient );
+	void		(*ClientBegin)( edict_t *ent );
+	void		(*ClientUserinfoChanged)( edict_t *ent, char *userinfo );
+	void		(*ClientDisconnect)( edict_t *ent );
+	void		(*ClientCommand)( edict_t *ent );
+	void		(*ClientThink)( edict_t *ent, usercmd_t *cmd );
 
-	void		(*RunFrame) (void);
+	void		(*RunFrame)( void );
 
 	// ServerCommand will be called when an "sv <command>" command is issued on the
 	// server console.
 	// The game can issue trap_Cmd_Args() / trap_Cmd_Argv() commands to get the rest
 	// of the parameters
-	void		(*ServerCommand) (void);
+	void		(*ServerCommand)( void );
 } game_export_t;

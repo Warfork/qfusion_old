@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // huff.c
 #include "qcommon.h"
 
-#define HUFF_DEBUG
+//#define HUFF_DEBUG
 
 typedef struct huffNode_s
 {
@@ -85,8 +85,7 @@ unsigned debugHuffCounts[256];
 Huff_ResetCounts
 =============
 */
-static void Huff_ResetCounts (void)
-{
+static void Huff_ResetCounts( void ) {
 	memset ( debugHuffCounts, 0, sizeof(debugHuffCounts) );
 }
 
@@ -95,13 +94,12 @@ static void Huff_ResetCounts (void)
 Huff_AddCounts
 =============
 */
-void Huff_AddCounts ( unsigned char *data, unsigned len )
+void Huff_AddCounts( unsigned char *data, unsigned len )
 {
 	int i;
 
-	for ( i = 0; i < len; i++ ) {
+	for( i = 0; i < len; i++ )
 		debugHuffCounts[data[i]]++;
-	}
 }
 
 /*
@@ -109,20 +107,18 @@ void Huff_AddCounts ( unsigned char *data, unsigned len )
 Huff_DumpCounts_f
 =============
 */
-void Huff_DumpCounts_f (void)
+void Huff_DumpCounts_f( void )
 {
 	int i, j;
 
-	Com_Printf ( " %5i", debugHuffCounts[0] );
-	for ( j = 1; j < 8; j++ ) {
+	Com_Printf( " %5i", debugHuffCounts[0] );
+	for( j = 1; j < 8; j++ )
 		Com_Printf ( ",%5i", debugHuffCounts[j] );
-	}
 	Com_Printf ( "\n" );
 
-	for ( i = 8; i < 256; i += 8 ) {
-		for ( j = 0; j < 8; j++ ) {
+	for( i = 8; i < 256; i += 8 ) {
+		for( j = 0; j < 8; j++ )
 			Com_Printf ( ",%5i", debugHuffCounts[i+j] );
-		}
 		Com_Printf ( "\n" );
 	}
 
@@ -135,22 +131,20 @@ void Huff_DumpCounts_f (void)
 Huff_BuildTable
 =============
 */
-static void Huff_BuildTable ( huffNode_t *node, huffTab_t *table, unsigned len, unsigned bits )
+static void Huff_BuildTable( huffNode_t *node, huffTab_t *table, unsigned len, unsigned bits )
 {
-	if ( !node ) {
+	if( !node )
 		Com_Error ( ERR_FATAL, "Huff_BuildTable: no node" );
-	}
-	if ( node->children[0] ) {
-		if ( !node->children[1] ) {
-			Com_Error ( ERR_FATAL, "Huff_BuildTable: bad node" );
-		}
-		if ( len >= 32 ) {
-			Com_Error ( ERR_FATAL, "Huff_BuildTable: bad len" );
-		}
+
+	if( node->children[0] ) {
+		if( !node->children[1] )
+			Com_Error( ERR_FATAL, "Huff_BuildTable: bad node" );
+		if( len >= 32 )
+			Com_Error( ERR_FATAL, "Huff_BuildTable: bad len" );
 
 		bits <<= 1;
-		Huff_BuildTable ( node->children[0], table, len + 1, bits );
-		Huff_BuildTable ( node->children[1], table, len + 1, bits | 1 );
+		Huff_BuildTable( node->children[0], table, len + 1, bits );
+		Huff_BuildTable( node->children[1], table, len + 1, bits | 1 );
 		return;
 	}
 
@@ -163,26 +157,25 @@ static void Huff_BuildTable ( huffNode_t *node, huffTab_t *table, unsigned len, 
 Huff_BuildTree
 =============
 */
-static void Huff_BuildTree ( huffTree_t *tree, unsigned *counts )
+static void Huff_BuildTree( huffTree_t *tree, unsigned *counts )
 {
 	int i, j;
 	unsigned best[2], bestval[2];
 	huffNode_t *nodes[256], *headNode;
 
-	for ( i = 0; i < 256; i++ ) {
-		nodes[i] = ( huffNode_t * )Mem_ZoneMalloc( sizeof(huffNode_t) );
+	for( i = 0; i < 256; i++ ) {
+		nodes[i] = ( huffNode_t * )Mem_ZoneMalloc( sizeof( huffNode_t ) );
 		nodes[i]->count = counts[i];
 		nodes[i]->pos = ( unsigned )i;
 	}
 
-	for ( i = 0; i < 255; i++ ) {
+	for( i = 0; i < 255; i++ ) {
 		best[0] = best[1] = 0;
 		bestval[0] = bestval[1] = 99999999;
 
 		for ( j = 0; j < 256; j++ ) {
-			if ( !nodes[j] ) {
+			if( !nodes[j] )
 				continue;
-			}
 
 			if ( nodes[j]->count < bestval[0] ) {
 				best[1] = best[0];
@@ -195,14 +188,12 @@ static void Huff_BuildTree ( huffTree_t *tree, unsigned *counts )
 			}
 		}
 
-		if ( !best[0] ) {
-			Com_Error ( ERR_FATAL, "Huff_BuildTree: no node 0: %i", bestval[0] );
-		}
-		if ( !best[1] ) {
-			Com_Error ( ERR_FATAL, "Huff_BuildTree: no node 1: %i", bestval[1] );
-		}
+		if( !best[0] )
+			Com_Error( ERR_FATAL, "Huff_BuildTree: no node 0: %i", bestval[0] );
+		if( !best[1] )
+			Com_Error( ERR_FATAL, "Huff_BuildTree: no node 1: %i", bestval[1] );
 
-		headNode = ( huffNode_t * )Mem_ZoneMalloc ( sizeof(huffNode_t) );
+		headNode = ( huffNode_t * )Mem_ZoneMallocExt( sizeof(huffNode_t), 0 );
 		headNode->children[0] = nodes[best[1]-1];
 		headNode->children[1] = nodes[best[0]-1];
 		headNode->count = headNode->children[0]->count + headNode->children[1]->count;
@@ -213,9 +204,9 @@ static void Huff_BuildTree ( huffTree_t *tree, unsigned *counts )
 	}
 
 	tree->headNode = headNode;
-	memset ( tree->lookupTable, 0, sizeof(tree->lookupTable) );
+	memset( tree->lookupTable, 0, sizeof( tree->lookupTable ) );
 
-	Huff_BuildTable ( tree->headNode, tree->lookupTable, 0, 0 );
+	Huff_BuildTable( tree->headNode, tree->lookupTable, 0, 0 );
 }
 
 /*
@@ -223,30 +214,35 @@ static void Huff_BuildTree ( huffTree_t *tree, unsigned *counts )
 Huff_Decode
 =============
 */
-static unsigned Huff_Decode ( huffTree_t *tree, unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize )
+static unsigned Huff_Decode( huffTree_t *tree, unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize )
 {
 	huffNode_t *node;
 	unsigned bits, tbits;
 	unsigned outSize;
 
+	if( !inSize )
+		return 0;
+
+	if( *in == 0xff ) {
+		memcpy( out, in + 1, inSize - 1 );
+		return inSize - 1;
+	}
+
 	outSize = 0;
 	tbits = ((inSize - 1) << 3) - *in++;
-	for ( bits = 0; bits < tbits; ) {
+	for( bits = 0; bits < tbits; ) {
 		node = tree->headNode;
 
-		do
-		{
-			if ( in[bits >> 3] & (1 << (bits & 7)) ) {
+		do {
+			if( in[bits >> 3] & (1 << (bits & 7)) )
 				node = node->children[1];
-			} else {
+			else
 				node = node->children[0];
-			}
 			bits++;
-		} while ( node->children[0] );
+		} while( node->children[0] );
 
-		if ( outSize == maxOutSize ) {
+		if( outSize == maxOutSize )
 			Com_Error ( ERR_DROP, "Huff_Decode: outlen == maxOutSize" );
-		}
 
 		*out++ = node->pos;
 		outSize++;
@@ -260,38 +256,39 @@ static unsigned Huff_Decode ( huffTree_t *tree, unsigned char *in, unsigned inSi
 Huff_Encode
 =============
 */
-static unsigned Huff_Encode ( huffTree_t *tree, unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize )
+static unsigned Huff_Encode( huffTree_t *tree, unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize )
 {
 	int i, j;
 	unsigned bits, pos, len, bitsPos;
 	unsigned outSize;
 
-	if ( !inSize ) {
+	if( !inSize )
 		return 0;
-	}
 
 	bitsPos = 0;
-	for ( i = 0; i < inSize; i++, bitsPos += len ) {
+	for( i = 0; i < inSize; i++, bitsPos += len ) {
 		bits = tree->lookupTable[in[i]].bits;
 		len = tree->lookupTable[in[i]].len;
 		pos = bitsPos + len - 1;
-		if ( (pos>>3) >= maxOutSize ) {
+		if( (pos>>3) >= maxOutSize )
 			return maxOutSize + 1;
-		}
 
-		for ( j = 0; j < len; j++, pos--, bits >>= 1 ) {
-			if ( bits & 1 ) {
+		for( j = 0; j < len; j++, pos--, bits >>= 1 ) {
+			if( bits & 1 )
 				out[(pos>>3)+1] |= (1 << (pos & 7));
-			} else {
+			else
 				out[(pos>>3)+1] &= ~(1 << (pos & 7));
-			}
 		}
 	}
 
 	outSize = (bitsPos + 7) / 8 + 1;
-	if ( outSize >= inSize ) {
-		return outSize;
-	} else if ( outSize > maxOutSize ) {
+	if( outSize >= inSize + 1 ) {
+		if( inSize + 1 > maxOutSize )
+			return inSize + 1;
+		*out = 0xff;
+		memcpy( out + 1, in, inSize );
+		return inSize + 1;
+	} else if( outSize > maxOutSize ) {
 		return outSize;
 	} else {
 		*out = ((outSize - 1) << 3) - bitsPos;
@@ -305,8 +302,8 @@ static unsigned Huff_Encode ( huffTree_t *tree, unsigned char *in, unsigned inSi
 Huff_DecodeStatic
 =============
 */
-unsigned Huff_DecodeStatic ( unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize ) {
-	return Huff_Decode ( &huffTree, in, inSize, out, maxOutSize );
+unsigned Huff_DecodeStatic( unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize ) {
+	return Huff_Decode( &huffTree, in, inSize, out, maxOutSize );
 }
 
 /*
@@ -314,8 +311,8 @@ unsigned Huff_DecodeStatic ( unsigned char *in, unsigned inSize, unsigned char *
 Huff_EncodeStatic
 =============
 */
-unsigned Huff_EncodeStatic ( unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize ) {
-	return Huff_Encode ( &huffTree, in, inSize, out, maxOutSize );
+unsigned Huff_EncodeStatic( unsigned char *in, unsigned inSize, unsigned char *out, unsigned maxOutSize ) {
+	return Huff_Encode( &huffTree, in, inSize, out, maxOutSize );
 }
 
 /*
@@ -323,13 +320,15 @@ unsigned Huff_EncodeStatic ( unsigned char *in, unsigned inSize, unsigned char *
 Huff_Init
 =============
 */
-void Huff_Init (void)
+void Huff_Init( void )
 {
 #ifdef HUFF_DEBUG
-	Cmd_AddCommand ( "dumpcounts", Huff_DumpCounts_f );
+	Cmd_AddCommand( "dumpcounts", Huff_DumpCounts_f );
 #endif
 
-	Huff_BuildTree ( &huffTree, huffCounts );
+	Huff_BuildTree( &huffTree, huffCounts );
 
+#ifdef HUFF_DEBUG
 	Huff_ResetCounts ();
+#endif
 }

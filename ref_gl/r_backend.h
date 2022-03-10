@@ -23,142 +23,128 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_ARRAY_TRIANGLES		MAX_ARRAY_INDEXES/3
 #define MAX_ARRAY_NEIGHBORS		MAX_ARRAY_TRIANGLES*3
 
-#ifdef SHADOW_VOLUMES
-extern vec4_t	vertexArray[MAX_ARRAY_VERTS*2];	// the second half is for shadow volumes
+enum
+{
+	VBO_VERTS,
+	VBO_NORMALS,
+	VBO_COLORS,
+	VBO_INDEXES,
+	VBO_TC0,
+
+	VBO_ENDMARKER
+};
+
+#define MAX_VERTEX_BUFFER_OBJECTS	VBO_ENDMARKER+MAX_TEXTURE_UNITS-1
+
+#if SHADOW_VOLUMES
+extern vec3_t		inVertsArray[MAX_ARRAY_VERTS*2];	// the second half is for shadow volumes
 #else
-extern vec4_t	vertexArray[MAX_ARRAY_VERTS];
+extern vec3_t		inVertsArray[MAX_ARRAY_VERTS];
 #endif
 
-extern vec3_t	normalsArray[MAX_ARRAY_VERTS];
-extern index_t	tempIndexesArray[MAX_ARRAY_INDEXES];
-extern byte_vec4_t colorArray[MAX_ARRAY_VERTS];
-
-extern vec4_t	tempVertexArray[MAX_ARRAY_VERTS];
-extern vec3_t	tempNormalsArray[MAX_ARRAY_VERTS];
-
-extern index_t	*indexesArray;
-#ifdef SHADOW_VOLUMES
-extern int		*neighborsArray;
-extern vec3_t	*trNormalsArray;
-#endif
-extern vec2_t	*coordsArray;
-extern vec2_t	*lightmapCoordsArray;
-
-extern index_t	inIndexesArray[MAX_ARRAY_INDEXES];
-
-#ifdef SHADOW_VOLUMES
-extern int		inNeighborsArray[MAX_ARRAY_NEIGHBORS];
-extern vec3_t	inTrNormalsArray[MAX_ARRAY_TRIANGLES];
-#endif
-
-extern vec2_t	inCoordsArray[MAX_ARRAY_VERTS];
-extern vec2_t	inLightmapCoordsArray[MAX_ARRAY_VERTS];
+extern vec3_t		inNormalsArray[MAX_ARRAY_VERTS];
+extern index_t		inIndexesArray[MAX_ARRAY_INDEXES];
+extern vec2_t		inCoordsArray[MAX_ARRAY_VERTS];
+extern vec2_t		inLightmapCoordsArray[MAX_ARRAY_VERTS];
 extern byte_vec4_t	inColorsArray[MAX_ARRAY_VERTS];
 
-extern int		numVerts, numIndexes, numColors;
+extern vec3_t		tempVertexArray[MAX_ARRAY_VERTS];
+extern vec3_t		tempNormalsArray[MAX_ARRAY_VERTS];
 
-extern index_t	*currentIndex;
-extern int		*currentTrNeighbor;
-extern float	*currentTrNormal;
-extern float	*currentVertex;
-extern float	*currentNormal;
-extern float	*currentCoords;
-extern float	*currentLightmapCoords;
-extern qbyte		*currentColor;
+extern index_t		*indexesArray;
+extern vec3_t		*vertsArray;
+extern vec3_t		*normalsArray;
+extern vec2_t		*coordsArray;
+extern vec2_t		*lightmapCoordsArray;
+extern byte_vec4_t	colorArray[MAX_ARRAY_VERTS];
+
+#if SHADOW_VOLUMES
+extern int			inNeighborsArray[MAX_ARRAY_NEIGHBORS];
+extern vec3_t		inTrNormalsArray[MAX_ARRAY_TRIANGLES];
+
+extern int			*neighborsArray;
+extern vec3_t		*trNormalsArray;
+
+extern int			*currentTrNeighbor;
+extern float		*currentTrNormal;
+#endif
+
+extern	int			r_numVertexBufferObjects;
+extern	GLuint		r_vertexBufferObjects[MAX_VERTEX_BUFFER_OBJECTS];
+
+extern int			numVerts, numIndexes, numColors;
 
 extern unsigned int	r_numverts;
 extern unsigned int	r_numtris;
 
-extern qboolean r_blocked;
-extern qboolean r_arrays_locked;
+extern qboolean		r_blocked;
+extern qboolean		r_arraysLocked;
 
-extern int		r_features;
+extern int			r_features;
 
-extern unsigned int r_quad_indexes[6];
+extern index_t		r_quad_indexes[];
+extern index_t		r_trifan_indexes[];
 
-void R_BackendInit (void);
-void R_BackendShutdown (void);
-void R_BackendStartFrame (void);
-void R_BackendEndFrame (void);
+void R_BackendInit( void );
+void R_BackendShutdown( void );
+void R_BackendStartFrame( void );
+void R_BackendEndFrame( void );
 
-void R_LockArrays (int numverts);
-void R_UnlockArrays (void);
-void R_UnlockArrays (void);
-void R_FlushArrays (void);
-void R_FlushArraysMtex (void);
-void R_ClearArrays (void);
+void R_BackendBeginTriangleOutlines( void );
+void R_BackendEndTriangleOutlines( void );
 
-void R_DrawTriangleStrips (index_t *indexes, int numindexes);
+void R_LockArrays( int numverts );
+void R_UnlockArrays( void );
+void R_UnlockArrays( void );
+void R_FlushArrays( void );
+void R_FlushArraysMtex( void );
+void R_ClearArrays( void );
 
-#define MF_NONE			0
-#define	MF_NONBATCHED	1
-#define MF_NORMALS		2
-#define MF_STCOORDS		4
-#define MF_LMCOORDS		8
-#define MF_COLORS		16
-#define MF_TRNORMALS	32
-#define MF_NOCULL		64
-
-static inline void R_ResetTexState (void)
-{
-	coordsArray = inCoordsArray;
-	lightmapCoordsArray = inLightmapCoordsArray;
-
-	currentCoords = coordsArray[0];
-	currentLightmapCoords = lightmapCoordsArray[0];
-
-	numColors = 0;
-	currentColor = inColorsArray[0];
-}
-
-static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trnormals, int numindexes, int features )
+static inline void R_PushIndexes( index_t *indexes, int *neighbors, vec3_t *trnormals, int numindexes, int features )
 {
 	int i;
 	int numTris;
+	index_t	*currentIndex;
 
 	// this is a fast path for non-batched geometry, use carefully 
 	// used on pics, sprites, .dpm, .md3 and .md2 models
-	if ( features & MF_NONBATCHED ) {
-		if ( numindexes > MAX_ARRAY_INDEXES ) {
+	if( features & MF_NONBATCHED ) {
+		if( numindexes > MAX_ARRAY_INDEXES )
 			numindexes = MAX_ARRAY_INDEXES;
-		}
 
 		// simply change indexesArray to point at indexes
 		numIndexes = numindexes;
 		indexesArray = indexes;
-		currentIndex = indexesArray + numIndexes;
 
-#ifdef SHADOW_VOLUMES
-		if ( neighbors ) {
+#if SHADOW_VOLUMES
+		if( neighbors ) {
 			neighborsArray = neighbors;
 			currentTrNeighbor = neighborsArray + numIndexes;
 		}
 
-		if ( trnormals && (features & MF_TRNORMALS) ) {
+		if( (features & MF_TRNORMALS) && trnormals ) {
 			numTris = numIndexes / 3;
-
 			trNormalsArray = trnormals;
 			currentTrNormal = trNormalsArray[0] + numTris;
 		}
 #endif
 	} else {
 		// clamp
-		if ( numIndexes + numindexes > MAX_ARRAY_INDEXES ) {
+		if( numIndexes + numindexes > MAX_ARRAY_INDEXES )
 			numindexes = MAX_ARRAY_INDEXES - numIndexes;
-		}
 
 		numTris = numindexes / 3;
+		currentIndex = indexesArray + numIndexes;
 		numIndexes += numindexes;
 
 		// the following code assumes that R_PushIndexes is fed with triangles...
-		for ( i=0; i<numTris; i++, indexes += 3, currentIndex += 3 )
-		{
+		for( i = 0; i < numTris; i++, indexes += 3, currentIndex += 3 ) {
 			currentIndex[0] = numVerts + indexes[0];
 			currentIndex[1] = numVerts + indexes[1];
 			currentIndex[2] = numVerts + indexes[2];
 
-#ifdef SHADOW_VOLUMES
-			if ( neighbors ) {
+#if SHADOW_VOLUMES
+			if( neighbors ) {
 				currentTrNeighbor[0] = numTris + neighbors[0];
 				currentTrNeighbor[1] = numTris + neighbors[1];
 				currentTrNeighbor[2] = numTris + neighbors[2];
@@ -167,7 +153,7 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 				currentTrNeighbor += 3;
 			}
 
-			if ( trnormals && (features & MF_TRNORMALS) ) {
+			if( (features & MF_TRNORMALS) && trnormals ) {
 				VectorCopy ( trnormals[i], currentTrNormal );
 				currentTrNormal += 3;
 			}
@@ -176,82 +162,71 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 	}
 }
 
-static inline void R_PushMesh ( mesh_t *mesh, int features )
+static inline void R_PushMesh( mesh_t *mesh, int features )
 {
 	int numverts;
 
-	if ( !mesh->indexes || !mesh->xyz_array ) {
+	if( !mesh->indexes || !mesh->xyzArray )
 		return;
-	}
 
 	r_features = features;
 
-#ifdef SHADOW_VOLUMES
-	R_PushIndexes ( mesh->indexes, mesh->trneighbors, mesh->trnormals, mesh->numindexes, features );
+#if SHADOW_VOLUMES
+	R_PushIndexes( mesh->indexes, mesh->trneighbors, mesh->trnormals, mesh->numIndexes, features );
 #else
-	R_PushIndexes ( mesh->indexes, NULL, NULL, mesh->numindexes, features );
+	R_PushIndexes( mesh->indexes, NULL, NULL, mesh->numIndexes, features );
 #endif
 
-	numverts = mesh->numvertexes;
-	if ( numVerts + numverts > MAX_ARRAY_VERTS ) {
-		numverts = MAX_ARRAY_VERTS - numVerts;
-	}
+	numverts = mesh->numVertexes;
 
-	memcpy ( currentVertex, mesh->xyz_array, numverts * sizeof(vec4_t) );
-	currentVertex += numverts * 4;
+	if( features & MF_NONBATCHED ) {
+		if( features & MF_DEFORMVS ) {
+			memcpy( inVertsArray[numVerts], mesh->xyzArray, numverts * sizeof(vec3_t) );
 
-	if ( mesh->normals_array && (features & MF_NORMALS) ) {
-		memcpy ( currentNormal, mesh->normals_array, numverts * sizeof(vec3_t) );
-		currentNormal += numverts * 3;
-	}
-
-	if ( mesh->st_array && (features & MF_STCOORDS) ) {
-		if ( features & MF_NONBATCHED ) {
-			coordsArray = mesh->st_array;
-			currentCoords = coordsArray[0];
+			if( (features & MF_NORMALS) && mesh->normalsArray )
+				memcpy( inNormalsArray[numVerts], mesh->normalsArray, numverts * sizeof(vec3_t) );
 		} else {
-			memcpy ( currentCoords, mesh->st_array, numverts * sizeof(vec2_t) );
+			vertsArray = mesh->xyzArray;
+
+			if( (features & MF_NORMALS) && mesh->normalsArray )
+				normalsArray = mesh->normalsArray;
 		}
 
-		currentCoords += numverts * 2;
+		if( (features & MF_STCOORDS) && mesh->stArray )
+			coordsArray = mesh->stArray;
+
+		if( (features & MF_LMCOORDS) && mesh->lmstArray )
+			lightmapCoordsArray = mesh->lmstArray;
+	} else {
+		memcpy( inVertsArray[numVerts], mesh->xyzArray, numverts * sizeof(vec3_t) );
+
+		if( (features & MF_NORMALS) && mesh->normalsArray )
+			memcpy( inNormalsArray[numVerts], mesh->normalsArray, numverts * sizeof(vec3_t) );
+
+		if( (features & MF_STCOORDS) && mesh->stArray )
+			memcpy( inCoordsArray[numVerts], mesh->stArray, numverts * sizeof(vec2_t) );
+
+		if( (features & MF_LMCOORDS) && mesh->lmstArray )
+			memcpy( inLightmapCoordsArray[numVerts], mesh->lmstArray, numverts * sizeof(vec2_t) );
 	}
 
-	if ( mesh->lmst_array && (features & MF_LMCOORDS) ) {
-		if ( features & MF_NONBATCHED ) {
-			lightmapCoordsArray = mesh->lmst_array;
-			currentLightmapCoords = lightmapCoordsArray[0];
-		} else {
-			memcpy ( currentLightmapCoords, mesh->lmst_array, numverts * sizeof(vec2_t) );
-		}
-
-		currentLightmapCoords += numverts * 2;
-	}
-
-	if ( mesh->colors_array && (features & MF_COLORS) ) {
-		memcpy ( currentColor, mesh->colors_array, numverts * sizeof(byte_vec4_t) );
-		currentColor += numverts * 4;
-	}
+	if( (features & MF_COLORS) && mesh->colorsArray )
+		memcpy( inColorsArray[numVerts], mesh->colorsArray, numverts * sizeof(byte_vec4_t) );
 
 	numVerts += numverts;
 	r_numverts += numverts;
 }
 
-static inline qboolean R_BackendOverflow ( mesh_t *mesh )
+static inline qboolean R_BackendOverflow( mesh_t *mesh )
 {
-	return ( numVerts + mesh->numvertexes > MAX_ARRAY_VERTS || 
-		numIndexes + mesh->numindexes > MAX_ARRAY_INDEXES );
+	return ( numVerts + mesh->numVertexes > MAX_ARRAY_VERTS || 
+		numIndexes + mesh->numIndexes > MAX_ARRAY_INDEXES );
 }
 
-static inline qboolean R_InvalidMesh ( mesh_t *mesh )
+static inline qboolean R_InvalidMesh( mesh_t *mesh )
 {
-	return ( !mesh->numvertexes || !mesh->numindexes || 
-		mesh->numvertexes > MAX_ARRAY_VERTS || mesh->numindexes > MAX_ARRAY_INDEXES );
+	return ( !mesh->numVertexes || !mesh->numIndexes || 
+		mesh->numVertexes > MAX_ARRAY_VERTS || mesh->numIndexes > MAX_ARRAY_INDEXES );
 }
 
-void R_RenderMeshBuffer ( meshbuffer_t *mb, qboolean shadowpass );
-void R_RenderMeshGeneric ( shaderpass_t *pass );
-void R_RenderMeshMultitextured ( shaderpass_t *pass );
-void R_RenderMeshCombined ( shaderpass_t *pass );
-
-void R_BackendBeginTriangleOutlines (void);
-void R_BackendEndTriangleOutlines (void);
+void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass );

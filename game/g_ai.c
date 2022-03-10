@@ -497,7 +497,7 @@ qboolean FindTarget (edict_t *self)
 
 		// is client in an spot too dark to be seen?
 //		if (client->light_level <= 5)
-//			return false;
+//			return qfalse;
 
 		if (!visible (self, client))
 		{
@@ -629,7 +629,7 @@ qboolean M_CheckAttack (edict_t *self)
 	if (enemy_range == RANGE_MELEE)
 	{
 		// don't always melee in easy mode
-		if (skill->value == 0 && (rand()&3) )
+		if (skill->integer == 0 && (rand()&3) )
 			return qfalse;
 		if (self->monsterinfo.melee)
 			self->monsterinfo.attack_state = AS_MELEE;
@@ -669,9 +669,9 @@ qboolean M_CheckAttack (edict_t *self)
 		return qfalse;
 	}
 
-	if (skill->value == 0)
+	if (skill->integer == 0)
 		chance *= 0.5;
-	else if (skill->value >= 2)
+	else if (skill->integer >= 2)
 		chance *= 2;
 
 	if (random () < chance)
@@ -966,7 +966,7 @@ void ai_run (edict_t *self, float dist)
 	}
 
 	// coop will change to another enemy if visible
-	if (coop->value)
+	if (coop->integer)
 	{	// FIXME: insane guys get mad with this, which causes crashes!
 		if (FindTarget (self))
 			return;

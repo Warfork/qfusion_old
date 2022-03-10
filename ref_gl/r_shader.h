@@ -20,12 +20,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef __SHADER_H__
 #define __SHADER_H__
 
-#define MAX_SHADERS				4096
-
-#define SHADER_PASS_MAX			8
-#define SHADER_DEFORM_MAX		8
-#define SHADER_ANIM_FRAMES_MAX	16
-#define SHADER_TCMOD_MAX		8
+#define MAX_SHADERS					4096
+#define MAX_SHADER_PASSES			8
+#define MAX_SHADER_DEFORMVS			8
+#define MAX_SHADER_ANIM_FRAMES		16
+#define MAX_SHADER_TCMODS			8
 
 enum
 {
@@ -41,19 +40,19 @@ enum
 // Shader flags
 enum
 {
-	SHADER_DEPTHWRITE				= 1 << 0,
-	SHADER_SKY						= 1 << 1,
-	SHADER_POLYGONOFFSET			= 1 << 2,
-	SHADER_NOMIPMAPS				= 1 << 3,
-	SHADER_NOPICMIP					= 1 << 4,
-	SHADER_CULL_FRONT				= 1 << 5,
-	SHADER_CULL_BACK				= 1 << 6,
-	SHADER_VIDEOMAP					= 1 << 7,
-	SHADER_AGEN_PORTAL				= 1 << 8,
-	SHADER_DEFORMV_BULGE			= 1 << 9,
-	SHADER_ENTITY_MERGABLE			= 1 << 10,
-	SHADER_FLARE					= 1 << 11,
-	SHADER_AUTOSPRITE				= 1 << 12
+	SHADER_DEPTHWRITE			= 1 << 0,
+	SHADER_SKY					= 1 << 1,
+	SHADER_POLYGONOFFSET		= 1 << 2,
+	SHADER_NOMIPMAPS			= 1 << 3,
+	SHADER_NOPICMIP				= 1 << 4,
+	SHADER_CULL_FRONT			= 1 << 5,
+	SHADER_CULL_BACK			= 1 << 6,
+	SHADER_VIDEOMAP				= 1 << 7,
+	SHADER_AGEN_PORTAL			= 1 << 8,
+	SHADER_DEFORMV_BULGE		= 1 << 9,
+	SHADER_ENTITY_MERGABLE		= 1 << 10,
+	SHADER_FLARE				= 1 << 11,
+	SHADER_AUTOSPRITE			= 1 << 12
 };
 
 // Shaderpass flags
@@ -66,7 +65,8 @@ enum
     SHADER_PASS_ALPHAFUNC		= 1 << 4,
     SHADER_PASS_ANIMMAP			= 1 << 5,
 	SHADER_PASS_DETAIL			= 1 << 6,
-	SHADER_PASS_NOCOLORARRAY	= 1 << 7
+	SHADER_PASS_NOCOLORARRAY	= 1 << 7,
+	SHADER_PASS_CUBEMAP			= 1 << 8
 };	
 
 // Transform functions
@@ -79,18 +79,6 @@ enum
     SHADER_FUNC_INVERSESAWTOOTH = 5,
 	SHADER_FUNC_NOISE			= 6,
 	SHADER_FUNC_CONSTANT		= 7
-};
-
-// tcmod functions
-enum 
-{
-	SHADER_TCMOD_NONE			= 0,
-	SHADER_TCMOD_SCALE			= 1,
-	SHADER_TCMOD_SCROLL			= 2,
-	SHADER_TCMOD_ROTATE			= 3,
-	SHADER_TCMOD_TRANSFORM		= 4,
-	SHADER_TCMOD_TURB			= 5,
-	SHADER_TCMOD_STRETCH		= 6
 };
 
 // sorting
@@ -138,13 +126,34 @@ enum
 	ALPHA_GEN_ONE_MINUS_DOT
 };
 
+// AlphaFunc
+enum
+{
+	ALPHA_FUNC_GT0,
+	ALPHA_FUNC_LT128,
+	ALPHA_FUNC_GE128
+};
+
 // texture coordinates generation
 enum 
 {
 	TC_GEN_BASE,
 	TC_GEN_LIGHTMAP,
 	TC_GEN_ENVIRONMENT,
-	TC_GEN_VECTOR
+	TC_GEN_VECTOR,
+	TC_GEN_REFLECTION
+};
+
+// tcmod functions
+enum 
+{
+	TC_MOD_NONE,
+	TC_MOD_SCALE,
+	TC_MOD_SCROLL,
+	TC_MOD_ROTATE,
+	TC_MOD_TRANSFORM,
+	TC_MOD_TURB,
+	TC_MOD_STRETCH
 };
 
 // vertices deformation
@@ -159,22 +168,6 @@ enum
 	DEFORMV_AUTOSPRITE2,
 	DEFORMV_PROJECTION_SHADOW,
 	DEFORMV_AUTOPARTICLE
-};
-
-// The flushing functions
-enum 
-{
-	SHADER_FLUSH_GENERIC,
-	SHADER_FLUSH_MULTITEXTURE_2,
-	SHADER_FLUSH_MULTITEXTURE_COMBINE
-};
-
-// AlphaFunc
-enum
-{
-	SHADER_ALPHA_GT0,
-	SHADER_ALPHA_LT128,
-	SHADER_ALPHA_GE128
 };
 
 // Periodic functions
@@ -212,7 +205,7 @@ typedef struct
 } deformv_t;
 
 // Per-pass rendering state information
-typedef struct shaderpass_s
+typedef struct
 {
     unsigned int	flags;
 
@@ -222,23 +215,20 @@ typedef struct shaderpass_s
     unsigned int	depthfunc;			// glDepthFunc arg
     unsigned int	alphafunc;
 
-    rgbgen_t		rgbgen;             
+    rgbgen_t		rgbgen;
 	alphagen_t		alphagen;
 
 	int				tcgen;
 	vec4_t			tcgenVec[2];
 
-	int				numMergedPasses;
-	void			(*flush) (struct shaderpass_s *pass);
-
-    int				numtcmods;               
-	tcmod_t			tcmods[SHADER_TCMOD_MAX];
+    int				numtcmods;
+	tcmod_t			*tcmods;
 
 	cinematics_t	*cin;
 
     float			anim_fps;			// animation frames per sec
     int				anim_numframes;
-    image_t			*anim_frames[SHADER_ANIM_FRAMES_MAX];  // texture refs
+    image_t			*anim_frames[MAX_SHADER_ANIM_FRAMES];  // texture refs
 } shaderpass_t;
 
 // Shader information
@@ -249,21 +239,20 @@ typedef struct shader_s
     int				flags;
 	int				features;
 	unsigned int	sort;
-	int				registration_sequence;
 
     int				numpasses;
-    shaderpass_t	passes[SHADER_PASS_MAX];
+    shaderpass_t	*passes;
 
 	int				numdeforms;
-	deformv_t		deforms[SHADER_DEFORM_MAX];
+	deformv_t		*deforms;
 
 	skydome_t		*skydome;
 
 	qbyte			fog_color[4];
-	float			fog_dist;
-} shader_t;
+	double			fog_dist;
 
-extern shader_t r_shaders[MAX_SHADERS];
+	struct shader_s *hash_next;
+} shader_t;
 
 // memory management
 extern mempool_t *r_shadersmempool;
@@ -271,16 +260,18 @@ extern mempool_t *r_shadersmempool;
 #define Shader_Malloc(size) Mem_Alloc(r_shadersmempool,size)
 #define Shader_Free(data) Mem_Free(data)
 
-qboolean Shader_Init (void);
-void Shader_Shutdown (void);
-void Shader_UpdateRegistration (void);
-void Shader_RunCinematic (void);
-void Shader_UploadCinematic (shader_t *shader);
+void R_InitShaders( qboolean silent );
+void R_ShutdownShaders( void );
 
-shader_t *R_Shader_Load (char *name, int type, qboolean forceDefault);
+void R_RunCinematicShaders( void );
+void R_UploadCinematicShader( shader_t *shader );
+
+shader_t *R_LoadShader( char *name, int type, qboolean forceDefault );
 
 shader_t *R_RegisterPic (char *name);
 shader_t *R_RegisterShader (char *name);
 shader_t *R_RegisterSkin (char *name);
+
+void R_ShaderList_f( void );
 
 #endif /*__SHADER_H__*/

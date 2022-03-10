@@ -41,7 +41,7 @@ void SV_SetMaster_f (void)
 	int		i, slot;
 
 	// only dedicated servers send heartbeats
-	if (!dedicated->value)
+	if (!dedicated->integer)
 	{
 		Com_Printf ("Only dedicated servers use masters.\n");
 		return;
@@ -100,7 +100,7 @@ qboolean SV_SetPlayer (void)
 	if (s[0] >= '0' && s[0] <= '9')
 	{
 		idnum = atoi(Cmd_Argv(1));
-		if (idnum < 0 || idnum >= sv_maxclients->value)
+		if (idnum < 0 || idnum >= sv_maxclients->integer)
 		{
 			Com_Printf ("Bad client slot: %i\n", idnum);
 			return qfalse;
@@ -117,7 +117,7 @@ qboolean SV_SetPlayer (void)
 	}
 
 	// check for a name match
-	for (i=0,cl=svs.clients ; i<sv_maxclients->value; i++,cl++)
+	for (i=0,cl=svs.clients ; i<sv_maxclients->integer; i++,cl++)
 	{
 		if (!cl->state)
 			continue;
@@ -156,65 +156,28 @@ void SV_WipeSavegame (char *savename)
 
 	Com_DPrintf("SV_WipeSaveGame(%s)\n", savename);
 
-	Com_sprintf (name, sizeof(name), "%s/save/%s/server.ssv", FS_Gamedir (), savename);
-	remove (name);
-	Com_sprintf (name, sizeof(name), "%s/save/%s/game.ssv", FS_Gamedir (), savename);
-	remove (name);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/server.ssv", FS_Gamedir (), savename);
+	FS_RemoveFile (name);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/game.ssv", FS_Gamedir (), savename);
+	FS_RemoveFile (name);
 
-	Com_sprintf (name, sizeof(name), "%s/save/%s/*.sav", FS_Gamedir (), savename);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/*.sav", FS_Gamedir (), savename);
 	s = Sys_FindFirst( name, 0, 0 );
 	while (s)
 	{
-		remove (s);
+		FS_RemoveFile (s);
 		s = Sys_FindNext( 0, 0 );
 	}
 	Sys_FindClose ();
-	Com_sprintf (name, sizeof(name), "%s/save/%s/*.sv2", FS_Gamedir (), savename);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/*.sv2", FS_Gamedir (), savename);
 	s = Sys_FindFirst(name, 0, 0 );
 	while (s)
 	{
-		remove (s);
+		FS_RemoveFile (s);
 		s = Sys_FindNext( 0, 0 );
 	}
 	Sys_FindClose ();
 }
-
-
-/*
-================
-CopyFile
-================
-*/
-void CopyFile (char *src, char *dst)
-{
-	FILE	*f1, *f2;
-	int		l;
-	qbyte	buffer[65536];
-
-	Com_DPrintf ("CopyFile (%s, %s)\n", src, dst);
-
-	f1 = fopen (src, "rb");
-	if (!f1)
-		return;
-	f2 = fopen (dst, "wb");
-	if (!f2)
-	{
-		fclose (f1);
-		return;
-	}
-
-	while (1)
-	{
-		l = fread (buffer, 1, sizeof(buffer), f1);
-		if (!l)
-			break;
-		fwrite (buffer, 1, l, f2);
-	}
-
-	fclose (f1);
-	fclose (f2);
-}
-
 
 /*
 ================
@@ -232,32 +195,31 @@ void SV_CopySaveGame (char *src, char *dst)
 	SV_WipeSavegame (dst);
 
 	// copy the savegame over
-	Com_sprintf (name, sizeof(name), "%s/save/%s/server.ssv", FS_Gamedir(), src);
-	Com_sprintf (name2, sizeof(name2), "%s/save/%s/server.ssv", FS_Gamedir(), dst);
-	FS_CreatePath (name2);
-	CopyFile (name, name2);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/server.ssv", FS_Gamedir(), src);
+	Q_snprintfz (name2, sizeof(name2), "%s/save/%s/server.ssv", FS_Gamedir(), dst);
+	FS_CopyFile (name, name2);
 
-	Com_sprintf (name, sizeof(name), "%s/save/%s/game.ssv", FS_Gamedir(), src);
-	Com_sprintf (name2, sizeof(name2), "%s/save/%s/game.ssv", FS_Gamedir(), dst);
-	CopyFile (name, name2);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/game.ssv", FS_Gamedir(), src);
+	Q_snprintfz (name2, sizeof(name2), "%s/save/%s/game.ssv", FS_Gamedir(), dst);
+	FS_CopyFile (name, name2);
 
-	Com_sprintf (name, sizeof(name), "%s/save/%s/", FS_Gamedir(), src);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/", FS_Gamedir(), src);
 	len = strlen(name);
-	Com_sprintf (name, sizeof(name), "%s/save/%s/*.sav", FS_Gamedir(), src);
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/*.sav", FS_Gamedir(), src);
 	found = Sys_FindFirst(name, 0, 0 );
 	while (found)
 	{
 		strcpy (name+len, found+len);
 
-		Com_sprintf (name2, sizeof(name2), "%s/save/%s/%s", FS_Gamedir(), dst, found+len);
-		CopyFile (name, name2);
+		Q_snprintfz (name2, sizeof(name2), "%s/save/%s/%s", FS_Gamedir(), dst, found+len);
+		FS_CopyFile (name, name2);
 
 		// change sav to sv2
 		l = strlen(name);
 		strcpy (name+l-3, "sv2");
 		l = strlen(name2);
 		strcpy (name2+l-3, "sv2");
-		CopyFile (name, name2);
+		FS_CopyFile (name, name2);
 
 		found = Sys_FindNext( 0, 0 );
 	}
@@ -278,7 +240,7 @@ void SV_WriteLevelFile (void)
 
 	Com_DPrintf("SV_WriteLevelFile()\n");
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/%s.sv2", FS_Gamedir(), sv.name);
+	Q_snprintfz (name, sizeof(name), "%s/save/current/%s.sv2", FS_Gamedir(), sv.name);
 	f = fopen(name, "wb");
 	if (!f)
 	{
@@ -289,7 +251,7 @@ void SV_WriteLevelFile (void)
 	CM_WritePortalState (f);
 	fclose (f);
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/%s.sav", FS_Gamedir(), sv.name);
+	Q_snprintfz (name, sizeof(name), "%s/save/current/%s.sav", FS_Gamedir(), sv.name);
 	ge->WriteLevel (name);
 }
 
@@ -306,7 +268,7 @@ void SV_ReadLevelFile (void)
 
 	Com_DPrintf("SV_ReadLevelFile()\n");
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/%s.sv2", FS_Gamedir(), sv.name);
+	Q_snprintfz (name, sizeof(name), "%s/save/current/%s.sv2", FS_Gamedir(), sv.name);
 	f = fopen(name, "rb");
 	if (!f)
 	{
@@ -318,7 +280,7 @@ void SV_ReadLevelFile (void)
 	CM_ReadPortalState (f);
 	fclose (f);
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/%s.sav", FS_Gamedir(), sv.name);
+	Q_snprintfz (name, sizeof(name), "%s/save/current/%s.sav", FS_Gamedir(), sv.name);
 	ge->ReadLevel (name);
 }
 
@@ -339,7 +301,7 @@ void SV_WriteServerFile (qboolean autosave)
 
 	Com_DPrintf("SV_WriteServerFile(%s)\n", autosave ? "true" : "false");
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/server.ssv", FS_Gamedir());
+	Q_snprintfz (name, sizeof(name), "%s/save/current/server.ssv", FS_Gamedir());
 	f = fopen (name, "wb");
 	if (!f)
 	{
@@ -353,14 +315,14 @@ void SV_WriteServerFile (qboolean autosave)
 	{
 		time (&aclock);
 		newtime = localtime (&aclock);
-		Com_sprintf (comment,sizeof(comment), "%2i:%i%i %2i/%2i  ", newtime->tm_hour
+		Q_snprintfz (comment,sizeof(comment), "%2i:%i%i %2i/%2i  ", newtime->tm_hour
 			, newtime->tm_min/10, newtime->tm_min%10,
 			newtime->tm_mon+1, newtime->tm_mday);
 		strncat (comment, sv.name, sizeof(comment)-1-strlen(comment) );
 	}
 	else
 	{	// autosaved
-		Com_sprintf (comment, sizeof(comment), "%s", sv.name);
+		Q_snprintfz (comment, sizeof(comment), "%s", sv.name);
 	}
 
 	fwrite (comment, 1, sizeof(comment), f);
@@ -391,7 +353,7 @@ void SV_WriteServerFile (qboolean autosave)
 	fclose (f);
 
 	// write game state
-	Com_sprintf (name, sizeof(name), "%s/save/current/game.ssv", FS_Gamedir());
+	Q_snprintfz (name, sizeof(name), "%s/save/current/game.ssv", FS_Gamedir());
 	ge->WriteGame (name, autosave);
 }
 
@@ -410,7 +372,7 @@ void SV_ReadServerFile (void)
 
 	Com_DPrintf("SV_ReadServerFile()\n");
 
-	Com_sprintf (name, sizeof(name), "%s/save/current/server.ssv", FS_Gamedir());
+	Q_snprintfz (name, sizeof(name), "%s/save/current/server.ssv", FS_Gamedir());
 	f = fopen (name, "rb");
 	if (!f)
 	{
@@ -442,15 +404,12 @@ void SV_ReadServerFile (void)
 	strcpy (svs.mapcmd, mapcmd);
 
 	// read game state
-	Com_sprintf (name, sizeof(name), "%s/save/current/game.ssv", FS_Gamedir());
+	Q_snprintfz (name, sizeof(name), "%s/save/current/game.ssv", FS_Gamedir());
 	ge->ReadGame (name);
 }
 
 
 //=========================================================
-
-
-
 
 /*
 ==================
@@ -464,6 +423,34 @@ FIXME: remove?
 void SV_DemoMap_f (void)
 {
 	SV_Map (qtrue, Cmd_Argv(1), qfalse, qfalse );
+}
+
+/*
+==================
+SV_Cinematic_f
+
+Puts the server in demo mode on a specific cinematic
+==================
+*/
+void SV_Cinematic_f (void)
+{
+	char filename[MAX_QPATH], expanded[MAX_QPATH];
+
+	if (Cmd_Argc() != 2) {
+		Com_Printf ("usage: cinematic <filename>\n");
+		return;
+	}
+
+	Q_strncpyz (filename, Cmd_Argv(1), sizeof(filename)-4);
+	COM_DefaultExtension (filename, ".roq");
+
+	Q_snprintfz (expanded, sizeof(expanded), "video/%s", filename);
+	if ( FS_FOpenFile (expanded, NULL, FS_READ) == -1 ) {
+		Com_Printf ("Can't find %s\n", expanded);
+		return;
+	}
+
+	SV_Map (qtrue, filename, qfalse, qfalse);
 }
 
 /*
@@ -485,8 +472,8 @@ void SV_Demo_f (void)
 	Q_strncpyz (filename, Cmd_Argv(1), sizeof(filename)-4);
 	COM_DefaultExtension (filename, ".dqf");
 
-	Com_sprintf (expanded, sizeof(expanded), "demos/%s", filename);
-	if ( !FS_FileExists (expanded) ) {
+	Q_snprintfz (expanded, sizeof(expanded), "demos/%s", filename);
+	if ( FS_FOpenFile (expanded, NULL, FS_READ) == -1 ) {
 		Com_Printf ("Can't find %s\n", expanded);
 		return;
 	}
@@ -544,8 +531,8 @@ void SV_GameMap_f (void)
 			// clear all the client inuse flags before saving so that
 			// when the level is re-entered, the clients will spawn
 			// at spawn points instead of occupying body shells
-			savedInuse = Mem_TempMalloc (sv_maxclients->value * sizeof(qboolean));
-			for (i=0,cl=svs.clients ; i<sv_maxclients->value; i++,cl++)
+			savedInuse = Mem_TempMalloc (sv_maxclients->integer * sizeof(qboolean));
+			for (i=0,cl=svs.clients ; i<sv_maxclients->integer; i++,cl++)
 			{
 				savedInuse[i] = cl->edict->r.inuse;
 				cl->edict->r.inuse = qfalse;
@@ -554,7 +541,7 @@ void SV_GameMap_f (void)
 			SV_WriteLevelFile ();
 
 			// we must restore these for clients to transfer over correctly
-			for (i=0,cl=svs.clients ; i<sv_maxclients->value; i++,cl++)
+			for (i=0,cl=svs.clients ; i<sv_maxclients->integer; i++,cl++)
 				cl->edict->r.inuse = savedInuse[i];
 			Mem_TempFree (savedInuse);
 		}
@@ -567,7 +554,7 @@ void SV_GameMap_f (void)
 	Q_strncpyz (svs.mapcmd, Cmd_Argv(1), sizeof(svs.mapcmd));
 
 	// copy off the level to the autosave slot
-	if (!dedicated->value)
+	if (!dedicated->integer)
 	{
 		SV_WriteServerFile (qtrue);
 		SV_CopySaveGame ("current", "save0");
@@ -591,8 +578,8 @@ void SV_Map_f (void)
 	map = Cmd_Argv(1);
 	if (!strstr (map, "."))
 	{
-		Com_sprintf (expanded, sizeof(expanded), "maps/%s.bsp", map);
-		if ( !FS_FileExists (expanded) )
+		Q_snprintfz (expanded, sizeof(expanded), "maps/%s.bsp", map);
+		if ( FS_FOpenFile (expanded, NULL, FS_READ) == -1 )
 		{
 			Com_Printf ("Can't find %s\n", expanded);
 			return;
@@ -640,7 +627,7 @@ void SV_Loadgame_f (void)
 	}
 
 	// make sure the server.ssv file exists
-	Com_sprintf (name, sizeof(name), "%s/save/%s/server.ssv", FS_Gamedir(), Cmd_Argv(1));
+	Q_snprintfz (name, sizeof(name), "%s/save/%s/server.ssv", FS_Gamedir(), Cmd_Argv(1));
 	f = fopen (name, "rb");
 	if (!f)
 	{
@@ -694,7 +681,7 @@ void SV_Savegame_f (void)
 		return;
 	}
 
-	if (sv_maxclients->value == 1 && svs.clients[0].edict->r.client->r.health <= 0)
+	if (sv_maxclients->integer == 1 && svs.clients[0].edict->r.client->r.health <= 0)
 	{
 		Com_Printf ("\nCan't savegame while dead!\n");
 		return;
@@ -777,7 +764,7 @@ void SV_Status_f (void)
 
 	Com_Printf ("num score ping name            lastmsg address               qport \n");
 	Com_Printf ("--- ----- ---- --------------- ------- --------------------- ------\n");
-	for (i=0,cl=svs.clients ; i<sv_maxclients->value; i++,cl++)
+	for (i=0,cl=svs.clients ; i<sv_maxclients->integer; i++,cl++)
 	{
 		if (!cl->state)
 			continue;
@@ -840,7 +827,7 @@ void SV_ConSay_f(void)
 
 	strcat(text, p);
 
-	for (j = 0, client = svs.clients; j < sv_maxclients->value; j++, client++)
+	for (j = 0, client = svs.clients; j < sv_maxclients->integer; j++, client++)
 	{
 		if (client->state != cs_spawned)
 			continue;
@@ -936,7 +923,7 @@ void SV_ServerRecord_f (void)
 	//
 	// open the demo file
 	//
-	Com_sprintf (name, sizeof(name), "%s/demos/%s.dqf", FS_Gamedir(), Cmd_Argv(1));
+	Q_snprintfz (name, sizeof(name), "%s/demos/%s.dqf", FS_Gamedir(), Cmd_Argv(1));
 
 	Com_Printf ("recording to %s.\n", name);
 	FS_CreatePath (name);
@@ -1068,10 +1055,11 @@ void SV_InitOperatorCommands (void)
 	Cmd_AddCommand ("devmap", SV_Map_f);
 	Cmd_AddCommand ("demo", SV_Demo_f);
 	Cmd_AddCommand ("demomap", SV_DemoMap_f);
+	Cmd_AddCommand ("cinematic", SV_Cinematic_f);
 	Cmd_AddCommand ("gamemap", SV_GameMap_f);
 	Cmd_AddCommand ("setmaster", SV_SetMaster_f);
 
-	if ( dedicated->value )
+	if ( dedicated->integer )
 		Cmd_AddCommand ("say", SV_ConSay_f);
 
 	Cmd_AddCommand ("serverrecord", SV_ServerRecord_f);

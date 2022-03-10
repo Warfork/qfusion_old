@@ -304,7 +304,7 @@ void ED_CallSpawn (edict_t *ent)
 
 	if (!ent->classname)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("ED_CallSpawn: NULL classname\n");
 		return;
 	}
@@ -331,7 +331,7 @@ void ED_CallSpawn (edict_t *ent)
 		}
 	}
 
-	if (developer->value)
+	if (developer->integer)
 		G_Printf ("%s doesn't have a spawn function\n", ent->classname);
 }
 
@@ -427,7 +427,7 @@ void ED_ParseField (char *key, char *value, edict_t *ent)
 		}
 	}
 
-	if (developer->value)
+	if (developer->integer)
 		G_Printf ("%s is not a field\n", key);
 }
 
@@ -534,7 +534,7 @@ void G_FindTeams (void)
 		}
 	}
 
-	if (developer->value)
+	if (developer->integer)
 		G_Printf ("%i teams with %i entities\n", c, c2);
 }
 
@@ -554,9 +554,9 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 	int			i;
 	float		skill_level;
 
-	skill_level = floor (skill->value);
+	skill_level = skill->integer;
 	clamp (skill_level, 0, 3);
-	if (skill->value != skill_level)
+	if (skill->integer != skill_level)
 		trap_Cvar_ForceSet ("skill", va("%f", skill_level));
 
 	SaveClientData ();
@@ -595,9 +595,9 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 		// remove things (except the world) from different skill levels or deathmatch
 		if (ent != world)
 		{
-			if ( deathmatch->value )
+			if ( deathmatch->integer )
 			{
-				if ( ctf->value || ((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS)) ) {
+				if ( ctf->integer || (dmflags->integer & (DF_MODELTEAMS | DF_SKINTEAMS)) ) {
 					if ( st.notteam ) {
 						G_FreeEdict (ent);	
 						inhibit++;
@@ -611,10 +611,10 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 			}
 			else
 			{
-				if ( /* ((coop->value) && (ent->spawnflags & SPAWNFLAG_NOT_COOP)) || */
-					((skill->value == 0) && (ent->spawnflags & SPAWNFLAG_NOT_EASY)) ||
-					((skill->value == 1) && (ent->spawnflags & SPAWNFLAG_NOT_MEDIUM)) ||
-					(((skill->value == 2) || (skill->value == 3)) && (ent->spawnflags & SPAWNFLAG_NOT_HARD))
+				if ( /* ((coop->integer) && (ent->spawnflags & SPAWNFLAG_NOT_COOP)) || */
+					((skill->integer == 0) && (ent->spawnflags & SPAWNFLAG_NOT_EASY)) ||
+					((skill->integer == 1) && (ent->spawnflags & SPAWNFLAG_NOT_MEDIUM)) ||
+					(((skill->integer == 2) || (skill->integer == 3)) && (ent->spawnflags & SPAWNFLAG_NOT_HARD))
 					)
 				{
 					G_FreeEdict (ent);	
@@ -633,7 +633,7 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 		ED_CallSpawn (ent);
 	}	
 
-	if (developer->value)
+	if (developer->integer)
 		G_Printf ("%i entities inhibited\n", inhibit);
 
 	G_FindTeams ();
@@ -643,36 +643,15 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 //ZOID
 	CTFSpawn();
 //ZOID
+
+	// make sure server got the edicts data (cinematics)
+	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
 }
 
 
 //===================================================================
 
-#if 0
-	// cursor positioning
-	xl <value>
-	xr <value>
-	yb <value>
-	yt <value>
-	xv <value>
-	yv <value>
-
-	// drawing
-	statpic <name>
-	pic <stat>
-	num <fieldwidth> <stat>
-	string <stat>
-
-	// control
-	if <stat>
-	ifeq <stat> <value>
-	ifbit <stat> <value>
-	endif
-
-#endif
-
 char *single_statusbar = "single";
-
 char *dm_statusbar = "dm";
 
 /*QUAKED worldspawn (0 0 0) ?
@@ -723,13 +702,13 @@ void SP_worldspawn (edict_t *ent)
 	}
 
 	trap_ConfigString (CS_MAPNAME, level.mapname);
-	trap_ConfigString (CS_MAXCLIENTS, va("%i", (int)(maxclients->value) ) );
-	trap_ConfigString (CS_AIRACCEL, va("%g", sv_airaccelerate->value) );
+	trap_ConfigString (CS_MAXCLIENTS, va("%i", sv_maxclients->integer ) );
+	trap_ConfigString (CS_AIRACCEL, va("%g", sv_airaccelerate->integer) );
 
 	// status bar program
-	if (deathmatch->value)
+	if (deathmatch->integer)
 //ZOID
-		if (ctf->value) {
+		if (ctf->integer) {
 			trap_ConfigString (CS_STATUSBAR, ctf_statusbar);
 			CTFPrecache();
 		} else

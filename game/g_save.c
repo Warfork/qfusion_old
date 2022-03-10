@@ -652,7 +652,7 @@ void ReadLevel (char *filename)
 
 	// wipe all the entities
 	memset (game.edicts, 0, game.maxentities*sizeof(game.edicts[0]));
-	game.numentities = maxclients->value+1;
+	game.numentities = sv_maxclients->integer+1;
 
 	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
 
@@ -706,7 +706,7 @@ void ReadLevel (char *filename)
 	fclose (f);
 
 	// mark all clients as unconnected
-	for (i=0 ; i<maxclients->value ; i++)
+	for (i=0 ; i<game.maxclients ; i++)
 	{
 		ent = &game.edicts[i+1];
 		ent->r.client = game.clients + i;

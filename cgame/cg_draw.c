@@ -62,10 +62,9 @@ void CG_DrawChar ( int x, int y, int num, int fontstyle, vec4_t color )
 	frow = (num>>4)*0.0625f;
 	fcol = (num&15)*0.0625f;
 
-	if ( fontstyle & FONT_SHADOWED ) {
-		trap_Draw_StretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, cgs.shaderCharset );
-	}
-	trap_Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, cgs.shaderCharset );
+	if( fontstyle & FONT_SHADOWED )
+		trap_R_DrawStretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, cgs.shaderCharset );
+	trap_R_DrawStretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, cgs.shaderCharset );
 }
 
 /*
@@ -91,9 +90,8 @@ void CG_DrawString ( int x, int y, char *str, int fontstyle, vec4_t color )
 		height = SMALL_CHAR_HEIGHT;
 	}
 
-	if ( y <= -height ) {
+	if( y <= -height )
 		return;			// totally off screen
-	}
 
 	Vector4Copy ( color, scolor );
 
@@ -112,9 +110,9 @@ void CG_DrawString ( int x, int y, char *str, int fontstyle, vec4_t color )
 			fcol = (num&15)*0.0625f;
 
 			if ( fontstyle & FONT_SHADOWED ) {
-				trap_Draw_StretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, cgs.shaderCharset );
+				trap_R_DrawStretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, cgs.shaderCharset );
 			}
-			trap_Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, cgs.shaderCharset );
+			trap_R_DrawStretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, cgs.shaderCharset );
 		}
 
 		x += width;
@@ -286,10 +284,9 @@ void CG_DrawPropString ( int x, int y, char *str, int fontstyle, vec4_t color )
 		width = propfont1[num].width;
 		swidth = width * scale;
 
-		if ( fontstyle & FONT_SHADOWED ) {
-			trap_Draw_StretchPic ( x+2, y+2, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), colorBlack, cgs.shaderPropfont );
-		}
-		trap_Draw_StretchPic ( x, y, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), scolor, cgs.shaderPropfont );
+		if( fontstyle & FONT_SHADOWED )
+			trap_R_DrawStretchPic ( x+2, y+2, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), colorBlack, cgs.shaderPropfont );
+		trap_R_DrawStretchPic ( x, y, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), scolor, cgs.shaderPropfont );
 
 		x += swidth + spacing;
 	}
@@ -367,7 +364,7 @@ CG_FillRect
 =============
 */
 void CG_FillRect ( int x, int y, int w, int h, vec4_t color ) {
-	trap_Draw_StretchPic ( x, y, w, h, 0, 0, 1, 1, color, cgs.shaderWhite );
+	trap_R_DrawStretchPic ( x, y, w, h, 0, 0, 1, 1, color, cgs.shaderWhite );
 }
 
 /*
@@ -410,11 +407,10 @@ void CG_DrawHUDString ( char *string, int x, int y, int centerwidth, int fontsty
 			}
 		}
 
-		if ( centerwidth ) {
+		if( centerwidth )
 			x = margin + (centerwidth - length*width)/2;
-		} else {
+		else
 			x = margin;
-		}
 
 		CG_DrawStringLen ( x, y, s, l, fontstyle, color );
 
@@ -434,38 +430,66 @@ CG_DrawHUDField
 void CG_DrawHUDField ( int x, int y, float *color, int width, int value )
 {
 	char	num[16], *ptr;
-	int		l;
-	int		frame;
+	int		length, maxwidth;
 
-	if ( width < 1 ) {
+	if( width < 0 )
 		return;
-	}
+
+	maxwidth = 5;
 
 	// draw number string
-	if ( width > 5 ) {
-		width = 5;
-	}
-
-	Com_sprintf ( num, sizeof(num), "%i", value );
-	l = strlen ( num );
-	if ( l > width ) {
-		l = width;
-	}
-	x += 2 + 32 * (width - l);
+	Q_snprintfz( num, sizeof(num), "%i", value );
+	length = strlen ( num );
+	if( !width )
+		width = length;
+	else if( width > maxwidth )
+		width = maxwidth;
+	x += 2 + BIG_CHAR_WIDTH * (width - length);
 
 	ptr = num;
-	while ( *ptr && l )
-	{
-		if ( *ptr == '-' ) {
-			frame = STAT_MINUS;
-		} else {
-			frame = *ptr -'0';
-		}
+	while( *ptr && length ) {
+		CG_DrawChar( x, y, *ptr, FONT_BIG, color );
+		x += BIG_CHAR_WIDTH;
+		ptr++;
+		length--;
+	}
+}
 
-		trap_Draw_StretchPic ( x, y, 32, 32, 0, 0, 1, 1, color, CG_MediaShader(cgs.media.sbNums[frame]) );
+/*
+==============
+CG_DrawHUDField2
+==============
+*/
+void CG_DrawHUDField2( int x, int y, float *color, int width, int value )
+{
+	char	num[16], *ptr;
+	int		frame, length, maxwidth;
+
+	if( width < 0 )
+		return;
+
+	maxwidth = 5;
+
+	// draw number string
+	Q_snprintfz( num, sizeof(num), "%i", value );
+	length = strlen ( num );
+	if( !width )
+		width = length;
+	else if( width > maxwidth )
+		width = maxwidth;
+	x += 2 + 32 * (width - length);
+
+	ptr = num;
+	while( *ptr && length ) {
+		if( *ptr == '-' )
+			frame = STAT_MINUS;
+		else
+			frame = *ptr -'0';
+
+		trap_R_DrawStretchPic ( x, y, 32, 32, 0, 0, 1, 1, color, CG_MediaShader(cgs.media.sbNums[frame]) );
 		x += 32;
 		ptr++;
-		l--;
+		length--;
 	}
 }
 
@@ -479,9 +503,8 @@ void CG_DrawModel ( int x, int y, int w, int h, struct model_s *model, struct sh
 	refdef_t refdef;
 	entity_t entity;
 
-	if ( !model ) {
+	if( !model )
 		return;
-	}
 
 	memset( &refdef, 0, sizeof( refdef ) );
 
@@ -498,16 +521,15 @@ void CG_DrawModel ( int x, int y, int w, int h, struct model_s *model, struct sh
 	entity.model = model;
 	entity.customShader = shader;
 	entity.scale = 1.0f;
-	entity.flags = RF_FULLBRIGHT | RF_NOSHADOW;
+	entity.flags = RF_FULLBRIGHT | RF_NOSHADOW | RF_FORCENOLOD;
 	VectorCopy( origin, entity.origin );
 	VectorCopy( entity.origin, entity.oldorigin );
 
 	AnglesToAxis ( angles, entity.axis );
 
-	refdef.num_entities = 1;
-	refdef.entities = &entity;
-
-	trap_R_RenderFrame( &refdef );
+	trap_R_ClearScene ();
+	trap_R_AddEntityToScene( &entity );
+	trap_R_RenderScene( &refdef );
 }
 
 /*
@@ -529,5 +551,30 @@ void CG_DrawHUDModel ( int x, int y, int w, int h, struct model_s *model, struct
 	origin[2] = -0.5 * (mins[2] + maxs[2]);
 	VectorSet ( angles, 0, anglemod(yawspeed * ( cg.time & 2047 ) * (360.0 / 2048.0)), 0 );
 
-	CG_DrawModel ( x, y, w, h, model, shader, origin, angles );
+	CG_DrawModel( x, y, w, h, model, shader, origin, angles );
+}
+
+/*
+================
+CG_DrawHUDRect
+================
+*/
+void CG_DrawHUDRect ( int x, int y, int w, int h, int val, int maxval, vec4_t color )
+{
+	float frac;
+
+	if( val < 1 || maxval < 1 || w < 1 || h < 1 )
+		return;
+
+	if( val >= maxval )
+		frac = 1.0f;
+	else
+		frac = (float)val / (float)maxval;
+
+	if( h > w )
+		h = (int)((float)h * frac + 0.5);
+	else
+		w = (int)((float)w * frac + 0.5);
+
+	CG_FillRect( x, y, w, h, color );
 }

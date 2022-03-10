@@ -129,8 +129,8 @@ void DoRespawn (edict_t *ent)
 //ZOID
 //in ctf, when we are weapons stay, only the master of a team of weapons
 //is spawned
-		if (ctf->value &&
-			((int)dmflags->value & DF_WEAPONS_STAY) &&
+		if (ctf->integer &&
+			(dmflags->integer & DF_WEAPONS_STAY) &&
 			master->item && (master->item->flags & IT_WEAPON))
 			ent = master;
 		else {
@@ -172,19 +172,19 @@ qboolean Pickup_Powerup (edict_t *ent, edict_t *other)
 	int		quantity;
 
 	quantity = other->r.client->pers.inventory[ITEM_INDEX(ent->item)];
-	if ((skill->value == 1 && quantity >= 2) || (skill->value >= 2 && quantity >= 1))
+	if ((skill->integer == 1 && quantity >= 2) || (skill->integer >= 2 && quantity >= 1))
 		return qfalse;
 
-	if ((coop->value) && (ent->item->flags & IT_STAY_COOP) && (quantity > 0))
+	if ((coop->integer) && (ent->item->flags & IT_STAY_COOP) && (quantity > 0))
 		return qfalse;
 
 	other->r.client->pers.inventory[ITEM_INDEX(ent->item)]++;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		if (!(ent->spawnflags & DROPPED_ITEM) )
 			SetRespawn (ent, ent->item->quantity);
-		if (((int)dmflags->value & DF_INSTANT_ITEMS) || ((ent->item->use == Use_Quad) && (ent->spawnflags & DROPPED_PLAYER_ITEM)))
+		if ((dmflags->integer & DF_INSTANT_ITEMS) || ((ent->item->use == Use_Quad) && (ent->spawnflags & DROPPED_PLAYER_ITEM)))
 		{
 			if ((ent->item->use == Use_Quad) && (ent->spawnflags & DROPPED_PLAYER_ITEM))
 				quad_drop_timeout_hack = (ent->nextthink - level.time) / FRAMETIME;
@@ -207,13 +207,13 @@ void Drop_General (edict_t *ent, gitem_t *item)
 
 qboolean Pickup_Adrenaline (edict_t *ent, edict_t *other)
 {
-	if (!deathmatch->value)
+	if (!deathmatch->integer)
 		other->max_health += 1;
 
 	if (other->health < other->max_health)
 		other->health = other->max_health;
 
-	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 		SetRespawn (ent, ent->item->quantity);
 
 	return qtrue;
@@ -223,7 +223,7 @@ qboolean Pickup_AncientHead (edict_t *ent, edict_t *other)
 {
 	other->max_health += 2;
 
-	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 		SetRespawn (ent, ent->item->quantity);
 
 	return qtrue;
@@ -263,7 +263,7 @@ qboolean Pickup_Bandolier (edict_t *ent, edict_t *other)
 			client->pers.inventory[index] = client->pers.max_shells;
 	}
 
-	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 		SetRespawn (ent, ent->item->quantity);
 
 	return qtrue;
@@ -343,7 +343,7 @@ qboolean Pickup_Pack (edict_t *ent, edict_t *other)
 			client->pers.inventory[index] = client->pers.max_slugs;
 	}
 
-	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 		SetRespawn (ent, ent->item->quantity);
 
 	return qtrue;
@@ -475,7 +475,7 @@ qboolean Pickup_Ammo (edict_t *ent, edict_t *other)
 	qboolean	weapon;
 
 	weapon = (ent->item->flags & IT_WEAPON);
-	if ( (weapon) && ( (int)dmflags->value & DF_INFINITE_AMMO ) )
+	if ( (weapon) && ( dmflags->integer & DF_INFINITE_AMMO ) )
 		count = 1000;
 	else if (ent->count)
 		count = ent->count;
@@ -489,11 +489,11 @@ qboolean Pickup_Ammo (edict_t *ent, edict_t *other)
 
 	if (weapon && !oldcount)
 	{
-		if (other->r.client->pers.weapon != ent->item && ( !deathmatch->value || other->r.client->pers.weapon == FindItem("blaster") ) )
+		if (other->r.client->pers.weapon != ent->item && ( !deathmatch->integer || other->r.client->pers.weapon == FindItem("blaster") ) )
 			other->r.client->newweapon = ent->item;
 	}
 
-	if (!(ent->spawnflags & (DROPPED_ITEM | DROPPED_PLAYER_ITEM)) && (deathmatch->value))
+	if (!(ent->spawnflags & (DROPPED_ITEM | DROPPED_PLAYER_ITEM)) && (deathmatch->integer))
 		SetRespawn (ent, 30);
 	return qtrue;
 }
@@ -529,7 +529,7 @@ void MegaHealth_think (edict_t *self)
 		return;
 	}
 
-	if (!(self->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+	if (!(self->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 		SetRespawn (self, 20);
 	else
 		G_FreeEdict (self);
@@ -574,7 +574,7 @@ qboolean Pickup_Health (edict_t *ent, edict_t *other)
 	}
 	else
 	{
-		if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+		if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 			SetRespawn (ent, 30);
 	}
 
@@ -671,7 +671,7 @@ qboolean Pickup_Armor (edict_t *ent, edict_t *other)
 		}
 	}
 
-	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->value))
+	if (!(ent->spawnflags & DROPPED_ITEM) && (deathmatch->integer))
 		SetRespawn (ent, 20);
 
 	return qtrue;
@@ -725,7 +725,7 @@ qboolean Pickup_PowerArmor (edict_t *ent, edict_t *other)
 
 	other->r.client->pers.inventory[ITEM_INDEX(ent->item)]++;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		if (!(ent->spawnflags & DROPPED_ITEM) )
 			SetRespawn (ent, ent->item->quantity);
@@ -799,7 +799,7 @@ void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags)
 	if (!taken)
 		return;
 
-	if (!((coop->value) &&  (ent->item->flags & IT_STAY_COOP)) || (ent->spawnflags & (DROPPED_ITEM | DROPPED_PLAYER_ITEM)))
+	if (!((coop->integer) && (ent->item->flags & IT_STAY_COOP)) || (ent->spawnflags & (DROPPED_ITEM | DROPPED_PLAYER_ITEM)))
 	{
 		if (ent->flags & FL_RESPAWN)
 			ent->flags &= ~FL_RESPAWN;
@@ -820,7 +820,7 @@ static void drop_temp_touch (edict_t *ent, edict_t *other, cplane_t *plane, int 
 static void drop_make_touchable (edict_t *ent)
 {
 	ent->touch = Touch_Item;
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		ent->nextthink = level.time + 29;
 		ent->think = G_FreeEdict;
@@ -944,7 +944,7 @@ void Finish_SpawningItem (edict_t *ent)
 		 trap_Trace ( &tr, ent->s.origin, ent->r.mins, ent->r.maxs, dest, ent, MASK_SOLID );
 
 		if ( tr.startsolid ) {
-			if (developer->value)
+			if (developer->integer)
 				G_Printf ( "droptofloor: %s startsolid at %s\n", ent->classname, vtos(ent->s.origin) );
 			G_FreeEdict ( ent );
 			return;
@@ -1067,9 +1067,9 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 	PrecacheItem (item);
 
 	// some items will be prevented in deathmatch
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
-		if ( (int)dmflags->value & DF_NO_ARMOR )
+		if ( dmflags->integer & DF_NO_ARMOR )
 		{
 			if (item->pickup == Pickup_Armor || item->pickup == Pickup_PowerArmor)
 			{
@@ -1077,7 +1077,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 				return;
 			}
 		}
-		if ( (int)dmflags->value & DF_NO_ITEMS )
+		if ( dmflags->integer & DF_NO_ITEMS )
 		{
 			if (item->pickup == Pickup_Powerup)
 			{
@@ -1085,7 +1085,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 				return;
 			}
 		}
-		if ( (int)dmflags->value & DF_NO_HEALTH )
+		if ( dmflags->integer & DF_NO_HEALTH )
 		{
 			if (item->pickup == Pickup_Health || item->pickup == Pickup_Adrenaline || item->pickup == Pickup_AncientHead)
 			{
@@ -1093,7 +1093,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 				return;
 			}
 		}
-		if ( (int)dmflags->value & DF_INFINITE_AMMO )
+		if ( dmflags->integer & DF_INFINITE_AMMO )
 		{
 			if ( (item->flags == IT_AMMO) || (strcmp(ent->classname, "weapon_bfg") == 0) )
 			{
@@ -1101,7 +1101,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 				return;
 			}
 		}
-		if ( (int)dmflags->value & DF_NO_HEALTH )
+		if ( dmflags->integer & DF_NO_HEALTH )
 		{
 			if ( item->flags == IT_HEALTH )
 			{
@@ -1112,14 +1112,14 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 	}
 
 	// don't let them drop items that stay in a coop game
-	if ((coop->value) && (item->flags & IT_STAY_COOP))
+	if ((coop->integer) && (item->flags & IT_STAY_COOP))
 	{
 		item->drop = NULL;
 	}
 
 //ZOID
 //Don't spawn the flags unless enabled
-	if ( !ctf->value && (item->flags & IT_FLAG) ) {
+	if ( !ctf->integer && (item->flags & IT_FLAG) ) {
 		G_FreeEdict(ent);
 		return;
 	}
@@ -1172,7 +1172,7 @@ gitem_t	itemlist[] =
 		NULL,
 		"sound/misc/ar3_pkup.wav",
 		{ "models/powerups/armor/armor_red.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconr_red",
 /* pickup */	"Body Armor",
@@ -1195,7 +1195,7 @@ gitem_t	itemlist[] =
 		NULL,
 		"sound/misc/ar2_pkup.wav",
 		{ "models/powerups/armor/armor_yel.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconr_yellow",
 /* pickup */	"Combat Armor",
@@ -1218,7 +1218,7 @@ gitem_t	itemlist[] =
 		NULL,
 		"sound/misc/ar1_pkup.wav",
 		{ "models/items/armor/jacket/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/i_jacketarmor",
 /* pickup */	"Jacket Armor",
@@ -1241,7 +1241,7 @@ gitem_t	itemlist[] =
 		NULL,
 		"sound/misc/ar1_pkup.wav",
 		{ "models/powerups/armor/shard.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconr_shard",
 /* pickup */	"Armor Shard",
@@ -1265,7 +1265,7 @@ gitem_t	itemlist[] =
 		NULL,
 		"sound/misc/ar3_pkup.wav",
 		{ "models/items/armor/screen/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/i_powerscreen",
 /* pickup */	"Power Screen",
@@ -1288,7 +1288,7 @@ gitem_t	itemlist[] =
 		NULL,
 		"sound/misc/ar3_pkup.wav",
 		{ "models/items/armor/shield/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"i_powershield",
 /* pickup */	"Power Shield",
@@ -1316,7 +1316,8 @@ always owned, never in the world
 		NULL,
 		CTFWeapon_Grapple,
 		"sound/misc/w_pkup.wav",
-		{ "models/weapons2/grapple/grapple.md3", 0, 0 }, EF_BOB|EF_ROTATE,
+		{ "models/weapons2/grapple/grapple.md3", 0, 0 },
+		EF_ROTATE_AND_BOB,
 		"models/weapons/grapple/tris.md2",
 /* icon */		"icons/iconw_grapple",
 /* pickup */	"Grapple",
@@ -1362,7 +1363,7 @@ always owned, never in the world
 		Weapon_Shotgun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons/g_shotg/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_shotg/tris.md2",
 /* icon */		"pics/w_shotgun",
 /* pickup */	"Shotgun",
@@ -1385,7 +1386,7 @@ always owned, never in the world
 		Weapon_SuperShotgun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/shotgun/shotgun.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_shotg2/tris.md2",
 /* icon */		"icons/iconw_shotgun",
 /* pickup */	"Super Shotgun",
@@ -1408,7 +1409,7 @@ always owned, never in the world
 		Weapon_SuperShotgun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons/g_shotg2/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_shotg2/tris.md2",
 /* icon */		"pics/w_sshotgun",
 /* pickup */	"Super Shotgun",
@@ -1431,7 +1432,7 @@ always owned, never in the world
 		Weapon_Machinegun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons/g_machn/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_machn/tris.md2",
 /* icon */		"icons/iconw_machinegun",
 /* pickup */	"Machinegun",
@@ -1454,7 +1455,7 @@ always owned, never in the world
 		Weapon_Chaingun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons/vulcan/vulcan.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_chain/tris.md2",
 /* icon */		"icons/iconw_chaingun",
 /* pickup */	"Chaingun",
@@ -1477,7 +1478,7 @@ always owned, never in the world
 		Weapon_Grenade,
 		"sound/misc/am_pkup.wav",
 		{ "models/powerups/ammo/grenadeam.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_handgr/tris.md2",
 /* icon */		"icons/icona_grenade",
 /* pickup */	"Grenades",
@@ -1500,7 +1501,7 @@ always owned, never in the world
 		Weapon_GrenadeLauncher,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/grenadel/grenadel.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_launch/tris.md2",
 /* icon */		"icons/iconw_grenade",
 /* pickup */	"Grenade Launcher",
@@ -1523,7 +1524,7 @@ always owned, never in the world
 		Weapon_RocketLauncher,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/rocketl/rocketl.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_rocket/tris.md2",
 /* icon */		"icons/iconw_rocket",
 /* pickup */	"Rocket Launcher",
@@ -1533,7 +1534,7 @@ always owned, never in the world
 		WEAP_ROCKETLAUNCHER,
 		NULL,
 		0,
-/* precache */ "sound/weapons/rocket/rockfly.wav sound/weapons/rocket/rocklx1a.wav sound/weapons/rocket/rocklf1a.wav models/objects/debris2/tris.md2"
+/* precache */ "sound/weapons/rocket/rockfly.wav sound/weapons/rocket/rocklx1a.wav sound/weapons/rocket/rocklf1a.wav"
 	},
 
 /*QUAKED weapon_plasmagun (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1546,7 +1547,7 @@ always owned, never in the world
 		Weapon_HyperBlaster,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/plasma/plasma.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_hyperb/tris.md2",
 /* icon */		"icons/iconw_plasma",
 /* pickup */	"Plasma Gun",
@@ -1569,7 +1570,7 @@ always owned, never in the world
 		Weapon_Railgun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/railgun/railgun.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_rail/tris.md2",
 /* icon */		"icons/iconw_railgun",
 /* pickup */	"Railgun",
@@ -1592,7 +1593,7 @@ always owned, never in the world
 		Weapon_BFG,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/bfg/bfg.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		"models/weapons/v_bfg/tris.md2",
 /* icon */		"icons/iconw_bfg",
 /* pickup */	"BFG10K",
@@ -1619,7 +1620,7 @@ always owned, never in the world
 		NULL,
 		"sound/misc/am_pkup.wav",
 		{ "models/powerups/ammo/shotgunam.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/icona_shotgun",
 /* pickup */	"Shells",
@@ -1642,7 +1643,7 @@ always owned, never in the world
 		NULL,
 		"sound/misc/am_pkup.wav",
 		{ "models/powerups/ammo/machinegunam.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/icona_machinegun",
 /* pickup */	"Bullets",
@@ -1665,7 +1666,7 @@ always owned, never in the world
 		NULL,
 		"sound/misc/am_pkup.wav",
 		{ "models/powerups/ammo/plasmaam.md3", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/icona_plasma",
 /* pickup */	"Cells",
@@ -1688,7 +1689,7 @@ always owned, never in the world
 		NULL,
 		"sound/misc/am_pkup.wav",
 		{ "models/powerups/ammo/rocketam.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/icona_rocket",
 /* pickup */	"Rockets",
@@ -1711,7 +1712,7 @@ always owned, never in the world
 		NULL,
 		"sound/misc/am_pkup.wav",
 		{ "models/powerups/ammo/railgunam.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/icona_railgun",
 /* pickup */	"Slugs",
@@ -1739,7 +1740,7 @@ always owned, never in the world
 		"sound/items/pkup.wav",
 		{ "models/powerups/instant/quad.md3", 
 		"models/powerups/instant/quad_ring.md3", 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/quad",
 /* pickup */	"Quad Damage",
@@ -1762,7 +1763,7 @@ always owned, never in the world
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/invulner/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/p_invulnerability",
 /* pickup */	"Invulnerability",
@@ -1785,7 +1786,7 @@ always owned, never in the world
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/silencer/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/p_silencer",
 /* pickup */	"Silencer",
@@ -1808,7 +1809,7 @@ always owned, never in the world
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/breather/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/p_rebreather",
 /* pickup */	"Rebreather",
@@ -1832,7 +1833,7 @@ always owned, never in the world
 		"sound/items/pkup.wav",
 		{ "models/powerups/instant/enviro.md3", 
 		"models/powerups/instant/enviro_ring.md3", 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/envirosuit",
 /* pickup */	"Battle Suit",
@@ -1856,7 +1857,7 @@ Special item that gives +2 to maximum health
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/c_head/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/i_fixme",
 /* pickup */	"Ancient Head",
@@ -1880,7 +1881,7 @@ gives +1 to maximum health
 		NULL,
 		"sound/items/use_medkit.wav",
 		{ "models/powerups/holdable/medkit.md3", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/medkit",
 /* pickup */	"Medkit",
@@ -1903,7 +1904,7 @@ gives +1 to maximum health
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/band/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/p_bandolier",
 /* pickup */	"Bandolier",
@@ -1926,7 +1927,7 @@ gives +1 to maximum health
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/pack/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/i_pack",
 /* pickup */	"Ammo Pack",
@@ -1949,7 +1950,7 @@ gives +1 to maximum health
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/items/pack/tris.md2", 0, 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/i_pack",
 /* pickup */	"Ammo Pack",
@@ -1973,7 +1974,7 @@ gives +1 to maximum health
 		"sound/items/n_health.wav",
 		{ "models/powerups/health/medium_cross.md3", 
 		"models/powerups/health/medium_sphere.md3", 0 }, 
-		EF_BOB|EF_ROTATE,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconh_green",
 /* pickup */	"10 Health",
@@ -1997,7 +1998,7 @@ gives +1 to maximum health
 		"sound/items/s_health.wav",
 		{ "models/powerups/health/small_cross.md3", 
 		"models/powerups/health/small_sphere.md3", 0 }, 
-		EF_BOB|EF_ROTATE,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconh_yellow",
 /* pickup */	"2 Health",
@@ -2021,7 +2022,7 @@ gives +1 to maximum health
 		"sound/items/l_health.wav",
 		{ "models/powerups/health/large_cross.md3", 
 		"models/powerups/health/large_sphere.md3", 0 }, 
-		EF_BOB|EF_ROTATE,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconh_red",
 /* pickup */	"25 Health",
@@ -2045,7 +2046,7 @@ gives +1 to maximum health
 		"sound/items/m_health.wav",
 		{ "models/powerups/health/mega_cross.md3", 
 		"models/powerups/health/mega_sphere.md3", 0 }, 
-		EF_BOB|EF_ROTATE,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconh_mega",
 /* pickup */	"Mega Health",
@@ -2069,7 +2070,7 @@ gives +1 to maximum health
 		NULL,
 		NULL,
 		{ "models/flags/r_flag.md3", 0, 0 }, 
-		EF_FLAG1|EF_BOB|EF_ROTATE,
+		EF_FLAG1|EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconf_red1",
 /* pickup */	"Red Flag",
@@ -2092,7 +2093,7 @@ gives +1 to maximum health
 		NULL,
 		NULL,
 		{ "models/flags/b_flag.md3", 0, 0 }, 
-		EF_FLAG2|EF_BOB|EF_ROTATE,
+		EF_FLAG2|EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/iconf_blu1",
 /* pickup */	"Blue Flag",
@@ -2114,7 +2115,7 @@ gives +1 to maximum health
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/ctf/resistance/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/tech1",
 /* pickup */	"Disruptor Shield",
@@ -2136,10 +2137,10 @@ gives +1 to maximum health
 		NULL,
 		"sound/items/pkup.wav",
 		{ "models/ctf/strength/tris.md2", 0, 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
-/* icon */		"tech2",
-/* pickup */	"pics/Power Amplifier",
+/* icon */		"pics/tech2",
+/* pickup */	"Power Amplifier",
 		0,
 		NULL,
 		IT_TECH,
@@ -2159,7 +2160,7 @@ gives +1 to maximum health
 		"sound/items/pkup.wav",
 		{ "models/powerups/instant/haste.md3", 
 		"models/powerups/instant/haste_ring.md3", 0 }, 
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/haste",
 /* pickup */	"Time Accel",
@@ -2182,7 +2183,7 @@ gives +1 to maximum health
 		"sound/items/pkup.wav",
 		{ "models/powerups/instant/regen.md3", 
 		"models/powerups/instant/regen_ring.md3", 0 },
-		EF_ROTATE|EF_BOB,
+		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"icons/regen",
 /* pickup */	"AutoDoc",

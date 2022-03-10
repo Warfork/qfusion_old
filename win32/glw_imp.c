@@ -34,8 +34,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../ref_gl/r_local.h"
 #include "glw_win.h"
 #include "winquake.h"
+#include "resource.h"
 
-#define	WINDOW_STYLE	(WS_OVERLAPPED|WS_BORDER|WS_CAPTION|WS_VISIBLE)
+#define WINDOW_STYLE	(WS_OVERLAPPED|WS_BORDER|WS_CAPTION|WS_VISIBLE|WS_SYSMENU)
 
 int GLimp_InitGL (void);
 
@@ -48,8 +49,8 @@ static qboolean VerifyDriver( void )
 {
 	char buffer[1024];
 
-	strcpy( buffer, qglGetString( GL_RENDERER ) );
-	strlwr( buffer );
+	Q_strncpyz( buffer, qglGetString( GL_RENDERER ), sizeof(buffer) );
+	Q_strlwr( buffer );
 	if ( strcmp( buffer, "gdi generic" ) == 0 )
 		if ( !glw_state.mcd_accelerated )
 			return qfalse;
@@ -59,7 +60,7 @@ static qboolean VerifyDriver( void )
 /*
 ** VID_CreateWindow
 */
-#define	WINDOW_CLASS_NAME	APPLICATION
+#define	WINDOW_CLASS_NAME	APPLICATION"WndClass"
 
 qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 {
@@ -76,8 +77,8 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	wc.cbClsExtra	 = 0;
 	wc.cbWndExtra	 = 0;
 	wc.hInstance	 = glw_state.hInstance;
-	wc.hIcon		 = 0;
-	wc.hCursor		 = LoadCursor (NULL,IDC_ARROW);
+	wc.hIcon		 = LoadIcon( glw_state.hInstance, MAKEINTRESOURCE( IDI_ICON1 ) );
+	wc.hCursor		 = LoadCursor (NULL, IDC_ARROW);
 	wc.hbrBackground = (HBRUSH)GetStockObject(GRAY_BRUSH);
 	wc.lpszMenuName  = 0;
 	wc.lpszClassName = WINDOW_CLASS_NAME;
@@ -88,7 +89,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	if (fullscreen)
 	{
 		exstyle = WS_EX_TOPMOST;
-		stylebits = WS_POPUP|WS_VISIBLE;
+		stylebits = (WS_POPUP|WS_VISIBLE);
 	}
 	else
 	{
@@ -115,8 +116,8 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	{
 		vid_xpos = Cvar_Get ("vid_xpos", "0", 0);
 		vid_ypos = Cvar_Get ("vid_ypos", "0", 0);
-		x = vid_xpos->value;
-		y = vid_ypos->value;
+		x = vid_xpos->integer;
+		y = vid_ypos->integer;
 	}
 
 	glw_state.hWnd = CreateWindowEx (
@@ -132,7 +133,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 
 	if (!glw_state.hWnd)
 		Com_Error (ERR_FATAL, "Couldn't create window");
-	
+
 	ShowWindow( glw_state.hWnd, SW_SHOW );
 	UpdateWindow( glw_state.hWnd );
 
@@ -156,7 +157,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 /*
 ** GLimp_SetMode
 */
-int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
+int GLimp_SetMode( int mode, qboolean fullscreen )
 {
 	int width, height;
 	const char *win_fs[] = { "W", "FS" };
@@ -194,11 +195,11 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 		dm.dmPelsHeight = height;
 		dm.dmFields     = DM_PELSWIDTH | DM_PELSHEIGHT;
 
-		if ( r_colorbits->value != 0 )
+		if ( r_colorbits->integer != 0 )
 		{
-			dm.dmBitsPerPel = r_colorbits->value;
+			dm.dmBitsPerPel = r_colorbits->integer;
 			dm.dmFields |= DM_BITSPERPEL;
-			Com_Printf ( "...using r_bitdepth of %d\n", ( int ) r_colorbits->value );
+			Com_Printf ( "...using r_bitdepth of %d\n", dm.dmBitsPerPel );
 		}
 		else
 		{
@@ -210,20 +211,19 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 			ReleaseDC( 0, hdc );
 		}
 
-		if ( vid_displayfrequency->value > 0 )
+		if ( vid_displayfrequency->integer > 0 )
 		{
 			dm.dmFields |= DM_DISPLAYFREQUENCY;
-			dm.dmDisplayFrequency = vid_displayfrequency->value;
+			dm.dmDisplayFrequency = vid_displayfrequency->integer;
 			Com_Printf ( "...using display frequency %i\n", dm.dmDisplayFrequency );
 		}
 
 		Com_Printf ( "...calling CDS: " );
 		if ( ChangeDisplaySettings( &dm, CDS_FULLSCREEN ) == DISP_CHANGE_SUCCESSFUL )
 		{
-			*pwidth = width;
-			*pheight = height;
-
-			gl_state.fullscreen = qtrue;
+			glState.width = width;
+			glState.height = height;
+			glState.fullScreen = qtrue;
 
 			Com_Printf ( "ok\n" );
 
@@ -234,8 +234,8 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 		}
 		else
 		{
-			*pwidth = width;
-			*pheight = height;
+			glState.width = width;
+			glState.height = height;
 
 			Com_Printf ( "failed\n" );
 
@@ -245,16 +245,17 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 			dm.dmPelsHeight = height;
 			dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
 
-			if ( r_colorbits->value != 0 )
+			if ( r_colorbits->integer != 0 )
 			{
-				dm.dmBitsPerPel = r_colorbits->value;
+				dm.dmBitsPerPel = r_colorbits->integer;
 				dm.dmFields |= DM_BITSPERPEL;
+				Com_Printf ( "...using r_bitdepth of %d\n", dm.dmBitsPerPel );
 			}
 
-			if ( vid_displayfrequency->value > 0 )
+			if ( vid_displayfrequency->integer > 0 )
 			{
 				dm.dmFields |= DM_DISPLAYFREQUENCY;
-				dm.dmDisplayFrequency = vid_displayfrequency->value;
+				dm.dmDisplayFrequency = vid_displayfrequency->integer;
 				Com_Printf ( "...using display frequency %i\n", dm.dmDisplayFrequency );
 			}
 
@@ -270,9 +271,9 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 
 				ChangeDisplaySettings( 0, 0 );
 
-				*pwidth = width;
-				*pheight = height;
-				gl_state.fullscreen = qfalse;
+				glState.width = width;
+				glState.height = height;
+				glState.fullScreen = qfalse;
 				if ( !VID_CreateWindow (width, height, qfalse) )
 					return rserr_invalid_mode;
 				return rserr_invalid_fullscreen;
@@ -283,7 +284,7 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 				if ( !VID_CreateWindow (width, height, qtrue) )
 					return rserr_invalid_mode;
 
-				gl_state.fullscreen = qtrue;
+				glState.fullScreen = qtrue;
 				return rserr_ok;
 			}
 		}
@@ -294,9 +295,9 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 
 		ChangeDisplaySettings( 0, 0 );
 
-		*pwidth = width;
-		*pheight = height;
-		gl_state.fullscreen = qfalse;
+		glState.width = width;
+		glState.height = height;
+		glState.fullScreen = qfalse;
 		if ( !VID_CreateWindow (width, height, qfalse) )
 			return rserr_invalid_mode;
 	}
@@ -313,33 +314,13 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 ** for the window.  The state structure is also nulled out.
 **
 */
-WORD original_ramp[3][256];
-WORD gamma_ramp[3][256];
-
 void GLimp_Shutdown( void )
 {
-	if ( !r_ignorehwgamma->value ) {
-		if( qwglSetDeviceGammaRamp3DFX ) {
-			WORD newramp[3*256];
-			int j;
-
-			for( j = 0; j < 256; j++ ) {
-				newramp[j+0] = original_ramp[0][j];
-				newramp[j+256] = original_ramp[1][j];
-				newramp[j+512] = original_ramp[2][j];
-			}
-
-			qwglSetDeviceGammaRamp3DFX ( glw_state.hDC, newramp );
-		} else {
-			SetDeviceGammaRamp (glw_state.hDC, original_ramp);
-		}
-	}
-
 	if ( qwglMakeCurrent && !qwglMakeCurrent( NULL, NULL ) )
 		Com_Printf ( "ref_gl::R_Shutdown() - wglMakeCurrent failed\n");
 	if ( glw_state.hGLRC )
 	{
-		if (  qwglDeleteContext && !qwglDeleteContext( glw_state.hGLRC ) )
+		if ( qwglDeleteContext && !qwglDeleteContext( glw_state.hGLRC ) )
 			Com_Printf ( "ref_gl::R_Shutdown() - wglDeleteContext failed\n");
 		glw_state.hGLRC = NULL;
 	}
@@ -364,10 +345,9 @@ void GLimp_Shutdown( void )
 
 	UnregisterClass (WINDOW_CLASS_NAME, glw_state.hInstance);
 
-	if ( gl_state.fullscreen )
-	{
+	if( glState.fullScreen ) {
 		ChangeDisplaySettings( 0, 0 );
-		gl_state.fullscreen = qfalse;
+		glState.fullScreen = qfalse;
 	}
 }
 
@@ -447,33 +427,30 @@ int GLimp_InitGL (void)
     };
     int  pixelformat;
 	cvar_t	*stereo;
-	cvar_t	*stencil;			// Vic
+	cvar_t	*stencil;
 	
 	stereo = Cvar_Get( "cl_stereo", "0", 0 );
 
-	// Vic
 	stencil = Cvar_Get( "r_stencilbits", "0", 0 );
-	pfd.cStencilBits = (int)max(0, stencil->value);
+	pfd.cStencilBits = max( 0, stencil->integer );
 
-	if ( pfd.cStencilBits != 0 ) {
-		gl_state.stencil_enabled = qtrue;
-	} else {
-		gl_state.stencil_enabled = qfalse;
-	}
-	// Vic
+	if ( pfd.cStencilBits != 0 )
+		glState.stencilEnabled = qtrue;
+	else
+		glState.stencilEnabled = qfalse;
 
 	/*
 	** set PFD_STEREO if necessary
 	*/
-	if ( stereo->value != 0 )
+	if ( stereo->integer != 0 )
 	{
 		Com_Printf ( "...attempting to use stereo\n" );
 		pfd.dwFlags |= PFD_STEREO;
-		gl_state.stereo_enabled = qtrue;
+		glState.stereoEnabled = qtrue;
 	}
 	else
 	{
-		gl_state.stereo_enabled = qfalse;
+		glState.stereoEnabled = qfalse;
 	}
 
 	/*
@@ -528,7 +505,7 @@ int GLimp_InitGL (void)
 		{
 			extern cvar_t *r_allow_software;
 
-			if ( r_allow_software->value )
+			if ( r_allow_software->integer )
 				glw_state.mcd_accelerated = qtrue;
 			else
 				glw_state.mcd_accelerated = qfalse;
@@ -542,11 +519,11 @@ int GLimp_InitGL (void)
 	/*
 	** report if stereo is desired but unavailable
 	*/
-	if ( !( pfd.dwFlags & PFD_STEREO ) && ( stereo->value != 0 ) ) 
+	if ( !( pfd.dwFlags & PFD_STEREO ) && ( stereo->integer != 0 ) ) 
 	{
 		Com_Printf ( "...failed to select stereo pixel format\n" );
 		Cvar_SetValue( "cl_stereo", 0 );
-		gl_state.stereo_enabled = qfalse;
+		glState.stereoEnabled = qfalse;
 	}
 
 	/*
@@ -576,30 +553,6 @@ int GLimp_InitGL (void)
 	*/
 	Com_Printf ( "GL PFD: color(%d-bits) Z(%d-bit) stencil(%d-bits)\n", ( int ) pfd.cColorBits, ( int ) pfd.cDepthBits, ( int )pfd.cStencilBits );
 
-	ZeroMemory (original_ramp, sizeof(original_ramp));
-
-	if ( !r_ignorehwgamma->value ) {
-		if( qwglGetDeviceGammaRamp3DFX ) {
-			WORD newramp[3*256];
-			int j;
-
-			gl_state.gammaramp = qwglGetDeviceGammaRamp3DFX ( glw_state.hDC, newramp );
-
-			for( j = 0; j < 256; j++ ) {
-				original_ramp[0][j] = newramp[j+0];
-				original_ramp[1][j] = newramp[j+256];
-				original_ramp[2][j] = newramp[j+512];
-			}
-		} else {
-			gl_state.gammaramp = GetDeviceGammaRamp ( glw_state.hDC, original_ramp );
-		}
-	} else {
-		gl_state.gammaramp = qfalse;
-	}
-
-	if (gl_state.gammaramp)
-		vid_gamma->modified = qtrue;
-
 	return qtrue;
 
 fail:
@@ -620,51 +573,38 @@ fail:
 /*
 ** GLimp_UpdateGammaRamp
 */
-void GLimp_UpdateGammaRamp (void)
+qboolean GLimp_GetGammaRamp( size_t stride, unsigned short *ramp )
 {
-	int i;
-	signed int v;
-	double div;
-
-	if (!gl_state.gammaramp)
-		return;
-	
-	memcpy (gamma_ramp, original_ramp, sizeof(original_ramp));
-	
-	div = (double)(1 << (int)floor(r_overbrightbits->value)) / 255.5;
-	for (i = 0; i < 256; i++) 
-	{
-		v = 255 * pow ((i+0.5)*div, (double)vid_gamma->value ) + 0.5;
-		clamp ( v, 0, 255 );
-		gamma_ramp[0][i] = gamma_ramp[1][i] = gamma_ramp[2][i] = ((WORD)v) << 8;
+	if( qwglGetDeviceGammaRamp3DFX ) {
+		if( qwglGetDeviceGammaRamp3DFX( glw_state.hDC, ramp ) )
+			return qtrue;
 	}
 
-	if( qwglSetDeviceGammaRamp3DFX ) {
-		WORD newramp[3*256];
-		int j;
+	if( GetDeviceGammaRamp ( glw_state.hDC, ramp ) )
+		return qtrue;
 
-		for( j = 0; j < 256; j++ ) {
-			newramp[j+0] = gamma_ramp[0][j];
-			newramp[j+256] = gamma_ramp[1][j];
-			newramp[j+512] = gamma_ramp[2][j];
-		}
+	return qfalse;
+}
 
-		qwglSetDeviceGammaRamp3DFX ( glw_state.hDC, newramp );
-	} else {
-		SetDeviceGammaRamp ( glw_state.hDC, gamma_ramp );
-	}
+/*
+** GLimp_SetGammaRamp
+*/
+void GLimp_SetGammaRamp( size_t stride, unsigned short *ramp )
+{
+	if( qwglGetDeviceGammaRamp3DFX )
+		qwglSetDeviceGammaRamp3DFX( glw_state.hDC, ramp );
+	else
+		SetDeviceGammaRamp( glw_state.hDC, ramp );
 }
 
 /*
 ** GLimp_BeginFrame
 */
-void GLimp_BeginFrame( float camera_separation )
+void GLimp_BeginFrame( void )
 {
-	extern int curtime;
-
 	if ( r_colorbits->modified )
 	{
-		if ( r_colorbits->value != 0 && !glw_state.allowdisplaydepthchange )
+		if ( r_colorbits->integer != 0 && !glw_state.allowdisplaydepthchange )
 		{
 			Cvar_SetValue( "r_colorbits", 0 );
 			Com_Printf ( "r_colorbits requires Win95 OSR2.x or WinNT 4.x\n" );
@@ -672,11 +612,11 @@ void GLimp_BeginFrame( float camera_separation )
 		r_colorbits->modified = qfalse;
 	}
 
-	if ( camera_separation < 0 && gl_state.stereo_enabled )
+	if ( glState.cameraSeparation < 0 && glState.stereoEnabled )
 	{
 		qglDrawBuffer( GL_BACK_LEFT );
 	}
-	else if ( camera_separation > 0 && gl_state.stereo_enabled )
+	else if ( glState.cameraSeparation > 0 && glState.stereoEnabled )
 	{
 		qglDrawBuffer( GL_BACK_RIGHT );
 	}
@@ -684,8 +624,6 @@ void GLimp_BeginFrame( float camera_separation )
 	{
 		qglDrawBuffer( GL_BACK );
 	}
-
-	Shader_RunCinematic ();
 }
 
 /*
@@ -721,7 +659,7 @@ void GLimp_AppActivate( qboolean active )
 	}
 	else
 	{
-		if ( vid_fullscreen->value )
+		if ( vid_fullscreen->integer )
 			ShowWindow( glw_state.hWnd, SW_MINIMIZE );
 	}
 }

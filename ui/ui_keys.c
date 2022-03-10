@@ -439,7 +439,7 @@ static const char *Keys_MenuKey( int key )
 		{
 			char cmd[1024];
 
-			Com_sprintf (cmd, sizeof(cmd), "bind \"%s\" \"%s\"\n", trap_Key_KeynumToString(key), bindnames[item->generic.localdata[0]][0]);
+			Q_snprintfz (cmd, sizeof(cmd), "bind \"%s\" \"%s\"\n", trap_Key_KeynumToString(key), bindnames[item->generic.localdata[0]][0]);
 			trap_Cmd_ExecuteText (EXEC_INSERT, cmd);
 		}
 		

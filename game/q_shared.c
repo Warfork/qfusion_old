@@ -311,7 +311,7 @@ char	*vtos (vec3_t v)
 	s = str[index];
 	index = (index + 1)&7;
 
-	Com_sprintf (s, 32, "(%i %i %i)", (int)v[0], (int)v[1], (int)v[2]);
+	Q_snprintfz (s, 32, "(%i %i %i)", (int)v[0], (int)v[1], (int)v[2]);
 
 	return s;
 }
@@ -358,13 +358,13 @@ char *COM_ParseExt (char **data_p, qboolean nl)
 	data = *data_p;
 	len = 0;
 	com_token[0] = 0;
-	
+
 	if (!data)
 	{
 		*data_p = NULL;
 		return "";
 	}
-		
+
 // skip whitespace
 skipwhite:
 	while ( (c = *data) <= ' ')
@@ -423,6 +423,11 @@ skipwhite:
 			c = *data++;
 			if (c=='\"' || !c)
 			{
+				if (len == MAX_TOKEN_CHARS)
+				{
+//					Com_Printf ("Token exceeded %i chars, discarded.\n", MAX_TOKEN_CHARS);
+					len = 0;
+				}
 				com_token[len] = 0;
 				*data_p = data;
 				return com_token;
@@ -459,24 +464,6 @@ skipwhite:
 }
 
 /*
-===============
-Com_PageInMemory
-
-===============
-*/
-int	paged_total;
-
-void Com_PageInMemory (qbyte *buffer, int size)
-{
-	int		i;
-
-	for (i=size-1 ; i>0 ; i-=4096)
-		paged_total += buffer[i];
-}
-
-
-
-/*
 ============================================================================
 
 					LIBRARY REPLACEMENT FUNCTIONS
@@ -484,27 +471,58 @@ void Com_PageInMemory (qbyte *buffer, int size)
 ============================================================================
 */
 
-void Q_strncpyz (char *dest, char *src, int size)
+void Q_strncpyz( char *dest, const char *src, size_t size )
 {
-	strncpy (dest, src, size-1);
-	dest[size-1] = 0;
+#ifdef HAVE_STRLCPY
+	strlcpy( dest, src, size );
+#else
+	if( size ) {
+		while( --size && (*dest++ = *src++) );
+		*dest = '\0';
+	}
+#endif
 }
 
-
-void Com_sprintf (char *dest, int size, char *fmt, ...)
+void Q_strncatz( char *dest, const char *src, size_t size )
 {
-	int		len;
+#ifdef HAVE_STRLCAT
+	strlcat( dest, src, size );
+#else
+	if( size ) {
+		while( --size && *dest++ );
+		if( size ) {
+			dest--;
+			while( --size && (*dest++ = *src++) );
+		}
+		*dest = '\0';
+	}
+#endif
+}
+
+void Q_snprintfz( char *dest, size_t size, const char *fmt, ... )
+{
 	va_list	argptr;
-	char	bigbuffer[0x10000];
 
-	va_start (argptr, fmt);
-	len = vsnprintf (bigbuffer, sizeof(bigbuffer), fmt, argptr);
-	va_end (argptr);
+	if( size ) {
+		va_start( argptr, fmt );
+		vsnprintf( dest, size, fmt, argptr );
+		va_end( argptr );
 
-	if (len >= size)
-		Com_Printf ("Com_sprintf: overflow of %i in %i\n", len, bigbuffer, size);
+		dest[size-1] = 0;
+	}
+}
 
-	strncpy (dest, bigbuffer, size-1);
+char *Q_strlwr( char *s )
+{
+	char *p;
+
+	if( s ) {
+		for( p = s; *s; s++ )
+			*s = tolower( *s );
+		return p;
+	}
+
+	return NULL;
 }
 
 /*
@@ -664,7 +682,7 @@ void Info_SetValueForKey (char *s, char *key, char *value)
 	if (!value || !strlen(value))
 		return;
 
-	Com_sprintf (newi, sizeof(newi), "\\%s\\%s", key, value);
+	Q_snprintfz (newi, sizeof(newi), "\\%s\\%s", key, value);
 
 	if (strlen(newi) + strlen(s) > MAX_INFO_STRING)
 	{

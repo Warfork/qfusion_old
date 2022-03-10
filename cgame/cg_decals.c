@@ -20,8 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "cg_local.h"
 
 #define MAX_DECALS				256
-#define MAX_DECAL_VERTS			384
-#define MAX_DECAL_FRAGMENTS		128
+#define MAX_DECAL_VERTS			128
+#define MAX_DECAL_FRAGMENTS		64
 
 typedef struct cdecal_s
 {
@@ -47,19 +47,18 @@ cdecal_t	cg_decals_headnode, *cg_free_decals;
 CG_ClearDecals
 =================
 */
-void CG_ClearDecals (void)
+void CG_ClearDecals( void )
 {
 	int i;
 
-	memset ( cg_decals, 0, sizeof(cg_decals) );
+	memset( cg_decals, 0, sizeof( cg_decals ) );
 
 	// link decals
 	cg_free_decals = cg_decals;
 	cg_decals_headnode.prev = &cg_decals_headnode;
 	cg_decals_headnode.next = &cg_decals_headnode;
-	for ( i = 0; i < MAX_DECALS - 1; i++ ) {
+	for( i = 0; i < MAX_DECALS - 1; i++ )
 		cg_decals[i].next = &cg_decals[i+1];
-	}
 }
 
 /*
@@ -69,7 +68,7 @@ CG_AllocDecal
 Returns either a free decal or the oldest one
 =================
 */
-cdecal_t *CG_AllocDecal (void)
+cdecal_t *CG_AllocDecal( void )
 {
 	cdecal_t *dl;
 
@@ -96,7 +95,7 @@ cdecal_t *CG_AllocDecal (void)
 CG_FreeDecal
 =================
 */
-void CG_FreeDecal ( cdecal_t *dl )
+void CG_FreeDecal( cdecal_t *dl )
 {
 	// remove from linked active list
 	dl->prev->next = dl->next;
@@ -112,60 +111,56 @@ void CG_FreeDecal ( cdecal_t *dl )
 CG_SpawnDecal
 =================
 */
-void CG_SpawnDecal ( vec3_t origin, vec3_t dir, float orient, float radius,
+void CG_SpawnDecal( vec3_t origin, vec3_t dir, float orient, float radius,
 				 float r, float g, float b, float a, float die, float fadetime, qboolean fadealpha, struct shader_s *shader )
 {
 	int i, j;
-	mat3_t axis;
+	vec3_t axis[3];
 	vec3_t verts[MAX_DECAL_VERTS];
 	byte_vec4_t color;
 	fragment_t *fr, fragments[MAX_DECAL_FRAGMENTS];
 	int numfragments;
 	cdecal_t *dl;
 
-	if ( !cg_addDecals->value ) {
+	if( !cg_addDecals->integer )
 		return;
-	}
 
 	// invalid decal
-	if ( radius <= 0 || VectorCompare (dir, vec3_origin) ) {
+	if( radius <= 0 || VectorCompare( dir, vec3_origin ) )
 		return;
-	}
 
 	// calculate orientation matrix
-	VectorNormalize2 ( dir, axis[0] );
-	PerpendicularVector ( axis[1], axis[0] );
-	RotatePointAroundVector ( axis[2], axis[0], axis[1], orient );
-	CrossProduct ( axis[0], axis[2], axis[1] );
+	VectorNormalize2( dir, axis[0] );
+	PerpendicularVector( axis[1], axis[0] );
+	RotatePointAroundVector( axis[2], axis[0], axis[1], orient );
+	CrossProduct( axis[0], axis[2], axis[1] );
 
-	numfragments = trap_R_GetClippedFragments ( origin, radius, axis, // clip it
+	numfragments = trap_R_GetClippedFragments( origin, radius, axis, // clip it
 		MAX_DECAL_VERTS, verts, MAX_DECAL_FRAGMENTS, fragments );
 
 	// no valid fragments
-	if ( !numfragments ) {
+	if( !numfragments )
 		return;
-	}
 
 	color[0] = (qbyte)( r*255 );
 	color[1] = (qbyte)( g*255 );
 	color[2] = (qbyte)( b*255 );
 	color[3] = (qbyte)( a*255 );
 
-	VectorScale ( axis[1], 0.5f / radius, axis[1] );
-	VectorScale ( axis[2], 0.5f / radius, axis[2] );
+	VectorScale( axis[1], 0.5f / radius, axis[1] );
+	VectorScale( axis[2], 0.5f / radius, axis[2] );
 
-	for ( i = 0, fr = fragments; i < numfragments; i++, fr++ ) {
-		if ( fr->numverts > MAX_POLY_VERTS ) {
+	for( i = 0, fr = fragments; i < numfragments; i++, fr++ ) {
+		if( fr->numverts > MAX_POLY_VERTS )
 			fr->numverts = MAX_POLY_VERTS;
-		} else if ( fr->numverts <= 0 ) {
+		else if( fr->numverts <= 0 )
 			continue;
-		}
 
 		// allocate decal
 		dl = CG_AllocDecal ();
 		dl->die = cg.time + die * 1000;
-		dl->fadetime = cg.time + (die - min(fadetime, die)) * 1000;
-		dl->fadefreq = 0.001f / min(fadetime, die);
+		dl->fadetime = cg.time + (die - min( fadetime, die )) * 1000;
+		dl->fadefreq = 0.001f / min( fadetime, die );
 		dl->fadealpha = fadealpha;
 		dl->shader = shader;
 		dl->color[0] = r; 
@@ -178,13 +173,13 @@ void CG_SpawnDecal ( vec3_t origin, vec3_t dir, float orient, float radius,
 		dl->poly.stcoords = dl->stcoords;
 		dl->poly.shader = dl->shader;
 
-		for ( j = 0; j < fr->numverts; j++ ) {
+		for( j = 0; j < fr->numverts; j++ ) {
 			vec3_t v;
 
-			VectorCopy ( verts[fr->firstvert+j], dl->verts[j] );
-			VectorSubtract ( dl->verts[j], origin, v );
-			dl->stcoords[j][0] = DotProduct ( v, axis[1] ) + 0.5f;
-			dl->stcoords[j][1] = DotProduct ( v, axis[2] ) + 0.5f;
+			VectorCopy( verts[fr->firstvert+j], dl->verts[j] );
+			VectorSubtract( dl->verts[j], origin, v );
+			dl->stcoords[j][0] = DotProduct( v, axis[1] ) + 0.5f;
+			dl->stcoords[j][1] = DotProduct( v, axis[2] ) + 0.5f;
 			*(int *)dl->colors[j] = *(int *)color;
 		}
 	}
@@ -195,7 +190,7 @@ void CG_SpawnDecal ( vec3_t origin, vec3_t dir, float orient, float radius,
 CG_AddDecals
 =================
 */
-void CG_AddDecals (void)
+void CG_AddDecals( void )
 {
 	int			i;
 	float		fade;
@@ -204,20 +199,20 @@ void CG_AddDecals (void)
 
 	// add decals in first-spawed - first-drawn order
 	hnode = &cg_decals_headnode;
-	for ( dl = hnode->prev; dl != hnode; dl = next ) {
+	for( dl = hnode->prev; dl != hnode; dl = next ) {
 		next = dl->prev;
 
 		// it's time to DIE
-		if ( dl->die <= cg.time ) {
-			CG_FreeDecal ( dl );
+		if( dl->die <= cg.time ) {
+			CG_FreeDecal( dl );
 			continue;
 		}
 
 		// fade out
-		if ( dl->fadetime < cg.time ) {
+		if( dl->fadetime < cg.time ) {
 			fade = (dl->die - cg.time) * dl->fadefreq;
 
-			if ( dl->fadealpha ) {
+			if( dl->fadealpha ) {
 				color[0] = (qbyte)( dl->color[0]*255 );
 				color[1] = (qbyte)( dl->color[1]*255 );
 				color[2] = (qbyte)( dl->color[2]*255 );
@@ -229,12 +224,11 @@ void CG_AddDecals (void)
 				color[3] = (qbyte)( dl->color[3]*255 );
 			}
 
-			for ( i = 0; i < dl->poly.numverts; i++ ) {
+			for( i = 0; i < dl->poly.numverts; i++ )
 				*(int *)dl->colors[i] = *(int *)color;
-			}
 		}
 
-		CG_AddPoly ( &dl->poly );
+		trap_R_AddPolyToScene( &dl->poly );
 	}
 }
 

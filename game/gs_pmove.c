@@ -84,7 +84,7 @@ void PM_ClipVelocity (vec3_t in, vec3_t normal, vec3_t out, float overbounce)
 	float	backoff;
 	float	change;
 	int		i;
-	
+
 	backoff = DotProduct (in, normal) * overbounce;
 
 	for (i=0 ; i<3 ; i++)
@@ -122,12 +122,12 @@ int PM_SlideMove (void)
 	vec3_t		end;
 	float		time_left;
 	int			blocked = 0;
-	
+
 	numbumps = 4;
-	
+
 	VectorCopy (pml.velocity, primal_velocity);
 	numplanes = 0;
-	
+
 	time_left = pml.frametime;
 
 	for (bumpcount=0 ; bumpcount<numbumps ; bumpcount++)
@@ -310,9 +310,9 @@ void PM_Friction (void)
 	float	speed, newspeed, control;
 	float	friction;
 	float	drop;
-	
+
 	vel = pml.velocity;
-	
+
 	speed = vel[0]*vel[0] +vel[1]*vel[1] + vel[2]*vel[2];
 	if (speed < 1)
 	{
@@ -370,16 +370,16 @@ void PM_Accelerate (vec3_t wishdir, float wishspeed, float accel)
 	accelspeed = accel*pml.frametime*wishspeed;
 	if (accelspeed > addspeed)
 		accelspeed = addspeed;
-	
+
 	for (i=0 ; i<3 ; i++)
-		pml.velocity[i] += accelspeed*wishdir[i];	
+		pml.velocity[i] += accelspeed*wishdir[i];
 }
 
 void PM_AirAccelerate (vec3_t wishdir, float wishspeed, float accel)
 {
 	int			i;
 	float		addspeed, accelspeed, currentspeed, wishspd = wishspeed;
-		
+
 	if (wishspd > 30)
 		wishspd = 30;
 	currentspeed = DotProduct (pml.velocity, wishdir);
@@ -389,7 +389,7 @@ void PM_AirAccelerate (vec3_t wishdir, float wishspeed, float accel)
 	accelspeed = accel * wishspeed * pml.frametime;
 	if (accelspeed > addspeed)
 		accelspeed = addspeed;
-	
+
 	for (i=0 ; i<3 ; i++)
 		pml.velocity[i] += accelspeed*wishdir[i];	
 }
@@ -506,7 +506,7 @@ void PM_AirMove (void)
 		VectorScale (wishvel, wishspeed, wishvel);
 		wishspeed = maxspeed;
 	}
-	
+
 	if ( pml.ladder )
 	{
 		PM_Accelerate (wishdir, wishspeed, pm_accelerate);
@@ -940,7 +940,7 @@ void PM_DeadMove (void)
 }
 
 
-qboolean	PM_GoodPosition (void)
+qboolean PM_GoodPosition (void)
 {
 	trace_t	trace;
 	vec3_t	origin, end;
@@ -1047,7 +1047,6 @@ PM_ClampAngles
 */
 void PM_ClampAngles (void)
 {
-	short	temp;
 	int		i;
 
 	if (pm->s.pm_flags & PMF_TIME_TELEPORT)
@@ -1060,10 +1059,7 @@ void PM_ClampAngles (void)
 	{
 		// circularly clamp the angles with deltas
 		for (i=0 ; i<3 ; i++)
-		{
-			temp = pm->cmd.angles[i] + pm->s.delta_angles[i];
-			pm->viewangles[i] = SHORT2ANGLE(temp);
-		}
+			pm->viewangles[i] = SHORT2ANGLE(pm->cmd.angles[i] + pm->s.delta_angles[i]);
 
 		// don't let the player look up or down more than 90 degrees
 		if (pm->viewangles[PITCH] > 89 && pm->viewangles[PITCH] < 180)

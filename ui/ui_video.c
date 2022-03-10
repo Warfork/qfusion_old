@@ -60,7 +60,7 @@ static void ScreenSizeCallback( void *s )
 {
 	menuslider_s *slider = ( menuslider_s * ) s;
 
-	trap_Cvar_SetValue( "viewsize", slider->curvalue * 10 );
+	trap_Cvar_SetValue( "cg_viewSize", slider->curvalue * 10 );
 }
 
 static void BrightnessCallback( void *s )
@@ -68,7 +68,7 @@ static void BrightnessCallback( void *s )
 	float gamma;
 	gamma = ( 0.8 - ( s_brightness_slider.curvalue/10.0 - 0.5 ) ) + 0.5;
 
-	trap_Cvar_SetValue( "vid_gamma", gamma );
+	trap_Cvar_SetValue( "r_gamma", gamma );
 }
 
 static void ResetDefaults( void *unused )
@@ -100,8 +100,6 @@ static void ApplyChanges( void *unused )
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "vid_restart\n");
 	trap_Cmd_Execute();
-
-	M_ForceMenuOff();
 }
 
 static void CancelChanges( void *unused )
@@ -172,7 +170,7 @@ static void Video_MenuInit( void )
 	int y_offset = UI_StringHeightOffset ( 0 );
 
 	s_mode_list.curvalue = trap_Cvar_VariableValue( "r_mode" );
-	s_screensize_slider.curvalue = trap_Cvar_VariableValue( "viewsize" )/10;
+	s_screensize_slider.curvalue = trap_Cvar_VariableValue( "cg_viewSize" )/10;
 
 	if ( strcmp( gl_driver, "3dfxgl" ) == 0 )
 		s_ref_list.curvalue = REF_3DFX;
@@ -210,7 +208,6 @@ static void Video_MenuInit( void )
 	s_screensize_slider.generic.type	= MTYPE_SLIDER;
 	s_screensize_slider.generic.x		= 0;
 	s_screensize_slider.generic.y		= y+=y_offset;
-	s_screensize_slider.generic.flags 	= QMF_LEFT_JUSTIFY;
 	s_screensize_slider.generic.name	= "screen size";
 	s_screensize_slider.minvalue		= 3;
 	s_screensize_slider.maxvalue		= 12;
@@ -219,12 +216,11 @@ static void Video_MenuInit( void )
 	s_brightness_slider.generic.type	= MTYPE_SLIDER;
 	s_brightness_slider.generic.x		= 0;
 	s_brightness_slider.generic.y		= y+=y_offset;
-	s_brightness_slider.generic.flags 	= QMF_LEFT_JUSTIFY;
 	s_brightness_slider.generic.name	= "brightness";
 	s_brightness_slider.generic.callback = BrightnessCallback;
 	s_brightness_slider.minvalue		= 5;
 	s_brightness_slider.maxvalue		= 13;
-	s_brightness_slider.curvalue		= ( 1.3 - trap_Cvar_VariableValue( "vid_gamma" ) + 0.5 ) * 10;
+	s_brightness_slider.curvalue		= ( 1.3 - trap_Cvar_VariableValue( "r_gamma" ) + 0.5 ) * 10;
 
 	s_fs_box.generic.type	= MTYPE_SPINCONTROL;
 	s_fs_box.generic.x		= 0;
@@ -272,7 +268,6 @@ static void Video_MenuInit( void )
 	s_tq_slider.generic.x		= 0;
 	s_tq_slider.generic.y		= y+=y_offset;
 	s_tq_slider.generic.name	= "texture quality";
-	s_tq_slider.generic.flags	= QMF_LEFT_JUSTIFY;
 	s_tq_slider.minvalue		= 0;
 	s_tq_slider.maxvalue		= 3;
 	s_tq_slider.curvalue		= 3-trap_Cvar_VariableValue( "r_picmip" );
@@ -280,7 +275,6 @@ static void Video_MenuInit( void )
 	s_sq_slider.generic.type	= MTYPE_SLIDER;
 	s_sq_slider.generic.x		= 0;
 	s_sq_slider.generic.y		= y+=y_offset;
-	s_sq_slider.generic.flags	= QMF_LEFT_JUSTIFY;
 	s_sq_slider.generic.name	= "sky quality";
 	s_sq_slider.minvalue		= 0;
 	s_sq_slider.maxvalue		= 3;

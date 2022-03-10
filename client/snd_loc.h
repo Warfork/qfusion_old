@@ -31,16 +31,14 @@ typedef struct
 	int 		length;
 	int 		loopstart;
 	int 		speed;			// not needed, because converted on load?
+	int 		channels;
 	int 		width;
-	int 		stereo;
-	qboolean	music;
 	qbyte		data[1];		// variable sized
 } sfxcache_t;
 
 typedef struct sfx_s
 {
 	char 		name[MAX_QPATH];
-	int			registration_sequence;
 	sfxcache_t	*cache;
 } sfx_t;
 
@@ -104,6 +102,16 @@ typedef struct
 	int			dataofs;		// chunk starts this many bytes from file start
 } wavinfo_t;
 
+typedef struct bgTrack_s
+{
+	int			file;
+	wavinfo_t	info;
+
+	void		*vorbisFile;
+	int			(*read)( struct bgTrack_s *track, void *ptr, size_t size );
+	int			(*seek)( struct bgTrack_s *track, int pos );
+	void		(*close)( struct bgTrack_s *track );
+} bgTrack_t;
 
 /*
 ====================================================================
@@ -125,6 +133,10 @@ void	SNDDMA_Shutdown(void);
 void	SNDDMA_BeginPainting (void);
 
 void	SNDDMA_Submit(void);
+
+void	SNDOGG_Init( void );
+void	SNDOGG_Shutdown( void );
+qboolean SNDOGG_OpenTrack( char *name, bgTrack_t *track );
 
 //====================================================================
 
@@ -160,7 +172,6 @@ extern mempool_t *s_mempool;
 wavinfo_t GetWavinfo (char *name, qbyte *wav, int wavlength);
 
 void S_InitScaletable (void);
-void S_InitMusicScaletable (void);
 
 sfxcache_t *S_LoadSound (sfx_t *s);
 

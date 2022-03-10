@@ -127,8 +127,8 @@ void ThrowGib (edict_t *self, char *gibname, int damage, int type)
 	gib->s.origin[2] = origin[2] + crandom() * size[2];
 
 	gib->s.modelindex = trap_ModelIndex (gibname);
+	gib->s.type = ET_GIB;
 	gib->r.solid = SOLID_NOT;
-	gib->s.effects |= EF_GIB;
 	gib->flags |= FL_NO_KNOCKBACK;
 	gib->takedamage = DAMAGE_YES;
 	gib->die = gib_die;
@@ -171,8 +171,8 @@ void ThrowHead (edict_t *self, char *gibname, int damage, int type)
 	self->s.modelindex = trap_ModelIndex (gibname);
 	self->s.modelindex2 = 0;
 	self->r.solid = SOLID_NOT;
-	self->s.effects |= EF_GIB;
-	self->s.effects &= ~EF_FLIES;
+	self->s.type = ET_GIB;
+	self->s.effects = 0;
 	self->s.sound = 0;
 	self->flags |= FL_NO_KNOCKBACK;
 	self->r.svflags &= ~SVF_MONSTER;
@@ -228,8 +228,9 @@ void ThrowClientHead (edict_t *self, int damage)
 
 	self->takedamage = DAMAGE_NO;
 	self->r.solid = SOLID_NOT;
-	self->s.effects = EF_GIB;
+	self->s.type = ET_GIB;
 	self->s.sound = 0;
+	self->s.effects = 0;
 	self->flags |= FL_NO_KNOCKBACK;
 
 	self->movetype = MOVETYPE_BOUNCE;
@@ -385,7 +386,7 @@ void SP_path_corner (edict_t *self)
 {
 	if (!self->targetname)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("path_corner with no targetname at %s\n", vtos(self->s.origin));
 		G_FreeEdict (self);
 		return;
@@ -418,7 +419,7 @@ void point_combat_touch (edict_t *self, edict_t *other, cplane_t *plane, int sur
 		other->goalentity = other->movetarget = G_PickTarget(other->target);
 		if (!other->goalentity)
 		{
-			if (developer->value)
+			if (developer->integer)
 				G_Printf ("%s at %s target %s does not exist\n", self->classname, vtos(self->s.origin), self->target);
 			other->movetarget = self;
 		}
@@ -460,7 +461,7 @@ void point_combat_touch (edict_t *self, edict_t *other, cplane_t *plane, int sur
 
 void SP_point_combat (edict_t *self)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		G_FreeEdict (self);
 		return;
@@ -498,7 +499,7 @@ void TH_viewthing(edict_t *ent)
 
 void SP_viewthing(edict_t *ent)
 {
-	if (developer->value)
+	if (developer->integer)
 		G_Printf ("viewthing spawned\n");
 
 	ent->movetype = MOVETYPE_NONE;
@@ -614,7 +615,7 @@ void SP_func_wall (edict_t *self)
 	{
 		if (!(self->spawnflags & 2))
 		{
-			if (developer->value)
+			if (developer->integer)
 				G_Printf ("func_wall START_ON without TOGGLE\n");
 			self->spawnflags |= 2;
 		}
@@ -804,7 +805,7 @@ void func_explosive_spawn (edict_t *self, edict_t *other, edict_t *activator)
 
 void SP_func_explosive (edict_t *self)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// auto-remove for deathmatch
 		G_FreeEdict (self);
 		return;
@@ -950,7 +951,7 @@ void barrel_delay (edict_t *self, edict_t *inflictor, edict_t *attacker, int dam
 
 void SP_misc_explobox (edict_t *self)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// auto-remove for deathmatch
 		G_FreeEdict (self);
 		return;
@@ -1200,7 +1201,7 @@ void misc_deadsoldier_die (edict_t *self, edict_t *inflictor, edict_t *attacker,
 
 void SP_misc_deadsoldier (edict_t *ent)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// auto-remove for deathmatch
 		G_FreeEdict (ent);
 		return;
@@ -1258,7 +1259,7 @@ void SP_misc_viper (edict_t *ent)
 {
 	if (!ent->target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("misc_viper without a target at %s\n", vtos(ent->r.absmin));
 		G_FreeEdict (ent);
 		return;
@@ -1334,7 +1335,7 @@ void misc_viper_bomb_use (edict_t *self, edict_t *other, edict_t *activator)
 
 	self->r.solid = SOLID_BBOX;
 	self->r.svflags &= ~SVF_NOCLIENT;
-	self->s.effects |= EF_ROCKET;
+	self->s.type = ET_ROCKET;
 	self->use = NULL;
 	self->movetype = MOVETYPE_TOSS;
 	self->prethink = misc_viper_bomb_prethink;
@@ -1389,7 +1390,7 @@ void SP_misc_strogg_ship (edict_t *ent)
 {
 	if (!ent->target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("%s without a target at %s\n", ent->classname, vtos(ent->r.absmin));
 		G_FreeEdict (ent);
 		return;
@@ -1471,7 +1472,7 @@ void SP_misc_gib_arm (edict_t *ent)
 {
 	ent->s.modelindex = trap_ModelIndex ("models/objects/gibs/arm/tris.md2");
 	ent->r.solid = SOLID_NOT;
-	ent->s.effects |= EF_GIB;
+	ent->s.type = ET_GIB;
 	ent->takedamage = DAMAGE_YES;
 	ent->die = gib_die;
 	ent->movetype = MOVETYPE_TOSS;
@@ -1492,7 +1493,7 @@ void SP_misc_gib_leg (edict_t *ent)
 {
 	ent->s.modelindex = trap_ModelIndex ("models/objects/gibs/leg/tris.md2");
 	ent->r.solid = SOLID_NOT;
-	ent->s.effects |= EF_GIB;
+	ent->s.type = ET_GIB;
 	ent->takedamage = DAMAGE_YES;
 	ent->die = gib_die;
 	ent->movetype = MOVETYPE_TOSS;
@@ -1513,7 +1514,7 @@ void SP_misc_gib_head (edict_t *ent)
 {
 	ent->s.modelindex = trap_ModelIndex ("models/objects/gibs/head/tris.md2");
 	ent->r.solid = SOLID_NOT;
-	ent->s.effects |= EF_GIB;
+	ent->s.type = ET_GIB;
 	ent->takedamage = DAMAGE_YES;
 	ent->die = gib_die;
 	ent->movetype = MOVETYPE_TOSS;
@@ -1623,13 +1624,13 @@ static void func_clock_format_countdown (edict_t *self)
 {
 	if (self->style == 0)
 	{
-		Com_sprintf (self->message, CLOCK_MESSAGE_SIZE, "%2i", self->health);
+		Q_snprintfz (self->message, CLOCK_MESSAGE_SIZE, "%2i", self->health);
 		return;
 	}
 
 	if (self->style == 1)
 	{
-		Com_sprintf(self->message, CLOCK_MESSAGE_SIZE, "%2i:%2i", self->health / 60, self->health % 60);
+		Q_snprintfz(self->message, CLOCK_MESSAGE_SIZE, "%2i:%2i", self->health / 60, self->health % 60);
 		if (self->message[3] == ' ')
 			self->message[3] = '0';
 		return;
@@ -1637,7 +1638,7 @@ static void func_clock_format_countdown (edict_t *self)
 
 	if (self->style == 2)
 	{
-		Com_sprintf(self->message, CLOCK_MESSAGE_SIZE, "%2i:%2i:%2i", self->health / 3600, (self->health - (self->health / 3600) * 3600) / 60, self->health % 60);
+		Q_snprintfz(self->message, CLOCK_MESSAGE_SIZE, "%2i:%2i:%2i", self->health / 3600, (self->health - (self->health / 3600) * 3600) / 60, self->health % 60);
 		if (self->message[3] == ' ')
 			self->message[3] = '0';
 		if (self->message[6] == ' ')
@@ -1672,7 +1673,7 @@ void func_clock_think (edict_t *self)
 
 		time(&gmtime);
 		ltime = localtime(&gmtime);
-		Com_sprintf (self->message, CLOCK_MESSAGE_SIZE, "%2i:%2i:%2i", ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
+		Q_snprintfz (self->message, CLOCK_MESSAGE_SIZE, "%2i:%2i:%2i", ltime->tm_hour, ltime->tm_min, ltime->tm_sec);
 		if (self->message[3] == ' ')
 			self->message[3] = '0';
 		if (self->message[6] == ' ')
@@ -1725,7 +1726,7 @@ void SP_func_clock (edict_t *self)
 {
 	if (!self->target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("%s with no target at %s\n", self->classname, vtos(self->s.origin));
 		G_FreeEdict (self);
 		return;
@@ -1733,7 +1734,7 @@ void SP_func_clock (edict_t *self)
 
 	if ((self->spawnflags & 2) && (!self->count))
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("%s with no count at %s\n", self->classname, vtos(self->s.origin));
 		G_FreeEdict (self);
 		return;

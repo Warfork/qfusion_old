@@ -369,20 +369,28 @@ void ( APIENTRY * qglVertex4sv )(const GLshort *v);
 void ( APIENTRY * qglVertexPointer )(GLint size, GLenum type, GLsizei stride, const GLvoid *pointer);
 void ( APIENTRY * qglViewport )(GLint x, GLint y, GLsizei width, GLsizei height);
 
-void ( APIENTRY * qglLockArraysEXT)( int, int);
-void ( APIENTRY * qglUnlockArraysEXT) ( void );
+void ( APIENTRY * qglLockArraysEXT )( int, int );
+void ( APIENTRY * qglUnlockArraysEXT ) ( void );
 
-void ( APIENTRY * qglPointParameterfEXT)( GLenum param, GLfloat value );
-void ( APIENTRY * qglPointParameterfvEXT)( GLenum param, const GLfloat *value );
-void ( APIENTRY * qglColorTableEXT)( GLenum, GLenum, GLsizei, GLenum, GLenum, const GLvoid * );
+void ( APIENTRY * qglPointParameterfEXT )( GLenum param, GLfloat value );
+void ( APIENTRY * qglPointParameterfvEXT )( GLenum param, const GLfloat *value );
+void ( APIENTRY * qglColorTableEXT )( GLenum, GLenum, GLsizei, GLenum, GLenum, const GLvoid * );
 
-void ( APIENTRY * qgl3DfxSetPaletteEXT)( GLuint * );
 void ( APIENTRY * qglSelectTextureSGIS)( GLenum );
-void ( APIENTRY * qglMTexCoord2fSGIS)( GLenum, GLfloat, GLfloat );
-void ( APIENTRY * qglActiveTextureARB) ( GLenum );
-void ( APIENTRY * qglClientActiveTextureARB) ( GLenum );
+void ( APIENTRY * qglMTexCoord2f )( GLenum, GLfloat, GLfloat );
+void ( APIENTRY * qglActiveTextureARB )( GLenum );
+void ( APIENTRY * qglClientActiveTextureARB )( GLenum );
 
+void ( APIENTRY * qglDrawRangeElementsEXT )( GLenum, GLuint, GLuint, GLsizei, GLenum, const GLvoid *);
 
+void ( APIENTRY * qglBindBufferARB )( GLenum target, GLuint buffer );
+void ( APIENTRY * qglDeleteBuffersARB )( GLsizei n, const GLuint *buffers );
+void ( APIENTRY * qglGenBuffersARB )( GLsizei n, GLuint *buffers );
+GLboolean ( APIENTRY * qglIsBufferARB )( GLuint buffer );
+GLvoid *( APIENTRY * qglMapBufferARB )( GLenum target, GLenum access );
+GLboolean ( APIENTRY * qglUnmapBufferARB )( GLenum target );
+void ( APIENTRY * qglBufferDataARB )( GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage );
+void ( APIENTRY * qglBufferSubDataARB )( GLenum target, GLintptrARB offset, GLsizeiptrARB size, const GLvoid *data );
 
 
 /* glx */
@@ -392,7 +400,7 @@ void (*qglXDestroyContext)( Display *dpy, GLXContext ctx );
 Bool (*qglXMakeCurrent)( Display *dpy, GLXDrawable drawable, GLXContext ctx);
 void (*qglXCopyContext)( Display *dpy, GLXContext src, GLXContext dst, GLuint mask );
 void (*qglXSwapBuffers)( Display *dpy, GLXDrawable drawable );
-
+void *(*qglXGetProcAddressARB)(const GLubyte *procName);
 
 
 
@@ -2983,16 +2991,10 @@ void QGL_Shutdown( void )
 	qglXMakeCurrent		=NULL;
 	qglXCopyContext		=NULL;
 	qglXSwapBuffers		=NULL;
+	qglXGetProcAddressARB = NULL;
 }
 
 #define GPA( a ) dlsym( glw_state.OpenGLLib, a )
-
-void *qwglGetProcAddress(char *symbol)
-{
-	if (glw_state.OpenGLLib)
-		return GPA ( symbol );
-	return NULL;
-}
 
 /*
 ** QGL_Init
@@ -3016,8 +3018,8 @@ qboolean QGL_Init( const char *dllname )
 
 		// try basedir next
 		path = Cvar_Get ("basedir", ".", CVAR_NOSET)->string;
-		
-		snprintf(fn, MAX_OSPATH, "%s/%s", path, dllname );
+
+		Q_snprintfz(fn, MAX_OSPATH, "%s/%s", path, dllname );
 
 		if((glw_state.OpenGLLib = dlopen (fn, RTLD_LAZY)) == 0) {
 			Com_Printf( PRINT_ALL, "%s\n", dlerror() );
@@ -3365,9 +3367,6 @@ qboolean QGL_Init( const char *dllname )
 	qglVertex4sv                 = 	dllVertex4sv                 = GPA( "glVertex4sv" );
 	qglVertexPointer             = 	dllVertexPointer             = GPA( "glVertexPointer" );
 	qglViewport                  = 	dllViewport                  = GPA( "glViewport" );
-	
-
-
 
 	qglXChooseVisual	=GPA("glXChooseVisual");
 	qglXCreateContext	=GPA("glXCreateContext");
@@ -3375,24 +3374,37 @@ qboolean QGL_Init( const char *dllname )
 	qglXMakeCurrent		=GPA("glXMakeCurrent");
 	qglXCopyContext		=GPA("glXCopyContext");
 	qglXSwapBuffers		=GPA("glXSwapBuffers");
+	qglXGetProcAddressARB = GPA("glXGetProcAddressARB");
 
+	qglLockArraysEXT = NULL;
+	qglUnlockArraysEXT = NULL;
+	qglSelectTextureSGIS = NULL;
+	qglMTexCoord2f = NULL;
+	qglActiveTextureARB = NULL;
+	qglClientActiveTextureARB = NULL;
 
+	qglDrawRangeElementsEXT = NULL;
 
-
-
-
-	qglLockArraysEXT = 0;
-	qglUnlockArraysEXT = 0;
-	qglPointParameterfEXT = 0;
-	qglPointParameterfvEXT = 0;
-	qglColorTableEXT = 0;
-	qgl3DfxSetPaletteEXT = 0;
-	qglSelectTextureSGIS = 0;
-	qglMTexCoord2fSGIS = 0;
-	qglActiveTextureARB = 0;
-	qglClientActiveTextureARB = 0;
+	qglBindBufferARB = NULL;
+	qglDeleteBuffersARB = NULL;
+	qglGenBuffersARB = NULL;
+	qglIsBufferARB = NULL;
+	qglMapBufferARB = NULL;
+	qglUnmapBufferARB = NULL;
+	qglBufferDataARB = NULL;
+	qglBufferSubDataARB = NULL;
 
 	return qtrue;
+}
+
+void *qglGetProcAddress(const GLubyte *procName)
+{
+	// check for broken driver
+	if (glConfig.versionString && strcmp( glConfig.versionString, "1.3.1 NVIDIA 28.80" ) && qglXGetProcAddressARB)
+		return qglXGetProcAddressARB (procName);
+	if (glw_state.OpenGLLib)
+		return GPA ( procName );
+	return NULL;
 }
 
 void GLimp_EnableLogging( qboolean enable )
@@ -3410,7 +3422,7 @@ void GLimp_EnableLogging( qboolean enable )
 
 			asctime( newtime );
 
-			Com_sprintf( buffer, sizeof(buffer), "%s/gl.log", FS_Gamedir() ); 
+			Q_snprintfz( buffer, sizeof(buffer), "%s/gl.log", FS_Gamedir() ); 
 			glw_state.log_fp = fopen( buffer, "wt" );
 
 			fprintf( glw_state.log_fp, "%s\n", asctime( newtime ) );

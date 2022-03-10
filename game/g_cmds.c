@@ -36,13 +36,13 @@ char *ClientTeam (edict_t *ent)
 	if (!p)
 		return value;
 
-	if ((int)(dmflags->value) & DF_MODELTEAMS)
+	if (dmflags->integer & DF_MODELTEAMS)
 	{
 		*p = 0;
 		return value;
 	}
 
-	// if ((int)(dmflags->value) & DF_SKINTEAMS)
+	// if (dmflags->integer & DF_SKINTEAMS)
 	return ++p;
 }
 
@@ -51,7 +51,7 @@ qboolean OnSameTeam (edict_t *ent1, edict_t *ent2)
 	char	ent1Team [512];
 	char	ent2Team [512];
 
-	if (!((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS)))
+	if (!(dmflags->integer & (DF_MODELTEAMS | DF_SKINTEAMS)))
 		return qfalse;
 
 	strcpy (ent1Team, ClientTeam (ent1));
@@ -168,7 +168,7 @@ void Cmd_Give_f (edict_t *ent)
 	qboolean	give_all;
 	edict_t		*it_ent;
 
-	if (deathmatch->value && !sv_cheats->value)
+	if (deathmatch->integer && !sv_cheats->integer)
 	{
 		G_PrintMsg (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
@@ -319,7 +319,7 @@ void Cmd_God_f (edict_t *ent)
 {
 	char	*msg;
 
-	if (deathmatch->value && !sv_cheats->value)
+	if (deathmatch->integer && !sv_cheats->integer)
 	{
 		G_PrintMsg (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
@@ -348,7 +348,7 @@ void Cmd_Notarget_f (edict_t *ent)
 {
 	char	*msg;
 
-	if (deathmatch->value && !sv_cheats->value)
+	if (deathmatch->integer && !sv_cheats->integer)
 	{
 		G_PrintMsg (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
@@ -375,7 +375,7 @@ void Cmd_Noclip_f (edict_t *ent)
 {
 	char	*msg;
 
-	if (deathmatch->value && !sv_cheats->value)
+	if (deathmatch->integer && !sv_cheats->integer)
 	{
 		G_PrintMsg (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
@@ -484,6 +484,7 @@ void Cmd_Inven_f (edict_t *ent)
 {
 	int			i;
 	char		s[1024];
+	int			row[MAX_ITEMS * 2], rowsize, rep;
 	gclient_t	*cl;
 
 	cl = ent->r.client;
@@ -506,7 +507,7 @@ void Cmd_Inven_f (edict_t *ent)
 	}
 
 //ZOID
-	if (ctf->value && cl->resp.ctf_team == CTF_NOTEAM) {
+	if (ctf->integer && cl->resp.ctf_team == CTF_NOTEAM) {
 		CTFOpenJoinMenu(ent);
 		return;
 	}
@@ -514,12 +515,23 @@ void Cmd_Inven_f (edict_t *ent)
 
 	cl->showinventory = qtrue;
 
-	strcpy (s, "inv \"");
-	for (i=0 ; i<MAX_ITEMS-1 ; i++)
+	// RLE compression
+	for (i=1,rowsize=0,row[0] = 0 ; i<game.num_items ; i++)
 	{
-		sprintf (s+strlen(s), "%i ", cl->pers.inventory[i]);
+		row[rowsize++] = cl->pers.inventory[i];
+		if (cl->pers.inventory[i])
+			continue;
+
+		for (i++, rep = 1; !cl->pers.inventory[i] && (i < game.num_items); i++, rep++);
+		row[rowsize++] = rep;
+		i--;
 	}
-	sprintf (s+strlen(s), "%i\"", cl->pers.inventory[i]);
+
+	// item 0 is never used
+	Q_strncpyz (s, "inv \"", sizeof(s));
+	for (i=0 ; i<rowsize-1 ; i++)
+		Q_strncatz (s, va("%i ", row[i]), sizeof(s));
+	Q_strncatz (s, va("%i\"", row[i]), sizeof(s));
 
 	trap_ServerCmd (ent, s);
 }
@@ -776,7 +788,7 @@ void Cmd_Players_f (edict_t *ent)
 	int		index[256];
 
 	count = 0;
-	for (i = 0 ; i < maxclients->value ; i++)
+	for (i = 0 ; i < game.maxclients ; i++)
 		if (game.clients[i].pers.connected)
 		{
 			index[count] = i;
@@ -791,7 +803,7 @@ void Cmd_Players_f (edict_t *ent)
 
 	for (i = 0 ; i < count ; i++)
 	{
-		Com_sprintf (small, sizeof(small), "%3i %s\n",
+		Q_snprintfz (small, sizeof(small), "%3i %s\n",
 			game.clients[index[i]].ps.stats[STAT_FRAGS],
 			game.clients[index[i]].pers.netname);
 		if (strlen (small) + strlen(large) > sizeof(large) - 100 )
@@ -863,7 +875,7 @@ qboolean CheckFlood(edict_t *ent)
 	int		i;
 	gclient_t *cl;
 
-	if (flood_msgs->value) {
+	if (flood_msgs->integer) {
 		cl = ent->r.client;
 
         if (level.time < cl->flood_locktill) {
@@ -871,14 +883,14 @@ qboolean CheckFlood(edict_t *ent)
 				(int)(cl->flood_locktill - level.time));
             return qtrue;
         }
-        i = cl->flood_whenhead - flood_msgs->value + 1;
+        i = cl->flood_whenhead - flood_msgs->integer + 1;
         if (i < 0)
             i = (sizeof(cl->flood_when)/sizeof(cl->flood_when[0])) + i;
 		if (cl->flood_when[i] && 
-			level.time - cl->flood_when[i] < flood_persecond->value) {
+			level.time - cl->flood_when[i] < flood_persecond->integer) {
 			cl->flood_locktill = level.time + flood_waitdelay->value;
 			G_PrintMsg (ent, PRINT_CHAT, "Flood protection:  You can't talk for %d seconds.\n",
-				(int)flood_waitdelay->value);
+				flood_waitdelay->integer);
             return qtrue;
         }
 		cl->flood_whenhead = (cl->flood_whenhead + 1) %
@@ -903,7 +915,7 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 	if (trap_Cmd_Argc () < 2 && !arg0)
 		return;
 
-	if (!((int)(dmflags->value) & (DF_MODELTEAMS | DF_SKINTEAMS)))
+	if (!(dmflags->integer & (DF_MODELTEAMS | DF_SKINTEAMS)))
 		team = qfalse;
 
 	if ( team ) {
@@ -912,7 +924,7 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 		color = COLOR_GREEN;
 	}
 
-	Com_sprintf (text, sizeof(text), "%s%c%c: ", ent->r.client->pers.netname, Q_COLOR_ESCAPE, color + '0');
+	Q_snprintfz (text, sizeof(text), "%s%c%c: ", ent->r.client->pers.netname, Q_COLOR_ESCAPE, color + '0');
 
 	if (arg0)
 	{
@@ -941,7 +953,7 @@ void Cmd_Say_f (edict_t *ent, qboolean team, qboolean arg0)
 	if (CheckFlood(ent))
 		return;
 
-	if (dedicated->value)
+	if (dedicated->integer)
 		G_Printf ("%s", text);
 
 	for (j = 1; j <= game.maxclients; j++)

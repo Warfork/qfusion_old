@@ -162,7 +162,7 @@ static void DMFlagCallback( void *self )
 setvalue:
 	trap_Cvar_SetValue ("dmflags", flags);
 
-	Com_sprintf( dmoptions_statusbar, sizeof( dmoptions_statusbar ), "dmflags = %d", flags );
+	Q_snprintfz( dmoptions_statusbar, sizeof( dmoptions_statusbar ), "dmflags = %d", flags );
 }
 
 void DMOptions_MenuInit( void )

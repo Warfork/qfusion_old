@@ -117,7 +117,7 @@ void trigger_enable (edict_t *self, edict_t *other, edict_t *activator)
 {
 	self->r.solid = SOLID_TRIGGER;
 	self->use = Use_Multi;
-	trap_LinkEntity (self);
+	trap_LinkEntity( self );
 }
 
 void SP_trigger_multiple (edict_t *ent)
@@ -152,8 +152,8 @@ void SP_trigger_multiple (edict_t *ent)
 	if (!VectorCompare(ent->s.angles, vec3_origin))
 		G_SetMovedir (ent->s.angles, ent->movedir);
 
-	trap_SetBrushModel (ent, ent->model);
-	trap_LinkEntity (ent);
+	trap_SetBrushModel( ent, ent->model );
+	trap_LinkEntity( ent );
 }
 
 
@@ -184,7 +184,7 @@ void SP_trigger_once(edict_t *ent)
 		ent->spawnflags &= ~1;
 		ent->spawnflags |= 4;
 
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("fixed TRIGGERED flag on %s at %s\n", ent->classname, vtos(v));
 	}
 
@@ -354,9 +354,9 @@ Pushes the player
 */
 void SP_trigger_push (edict_t *self)
 {
-	InitTrigger (self);
+	InitTrigger( self );
 
-	trap_SoundIndex ( "sound/world/jumppad.wav" );
+	trap_SoundIndex( "sound/world/jumppad.wav" );
 
 	self->touch = trigger_push_touch;
 	self->think = S_trigger_push_think;
@@ -364,7 +364,7 @@ void SP_trigger_push (edict_t *self)
 	self->r.svflags &= ~SVF_NOCLIENT;
 	self->s.type = ET_PUSH_TRIGGER;
 
-	trap_LinkEntity (self);
+	trap_LinkEntity( self );
 }
 
 
@@ -473,7 +473,7 @@ void SP_trigger_gravity (edict_t *self)
 {
 	if (st.gravity == 0)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("trigger_gravity without gravity set at %s\n", vtos(self->s.origin));
 		G_FreeEdict  (self);
 		return;
@@ -558,7 +558,7 @@ static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane
 
 	if (!dest)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("Couldn't find destination.\n");
 		return;
 	}
@@ -617,7 +617,7 @@ void SP_trigger_teleport (edict_t *ent)
 {
 	if (!ent->target)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ( "teleporter without a target.\n" );
 		G_FreeEdict ( ent );
 		return;

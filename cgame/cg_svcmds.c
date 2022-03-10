@@ -102,8 +102,6 @@ void CG_CS_ConfigString (void)
 	// do something apropriate 
 	if ( i == CS_MAPNAME ) {
 		CG_RegisterLevelShot ();
-	} else if ( i == CS_AUDIOTRACK ) {
-		cgs.musicPrecache = trap_S_RegisterSound ( cgs.configStrings[i] );
 	} else if ( i == CS_STATUSBAR ) { 
 		CG_LoadStatusBar ( cgs.configStrings[i] );
 	} else if ( i >= CS_MODELS && i < CS_MODELS+MAX_MODELS ) {
@@ -128,21 +126,20 @@ CG_SC_Inventory
 */
 void CG_SC_Inventory (void)
 {
-	int		i;
-	char	*p, *s, inv[MAX_TOKEN_CHARS];
+	int		i, rep;
+	char	inv[MAX_TOKEN_CHARS], *s;
 
-	Q_strncpyz ( inv, trap_Cmd_Argv (1), sizeof(inv) );
+	Q_strncpyz( inv, trap_Cmd_Argv( 1 ), sizeof( inv ) );
 
-	for ( i = 0, s = inv; i < MAX_ITEMS; i++ )
-	{
-		p = strstr ( s, " " );
-		if ( !p ) {
-			break;
-		}
+	cg.inventory[0] = 0;	// item 0 is never used
+	for( i = 1, s = inv; (i < MAX_ITEMS) && s && *s; i++ ) {
+		cg.inventory[i] = atoi( COM_Parse(&s) );
+		if( cg.inventory[i] )
+			continue;
 
-		s[s-p] = 0;
-		cg.inventory[i] = atoi ( s );
-		s = p + 1;
+		for( rep = atoi( COM_Parse(&s) ); (rep > 0) && (i < MAX_ITEMS); rep-- )
+			cg.inventory[i++] = 0;
+		i--;
 	}
 }
 

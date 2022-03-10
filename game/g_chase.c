@@ -99,7 +99,7 @@ void UpdateChaseCam(edict_t *ent)
 		char s[MAX_STRING_CHARS];
 
 		ent->r.client->update_chase = qfalse;
-		sprintf(s, "xv 0 yb -68 string \"%sChasing %s\"",
+		Q_snprintfz(s, sizeof(s), "xv 0 yb -68 string \"%sChasing %s\"",
 			S_COLOR_YELLOW, targ->r.client->pers.netname);
 		trap_Layout (ent, s);
 	}
@@ -116,7 +116,7 @@ void ChaseNext(edict_t *ent)
 	i = ent->r.client->chase_target - game.edicts;
 	do {
 		i++;
-		if (i > maxclients->value)
+		if (i > game.maxclients)
 			i = 1;
 		e = game.edicts + i;
 		if (!e->r.inuse)
@@ -141,7 +141,7 @@ void ChasePrev(edict_t *ent)
 	do {
 		i--;
 		if (i < 1)
-			i = maxclients->value;
+			i = game.maxclients;
 		e = game.edicts + i;
 		if (!e->r.inuse)
 			continue;

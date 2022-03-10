@@ -149,4 +149,5 @@ void Key_SetBinding (int keynum, char *binding);
 void Key_ClearStates (void);
 int Key_GetKey (void);
 char *Key_GetBindingBuf (int binding);
+char *Key_KeynumToString (int keynum);
 qboolean Key_IsDown (int keynum);

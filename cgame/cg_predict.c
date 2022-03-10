@@ -34,7 +34,7 @@ void CG_CheckPredictionError (void)
 	int		delta[3];
 	int		incomingAcknowledged, outgoingSequence;
 
-	if ( !cg_predict->value || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
+	if ( !cg_predict->integer || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
 		return;
 	}
 
@@ -50,7 +50,7 @@ void CG_CheckPredictionError (void)
 	if ( abs(delta[0]) > 128*16 || abs(delta[1]) > 128*16 || abs(delta[2]) > 128*16 ) {
 		VectorClear ( cg.predictionError );					// a teleport or something
 	} else {
-		if ( cg_showMiss->value && (delta[0] || delta[1] || delta[2]) ) {
+		if ( cg_showMiss->integer && (delta[0] || delta[1] || delta[2]) ) {
 			Com_Printf ("prediction miss on %i: %i\n", cg.frame.serverFrame, delta[0] + delta[1] + delta[2]);
 		}
 
@@ -74,10 +74,8 @@ void CG_BuildSolidList (void)
 	{
 		num = (cg.frame.parseEntities + i) & (MAX_PARSE_ENTITIES-1);
 		ent = &cg_parseEntities[num];
-
-		if ( !ent->solid || (ent->effects & EF_PORTALENTITY) ) {
+		if( !ent->solid )
 			continue;
-		}
 
 		cg_solidList[cg_numSolids++] = ent;
 	}
@@ -101,10 +99,9 @@ void CG_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 	{
 		ent = cg_solidList[i];
 
-		if ( ent->number == ignore ) {
+		if( ent->number == ignore )
 			continue;
-		}
-		if ( !(contentmask & CONTENTS_CORPSE) && (ent->effects & EF_CORPSE) )
+		if( !(contentmask & CONTENTS_CORPSE) && (ent->effects & EF_CORPSE) )
 			continue;
 
 		if ( ent->solid == SOLID_BMODEL ) {	// special value for bmodel
@@ -210,7 +207,7 @@ int	CG_PointContents ( vec3_t point )
 =================
 CG_PredictMovement
 
-Sets cg.predictedOrigin and cg.predictedAngles
+Sets cg.predictedVelocty, cg.predictedOrigin and cg.predictedAngles
 =================
 */
 void CG_PredictMovement (void)
@@ -225,27 +222,28 @@ void CG_PredictMovement (void)
 	float		oldstep;
 	int			oldz;
 
-	if ( cg_paused->value ) {
+	if( cg_paused->integer )
 		return;
-	}
 
-	if ( !cg_predict->value || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
+	if ( !cg_predict->integer || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
 		// just set angles
-		trap_NET_GetCurrentUserCommand ( &cmd );
+		current = trap_NET_GetCurrentUserCmdNum ();
+		trap_NET_GetUserCmd ( current, &cmd );
 
-		for ( i = 0; i < 3; i++ ) {
+		VectorScale ( cg.frame.playerState.pmove.velocity, (1.0/16.0), cg.predictedVelocity );
+		VectorScale ( cg.frame.playerState.pmove.origin, (1.0/16.0), cg.predictedOrigin );
+
+		for( i = 0; i < 3; i++ )
 			cg.predictedAngles[i] = SHORT2ANGLE (cmd.angles[i]) + SHORT2ANGLE(cg.frame.playerState.pmove.delta_angles[i]);
-		}
 		return;
 	}
 
-	trap_NET_GetCurrentState ( &ack, &current );
+	trap_NET_GetCurrentState( &ack, &current );
 
 	// if we are too far out of date, just freeze
-	if ( current - ack >= CMD_BACKUP ) {
-		if ( cg_showMiss->value ) {
+	if( current - ack >= CMD_BACKUP ) {
+		if( cg_showMiss->integer )
 			CG_Printf ( "exceeded CMD_BACKUP\n" );
-		}
 		return;	
 	}
 
@@ -262,7 +260,7 @@ void CG_PredictMovement (void)
 	while ( ++ack < current )
 	{
 		frame = ack & CMD_MASK;
-		trap_NET_GetUserCommand ( frame, &pm.cmd );
+		trap_NET_GetUserCmd ( frame, &pm.cmd );
 
 		Pmove ( &pm );
 
@@ -286,6 +284,8 @@ void CG_PredictMovement (void)
 	}
 
 	// copy results out for rendering
+	cg.groundEntity = pm.groundentity;
+	VectorScale ( pm.s.velocity, (1.0/16.0), cg.predictedVelocity );
 	VectorScale ( pm.s.origin, (1.0/16.0), cg.predictedOrigin );
 	VectorCopy ( pm.viewangles, cg.predictedAngles );
 }

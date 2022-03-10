@@ -21,7 +21,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // is used for both the software and OpenGL rendering versions of the
 // Quake refresh engine.
 
-#include <assert.h>
 #include <dlfcn.h> // ELF dl loader
 #include <sys/stat.h>
 #include <unistd.h>
@@ -30,20 +29,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../client/client.h"
 
 
-// Structure containing functions exported from refresh DLL
-
 // Console variables that we need to access from this module
-cvar_t		*vid_gamma;
 cvar_t		*vid_xpos;			// X coordinate of window position
 cvar_t		*vid_ypos;			// Y coordinate of window position
 cvar_t		*vid_fullscreen;
 
 // Global variables used internally by this module
 viddef_t	viddef;				// global video state; used by other modules
-void		*reflib_library;	// Handle to refresh DLL 
-qboolean	reflib_active = 0;
 
-qboolean	vid_ref_modified = qtrue;
+qboolean	vid_ref_modified;
+qboolean	vid_ref_active;
 
 #define VID_NUM_MODES ( sizeof( vid_modes ) / sizeof( vid_modes[0] ) )
 
@@ -57,35 +52,10 @@ DLL GLUE
 ==========================================================================
 */
 
-#define	MAXPRINTMSG	4096
-void VID_Printf (int print_level, char *fmt, ...)
+void VID_Restart (void)
 {
-	va_list		argptr;
-	char		msg[MAXPRINTMSG];
-	
-	va_start (argptr,fmt);
-	vsnprintf (msg,MAXPRINTMSG,fmt,argptr);
-	va_end (argptr);
-
-	if (print_level == PRINT_ALL)
-		Com_Printf ("%s", msg);
-	else
-		Com_DPrintf ("%s", msg);
+	vid_ref_modified = qtrue;
 }
-
-void VID_Error (int err_level, char *fmt, ...)
-{
-	va_list		argptr;
-	char		msg[MAXPRINTMSG];
-	
-	va_start (argptr,fmt);
-	vsnprintf (msg,MAXPRINTMSG,fmt,argptr);
-	va_end (argptr);
-
-	Com_Error (err_level,"%s", msg);
-}
-
-//==========================================================================
 
 /*
 ============
@@ -98,7 +68,7 @@ cause the entire video mode and refresh DLL to be reset on the next frame.
 */
 void VID_Restart_f (void)
 {
-	vid_ref_modified = qtrue;
+	VID_Restart ();
 }
 
 /*
@@ -146,31 +116,6 @@ void VID_NewWindow(int width, int height)
 	viddef.height = height;
 }
 
-
-
-/*
-==============
-VID_LoadRefresh
-==============
-*/
-qboolean VID_LoadRefresh (void)
-{
-	if (reflib_active)
-		R_Shutdown();
-
-	Swap_Init ();
-
-	if( R_Init(NULL, NULL) == -1)
-	{
-		R_Shutdown ();
-		return qfalse;
-	}
-
-	reflib_active = qtrue;
-
-	return qtrue;
-}
-
 /*
 ============
 VID_CheckChanges
@@ -182,32 +127,40 @@ update the rendering DLL and/or video mode to match.
 */
 void VID_CheckChanges (void)
 {
-	qboolean vid_ref_was_modified = vid_ref_modified;
 	extern cvar_t *gl_driver;
 
 	if ( vid_ref_modified )
 	{
-		cl.force_refdef = qtrue;		// can't use a paused refdef
-		S_StopAllSounds();
-	}
+		qboolean cgameActive = cls.cgameActive;
 
-	while (vid_ref_modified)
-	{
-		/*
-		** refresh has changed
-		*/
-		vid_ref_modified = qfalse;
-		vid_fullscreen->modified = qtrue;
 		cls.disable_screen = qtrue;
 
-		if ( !VID_LoadRefresh() )
+		CL_ShutdownMedia ();
+
+		if( vid_ref_active ) {
+			R_Shutdown ();
+			vid_ref_active = qfalse;
+		}
+
+		if( R_Init( NULL, NULL ) == -1 )
 			Com_Error ( ERR_FATAL, "Failed to load %s", (gl_driver && gl_driver->name) ? gl_driver->string : "" );
 
-		cls.disable_screen = qfalse;
-	}
+		CL_InitMedia ();
 
-	if ( vid_ref_was_modified ) {
-		SCR_PrepRefresh ();
+		cls.disable_screen = qfalse;
+
+		Con_Close ();
+
+		if( cgameActive ) {
+			CL_GameModule_Init ();
+			CL_SetKeyDest( key_game );
+		} else {
+			CL_UIModule_MenuMain ();
+			CL_SetKeyDest( key_menu );
+		}
+
+		vid_ref_active = qtrue;
+		vid_ref_modified = qfalse;
 	}
 }
 
@@ -221,14 +174,15 @@ void VID_Init (void)
 	vid_xpos = Cvar_Get ("vid_xpos", "3", CVAR_ARCHIVE);
 	vid_ypos = Cvar_Get ("vid_ypos", "22", CVAR_ARCHIVE);
 	vid_fullscreen = Cvar_Get ("vid_fullscreen", "0", CVAR_ARCHIVE);
-	vid_gamma = Cvar_Get( "vid_gamma", "1", CVAR_ARCHIVE );
 
 	/* Add some console commands that we want to handle */
 	Cmd_AddCommand ("vid_restart", VID_Restart_f);
 
-		
 	/* Start the graphics mode and load refresh DLL */
-	VID_CheckChanges();
+	vid_ref_modified = qtrue;
+	vid_ref_active = qfalse;
+	vid_fullscreen->modified = qtrue;
+	VID_CheckChanges ();
 }
 
 /*
@@ -238,34 +192,10 @@ VID_Shutdown
 */
 void VID_Shutdown (void)
 {
-	if ( reflib_active )
-	{
+	if( vid_ref_active ) {
 		R_Shutdown ();
+		vid_ref_active = qfalse;
 	}
+
+	Cmd_RemoveCommand ("vid_restart");
 }
-
-/*
-============
-VID_CheckRefExists
-
-Checks to see if the given ref_NAME.so exists.
-Placed here to avoid complicating other code if the library .so files
-ever have their names changed.
-============
-*/
-qboolean VID_CheckRefExists (const char *ref)
-{
-	char	fn[MAX_OSPATH];
-	char	*path;
-	struct stat st;
-
-	path = Cvar_Get ("basedir", ".", CVAR_NOSET)->string;
-	snprintf (fn, MAX_OSPATH, "%s/ref_%s.so", path, ref );
-	
-	if (stat(fn, &st) == 0)
-		return qtrue;
-	else
-		return qfalse;
-}
-
-

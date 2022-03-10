@@ -45,13 +45,15 @@ static void StartGame( void )
 {
 	// disable updates and start the cinematic going
 	trap_CL_ResetServerCount ();
+
 	M_ForceMenuOff ();
+
 	trap_Cvar_SetValue( "deathmatch", 0 );
 	trap_Cvar_SetValue( "coop", 0 );
 
 	trap_Cvar_SetValue( "gamerules", 0 );
 
-	trap_Cmd_ExecuteText ( EXEC_APPEND, "loading ; killserver ; wait ; newgame\n");
+	trap_Cmd_ExecuteText ( EXEC_APPEND, "killserver ; wait ; newgame\n");
 	trap_CL_SetKeyDest ( key_game );
 }
 
@@ -197,7 +199,7 @@ void Create_Savestrings (void)
 
 	for (i=0 ; i<MAX_SAVEGAMES ; i++)
 	{
-		Com_sprintf (name, sizeof(name), "%s/save/save%i/server.ssv", trap_FS_Gamedir(), i);
+		Q_snprintfz (name, sizeof(name), "%s/save/save%i/server.ssv", trap_FS_Gamedir(), i);
 		f = fopen (name, "rb");
 		if (!f)
 		{

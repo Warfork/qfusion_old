@@ -113,12 +113,9 @@ void SV_EmitPacketEntities (client_frame_t *from, client_frame_t *to, sizebuf_t 
 	MSG_WriteShort (msg, 0);	// end of packetentities
 }
 
-
-
 /*
 =============
 SV_WritePlayerstateToClient
-
 =============
 */
 void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, sizebuf_t *msg)
@@ -205,11 +202,6 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 
 	if (ps->gunindex != ops->gunindex)
 		pflags |= PS_WEAPONINDEX;
-
-	if (ps->gunangles[0] != ops->gunangles[0]
-		|| ps->gunangles[1] != ops->gunangles[1]
-		|| ps->gunangles[2] != ops->gunangles[2] )
-		pflags |= PS_WEAPONANGLES;
 
 	//
 	// write it
@@ -307,13 +299,6 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (pflags & PS_WEAPONFRAME)
 		MSG_WriteShort (msg, ps->gunframe);
 
-	if (pflags & PS_WEAPONANGLES)
-	{
-		MSG_WriteChar (msg, ps->gunangles[0]*4);
-		MSG_WriteChar (msg, ps->gunangles[1]*4);
-		MSG_WriteChar (msg, ps->gunangles[2]*4);
-	}
-
 	if (pflags & PS_BLEND)
 	{
 		MSG_WriteByte (msg, ps->blend[0]*255);
@@ -335,7 +320,6 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 		if (statbits & (1<<i) )
 			MSG_WriteShort (msg, ps->stats[i]);
 }
-
 
 /*
 ==================
@@ -395,9 +379,6 @@ Build a client frame structure
 qbyte		fatpvs[MAX_MAP_LEAFS/8];
 qbyte		fatphs[MAX_MAP_LEAFS/8];
 
-qbyte		clientpvs[MAX_MAP_LEAFS/8];
-qbyte		clientphs[MAX_MAP_LEAFS/8];
-
 /*
 ============
 SV_FatPVS
@@ -448,7 +429,6 @@ void SV_FatPVS (vec3_t org)
 /*
 ============
 SV_FatPHS
-
 ===========
 */
 void SV_FatPHS (int cluster)
@@ -503,13 +483,13 @@ void SV_MergePVS (vec3_t org)
 /*
 ============
 SV_MergePHS
-
 ===========
 */
 void SV_MergePHS (int cluster)
 {
 	int		i, longs;
 	qbyte	*src;
+
 	longs = CM_ClusterSize()>>2;
 
 	// or in all the other leaf bits
@@ -521,16 +501,15 @@ void SV_MergePHS (int cluster)
 /*
 =============
 SV_CullEntity
-
 =============
 */
-qboolean SV_CullEntity (edict_t *ent, qbyte *bitvector)
+qboolean SV_CullEntity (edict_t *ent)
 {
 	int i, l;
 
 	if (ent->r.num_clusters == -1)
 	{	// too many leafs for individual check, go by headnode
-		if (!CM_HeadnodeVisible (ent->r.headnode, bitvector))
+		if (!CM_HeadnodeVisible (ent->r.headnode, fatpvs))
 			return qtrue;
 		return qfalse;
 	}
@@ -539,7 +518,7 @@ qboolean SV_CullEntity (edict_t *ent, qbyte *bitvector)
 	for (i=0 ; i < ent->r.num_clusters ; i++)
 	{
 		l = ent->r.clusternums[i];
-		if (bitvector[l >> 3] & (1 << (l&7) )) {
+		if (fatpvs[l >> 3] & (1 << (l&7) )) {
 			return qfalse;
 		}
 	}
@@ -557,91 +536,111 @@ copies off the playerstat and areabits.
 */
 void SV_BuildClientFrame (client_t *client)
 {
-	int		e, i;
-	vec3_t	org;
-	edict_t	*ent;
-	edict_t	*clent;
-	edict_t *pedicts[MAX_EDICTS];
+	int				e, l;
+	vec3_t			org;
+	edict_t			*ent, *clent;
+	edict_t			*pedicts[MAX_EDICTS];
 	client_frame_t	*frame;
 	entity_state_t	*state;
-	int		l;
-	int		clientarea;
-	int		portalarea;
-	int		leafnum;
-	int		numedicts;
-	qboolean portalview;
-	qbyte	*bitvector;
+	int				clientarea, portalarea;
+	int				leafnum, clusternum;
+	int				numedicts;
+	qboolean		portalview;
 
 	clent = client->edict;
-	if (!clent->r.client)
+	if( !clent->r.client )
 		return;		// not in game yet
 
 	// this is the frame we are creating
 	frame = &client->frames[sv.framenum & UPDATE_MASK];
-
 	frame->senttime = svs.realtime; // save it for ping calc later
 
 	// find the client's PVS
-	for (i=0 ; i<3 ; i++)
-		org[i] = clent->r.client->ps.pmove.origin[i]*(1.0/16.0) + clent->r.client->ps.viewoffset[i];
+	VectorAdd( clent->s.origin, clent->r.client->ps.viewoffset, org );
 
-	leafnum = CM_PointLeafnum (org);
-	clientarea = CM_LeafArea (leafnum);
+	leafnum = CM_PointLeafnum( org );
+	clusternum = CM_LeafCluster( leafnum );
+	clientarea = CM_LeafArea( leafnum );
 
 	// calculate the visible areas
-	frame->areabytes = CM_WriteAreaBits (frame->areabits, clientarea);
+	frame->areabytes = CM_WriteAreaBits( frame->areabits, clientarea );
 
 	// grab the current player_state_t
 	frame->ps = clent->r.client->ps;
-
-	// save client's PVS so it can be later compared with fatpvs
-	SV_FatPVS (org);
-	memcpy (clientpvs, fatpvs, CM_ClusterSize());
-
-	SV_FatPHS (CM_LeafCluster(leafnum));
-	memcpy (clientphs, fatphs, CM_ClusterSize());
-
-	portalview = qfalse;
 
 	// build up the list of visible entities
 	frame->num_entities = 0;
 	frame->first_entity = svs.next_client_entities;
 
+	if( clusternum == -1 ) {
+		for( e = 1; e < sv.num_edicts; e++ ) {
+			ent = EDICT_NUM( e );
+
+			// ignore ents without visible models
+			if( ent->r.svflags & SVF_NOCLIENT )
+				continue;
+			if( ent->r.visclent && (ent->r.visclent != clent) )
+				continue;
+
+			// ignore ents without visible models unless they have an effect
+			if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] )
+				continue;
+			if( !(ent->r.svflags & SVF_BROADCAST) || ent != clent )
+				continue;
+
+			// fix number if broken
+			if( ent->s.number != e ) {
+				Com_DPrintf( "FIXING ENT->S.NUMBER!!!\n" );
+				ent->s.number = e;
+			}
+
+			// add it to the circular client_entities array
+			state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
+			*state = ent->s;
+
+			svs.next_client_entities++;
+			frame->num_entities++;
+		}
+		return;
+	}
+
+	// save client's PVS so it can be later compared with fatpvs
+	SV_FatPVS( org );
+	SV_FatPHS( clusternum );
+
+	portalview = qfalse;
+
 	// portal entities are the first to be checked so we can merge PV sets
-	for (e=1,numedicts=0 ; e<sv.num_edicts ; e++)
-	{
-		ent = EDICT_NUM(e);
+	for( e = 1, numedicts = 0; e < sv.num_edicts; e++ ) {
+		ent = EDICT_NUM( e );
 
 		// ignore ents without visible models
-		if (ent->r.svflags & SVF_NOCLIENT)
+		if( ent->r.svflags & SVF_NOCLIENT )
 			continue;
-		if (ent->r.visclent && (ent->r.visclent != clent))
+		if( ent->r.visclent && (ent->r.visclent != clent) )
 			continue;
 
 		// ignore ents without visible models unless they have an effect
-		if (!ent->s.modelindex && !ent->s.effects && !ent->s.sound
-			&& !ent->s.events[0])
+		if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] )
 			continue;
 
 		// fix number if broken
-		if (ent->s.number != e)
-		{
-			Com_DPrintf ("FIXING ENT->S.NUMBER!!!\n");
+		if( ent->s.number != e ) {
+			Com_DPrintf( "FIXING ENT->S.NUMBER!!!\n" );
 			ent->s.number = e;
 		}
 
 		// ignore if not touching a PV leaf
-		if (ent != clent)
-		{
-			if ( !(ent->r.svflags & SVF_PORTAL) ) {
-				if (!ent->s.modelindex && !ent->s.events[0])
-				{	// don't send sounds if they will be attenuated away
+		if( ent != clent || !(ent->r.svflags & SVF_BROADCAST) ) {
+			if( !(ent->r.svflags & SVF_PORTAL) ) {
+				if( !ent->s.modelindex && !ent->s.events[0] ) {
+					// don't send sounds if they will be attenuated away
 					vec3_t	delta;
 					float	len;
-					
-					VectorSubtract (org, ent->s.origin, delta);
-					len = VectorLength (delta);
-					if (len > 400)
+
+					VectorSubtract( org, ent->s.origin, delta );
+					len = VectorLength( delta );
+					if( len > 400 )
 						continue;
 				}
 
@@ -650,20 +649,20 @@ void SV_BuildClientFrame (client_t *client)
 			}
 
 			// check area
-			if (!CM_AreasConnected (clientarea, ent->r.areanum))
+			if( !CM_AreasConnected( clientarea, ent->r.areanum ) )
 				continue;
-			if (SV_CullEntity (ent, fatpvs))
+			if( SV_CullEntity( ent ) )
 				continue;
 
 			// merge PV sets if portal 
-			if ( !VectorCompare ( ent->s.origin, ent->s.origin2 ) ) {
-				SV_MergePVS ( ent->s.old_origin );
+			if( !VectorCompare( ent->s.origin, ent->s.origin2 ) ) {
+				SV_MergePVS( ent->s.old_origin );
 
-				portalarea = CM_PointLeafnum ( ent->s.origin2 );
-				SV_MergePHS ( CM_LeafCluster (portalarea) );
+				portalarea = CM_PointLeafnum( ent->s.origin2 );
+				SV_MergePHS( CM_LeafCluster( portalarea ) );
 
-				portalarea = CM_LeafArea ( portalarea );
-				CM_MergeAreaBits ( frame->areabits, portalarea );
+				portalarea = CM_LeafArea( portalarea );
+				CM_MergeAreaBits( frame->areabits, portalarea );
 
 				portalview = qtrue;
 			}
@@ -674,58 +673,46 @@ void SV_BuildClientFrame (client_t *client)
 		*state = ent->s;
 
 		// don't mark players missiles as solid
-		if (ent->r.owner == client->edict)
+		if( ent->r.owner == client->edict )
 			state->solid = 0;
 
 		svs.next_client_entities++;
 		frame->num_entities++;
 	}
 
-	for (e=0 ; e<numedicts ; e++)
-	{
+	for( e = 0; e < numedicts; e++ ) {
 		ent = pedicts[e];
 
 		// check area
-		if (! (frame->areabits[ent->r.areanum>>3] & (1<<(ent->r.areanum&7)) ) )
-		{	// doors can legally straddle two areas, so
+		if( ! (frame->areabits[ent->r.areanum>>3] & (1<<(ent->r.areanum&7)) ) ) {
+			// doors can legally straddle two areas, so
 			// we may need to check another one
-			if (!ent->r.areanum2
-				|| !(frame->areabits[ent->r.areanum2>>3] & (1<<(ent->r.areanum2&7)) ))
+			if( !ent->r.areanum2
+				|| !(frame->areabits[ent->r.areanum2>>3] & (1<<(ent->r.areanum2&7)) ) )
 				continue;		// blocked by a door
 		}
 
 		// just check one point for PHS
-		if (ent->r.svflags & SVF_FORCEOLDORIGIN)
-		{
-			l = ent->r.clusternums[0];
-			if ( !(fatphs[l >> 3] & (1 << (l&7) )) )
-				continue;
+		if( ent->r.svflags & SVF_FORCEOLDORIGIN ) {
+			if( ent->r.num_clusters == -1 ) {
+				if( !CM_HeadnodeVisible( ent->r.headnode, fatphs ) )
+					continue;
+			} else {
+				l = ent->r.clusternums[0];
+				if( !(fatphs[l >> 3] & (1 << (l&7) )) )
+					continue;
+			}
+		} else if( SV_CullEntity( ent ) ) {
+			continue;
 		}
-		else
-		{
-			// FIXME: if an ent has a model and a sound, but isn't
-			// in the PVS, only the PHS, clear the model
-			if (ent->s.sound)
-				bitvector = fatpvs;
-			else
-				bitvector = fatpvs;
 
-			if (SV_CullEntity (ent, fatpvs))
-				continue;
-		}
-		
 		// add it to the circular client_entities array
 		state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
 		*state = ent->s;
 
 		// don't mark players missiles as solid
-		if (ent->r.owner == client->edict)
+		if( ent->r.owner == client->edict )
 			state->solid = 0;
-
-		// don't mark entities from portals as solid
-		if (portalview && state->solid && !(ent->r.svflags & SVF_FORCEOLDORIGIN) && SV_CullEntity (ent, clientpvs)) {
-			state->effects |= EF_PORTALENTITY;
-		}
 
 		svs.next_client_entities++;
 		frame->num_entities++;
@@ -788,4 +775,3 @@ void SV_RecordDemoMessage (void)
 	fwrite (&len, 4, 1, svs.demofile);
 	fwrite (buf.data, buf.cursize, 1, svs.demofile);
 }
-

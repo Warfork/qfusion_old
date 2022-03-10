@@ -22,39 +22,38 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "../cgame/ref.h"
 
-void	R_BeginRegistration (void);
-void	R_RegisterWorldModel (char *model);
-void	R_EndRegistration (void);
+int		R_Init( void *hinstance, void *hWnd );
+void	R_Restart( void );
+void	R_Shutdown( void );
 
-void	R_ModelBounds (struct model_s *model, vec3_t mins, vec3_t maxs);
+void	R_RegisterWorldModel( char *model );
+void	R_ModelBounds( struct model_s *model, vec3_t mins, vec3_t maxs );
 
-struct model_s	*R_RegisterModel (char *name);
+struct model_s	*R_RegisterModel( char *name );
+struct shader_s *R_RegisterPic( char *name );
+struct shader_s *R_RegisterShader( char *name );
+struct shader_s *R_RegisterSkin( char *name );
+struct skinfile_s *R_RegisterSkinFile( char *name );
 
-struct shader_s *R_RegisterPic (char *name);
-struct shader_s *R_RegisterShader (char *name);
-struct shader_s *R_RegisterSkin (char *name);
-struct skinfile_s *R_RegisterSkinFile (char *name);
+void	R_ClearScene( void );
+void	R_AddEntityToScene( entity_t *ent );
+void	R_AddLightToScene( vec3_t org, float intensity, float r, float g, float b );
+void	R_AddPolyToScene( poly_t *poly );
+void	R_RenderScene( refdef_t *fd );
 
-void	R_RenderFrame (refdef_t *fd);
+void	R_DrawStretchPic( int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader );
+void	R_DrawStretchRaw( int x, int y, int w, int h, int cols, int rows, int frame, qbyte *data );
 
-void	Draw_StretchPic (int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader);
-void	Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, int frame, qbyte *data);
+qboolean R_LerpAttachment( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name );
 
-qboolean R_LerpAttachment ( orientation_t *orient, struct model_s *mod, int frame, int oldframe, float backlerp, char *name );
+int		R_GetClippedFragments( vec3_t origin, float radius, vec3_t axis[3], int maxfverts, vec3_t *fverts, int maxfragments, fragment_t *fragments );
 
-int		R_GetClippedFragments ( vec3_t origin, float radius, mat3_t axis, int maxfverts, vec3_t *fverts, int maxfragments, fragment_t *fragments );
-
-void	R_BeginFrame( float camera_separation );
+void	R_BeginFrame( float cameraSeparation );
+void	R_EndFrame( void );
 void	R_ApplySoftwareGamma( void );
-void	R_Flush (void);
 
-void	R_ScreenShot (char *name, qboolean silent);
-
-void	GLimp_EndFrame (void);
+void	R_ScreenShot( char *name, qboolean silent );
 
 void	GLimp_AppActivate( qboolean active );
-
-int		R_Init( void *hinstance, void *hWnd );
-void	R_Shutdown (void);
 
 #endif //__RENDER_H__

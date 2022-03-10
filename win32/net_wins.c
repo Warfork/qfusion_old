@@ -100,7 +100,7 @@ void SockadrToNetadr (struct sockaddr *s, netadr_t *a)
 }
 
 
-qboolean	NET_CompareAdr (netadr_t *a, netadr_t *b)
+qboolean NET_CompareAdr (netadr_t *a, netadr_t *b)
 {
 	if (a->type != b->type)
 		return qfalse;
@@ -130,7 +130,7 @@ NET_CompareBaseAdr
 Compares without the port
 ===================
 */
-qboolean	NET_CompareBaseAdr (netadr_t *a, netadr_t *b)
+qboolean NET_CompareBaseAdr (netadr_t *a, netadr_t *b)
 {
 	if (a->type != b->type)
 		return qfalse;
@@ -153,16 +153,16 @@ qboolean	NET_CompareBaseAdr (netadr_t *a, netadr_t *b)
 	return qfalse;
 }
 
-char	*NET_AdrToString (netadr_t *a)
+char *NET_AdrToString (netadr_t *a)
 {
 	static	char	s[64];
 
 	if (a->type == NA_LOOPBACK)
-		Com_sprintf (s, sizeof(s), "loopback");
-	else if (a->type == NA_IP)
-		Com_sprintf (s, sizeof(s), "%i.%i.%i.%i:%i", a->ip[0], a->ip[1], a->ip[2], a->ip[3], ntohs(a->port));
+		Q_snprintfz (s, sizeof(s), "loopback");
+	else if (a->type == NA_IP || a->type == NA_BROADCAST)
+		Q_snprintfz (s, sizeof(s), "%i.%i.%i.%i:%i", a->ip[0], a->ip[1], a->ip[2], a->ip[3], ntohs(a->port));
 	else
-		Com_sprintf (s, sizeof(s), "%02x%02x%02x%02x:%02x%02x%02x%02x%02x%02x:%i", a->ipx[0], a->ipx[1], a->ipx[2], a->ipx[3], a->ipx[4], a->ipx[5], a->ipx[6], a->ipx[7], a->ipx[8], a->ipx[9], ntohs(a->port));
+		Q_snprintfz (s, sizeof(s), "%02x%02x%02x%02x:%02x%02x%02x%02x%02x%02x:%i", a->ipx[0], a->ipx[1], a->ipx[2], a->ipx[3], a->ipx[4], a->ipx[5], a->ipx[6], a->ipx[7], a->ipx[8], a->ipx[9], ntohs(a->port));
 
 	return s;
 }
@@ -185,7 +185,7 @@ idnewt:28000
 	sscanf (copy, "%x", &val);	\
 	((struct sockaddr_ipx *)sadr)->dest = val
 
-qboolean	NET_StringToSockaddr (char *s, struct sockaddr *sadr)
+qboolean NET_StringToSockaddr (char *s, struct sockaddr *sadr)
 {
 	struct hostent	*h;
 	char	*colon;
@@ -255,7 +255,7 @@ idnewt:28000
 192.246.40.70:28000
 =============
 */
-qboolean	NET_StringToAdr (char *s, netadr_t *a)
+qboolean NET_StringToAdr (char *s, netadr_t *a)
 {
 	struct sockaddr sadr;
 	
@@ -275,7 +275,7 @@ qboolean	NET_StringToAdr (char *s, netadr_t *a)
 }
 
 
-qboolean	NET_IsLocalAddress (netadr_t *adr)
+qboolean NET_IsLocalAddress (netadr_t *adr)
 {
 	return (adr->type == NA_LOOPBACK);
 }
@@ -288,7 +288,7 @@ LOOPBACK BUFFERS FOR LOCAL PLAYER
 =============================================================================
 */
 
-qboolean	NET_GetLoopPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_message)
+qboolean NET_GetLoopPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_message)
 {
 	int		i;
 	loopback_t	*loop;
@@ -329,7 +329,7 @@ void NET_SendLoopPacket (netsrc_t sock, int length, void *data)
 
 //=============================================================================
 
-qboolean	NET_GetPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_message)
+qboolean NET_GetPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_message)
 {
 	int 	ret;
 	struct sockaddr from;
@@ -402,25 +402,13 @@ void NET_SendPacket (netsrc_t sock, int length, void *data, netadr_t to)
 		return;
 	}
 
-	if (to.type == NA_BROADCAST)
+	if (to.type == NA_BROADCAST || to.type == NA_IP)
 	{
 		net_socket = ip_sockets[sock];
 		if (!net_socket)
 			return;
 	}
-	else if (to.type == NA_IP)
-	{
-		net_socket = ip_sockets[sock];
-		if (!net_socket)
-			return;
-	}
-	else if (to.type == NA_IPX)
-	{
-		net_socket = ipx_sockets[sock];
-		if (!net_socket)
-			return;
-	}
-	else if (to.type == NA_BROADCAST_IPX)
+	else if (to.type == NA_IPX || to.type == NA_BROADCAST_IPX)
 	{
 		net_socket = ipx_sockets[sock];
 		if (!net_socket)
@@ -445,7 +433,7 @@ void NET_SendPacket (netsrc_t sock, int length, void *data, netadr_t to)
 		if ((err == WSAEADDRNOTAVAIL) && ((to.type == NA_BROADCAST) || (to.type == NA_BROADCAST_IPX)))
 			return;
 
-		if (dedicated->value)	// let dedicated servers continue after errors
+		if (dedicated->integer)	// let dedicated servers continue after errors
 		{
 			Com_Printf ("NET_SendPacket ERROR: %s to %s\n", NET_ErrorString(),
 				NET_AdrToString (&to));
@@ -545,20 +533,17 @@ void NET_OpenIP (void)
 
 	if (!ip_sockets[NS_SERVER])
 	{
-		port = Cvar_Get("ip_hostport", "0", CVAR_NOSET)->value;
+		port = Cvar_Get("ip_hostport", "0", CVAR_NOSET)->integer;
 		if (!port)
 		{
-			port = Cvar_Get("hostport", "0", CVAR_NOSET)->value;
+			port = Cvar_Get("hostport", "0", CVAR_NOSET)->integer;
 			if (!port)
-			{
-				port = Cvar_Get("port", va("%i", PORT_SERVER), CVAR_NOSET)->value;
-			}
+				port = Cvar_Get("port", va("%i", PORT_SERVER), CVAR_NOSET)->integer;
 		}
 		ip_sockets[NS_SERVER] = NET_IPSocket (ip->string, port);
 		if (!ip_sockets[NS_SERVER] && dedicated)
 			Com_Error (ERR_FATAL, "Couldn't allocate dedicated server IP port");
 	}
-
 
 	// dedicated servers don't need client ports
 	if (dedicated)
@@ -566,11 +551,11 @@ void NET_OpenIP (void)
 
 	if (!ip_sockets[NS_CLIENT])
 	{
-		port = Cvar_Get("ip_clientport", "0", CVAR_NOSET)->value;
+		port = Cvar_Get("ip_clientport", "0", CVAR_NOSET)->integer;
 		if (!port)
 		{
 			srand(Sys_Milliseconds());
-			port = Cvar_Get("clientport", va("%i", PORT_CLIENT), CVAR_NOSET)->value;
+			port = Cvar_Get("clientport", va("%i", PORT_CLIENT), CVAR_NOSET)->integer;
 			if (!port)
 				port = PORT_ANY;
 		}
@@ -648,14 +633,12 @@ void NET_OpenIPX (void)
 
 	if (!ipx_sockets[NS_SERVER])
 	{
-		port = Cvar_Get("ipx_hostport", "0", CVAR_NOSET)->value;
+		port = Cvar_Get("ipx_hostport", "0", CVAR_NOSET)->integer;
 		if (!port)
 		{
-			port = Cvar_Get("hostport", "0", CVAR_NOSET)->value;
+			port = Cvar_Get("hostport", "0", CVAR_NOSET)->integer;
 			if (!port)
-			{
-				port = Cvar_Get("port", va("%i", PORT_SERVER), CVAR_NOSET)->value;
-			}
+				port = Cvar_Get("port", va("%i", PORT_SERVER), CVAR_NOSET)->integer;
 		}
 		ipx_sockets[NS_SERVER] = NET_IPXSocket (port);
 	}
@@ -666,11 +649,11 @@ void NET_OpenIPX (void)
 
 	if (!ipx_sockets[NS_CLIENT])
 	{
-		port = Cvar_Get("ipx_clientport", "0", CVAR_NOSET)->value;
+		port = Cvar_Get("ipx_clientport", "0", CVAR_NOSET)->integer;
 		if (!port)
 		{
 			srand(Sys_Milliseconds());
-			port = Cvar_Get("clientport", va("%i", PORT_CLIENT), CVAR_NOSET)->value;
+			port = Cvar_Get("clientport", va("%i", PORT_CLIENT), CVAR_NOSET)->integer;
 			if (!port)
 				port = PORT_ANY;
 		}
@@ -716,9 +699,9 @@ void	NET_Config (qboolean multiplayer)
 	}
 	else
 	{	// open sockets
-		if (! noudp->value)
+		if (!noudp->integer)
 			NET_OpenIP ();
-		if (! noipx->value)
+		if (!noipx->integer)
 			NET_OpenIPX ();
 	}
 }
@@ -731,7 +714,7 @@ void NET_Sleep(int msec)
 	extern cvar_t *dedicated;
 	int i;
 
-	if (!dedicated || !dedicated->value)
+	if (!dedicated || !dedicated->integer)
 		return; // we're not a server, just run full speed
 
 	FD_ZERO(&fdset);
@@ -762,10 +745,7 @@ NET_Init
 */
 void NET_Init (void)
 {
-	WORD	wVersionRequested; 
 	int		r;
-
-	wVersionRequested = MAKEWORD(1, 1); 
 
 	r = WSAStartup (MAKEWORD(1, 1), &winsockdata);
 
@@ -786,7 +766,7 @@ void NET_Init (void)
 NET_Shutdown
 ====================
 */
-void	NET_Shutdown (void)
+void NET_Shutdown (void)
 {
 	NET_Config (qfalse);	// close sockets
 

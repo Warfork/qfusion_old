@@ -34,7 +34,7 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 	// this is usually 0.5 (128), 1 (256), or 2 (512)
 	fracstep = ((double) sc->speed / (double) dma.speed) * 256.0;
 
-	srclength = sc->length << sc->stereo;
+	srclength = sc->length / sc->channels;
 	outcount = (double) sc->length * (double) dma.speed / (double) sc->speed;
 
 	sc->length = outcount;
@@ -66,7 +66,7 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 			if (sc->width == 2)
 			{
 				short *out = (void *)sc->data, *in = (void *)data;
-				if (sc->stereo)
+				if (sc->channels == 2)
 				{
 					fracstep <<= 1;
 					for (i=0 ; i<outcount ; i++)
@@ -90,7 +90,7 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 				signed char *out = (void *)sc->data;
 				unsigned char *in = (void *)data;
 
-				if (sc->stereo)
+				if (sc->channels == 2)
 				{
 					fracstep <<= 1;
 					for (i=0 ; i<outcount ; i++)
@@ -118,7 +118,7 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 			{
 				short *out = (void *)sc->data, *in = (void *)data;
 
-				if (sc->stereo)
+				if (sc->channels == 2)
 				{
 					for (i=0 ; i<outcount ; i++)
 					{
@@ -160,7 +160,7 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 			{
 				signed char *out = (void *)sc->data;
 				unsigned char *in = (void *)data;
-				if (sc->stereo) // LordHavoc: stereo sound support
+				if (sc->channels == 2)
 				{
 					for (i=0 ; i<outcount ; i++)
 					{
@@ -228,7 +228,7 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 		return sc;
 
 // load it in
-	Com_sprintf (namebuffer, sizeof(namebuffer), s->name);
+	Q_strncpyz (namebuffer, s->name, sizeof(namebuffer));
 	size = FS_LoadFile (namebuffer, (void **)&data);
 
 	if (!data)
@@ -255,18 +255,12 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 		FS_FreeFile (data);
 		return NULL;
 	}
-	
+
 	sc->length = info.samples;
 	sc->loopstart = info.loopstart;
 	sc->speed = info.rate;
+	sc->channels = info.channels;
 	sc->width = info.width;
-	sc->stereo = (info.channels == 2);
-	sc->music = !strncmp (namebuffer, "music/", 6);
-
-	// force loopstart if it's a music file
-	if ( sc->music && (sc->loopstart == -1) ) {
-		sc->loopstart = 0;
-	}
 
 	ResampleSfx (sc, data + info.dataofs, s->name);
 
@@ -324,7 +318,7 @@ void FindNextChunk(char *name)
 			data_p = NULL;
 			return;
 		}
-		
+
 		data_p += 4;
 		iff_chunk_len = GetLittleLong();
 		if (iff_chunk_len < 0)
@@ -346,23 +340,6 @@ void FindChunk(char *name)
 	FindNextChunk (name);
 }
 
-
-void DumpChunks(void)
-{
-	char	str[5];
-	
-	str[4] = 0;
-	data_p = iff_data;
-	do
-	{
-		memcpy (str, data_p, 4);
-		data_p += 4;
-		iff_chunk_len = GetLittleLong();
-		Com_Printf ("0x%x : %s (%d)\n", (int)(data_p - 4), str, iff_chunk_len);
-		data_p += (iff_chunk_len + 1) & ~1;
-	} while (data_p < iff_end);
-}
-
 /*
 ============
 GetWavinfo
@@ -379,7 +356,7 @@ wavinfo_t GetWavinfo (char *name, qbyte *wav, int wavlength)
 
 	if (!wav)
 		return info;
-		
+
 	iff_data = wav;
 	iff_end = wav + wavlength;
 
@@ -456,7 +433,7 @@ wavinfo_t GetWavinfo (char *name, qbyte *wav, int wavlength)
 		info.samples = samples;
 
 	info.dataofs = data_p - wav;
-	
+
 	return info;
 }
 

@@ -273,7 +273,7 @@ void SV_CalcViewOffset (edict_t *ent)
 
 		delta = DotProduct (ent->velocity, forward);
 		angles[PITCH] += delta*run_pitch->value;
-		
+
 		delta = DotProduct (ent->velocity, right);
 		angles[ROLL] += delta*run_roll->value;
 
@@ -328,47 +328,6 @@ void SV_CalcViewOffset (edict_t *ent)
 
 	VectorCopy (v, client->ps.viewoffset);
 }
-
-/*
-==============
-SV_CalcGunOffset
-==============
-*/
-void SV_CalcGunOffset (edict_t *ent)
-{
-	int			i;
-	float		delta;
-	gclient_t	*client = ent->r.client;
-
-	// gun angles from bobbing
-	client->ps.gunangles[ROLL] = xyspeed * bobfracsin * 0.005;
-	client->ps.gunangles[YAW] = xyspeed * bobfracsin * 0.01;
-	if (bobcycle & 1)
-	{
-		client->ps.gunangles[ROLL] = -client->ps.gunangles[ROLL];
-		client->ps.gunangles[YAW] = -client->ps.gunangles[YAW];
-	}
-
-	client->ps.gunangles[PITCH] = xyspeed * bobfracsin * 0.005;
-
-	// gun angles from delta movement
-	for (i=0 ; i<3 ; i++)
-	{
-		delta = client->oldviewangles[i] - client->ps.viewangles[i];
-		if (delta > 180)
-			delta -= 360;
-		if (delta < -180)
-			delta += 360;
-		if (delta > 45)
-			delta = 45;
-		if (delta < -45)
-			delta = -45;
-		if (i == YAW)
-			client->ps.gunangles[ROLL] += 0.1*delta;
-		client->ps.gunangles[i] += 0.2 * delta;
-	}
-}
-
 
 /*
 =============
@@ -567,7 +526,7 @@ void P_FallingDamage (edict_t *ent)
 			damage = 1;
 		VectorSet (dir, 0, 0, 1);
 
-		if (!deathmatch->value || !((int)dmflags->value & DF_NO_FALLING) )
+		if (!deathmatch->integer || !(dmflags->integer & DF_NO_FALLING) )
 			T_Damage (ent, world, world, dir, ent->s.origin, vec3_origin, damage, 0, 0, MOD_FALLING);
 
 		if (ent->health > 0)
@@ -1116,9 +1075,6 @@ void ClientEndServerFrame (edict_t *ent)
 	// determine the view offsets
 	SV_CalcViewOffset (ent);
 
-	// determine the gun offsets
-	SV_CalcGunOffset (ent);
-
 	// determine the full screen color blend
 	// must be after viewoffset, so eye contents can be
 	// accurately determined
@@ -1133,7 +1089,7 @@ void ClientEndServerFrame (edict_t *ent)
 
 //ZOID
 //update chasecam follower stats
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		edict_t *e = game.edicts + i;
 		if (!e->r.inuse || e->r.client->chase_target != ent)
 			continue;

@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "g_local.h"
 #include "m_player.h"
 
-typedef enum match_s {
+typedef enum {
 	MATCH_NONE,
 	MATCH_SETUP,
 	MATCH_PREGAME,
@@ -35,7 +35,7 @@ typedef enum {
 	ELECT_MAP
 } elect_t;
 
-typedef struct ctfgame_s
+typedef struct
 {
 	int team1, team2;
 	int total1, total2; // these are only set when going into intermission!
@@ -55,7 +55,6 @@ typedef struct ctfgame_s
 	float electtime;	// remaining time until election times out
 	char emsg[256];		// election name
 	int warnactive; // true if stat string 30 is active
-
 
 	ghost_t ghosts[MAX_CLIENTS]; // ghost codes
 } ctfgame_t;
@@ -160,7 +159,7 @@ void CTFSpawn(void)
 	memset(&ctfgame, 0, sizeof(ctfgame));
 	CTFSetupTechSpawn();
 
-	if (competition->value > 1) {
+	if (competition->integer > 1) {
 		ctfgame.match = MATCH_SETUP;
 		ctfgame.matchtime = level.time + matchsetuptime->value * 60;
 	}
@@ -248,7 +247,7 @@ void CTFAssignSkin(edict_t *ent, char *s)
 	char *p;
 	char t[64];
 
-	Com_sprintf(t, sizeof(t), "%s", s);
+	Q_snprintfz(t, sizeof(t), "%s", s);
 
 	if ((p = strchr(t, '/')) != NULL)
 		p[1] = 0;
@@ -280,12 +279,12 @@ void CTFAssignTeam(gclient_t *who)
 
 	who->resp.ctf_state = 0;
 
-	if (!((int)dmflags->value & DF_CTF_FORCEJOIN)) {
+	if (!(dmflags->integer & DF_CTF_FORCEJOIN)) {
 		who->resp.ctf_team = CTF_NOTEAM;
 		return;
 	}
 
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		player = &game.edicts[i];
 
 		if (!player->r.inuse || player->r.client == who)
@@ -446,7 +445,7 @@ void CTFFragBonuses(edict_t *targ, edict_t *inflictor, edict_t *attacker)
 
 		// the target had the flag, clear the hurt carrier
 		// field on the other team
-		for (i = 1; i <= maxclients->value; i++) {
+		for (i = 1; i <= game.maxclients; i++) {
 			ent = game.edicts + i;
 			if (ent->r.inuse && ent->r.client->resp.ctf_team == otherteam)
 				ent->r.client->resp.ctf_lasthurtcarrier = 0;
@@ -494,7 +493,7 @@ void CTFFragBonuses(edict_t *targ, edict_t *inflictor, edict_t *attacker)
 		return; // can't find attacker's flag
 
 	// find attacker's team's flag carrier
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		carrier = game.edicts + i;
 		if (carrier->r.inuse && 
 			carrier->r.client->pers.inventory[ITEM_INDEX(flag_item)])
@@ -656,7 +655,7 @@ qboolean CTFPickup_Flag(edict_t *ent, edict_t *other)
 					other->r.client->resp.ghost->caps++;
 
 				// Ok, let's do the player loop, hand out the bonuses
-				for (i = 1; i <= maxclients->value; i++) {
+				for (i = 1; i <= game.maxclients; i++) {
 					player = &game.edicts[i];
 					if (!player->r.inuse)
 						continue;
@@ -843,7 +842,7 @@ void CTFCalcScores(void)
 	int i;
 
 	ctfgame.total1 = ctfgame.total2 = 0;
-	for (i = 0; i < maxclients->value; i++) {
+	for (i = 0; i < game.maxclients; i++) {
 		if (!game.edicts[i+1].r.inuse)
 			continue;
 		if (game.clients[i].resp.ctf_team == CTF_TEAM1)
@@ -896,7 +895,7 @@ static void CTFSetIDView(edict_t *ent)
 
 	AngleVectors(ent->r.client->v_angle, forward, NULL, NULL);
 	best = NULL;
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		who = game.edicts + i;
 		if (!who->r.inuse || who->r.solid == SOLID_NOT)
 			continue;
@@ -989,7 +988,7 @@ void SetCTFStats(edict_t *ent)
 			// not at base
 			// check if on player
 			p1 = imageindex_i_ctf1d; // default to dropped
-			for (i = 1; i <= maxclients->value; i++)
+			for (i = 1; i <= game.maxclients; i++)
 				if (game.edicts[i].r.inuse &&
 					game.edicts[i].r.client->pers.inventory[ITEM_INDEX(flag1_item)]) {
 					// enemy has it
@@ -1008,7 +1007,7 @@ void SetCTFStats(edict_t *ent)
 			// not at base
 			// check if on player
 			p2 = imageindex_i_ctf2d; // default to dropped
-			for (i = 1; i <= maxclients->value; i++)
+			for (i = 1; i <= game.maxclients; i++)
 				if (game.edicts[i].r.inuse &&
 					game.edicts[i].r.client->pers.inventory[ITEM_INDEX(flag2_item)]) {
 					// enemy has it
@@ -1507,13 +1506,13 @@ char *CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 	len = 0;
 
 	// team one
-	sprintf(string, "size 32 32 "
+	Q_snprintfz(string, sizeof(string), "size 32 32 "
 		"if 23 xv 8 yv 8 23 endif "
 		"xv 40 yv 28 string \"%4d/%-3d\" "
-		"xv 98 yv 12 num 2 17 "
-		"if 24 xv 168 yv 8 pic 24 endif "
+		"xv 98 yv 12 num 2 %17 "
+		"if 24 xv 168 yv 8 pic %24 endif "
 		"xv 200 yv 28 string \"%4d/%-3d\" "
-		"xv 256 yv 12 num 2 19 ",
+		"xv 256 yv 12 num 2 %19 ",
 		totalscore[0], total[0],
 		totalscore[1], total[1]);
 	len = strlen(string);
@@ -1581,7 +1580,7 @@ char *CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 
 	k = n = 0;
 	if (maxsize - len > 50) {
-		for (i = 0; i < maxclients->value; i++) {
+		for (i = 0; i < game.maxclients; i++) {
 			cl_ent = game.edicts + 1 + i;
 			cl = &game.clients[i];
 			if (!cl_ent->r.inuse ||
@@ -1591,7 +1590,7 @@ char *CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 
 			if (!k) {
 				k = 1;
-				sprintf(entry, "xv 0 yv %d string \"%sSpectators\" ", S_COLOR_YELLOW, j);
+				sprintf(entry, "xv 0 yv %d string \"%sSpectators\"%s ", j, S_COLOR_YELLOW, S_COLOR_WHITE);
 				strcat(string, entry);
 				len = strlen(string);
 				j += 16;
@@ -1785,9 +1784,8 @@ void CTFSpawnTechs(edict_t *ent)
 	edict_t *spot;
 	int i;
 
-	if ( !ctf->value ) {
+	if( !ctf->integer )
 		return;
-	}
 
 	i = 0;
 	while (tnames[i]) {
@@ -1814,7 +1812,7 @@ void CTFSetupTechSpawn(void)
 {
 	edict_t *ent;
 
-	if (((int)dmflags->value & DF_CTF_NO_TECH))
+	if (dmflags->integer & DF_CTF_NO_TECH)
 		return;
 
 	ent = G_Spawn();
@@ -2011,9 +2009,9 @@ static void CTFSay_Team_Location(edict_t *who, char *buf, int buflen)
 
 	// we now have the closest target_location
 	if ( hot->count ) {
-		Com_sprintf ( buf, buflen, "%c%c%s" S_COLOR_WHITE, Q_COLOR_ESCAPE, hot->count + '0', hot->message );
+		Q_snprintfz ( buf, buflen, "%c%c%s" S_COLOR_WHITE, Q_COLOR_ESCAPE, hot->count + '0', hot->message );
 	} else {
-		Com_sprintf ( buf, buflen, "%s", hot->message );
+		Q_snprintfz ( buf, buflen, "%s", hot->message );
 	}
 }
 
@@ -2048,15 +2046,15 @@ static void CTFSay_Team_Armor(edict_t *who, char *buf, int buflen)
 	}
 
 	if (!*buf)
-		Com_sprintf(buf, buflen, "no armor");
+		Q_snprintfz(buf, buflen, "no armor");
 }
 
 static void CTFSay_Team_Health(edict_t *who, char *buf, int buflen)
 {
 	if (who->health <= 0)
-		Com_sprintf (buf, buflen, "dead");
+		Q_snprintfz (buf, buflen, "dead");
 	else
-		Com_sprintf (buf, buflen, "%i health", who->health);
+		Q_snprintfz (buf, buflen, "%i health", who->health);
 }
 
 static void CTFSay_Team_Tech(edict_t *who, char *buf, int buflen)
@@ -2074,15 +2072,15 @@ static void CTFSay_Team_Tech(edict_t *who, char *buf, int buflen)
 		}
 		i++;
 	}
-	Com_sprintf(buf, buflen, "no powerup");
+	Q_snprintfz(buf, buflen, "no powerup");
 }
 
 static void CTFSay_Team_Weapon(edict_t *who, char *buf, int buflen)
 {
 	if (who->r.client->pers.weapon)
-		Com_sprintf(buf, buflen, who->r.client->pers.weapon->pickup_name);
+		Q_snprintfz(buf, buflen, who->r.client->pers.weapon->pickup_name);
 	else
-		Com_sprintf(buf, buflen, "none");
+		Q_snprintfz(buf, buflen, "none");
 }
 
 static void CTFSay_Team_Sight(edict_t *who, char *buf, int buflen)
@@ -2094,7 +2092,7 @@ static void CTFSay_Team_Sight(edict_t *who, char *buf, int buflen)
 	char s2[1024];
 
 	*s = *s2 = 0;
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		targ = game.edicts + i;
 		if (!targ->r.inuse || 
 			targ == who ||
@@ -2117,9 +2115,9 @@ static void CTFSay_Team_Sight(edict_t *who, char *buf, int buflen)
 				strcat(s, " and ");
 			strcat(s, s2);
 		}
-		Com_sprintf(buf, buflen, s);
+		Q_snprintfz(buf, buflen, s);
 	} else
-		Com_sprintf(buf, buflen, "no one");
+		Q_snprintfz(buf, buflen, "no one");
 }
 
 void CTFSay_Team(edict_t *who, char *msg)
@@ -2203,7 +2201,7 @@ void CTFSay_Team(edict_t *who, char *msg)
 	}
 	*p = 0;
 
-	for (i = 0; i < maxclients->value; i++) {
+	for (i = 0; i < game.maxclients; i++) {
 		cl_ent = game.edicts + 1 + i;
 		if (!cl_ent->r.inuse)
 			continue;
@@ -2243,7 +2241,7 @@ qboolean CTFBeginElection(edict_t *ent, elect_t type, char *msg)
 	int count;
 	edict_t *e;
 
-	if (electpercentage->value == 0) {
+	if (electpercentage->integer == 0) {
 		G_PrintMsg (ent, PRINT_HIGH, "Elections are disabled, only an admin can process this action.\n");
 		return qfalse;
 	}
@@ -2256,7 +2254,7 @@ qboolean CTFBeginElection(edict_t *ent, elect_t type, char *msg)
 
 	// clear votes
 	count = 0;
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		e = game.edicts + i;
 		e->r.client->resp.voted = qfalse;
 		if (e->r.inuse)
@@ -2291,7 +2289,7 @@ void CTFResetAllPlayers(void)
 	int i;
 	edict_t *ent;
 
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		ent = game.edicts + i;
 		if (!ent->r.inuse)
 			continue;
@@ -2369,7 +2367,7 @@ void CTFStartMatch(void)
 
 	memset(ctfgame.ghosts, 0, sizeof(ctfgame.ghosts));
 
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		ent = game.edicts + i;
 		if (!ent->r.inuse)
 			continue;
@@ -2445,7 +2443,7 @@ void CTFWinElection(void)
 	switch (ctfgame.election) {
 	case ELECT_MATCH :
 		// reset into match mode
-		if (competition->value < 3)
+		if (competition->integer < 3)
 			trap_Cvar_Set("competition", "2");
 		ctfgame.match = MATCH_SETUP;
 		CTFResetAllPlayers();
@@ -2543,7 +2541,7 @@ void CTFReady(edict_t *ent)
 	G_PrintMsg (NULL, PRINT_HIGH, "%s%s is ready.\n", ent->r.client->pers.netname, S_COLOR_WHITE);
 
 	t1 = t2 = 0;
-	for (j = 0, i = 1; i <= maxclients->value; i++) {
+	for (j = 0, i = 1; i <= game.maxclients; i++) {
 		e = game.edicts + i;
 		if (!e->r.inuse)
 			continue;
@@ -2779,7 +2777,7 @@ void CTFChaseCam(edict_t *ent, pmenuhnd_t *p)
 		return;
 	}
 
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		e = game.edicts + i;
 		if (e->r.inuse && e->r.solid != SOLID_NOT) {
 			ent->r.client->chase_target = e;
@@ -2864,7 +2862,7 @@ int CTFUpdateJoinMenu(edict_t *ent)
 	SetLevelName(joinmenu + jmenu_level);
 
 	num1 = num2 = 0;
-	for (i = 0; i < maxclients->value; i++) {
+	for (i = 0; i < game.maxclients; i++) {
 		if (!game.edicts[i+1].r.inuse)
 			continue;
 		if (game.clients[i].resp.ctf_team == CTF_TEAM1)
@@ -2905,7 +2903,7 @@ int CTFUpdateJoinMenu(edict_t *ent)
 
 	joinmenu[jmenu_reqmatch].text = NULL;
 	joinmenu[jmenu_reqmatch].SelectFunc = NULL;
-	if (competition->value && ctfgame.match < MATCH_SETUP) {
+	if (competition->integer && ctfgame.match < MATCH_SETUP) {
 		joinmenu[jmenu_reqmatch].text = "Request Match";
 		joinmenu[jmenu_reqmatch].SelectFunc = CTFRequestMatch;
 	}
@@ -2942,7 +2940,7 @@ qboolean CTFStartClient(edict_t *ent)
 	if (ent->r.client->resp.ctf_team != CTF_NOTEAM)
 		return qfalse;
 
-	if (!((int)dmflags->value & DF_CTF_FORCEJOIN) || ctfgame.match >= MATCH_SETUP) {
+	if (!(dmflags->integer & DF_CTF_FORCEJOIN) || ctfgame.match >= MATCH_SETUP) {
 		// start as 'observer'
 		ent->movetype = MOVETYPE_NOCLIP;
 		ent->r.solid = SOLID_NOT;
@@ -3011,7 +3009,7 @@ qboolean CTFCheckRules(void)
 			switch (ctfgame.match) {
 			case MATCH_SETUP :
 				// go back to normal mode
-				if (competition->value < 3) {
+				if (competition->integer < 3) {
 					ctfgame.match = MATCH_NONE;
 					trap_Cvar_Set("competition", "1");
 					CTFResetAllPlayers();
@@ -3042,7 +3040,7 @@ qboolean CTFCheckRules(void)
 
 		switch (ctfgame.match) {
 		case MATCH_SETUP :
-			for (j = 0, i = 1; i <= maxclients->value; i++) {
+			for (j = 0, i = 1; i <= game.maxclients; i++) {
 				ent = game.edicts + i;
 				if (!ent->r.inuse)
 					continue;
@@ -3051,7 +3049,7 @@ qboolean CTFCheckRules(void)
 					j++;
 			}
 
-			if (competition->value < 3)
+			if (competition->integer < 3)
 				sprintf(text, "%02d:%02d SETUP: %d not ready",
 					t / 60, t % 60, j);
 			else
@@ -3091,9 +3089,9 @@ qboolean CTFCheckRules(void)
 		ctfgame.lasttime = level.time;
 		// this is only done in non-match (public) mode
 
-		if (warn_unbalanced->value) {
+		if (warn_unbalanced->integer) {
 			// count up the team totals
-			for (i = 1; i <= maxclients->value; i++) {
+			for (i = 1; i <= game.maxclients; i++) {
 				ent = game.edicts + i;
 				if (!ent->r.inuse)
 					continue;
@@ -3120,9 +3118,9 @@ qboolean CTFCheckRules(void)
 
 	}
 
-	if (capturelimit->value && 
-		(ctfgame.team1 >= capturelimit->value ||
-		ctfgame.team2 >= capturelimit->value)) {
+	if (capturelimit->integer && 
+		(ctfgame.team1 >= capturelimit->integer ||
+		ctfgame.team2 >= capturelimit->integer)) {
 		G_PrintMsg (NULL, PRINT_HIGH, "Capturelimit hit.\n");
 		return qtrue;
 	}
@@ -3187,10 +3185,10 @@ void CTFAdmin_SettingsApply(edict_t *ent, pmenuhnd_t *p)
 		trap_Cvar_Set("matchstarttime", st);
 	}
 
-	if (settings->weaponsstay != !!((int)dmflags->value & DF_WEAPONS_STAY)) {
+	if (settings->weaponsstay != !!(dmflags->integer & DF_WEAPONS_STAY)) {
 		G_PrintMsg (NULL, PRINT_HIGH, "%s%s turned %s weapons stay.\n",
 			ent->r.client->pers.netname, S_COLOR_WHITE, settings->weaponsstay ? "on" : "off");
-		i = (int)dmflags->value;
+		i = dmflags->integer;
 		if (settings->weaponsstay)
 			i |= DF_WEAPONS_STAY;
 		else
@@ -3199,10 +3197,10 @@ void CTFAdmin_SettingsApply(edict_t *ent, pmenuhnd_t *p)
 		trap_Cvar_Set("dmflags", st);
 	}
 
-	if (settings->instantitems != !!((int)dmflags->value & DF_INSTANT_ITEMS)) {
+	if (settings->instantitems != !!(dmflags->integer & DF_INSTANT_ITEMS)) {
 		G_PrintMsg (NULL, PRINT_HIGH, "%s%s turned %s instant items.\n",
 			ent->r.client->pers.netname, S_COLOR_WHITE, settings->instantitems ? "on" : "off");
-		i = (int)dmflags->value;
+		i = dmflags->integer;
 		if (settings->instantitems)
 			i |= DF_INSTANT_ITEMS;
 		else
@@ -3211,10 +3209,10 @@ void CTFAdmin_SettingsApply(edict_t *ent, pmenuhnd_t *p)
 		trap_Cvar_Set("dmflags", st);
 	}
 
-	if (settings->quaddrop != !!((int)dmflags->value & DF_QUAD_DROP)) {
+	if (settings->quaddrop != !!(dmflags->integer & DF_QUAD_DROP)) {
 		G_PrintMsg (NULL, PRINT_HIGH, "%s%s turned %s quad drop.\n",
 			ent->r.client->pers.netname, S_COLOR_WHITE, settings->quaddrop ? "on" : "off");
-		i = (int)dmflags->value;
+		i = dmflags->integer;
 		if (settings->quaddrop)
 			i |= DF_QUAD_DROP;
 		else
@@ -3388,9 +3386,9 @@ void CTFAdmin_Settings(edict_t *ent, pmenuhnd_t *p)
 	settings.matchlen = matchtime->value;
 	settings.matchsetuplen = matchsetuptime->value;
 	settings.matchstartlen = matchstarttime->value;
-	settings.weaponsstay = !!((int)dmflags->value & DF_WEAPONS_STAY);
-	settings.instantitems = !!((int)dmflags->value & DF_INSTANT_ITEMS);
-	settings.quaddrop = !!((int)dmflags->value & DF_QUAD_DROP);
+	settings.weaponsstay = !!(dmflags->integer & DF_WEAPONS_STAY);
+	settings.instantitems = !!(dmflags->integer & DF_INSTANT_ITEMS);
+	settings.quaddrop = !!(dmflags->integer & DF_QUAD_DROP);
 	settings.instantweap = instantweap->value != 0;
 	settings.matchlock = matchlock->value != 0;
 
@@ -3521,7 +3519,7 @@ void CTFStats(edict_t *ent)
 
 	*text = 0;
 	if (ctfgame.match == MATCH_SETUP) {
-		for (i = 1; i <= maxclients->value; i++) {
+		for (i = 1; i <= game.maxclients; i++) {
 			e2 = game.edicts + i;
 			if (!e2->r.inuse)
 				continue;
@@ -3583,12 +3581,12 @@ void CTFPlayerList(edict_t *ent)
 	// number, name, connect time, ping, score, admin
 
 	*text = 0;
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		e2 = game.edicts + i;
 		if (!e2->r.inuse)
 			continue;
 
-		Com_sprintf(st, sizeof(st), "%3d %-16.16s%s %02d:%02d %4d %3d%s%s\n",
+		Q_snprintfz(st, sizeof(st), "%3d %-16.16s%s %02d:%02d %4d %3d%s%s\n",
 			i,
 			e2->r.client->pers.netname, S_COLOR_WHITE,
 			(level.framenum - e2->r.client->resp.enterframe) / 600,
@@ -3676,7 +3674,7 @@ void CTFBoot(edict_t *ent)
 	}
 
 	i = atoi(trap_Cmd_Argv(1));
-	if (i < 1 || i > maxclients->value) {
+	if (i < 1 || i > game.maxclients) {
 		G_PrintMsg (ent, PRINT_HIGH, "Invalid player number.\n");
 		return;
 	}

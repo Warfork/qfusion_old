@@ -43,7 +43,7 @@ RSC=rc.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /YX /c
-# ADD CPP /nologo /G5 /MT /W3 /GX /O2 /I "qcommon" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /YX /FD /c
+# ADD CPP /nologo /G5 /MT /W3 /GX /O2 /I "qcommon" /I ".\win32/include" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /YX /FD /c
 # ADD BASE MTL /nologo /D "NDEBUG" /win32
 # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "NDEBUG"
@@ -70,7 +70,7 @@ LINK32=link.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /YX /c
-# ADD CPP /nologo /G5 /MTd /W3 /GX /ZI /Od /I "qcommon" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /FR /YX /FD /c
+# ADD CPP /nologo /G5 /MTd /W3 /GX /Zi /Od /I "qcommon" /I ".\win32/include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /FR /YX /FD /c
 # ADD BASE MTL /nologo /D "_DEBUG" /win32
 # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
@@ -80,7 +80,8 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /debug /machine:I386
-# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib dxguid.lib /nologo /subsystem:windows /profile /map /debug /machine:I386 /nodefaultlib:"libc" /libpath:".\win32/lib"
+# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib dxguid.lib /nologo /subsystem:windows /incremental:no /map /debug /machine:I386 /nodefaultlib:"libc" /nodefaultlib:"libcmtd" /libpath:".\win32/lib"
+# SUBTRACT LINK32 /profile
 
 !ENDIF 
 
@@ -133,11 +134,15 @@ SOURCE=.\client\cl_ui.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\cmd.c
+SOURCE=.\qcommon\cm_main.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\cmodel.c
+SOURCE=.\qcommon\cm_trace.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\qcommon\cmd.c
 # End Source File
 # Begin Source File
 
@@ -205,10 +210,6 @@ SOURCE=.\game\q_shared.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\win32\q_shwin.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\win32\qgl_win.c
 # End Source File
 # Begin Source File
@@ -225,10 +226,6 @@ SOURCE=.\ref_gl\r_cin.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ref_gl\r_draw.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\ref_gl\r_image.c
 # End Source File
 # Begin Source File
@@ -241,11 +238,11 @@ SOURCE=.\ref_gl\r_main.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ref_gl\r_mesh.c
+SOURCE=.\ref_gl\r_math.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ref_gl\r_misc.c
+SOURCE=.\ref_gl\r_mesh.c
 # End Source File
 # Begin Source File
 
@@ -273,11 +270,11 @@ SOURCE=.\ref_gl\r_skm.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ref_gl\r_surf.c
+SOURCE=.\ref_gl\r_sky.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ref_gl\r_warp.c
+SOURCE=.\ref_gl\r_surf.c
 # End Source File
 # Begin Source File
 
@@ -290,6 +287,10 @@ SOURCE=.\client\snd_mem.c
 # Begin Source File
 
 SOURCE=.\client\snd_mix.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\client\snd_ogg.c
 # End Source File
 # Begin Source File
 
@@ -333,10 +334,6 @@ SOURCE=.\win32\sys_win.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\unzip.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\win32\vid_win.c
 # End Source File
 # End Group
@@ -345,15 +342,19 @@ SOURCE=.\win32\vid_win.c
 # PROP Default_Filter "h;hpp;hxx;hm;inl;fi;fd"
 # Begin Source File
 
-SOURCE=.\client\anorms.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\client\cin.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\client\client.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\qcommon\cm_local.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\qcommon\cmodel.h
 # End Source File
 # Begin Source File
 
@@ -369,11 +370,11 @@ SOURCE=.\client\input.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\ioapi.h
+SOURCE=.\client\keys.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\client\keys.h
+SOURCE=.\qcommon\mdfour.h
 # End Source File
 # Begin Source File
 
@@ -386,10 +387,6 @@ SOURCE=.\game\q_shared.h
 # Begin Source File
 
 SOURCE=.\qcommon\qcommon.h
-# End Source File
-# Begin Source File
-
-SOURCE=.\game\qfconfig.h
 # End Source File
 # Begin Source File
 
@@ -406,6 +403,10 @@ SOURCE=.\ref_gl\r_backend.h
 # Begin Source File
 
 SOURCE=.\ref_gl\r_local.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\r_math.h
 # End Source File
 # Begin Source File
 
@@ -433,10 +434,6 @@ SOURCE=.\ref_gl\render.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\client\screen.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\server\server.h
 # End Source File
 # Begin Source File
@@ -449,36 +446,16 @@ SOURCE=.\client\sound.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\unzip.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\client\vid.h
-# End Source File
-# Begin Source File
-
-SOURCE=.\game\win32conf.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\win32\winquake.h
 # End Source File
-# Begin Source File
-
-SOURCE=.\qcommon\zconf.h
-# End Source File
-# Begin Source File
-
-SOURCE=.\qcommon\zlib.h
-# End Source File
 # End Group
 # Begin Group "Resource Files"
 
 # PROP Default_Filter "ico;cur;bmp;dlg;rc2;rct;bin;cnt;rtf;gif;jpg;jpeg;jpe"
-# Begin Source File
-
-SOURCE=.\win32\q2.ico
-# End Source File
 # Begin Source File
 
 SOURCE=.\win32\qe3.ico

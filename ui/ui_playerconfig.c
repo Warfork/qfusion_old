@@ -103,7 +103,7 @@ static void PlayerConfig_ScanDirectories( void )
 {
 	int ndirs, dirlen;
 	char dirnames[1024];
-	char *path = NULL, *dirptr;
+	char *dirptr;
 	int i;
 
 	s_numplayermodels = 0;
@@ -111,12 +111,7 @@ static void PlayerConfig_ScanDirectories( void )
 	/*
 	** get a list of directories
 	*/
-	do 
-	{
-		if ( ndirs = trap_FS_ListFiles( "players", "/", dirnames, sizeof(dirnames) ) )
-			break;
-	} while ( path );
-
+	ndirs = trap_FS_GetFileList( "players", "/", dirnames, sizeof(dirnames) );
 	if ( !ndirs ) {
 		return;
 	}
@@ -145,7 +140,7 @@ static void PlayerConfig_ScanDirectories( void )
 			continue;
 
 		// verify the existence of at least one pcx skin
-		npcxfiles = trap_FS_ListFiles( va("players/%s",dirptr), ".pcx", pcxnames, sizeof(pcxnames) );
+		npcxfiles = trap_FS_GetFileList( va("players/%s",dirptr), ".pcx", pcxnames, sizeof(pcxnames) );
 
 		if ( !npcxfiles )
 			continue;
@@ -199,28 +194,6 @@ static void PlayerConfig_ScanDirectories( void )
 	}
 }
 
-static int pmicmpfnc( const void *_a, const void *_b )
-{
-	const playermodelinfo_s *a = ( const playermodelinfo_s * ) _a;
-	const playermodelinfo_s *b = ( const playermodelinfo_s * ) _b;
-
-	/*
-	** sort by male, female, then alphabetical
-	*/
-	if ( strcmp( a->directory, "male" ) == 0 )
-		return -1;
-	else if ( strcmp( b->directory, "male" ) == 0 )
-		return 1;
-
-	if ( strcmp( a->directory, "female" ) == 0 )
-		return -1;
-	else if ( strcmp( b->directory, "female" ) == 0 )
-		return 1;
-
-	return strcmp( a->directory, b->directory );
-}
-
-
 qboolean PlayerConfig_MenuInit( void )
 {
 	char currentdirectory[1024];
@@ -233,7 +206,6 @@ qboolean PlayerConfig_MenuInit( void )
 	char *skin = trap_Cvar_VariableString ( "skin" );
 	int y = 0;
 	int y_offset = UI_StringHeightOffset ( 0 );
-
 	static char *handedness[] = { "right", "left", "center", 0 };
 
 	PlayerConfig_ScanDirectories();
@@ -261,8 +233,6 @@ qboolean PlayerConfig_MenuInit( void )
 		strcpy( currentdirectory, "male" );
 		strcpy( currentskin, "grunt" );
 	}
-
-	qsort( s_pmi, s_numplayermodels, sizeof( s_pmi[0] ), pmicmpfnc );
 
 	memset( s_pmnames, 0, sizeof( s_pmnames ) );
 	for ( i = 0; i < s_numplayermodels; i++ )
@@ -404,15 +374,15 @@ void PlayerConfig_MenuDraw( void )
 
 		memset( &entity, 0, sizeof( entity ) );
 
-		Com_sprintf( scratch, sizeof( scratch ), "players/%s/tris.md2", s_pmi[s_player_model_box.curvalue].directory );
+		Q_snprintfz( scratch, sizeof( scratch ), "players/%s/tris.md2", s_pmi[s_player_model_box.curvalue].directory );
 		entity.model = trap_R_RegisterModel( scratch );
-		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s", s_pmi[s_player_model_box.curvalue].directory, s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
+		Q_snprintfz( scratch, sizeof( scratch ), "players/%s/%s", s_pmi[s_player_model_box.curvalue].directory, s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
 		entity.customShader = trap_R_RegisterSkin( scratch );
 		trap_R_ModelBounds ( entity.model, mins, maxs );
 		entity.origin[0] = 0.5 * (maxs[2] - mins[2]) * (1.0 / 0.268);
 		entity.origin[1] = 0.5 * (mins[1] + maxs[1]);
 		entity.origin[2] = -0.5 * (mins[2] + maxs[2]);
-		entity.flags = RF_FULLBRIGHT;
+		entity.flags = RF_FULLBRIGHT | RF_NOSHADOW | RF_FORCENOLOD;
 		entity.scale = 1.0f;
 		VectorCopy( entity.origin, entity.oldorigin );
 		VectorCopy( entity.origin, entity.lightingOrigin );
@@ -426,17 +396,16 @@ void PlayerConfig_MenuDraw( void )
 		entity.oldframe = entity.frame;
 		entity.frame = 0;
 
-		refdef.num_entities = 1;
-		refdef.entities = &entity;
-
 		Menu_Draw( &s_player_config_menu );
 
-		trap_R_RenderFrame( &refdef );
+		trap_R_ClearScene ();
+		trap_R_AddEntityToScene( &entity );
+		trap_R_RenderScene( &refdef );
 
-		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s_i", 
+		Q_snprintfz( scratch, sizeof( scratch ), "players/%s/%s_i", 
 			s_pmi[s_player_model_box.curvalue].directory,
 			s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
-		trap_Draw_StretchPic( s_player_config_menu.x - 40, refdef.y, 32, 32, 0, 0, 1, 1, colorWhite, trap_R_RegisterPic(scratch) );
+		trap_R_DrawStretchPic( s_player_config_menu.x - 40, refdef.y, 32, 32, 0, 0, 1, 1, colorWhite, trap_R_RegisterPic(scratch) );
 	}
 }
 
@@ -454,7 +423,7 @@ const char *PlayerConfig_MenuKey (int key)
 
 		trap_Cvar_Set( "name", s_player_name_field.buffer );
 
-		Com_sprintf( scratch, sizeof( scratch ), "%s/%s", 
+		Q_snprintfz( scratch, sizeof( scratch ), "%s/%s", 
 			s_pmi[s_player_model_box.curvalue].directory, 
 			s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
 

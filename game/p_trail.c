@@ -40,7 +40,7 @@ the player has been recently.  It is used by monsters for pursuit.
 
 edict_t		*trail[TRAIL_LENGTH];
 int			trail_head;
-qboolean	trail_active = qfalse;
+qboolean	trail_active;
 
 #define NEXT(n)		(((n) + 1) & (TRAIL_LENGTH - 1))
 #define PREV(n)		(((n) - 1) & (TRAIL_LENGTH - 1))
@@ -50,8 +50,11 @@ void PlayerTrail_Init (void)
 {
 	int		n;
 
-	if (deathmatch->value /* FIXME || coop */)
+	if (deathmatch->integer /* FIXME || coop */)
+	{
+		trail_active = qfalse;
 		return;
+	}
 
 	for (n = 0; n < TRAIL_LENGTH; n++)
 	{

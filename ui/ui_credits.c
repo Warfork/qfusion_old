@@ -32,24 +32,31 @@ static const char **credits;
 static char *creditsIndex[256];
 static char *creditsBuffer;
 
-static const char *idcredits[] =
+static const char *qfcredits[] =
 {
+	"+" "^1" "q" "^2" "f" "^3" "u" "^4" "s" "^5" "i" "^6" "o" "^7" "n",
+	"http://hkitchen.quakesrc.org/",
+	"",
 	"+" S_COLOR_RED "PROGRAMMING",
 	"Victor 'Vic' Luchits",
 	"",
 	"+" S_COLOR_RED "ADDITIONAL PROGRAMMING",
 	"Anton 'Tonik' Gavrilov",
 	"",
-	"+" S_COLOR_RED "LINUX PORT",
+	"+" S_COLOR_RED "LINUX PORT ASSISTANCE",
 	"Bobakitoo",
 	"",
 	"+" S_COLOR_RED "SPECIAL THANKS",
 	"(in alphabetical order)",
 	"",
 	"Andrew Tridgell",
+	"Andrey '[SkulleR]' Nazarov",
 	"Bram 'Brambo' Stein",
+	"DarkOne",
+	"Dmitri 'Zindahsh' Kolesnikov",
 	"EvilTypeGuy",
 	"Forest 'LordHavoc' Hale",
+	"Jalisko",
 	"Martin Kraus",
 	"Mathias Heyer",
 	"MrG",
@@ -57,12 +64,20 @@ static const char *idcredits[] =
 	"Robert 'Heffo' Heffernan",
 	"Stephen Taylor",
 	"Tim Ferguson",
+	"{wf}shadowspawn",
+	"",
+	"+" S_COLOR_RED "ORIGINAL CODE BY ID SOFTWARE",
+	"",
+	"+" S_COLOR_RED "PROGRAMMING",
+	"John Carmack",
+	"John Cash",
+	"Brian Hook",
 	0
 };
 
 void M_Credits_MenuDraw( void )
 {
-	int i, x, y;
+	int i, x, y, j;
 	int w, h, length;
 	int y_offset = UI_StringHeightOffset ( 0 );
 	char *s;
@@ -92,10 +107,13 @@ void M_Credits_MenuDraw( void )
 		}
 
 		s = ( char * )&credits[i][stringoffset];
-		if ( Q_IsColorString (s) ) {
-			length = strlen (s) - 2;
-		} else {
-			length = strlen (s);
+		length = strlen( s );
+
+		for( j = 0; s[j]; j++ ) {
+			if( Q_IsColorString( &s[j] ) ) {
+				length -= 2;
+				j++;
+			}
 		}
 
 		if ( bold ) {
@@ -117,8 +135,10 @@ const char *M_Credits_Key( int key )
 	{
 	case K_ESCAPE:
 	case K_MOUSE2:
-		if (creditsBuffer)
-			trap_FS_FreeFile (creditsBuffer);
+		if (creditsBuffer) {
+			UI_MemFree( creditsBuffer );
+			creditsBuffer = NULL;
+		}
 		M_PopMenu ();
 		break;
 	}
@@ -129,15 +149,19 @@ const char *M_Credits_Key( int key )
 
 void M_Menu_Credits_f( void )
 {
-	int		n;
+	int		n, f;
 	int		count;
 	char	*p;
 	int		isdeveloper = 0;
 
 	creditsBuffer = NULL;
-	count = trap_FS_LoadFile ( "credits", (void **)&creditsBuffer );
-	if (count != -1)
+	count = trap_FS_FOpenFile( "credits", &f, FS_READ );
+	if (count > 0)
 	{
+		creditsBuffer = UI_Malloc( count + 1 );
+		trap_FS_Read( creditsBuffer, count, f );
+		trap_FS_FCloseFile( f );
+
 		p = creditsBuffer;
 		for (n = 0; n < 255; n++)
 		{
@@ -159,9 +183,11 @@ void M_Menu_Credits_f( void )
 				break;
 		}
 		creditsIndex[++n] = 0;
-		credits = creditsIndex;
+		credits = ( const char **)creditsIndex;
+	} else if( count == 0 ) {
+		trap_FS_FCloseFile( f );
 	} else {
-		credits = idcredits;	
+		credits = qfcredits;	
 	}
 
 	credits_start_time = uis.time;

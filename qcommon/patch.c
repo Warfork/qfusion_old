@@ -24,37 +24,31 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 Patch_FlatnessTest
 ===============
 */
-static int Patch_FlatnessTest ( float maxflat, vec4_t point0, vec4_t point1, vec4_t point2 )
+static int Patch_FlatnessTest( float maxflat2, vec_t *point0, vec_t *point1, vec_t *point2 )
 {
 	vec3_t v1, v2, v3;
 	vec3_t t, n;
-	float dist, d, l;
+	float d;
 	int ft0, ft1;
 
-	VectorSubtract ( point2, point0, n );
-	l = VectorNormalize ( n );
-
-	if ( !l ) {
+	VectorSubtract( point2, point0, n );
+	if( !VectorNormalize( n ) )
 		return 0;
-	}
 
-	VectorSubtract ( point1, point0, t );
-	d = -DotProduct ( t, n );
-	VectorMA ( t, d, n, t );
-	dist = VectorLength ( t );
-
-	if ( fabs(dist) <= maxflat ) {
+	VectorSubtract( point1, point0, t );
+	d = -DotProduct( t, n );
+	VectorMA( t, d, n, t );
+	if( DotProduct( t, t ) < maxflat2 )
 		return 0;
-	}
 
-	VectorAvg ( point1, point0, v1 );
-	VectorAvg ( point2, point1, v2 );
-	VectorAvg ( v1, v2, v3 );
+	VectorAvg( point1, point0, v1 );
+	VectorAvg( point2, point1, v2 );
+	VectorAvg( v1, v2, v3 );
 
-	ft0 = Patch_FlatnessTest ( maxflat, point0, v1, v3 );
-	ft1 = Patch_FlatnessTest ( maxflat, v3, v2, point2 );
+	ft0 = Patch_FlatnessTest( maxflat2, point0, v1, v3 );
+	ft1 = Patch_FlatnessTest( maxflat2, v3, v2, point2 );
 
-	return 1 + (int)floor( max ( ft0, ft1 ) + 0.5f );
+	return 1 + (int)( floor( max ( ft0, ft1 ) ) + 0.5f );
 }
 
 /*
@@ -62,30 +56,29 @@ static int Patch_FlatnessTest ( float maxflat, vec4_t point0, vec4_t point1, vec
 Patch_GetFlatness
 ===============
 */
-void Patch_GetFlatness ( float maxflat, vec4_t *points, int *patch_cp, int *flat )
+void Patch_GetFlatness( float maxflat, vec3_t *points, int *patch_cp, int *flat )
 {
 	int i, p, u, v;
+	float maxflat2 = maxflat * maxflat;
 
 	flat[0] = flat[1] = 0;
-	for (v = 0; v < patch_cp[1] - 1; v += 2)
-	{
-		for (u = 0; u < patch_cp[0] - 1; u += 2)
-		{
+	for( v = 0; v < patch_cp[1] - 1; v += 2 ) {
+		for( u = 0; u < patch_cp[0] - 1; u += 2 ) {
 			p = v * patch_cp[0] + u;
 
-			i = Patch_FlatnessTest ( maxflat, points[p], points[p+1], points[p+2] );
-			flat[0] = max ( flat[0], i );
-			i = Patch_FlatnessTest ( maxflat, points[p+patch_cp[0]], points[p+patch_cp[0]+1], points[p+patch_cp[0]+2] );
-			flat[0] = max ( flat[0], i );
-			i = Patch_FlatnessTest ( maxflat, points[p+2*patch_cp[0]], points[p+2*patch_cp[0]+1], points[p+2*patch_cp[0]+2] );
-			flat[0] = max ( flat[0], i );
+			i = Patch_FlatnessTest( maxflat2, points[p], points[p+1], points[p+2] );
+			flat[0] = max( flat[0], i );
+			i = Patch_FlatnessTest( maxflat2, points[p+patch_cp[0]], points[p+patch_cp[0]+1], points[p+patch_cp[0]+2] );
+			flat[0] = max( flat[0], i );
+			i = Patch_FlatnessTest( maxflat2, points[p+2*patch_cp[0]], points[p+2*patch_cp[0]+1], points[p+2*patch_cp[0]+2] );
+			flat[0] = max( flat[0], i );
 
-			i = Patch_FlatnessTest ( maxflat, points[p], points[p+patch_cp[0]], points[p+2*patch_cp[0]] );
-			flat[1] = max ( flat[1], i );
-			i = Patch_FlatnessTest ( maxflat, points[p+1], points[p+patch_cp[0]+1], points[p+2*patch_cp[0]+1] );
-			flat[1] = max ( flat[1], i );
-			i = Patch_FlatnessTest ( maxflat, points[p+2], points[p+patch_cp[0]+2], points[p+2*patch_cp[0]+2] );
-			flat[1] = max ( flat[1], i );
+			i = Patch_FlatnessTest( maxflat2, points[p], points[p+patch_cp[0]], points[p+2*patch_cp[0]] );
+			flat[1] = max( flat[1], i );
+			i = Patch_FlatnessTest( maxflat2, points[p+1], points[p+patch_cp[0]+1], points[p+2*patch_cp[0]+1] );
+			flat[1] = max( flat[1], i );
+			i = Patch_FlatnessTest( maxflat2, points[p+2], points[p+patch_cp[0]+2], points[p+2*patch_cp[0]+2] );
+			flat[1] = max( flat[1], i );
 		}
 	}
 }
@@ -95,21 +88,17 @@ void Patch_GetFlatness ( float maxflat, vec4_t *points, int *patch_cp, int *flat
 Patch_Evaluate_QuadricBezier
 ===============
 */
-static void Patch_Evaluate_QuadricBezier ( float t, vec4_t point0, vec4_t point1, vec3_t point2, vec4_t out )
+static void Patch_Evaluate_QuadricBezier( float t, vec_t *point0, vec_t *point1, vec_t *point2, vec_t *out, int comp )
 {
-	float qt = t * t;
-	float dt = 2.0f * t, tt;
-	vec4_t tvec4;
+	int		i;
+	vec_t	qt = t * t;
+	vec_t	dt = 2.0f * t, tt, tt2;
 
 	tt = 1.0f - dt + qt;
-	Vector4Scale ( point0, tt, out );
+	tt2 = dt - 2.0f * qt;
 
-	tt = dt - 2.0f * qt;
-	Vector4Scale ( point1, tt, tvec4 );
-	Vector4Add ( out, tvec4, out );
-
-	Vector4Scale ( point2, qt, tvec4 );
-	Vector4Add ( out, tvec4, out );
+	for( i = 0; i < comp; i++ )
+		out[i] = point0[i] * tt + point1[i] * tt2 + point2[i] * qt;
 }
 
 /*
@@ -117,68 +106,55 @@ static void Patch_Evaluate_QuadricBezier ( float t, vec4_t point0, vec4_t point1
 Patch_Evaluate
 ===============
 */
-void Patch_Evaluate ( vec4_t *p, int *numcp, int *tess, vec4_t *dest )
+void Patch_Evaluate( vec_t *p, int *numcp, int *tess, vec_t *dest, int comp )
 {
 	int num_patches[2], num_tess[2];
 	int index[3], dstpitch, i, u, v, x, y;
 	float s, t, step[2];
-	vec4_t *tvec, pv[3][3], v1, v2, v3;
+	vec_t *tvec, *tvec2;
+	vec4_t pv[3][3], v1, v2, v3;
 
 	num_patches[0] = numcp[0] / 2;
 	num_patches[1] = numcp[1] / 2;
-	dstpitch = num_patches[0] * tess[0] + 1;
+	dstpitch = (num_patches[0] * tess[0] + 1) * comp;
 
 	step[0] = 1.0f / (float)tess[0];
 	step[1] = 1.0f / (float)tess[1];
 
-	for ( v = 0; v < num_patches[1]; v++ )
-	{
+	for( v = 0; v < num_patches[1]; v++ ) {
 		// last patch has one more row 
-		if ( v < num_patches[1] - 1 ) {
+		if( v < num_patches[1] - 1 )
 			num_tess[1] = tess[1];
-		} else {
+		else
 			num_tess[1] = tess[1] + 1;
-		}
 
-		for ( u = 0; u < num_patches[0]; u++ )
-		{
+		for( u = 0; u < num_patches[0]; u++ ) {
 			// last patch has one more column
-			if ( u < num_patches[0] - 1 ) {
+			if( u < num_patches[0] - 1 )
 				num_tess[0] = tess[0];
-			} else {
+			else
 				num_tess[0] = tess[0] + 1;
-			}
 
 			index[0] = (v * numcp[0] + u) * 2;
 			index[1] = index[0] + numcp[0];
 			index[2] = index[1] + numcp[0];
 
 			// current 3x3 patch control points
-			for ( i = 0; i < 3; i++ ) 
-			{
-				Vector4Copy ( p[index[0]+i], pv[i][0] );
-				Vector4Copy ( p[index[1]+i], pv[i][1] );
-				Vector4Copy ( p[index[2]+i], pv[i][2] );
+			for( i = 0; i < 3; i++ ) {
+				Vector4Copy( &p[(index[0]+i) * comp], pv[i][0] );
+				Vector4Copy( &p[(index[1]+i) * comp], pv[i][1] );
+				Vector4Copy( &p[(index[2]+i) * comp], pv[i][2] );
 			}
-			
-			t = 0.0f;
-			tvec = dest + v * tess[1] * dstpitch + u * tess[0];
 
-			for ( y = 0; y < num_tess[1]; y++, t += step[1] )
-			{
-				Patch_Evaluate_QuadricBezier ( t, pv[0][0], pv[0][1], pv[0][2], v1 );
-				Patch_Evaluate_QuadricBezier ( t, pv[1][0], pv[1][1], pv[1][2], v2 );
-				Patch_Evaluate_QuadricBezier ( t, pv[2][0], pv[2][1], pv[2][2], v3 );
+			tvec = dest + v * tess[1] * dstpitch + u * tess[0] * comp;
+			for( y = 0, t = 0.0f; y < num_tess[1]; y++, t += step[1], tvec += dstpitch ) {
+				Patch_Evaluate_QuadricBezier( t, pv[0][0], pv[0][1], pv[0][2], v1, comp );
+				Patch_Evaluate_QuadricBezier( t, pv[1][0], pv[1][1], pv[1][2], v2, comp );
+				Patch_Evaluate_QuadricBezier( t, pv[2][0], pv[2][1], pv[2][2], v3, comp );
 
-				s = 0.0f;
-				for ( x = 0; x < num_tess[0]; x++, s += step[0] )
-				{
-					Patch_Evaluate_QuadricBezier ( s, v1, v2, v3, tvec[x] );
-				}
-
-				tvec += dstpitch;
+				for( x = 0, tvec2 = tvec, s = 0.0f; x < num_tess[0]; x++, s += step[0], tvec2 += comp )
+					Patch_Evaluate_QuadricBezier( s, v1, v2, v3, tvec2, comp );
 			}
 		}
 	}
 }
-

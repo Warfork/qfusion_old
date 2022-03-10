@@ -332,8 +332,8 @@ edict_t *G_Spawn (void)
 	int			i;
 	edict_t		*e;
 
-	e = &game.edicts[(int)maxclients->value+1];
-	for ( i=maxclients->value+1 ; i<game.numentities ; i++, e++)
+	e = &game.edicts[game.maxclients+1];
+	for ( i=game.maxclients+1 ; i<game.numentities ; i++, e++)
 	{
 		// the first couple seconds of server time can involve a lot of
 		// freeing and allocating, so relax the replacement policy
@@ -367,7 +367,7 @@ void G_FreeEdict (edict_t *ed)
 {
 	trap_UnlinkEntity (ed);		// unlink from world
 
-	if ((ed - game.edicts) <= (maxclients->value + BODY_QUEUE_SIZE))
+	if ((ed - game.edicts) <= (game.maxclients + BODY_QUEUE_SIZE))
 	{
 //		G_Printf ("tried to free special edict\n");
 		return;
@@ -465,26 +465,31 @@ G_TouchTriggers
 
 ============
 */
-void	G_TouchTriggers (edict_t *ent)
+void G_TouchTriggers (edict_t *ent)
 {
 	int			i, num;
 	edict_t		*touch[MAX_EDICTS], *hit;
+	vec3_t		mins, maxs;
 
 	// dead things don't activate triggers!
-	if ((ent->r.client || (ent->r.svflags & SVF_MONSTER)) && (ent->health <= 0))
+	if( (ent->r.client || (ent->r.svflags & SVF_MONSTER)) && (ent->health <= 0) )
 		return;
 
-	num = trap_BoxEdicts (ent->r.absmin, ent->r.absmax, touch
-		, MAX_EDICTS, AREA_TRIGGERS);
+	VectorAdd( ent->s.origin, ent->r.mins, mins );
+	VectorAdd( ent->s.origin, ent->r.maxs, maxs );
+
+	// FIXME: should be s.origin + mins and s.origin + maxs because of absmin and absmax padding?
+	num = trap_BoxEdicts( ent->r.absmin, ent->r.absmax, touch, MAX_EDICTS, AREA_TRIGGERS );
 
 	// be careful, it is possible to have an entity in this
 	// list removed before we get to it (killtriggered)
-	for (i=0 ; i<num ; i++)
-	{
+	for( i = 0; i < num; i++ ) {
 		hit = touch[i];
-		if (!hit->r.inuse)
+		if( !hit->r.inuse )
 			continue;
-		if (!hit->touch)
+		if( !hit->touch )
+			continue;
+		if( !hit->item && !trap_EntityContact( mins, maxs, hit ) )
 			continue;
 		hit->touch (hit, ent, NULL, 0);
 	}
@@ -502,20 +507,26 @@ void	G_TouchSolids (edict_t *ent)
 {
 	int			i, num;
 	edict_t		*touch[MAX_EDICTS], *hit;
+	vec3_t		mins, maxs;
 
-	num = trap_BoxEdicts (ent->r.absmin, ent->r.absmax, touch
-		, MAX_EDICTS, AREA_SOLID);
+	// FIXME: should be s.origin + mins and s.origin + maxs because of absmin and absmax padding?
+	num = trap_BoxEdicts( ent->r.absmin, ent->r.absmax, touch, MAX_EDICTS, AREA_SOLID);
 
 	// be careful, it is possible to have an entity in this
 	// list removed before we get to it (killtriggered)
-	for (i=0 ; i<num ; i++)
-	{
+	for( i = 0; i < num; i++ ) {
 		hit = touch[i];
-		if (!hit->r.inuse)
+		if( !hit->r.inuse )
 			continue;
-		if (ent->touch)
-			ent->touch (hit, ent, NULL, 0);
-		if (!ent->r.inuse)
+
+		VectorAdd( hit->s.origin, hit->r.mins, mins );
+		VectorAdd( hit->s.origin, hit->r.maxs, maxs );
+		if( !ent->item && !trap_EntityContact( mins, maxs, ent ) )
+			continue;
+
+		if( ent->touch )
+			ent->touch( hit, ent, NULL, 0 );
+		if( !ent->r.inuse )
 			break;
 	}
 }
@@ -609,11 +620,10 @@ void G_PrintMsg ( edict_t *ent, int level, char *fmt, ... )
 	va_list		argptr;
 	char		*s, *p;
 
-	va_start (argptr, fmt);
-	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
-		G_Error ( "G_PrintMsg: Buffer overflow" );
-	}
-	va_end (argptr);
+	va_start( argptr, fmt );
+	vsnprintf( msg, sizeof(msg) - 1, fmt, argptr );
+	va_end( argptr );
+	msg[sizeof(msg)-1] = 0;
 
 	// double quotes are bad
 	while ((p = strchr(msg, '\"')) != NULL)
@@ -631,19 +641,17 @@ void G_PrintMsg ( edict_t *ent, int level, char *fmt, ... )
 				continue;
 			if (!ent->r.client || level < ent->r.client->pers.messagelevel)
 				continue;
-			trap_ServerCmd ( ent, s );
+			trap_ServerCmd( ent, s );
 		}
 
 		// mirror at server console
-		if ( dedicated->value ) {
-			G_Printf ( "%s", msg );
-		}
+		if( dedicated->integer )
+			G_Printf( "%s", msg );
 		return;
 	}
 
-	if ( ent->r.inuse && ent->r.client && (level >= ent->r.client->pers.messagelevel) ) {
-		trap_ServerCmd ( ent, s );
-	}
+	if( ent->r.inuse && ent->r.client && (level >= ent->r.client->pers.messagelevel) )
+		trap_ServerCmd( ent, s );
 }
 
 /*
@@ -659,11 +667,10 @@ void G_CenterPrintMsg ( edict_t *ent, char *fmt, ... )
 	va_list		argptr;
 	char		*p;
 
-	va_start (argptr, fmt);
-	if ( vsprintf (msg, fmt, argptr) > sizeof(msg) ) {
-		G_Error ( "G_CenterPrintMsg: Buffer overflow" );
-	}
-	va_end (argptr);
+	va_start( argptr, fmt );
+	vsnprintf( msg, sizeof(msg), fmt, argptr );
+	va_end( argptr );
+	msg[sizeof(msg)-1] = 0;
 
 	// double quotes are bad
 	while ((p = strchr(msg, '\"')) != NULL)
@@ -681,9 +688,8 @@ Prints death message to all clients
 */
 void G_Obituary ( edict_t *victim, edict_t *attacker, int mod )
 {
-	if ( victim && attacker ) {
+	if( victim && attacker )
 		trap_ServerCmd ( victim, va ( "obry %i %i %i", victim - game.edicts, attacker - game.edicts, mod ) );
-	}
 }
 
 /*
@@ -693,9 +699,8 @@ G_Sound
 */
 void G_Sound ( edict_t *ent, int channel, int soundindex, float volume, float attenuation )
 {
-	if ( ent ) {
+	if( ent )
 		trap_Sound ( NULL, ent, channel, soundindex, volume, attenuation );
-	}
 }
 
 /*
@@ -705,9 +710,8 @@ G_PositionedSound
 */
 void G_PositionedSound ( vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation )
 {
-	if ( origin || ent ) {
+	if( origin || ent )
 		trap_Sound ( origin, ent, channel, soundindex, volume, attenuation );
-	}
 }
 
 /*

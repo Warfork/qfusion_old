@@ -154,23 +154,18 @@ typedef struct
 
 typedef struct
 {
-    vec3_t			mins;
-	vec3_t			maxs;
-    vec3_t			translate;
+    float			mins[3];
+	float			maxs[3];
+    float			translate[3];
     float			radius;
     char			creator[16];
 } dmd3frame_t;
 
-typedef struct 
-{
-	vec3_t			origin;
-	float			axis[3][3];
-} dorientation_t;
-
 typedef struct
 {
 	char			name[MD3_MAX_PATH];		// tag name
-	dorientation_t	orient;
+	float			origin[3];
+	float			axis[3][3];
 } dmd3tag_t;
 
 typedef struct 
@@ -321,7 +316,8 @@ typedef struct
 
 typedef struct
 {
-	float matrix[3][4];
+	float quat[4];
+	float origin[3];
 } dskpbonepose_t;
 
 // immediately followed by bone positions for the frame
@@ -402,8 +398,6 @@ typedef struct {
 #define	LIGHTMAP_WIDTH			128
 #define	LIGHTMAP_HEIGHT			128
 #define LIGHTMAP_SIZE			(LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT*LIGHTMAP_BYTES)
-
-#define	MAX_MAP_LIGHTMAPS		(MAX_MAP_LIGHTING / LIGHTMAP_SIZE)
 
 // key / value pair sizes
 

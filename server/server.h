@@ -181,8 +181,8 @@ typedef struct
 	int			spawncount;					// incremented each server start
 											// used to check late spawns
 
-	client_t	*clients;					// [maxclients->value];
-	int			num_client_entities;		// maxclients->value*UPDATE_BACKUP*MAX_PACKET_ENTITIES
+	client_t	*clients;					// [maxclients->integer];
+	int			num_client_entities;		// maxclients->integer*UPDATE_BACKUP*MAX_PACKET_ENTITIES
 	int			next_client_entities;		// next client_entity to use
 	entity_state_t	*client_entities;		// [num_client_entities]
 
@@ -241,6 +241,7 @@ void SV_UserinfoChanged (client_t *cl);
 void Master_Heartbeat (void);
 void Master_Packet (void);
 void SVC_MasterInfoResponse (void);
+void SVC_FakeConnect( char *fakeUserinfo, char *fakeIP );
 
 //
 // sv_init.c

@@ -20,30 +20,35 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef __REF_H
 #define __REF_H
 
-#define	MAX_DLIGHTS		32
-#define	MAX_ENTITIES	2048
-#define MAX_POLY_VERTS	3000
-#define MAX_POLYS		2048
+// FIXME: move these to r_local.h?
+#define	MAX_DLIGHTS			32
+#define	MAX_ENTITIES		2048
+#define MAX_POLY_VERTS		3000
+#define MAX_POLYS			2048
+
+// refdef flags
+#define	RDF_UNDERWATER		1		// warp the screen as apropriate
+#define RDF_NOWORLDMODEL	2		// used for player configuration screen
 
 typedef struct 
 {
-	vec3_t			origin;
-	float			axis[3][3];
+	vec3_t				origin;
+	float				axis[3][3];
 } orientation_t;
 
 typedef struct
 {
-	int				firstvert;
-	int				numverts;		// can't exceed MAX_POLY_VERTS
+	int					firstvert;
+	int					numverts;		// can't exceed MAX_POLY_VERTS
 } fragment_t;
 
 typedef struct
 {
-	int				numverts;
-	vec3_t			*verts;
-	vec2_t			*stcoords;
-	byte_vec4_t		*colors;
-	struct shader_s	*shader;
+	int					numverts;
+	vec3_t				*verts;
+	vec2_t				*stcoords;
+	byte_vec4_t			*colors;
+	struct shader_s		*shader;
 } poly_t;
 
 typedef enum
@@ -51,7 +56,6 @@ typedef enum
 	RT_MODEL,
 	RT_SPRITE,
 	RT_PORTALSURFACE,
-	RT_POLY,
 
 	NUM_RTYPES
 } entity_rtype_t;
@@ -94,38 +98,29 @@ typedef struct entity_s
 
 typedef struct
 {
-	vec3_t	origin;
-	vec3_t	color;
-	float	intensity;
+	vec3_t				origin;
+	vec3_t				color;
+	float				intensity;
 } dlight_t;
 
 typedef struct
 {
-	vec3_t	origin;
-	qbyte	color[4];
-	float	scale;
+	vec3_t				origin;
+	qbyte				color[4];
+	float				scale;
 } particle_t;
 
 typedef struct
 {
-	int			x, y, width, height;// in virtual screen coordinates
-	float		fov_x, fov_y;
-	float		vieworg[3];
-	float		viewangles[3];
-	float		blend[4];			// rgba 0-1 full screen blend
-	float		time;				// time is used for timing offsets
-	int			rdflags;			// RDF_UNDERWATER, etc
+	int					x, y, width, height;	// in virtual screen coordinates
+	float				fov_x, fov_y;
+	float				vieworg[3];
+	float				viewangles[3];
+	float				blend[4];				// rgba 0-1 full screen blend
+	float				time;					// time is used for timing offsets
+	int					rdflags;				// RDF_UNDERWATER, etc
 
-	qbyte		*areabits;			// if not NULL, only areas with set bits will be drawn
-
-	int			num_entities;
-	entity_t	*entities;
-
-	int			num_dlights;
-	dlight_t	*dlights;
-
-	int			num_polys;
-	poly_t		*polys;
+	qbyte				*areabits;				// if not NULL, only areas with set bits will be drawn
 } refdef_t;
 
 #endif // __REF_H

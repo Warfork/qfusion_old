@@ -30,19 +30,15 @@ typedef struct skinfile_s
 {
 	char				name[MAX_QPATH];
 
-	int					registration_sequence;
-
 	mesh_shader_pair_t	*pairs;
 	int					numpairs;
 } skinfile_t;
 
-void R_SkinFile_Init (void);
-void R_SkinFile_UpdateRegistration (void);
-void R_SkinFile_Shutdown (void);
+void R_InitSkinFiles (void);
+void R_ShutdownSkinFiles (void);
 
 skinfile_t *R_SkinFile_Load ( char *name );
 skinfile_t *R_RegisterSkinFile ( char *name );
-
-shader_t *R_SkinFile_FindShader ( skinfile_t *skinfile, char *meshname );
+shader_t *R_FindShaderForSkinFile( skinfile_t *skinfile, char *meshname );
 
 

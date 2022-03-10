@@ -39,26 +39,40 @@ void Key_ClearTyping (void)
 
 /*
 ================
+Con_Close
+================
+*/
+void Con_Close (void)
+{
+	scr_con_current = 0;
+
+	Key_ClearTyping ();
+	Con_ClearNotify ();
+	Key_ClearStates ();
+}
+
+/*
+================
 Con_ToggleConsole_f
 ================
 */
 void Con_ToggleConsole_f (void)
 {
-	static int oldkeydest;
-
 	SCR_EndLoadingPlaque ();	// get rid of loading plaque
 
+#if 1
 	if (cl.attractloop)
 	{
 		Cbuf_AddText ("killserver\n");
 		return;
 	}
+#endif
 
 	Key_ClearTyping ();
 	Con_ClearNotify ();
 
 	if ( cls.key_dest == key_console ) {
-		CL_SetKeyDest (oldkeydest);
+		CL_SetKeyDest (cls.old_key_dest);
 		Key_ClearStates ();
 		Cvar_Set ("paused", "0");
 	}
@@ -66,7 +80,7 @@ void Con_ToggleConsole_f (void)
 	{
 		Key_ClearStates ();
 
-		oldkeydest = cls.key_dest;
+		CL_SetOldKeyDest (cls.key_dest);
 		CL_SetKeyDest (key_console);
 
 		if (Cvar_VariableValue ("sv_maxclients") == 1 
@@ -108,7 +122,7 @@ void Con_Dump_f (void)
 		return;
 	}
 
-	Com_sprintf (name, sizeof(name), "%s/%s.txt", FS_Gamedir(), Cmd_Argv(1));
+	Q_snprintfz (name, sizeof(name), "%s/%s.txt", FS_Gamedir(), Cmd_Argv(1));
 
 	Com_Printf ("Dumped console text to %s.\n", name);
 	FS_CreatePath (name);
@@ -582,11 +596,10 @@ void Con_DrawConsole (float frac)
 		lines = viddef.height;
 
 // draw the background
-	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, 
-		0, 0, 1, 1, colorWhite, cls.consoleShader );
-	Draw_FillRect ( 0, -(int)viddef.height+lines+viddef.height, viddef.width, 2, colorRed );
+	R_DrawStretchPic (0, 0, viddef.width, lines, 0, 0, 1, 1, colorWhite, cls.consoleShader );
+	Draw_FillRect (0, lines - 2, viddef.width, 2, colorRed);
 
-	Com_sprintf (version, sizeof(version), APPLICATION " v%4.2f", VERSION);
+	Q_snprintfz (version, sizeof(version), APPLICATION " v%4.2f", VERSION);
 	Draw_String (viddef.width-strlen(version)*SMALL_CHAR_WIDTH-4, lines-20, version, colorRed );
 
 // draw the text

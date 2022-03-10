@@ -54,8 +54,6 @@ Multiple identical looping sounds will just increase volume without any speed co
 */
 void Use_Target_Speaker (edict_t *ent, edict_t *other, edict_t *activator)
 {
-	int		chan;
-
 	if (ent->spawnflags & 3)
 	{	// looping sound toggles
 		if (ent->s.sound)
@@ -65,14 +63,14 @@ void Use_Target_Speaker (edict_t *ent, edict_t *other, edict_t *activator)
 	}
 	else
 	{	// normal sound
-		if (ent->spawnflags & 4)
-			chan = CHAN_VOICE|CHAN_RELIABLE;
-		else
-			chan = CHAN_VOICE;
-
+		if( ent->spawnflags & 8 )
+			G_GlobalSound( CHAN_VOICE|CHAN_RELIABLE, ent->noise_index );
 		// use a G_PositionedSound, because this entity won't normally be
 		// sent to any clients because it is invisible
-		G_PositionedSound (ent->s.origin, ent, chan, ent->noise_index, ent->volume, ent->attenuation);
+		else if( ent->spawnflags & 4 )
+			G_PositionedSound( ent->s.origin, ent, CHAN_VOICE|CHAN_RELIABLE, ent->noise_index, ent->volume, ent->attenuation );
+		else
+			G_PositionedSound( ent->s.origin, ent, CHAN_VOICE, ent->noise_index, ent->volume, ent->attenuation );
 	}
 }
 
@@ -82,19 +80,23 @@ void SP_target_speaker (edict_t *ent)
 
 	if (!st.noise)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("target_speaker with no noise set at %s\n", vtos(ent->s.origin));
 		return;
 	}
 
 	if (!strstr (st.noise, ".wav"))
-		Com_sprintf (buffer, sizeof(buffer), "%s.wav", st.noise);
+		Q_snprintfz (buffer, sizeof(buffer), "%s.wav", st.noise);
 	else
 		Q_strncpyz (buffer, st.noise, sizeof(buffer));
 	ent->noise_index = trap_SoundIndex (buffer);
 
 	if (!ent->volume)
 		ent->volume = 1.0;
+	if (!ent->attenuation)
+		ent->attenuation = ATTN_NORM;
+	else if (ent->attenuation == -1)	// use -1 so 0 defaults to ATTN_NONE
+		ent->attenuation = ATTN_NONE;
 
 	// check for prestarted looping sound
 	if (ent->spawnflags & 1)
@@ -125,7 +127,7 @@ When fired, the "message" key becomes the current personal computer string, and 
 */
 void SP_target_help(edict_t *ent)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// auto-remove for deathmatch
 		G_FreeEdict (ent);
 		return;
@@ -133,7 +135,7 @@ void SP_target_help(edict_t *ent)
 
 	if (!ent->message)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("%s with no message at %s\n", ent->classname, vtos(ent->s.origin));
 		G_FreeEdict (ent);
 		return;
@@ -159,7 +161,7 @@ void use_target_secret (edict_t *ent, edict_t *other, edict_t *activator)
 
 void SP_target_secret (edict_t *ent)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// auto-remove for deathmatch
 		G_FreeEdict (ent);
 		return;
@@ -191,7 +193,7 @@ void use_target_goal (edict_t *ent, edict_t *other, edict_t *activator)
 
 void SP_target_goal (edict_t *ent)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{	// auto-remove for deathmatch
 		G_FreeEdict (ent);
 		return;
@@ -258,21 +260,21 @@ void use_target_changelevel (edict_t *self, edict_t *other, edict_t *activator)
 	if (level.intermissiontime)
 		return;		// already activated
 
-	if (!deathmatch->value && !coop->value)
+	if (!deathmatch->integer && !coop->integer)
 	{
 		if (game.edicts[1].health <= 0)
 			return;
 	}
 
 	// if noexit, do a ton of damage to other
-	if (deathmatch->value && !( (int)dmflags->value & DF_ALLOW_EXIT) && other != world)
+	if (deathmatch->integer && !( dmflags->integer & DF_ALLOW_EXIT) && other != world)
 	{
 		T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 10 * other->max_health, 1000, 0, MOD_EXIT);
 		return;
 	}
 
 	// if multiplayer, let everyone know who hit the exit
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		if (activator && activator->r.client)
 			G_PrintMsg (NULL, PRINT_HIGH, "%s exited the level.\n", activator->r.client->pers.netname);
@@ -289,7 +291,7 @@ void SP_target_changelevel (edict_t *ent)
 {
 	if (!ent->map)
 	{
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("target_changelevel with no map at %s\n", vtos(ent->s.origin));
 		G_FreeEdict (ent);
 		return;
@@ -398,16 +400,16 @@ speed	default is 1000
 
 void use_target_blaster (edict_t *self, edict_t *other, edict_t *activator)
 {
-	int effect;
+	int type;
 
 	if (self->spawnflags & 2)
-		effect = 0;
+		type = ET_GENERIC;
 	else if (self->spawnflags & 1)
-		effect = EF_HYPERBLASTER;
+		type = ET_HYPERBLASTER;
 	else
-		effect = EF_BLASTER;
+		type = ET_BLASTER;
 
-	fire_blaster (self, self->s.origin, self->movedir, self->dmg, self->speed, effect, MOD_TARGET_BLASTER);
+	fire_blaster (self, self->s.origin, self->movedir, self->dmg, self->speed, type, MOD_TARGET_BLASTER);
 	G_Sound (self, CHAN_VOICE, self->noise_index, 1, ATTN_NORM);
 }
 
@@ -525,7 +527,7 @@ void target_laser_think (edict_t *self)
 		{
 			if (game.edicts[tr.ent].r.client && self->activator->r.client)
 			{
-				if (!ctf->value || game.edicts[tr.ent].r.client->resp.ctf_team != self->activator->r.client->resp.ctf_team)
+				if (!ctf->integer || game.edicts[tr.ent].r.client->resp.ctf_team != self->activator->r.client->resp.ctf_team)
 					T_Damage (&game.edicts[tr.ent], self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
 			}
 			else
@@ -619,7 +621,7 @@ void target_laser_start (edict_t *self)
 		{
 			ent = G_Find (NULL, FOFS(targetname), self->target);
 			if (!ent)
-				if (developer->value)
+				if (developer->integer)
 					G_Printf ("%s at %s: %s is a bad target\n", self->classname, vtos(self->s.origin), self->target);
 			self->enemy = ent;
 		}
@@ -702,7 +704,7 @@ void target_earthquake_use (edict_t *self, edict_t *other, edict_t *activator)
 void SP_target_earthquake (edict_t *self)
 {
 	if (!self->targetname)
-		if (developer->value)
+		if (developer->integer)
 			G_Printf ("untargeted %s at %s\n", self->classname, vtos(self->s.origin));
 
 	if (!self->count)
@@ -759,7 +761,7 @@ void SP_target_print_use (edict_t *self, edict_t *other, edict_t *activator)
 		return;
 	}
 		
-	for (n = 1; n <= maxclients->value; n++)
+	for (n = 1; n <= game.maxclients; n++)
 	{
 		player = &game.edicts[n];
 		if (!player->r.inuse)

@@ -23,6 +23,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../client/client.h"
 
 viddef_t	viddef;				// global video state
+qboolean	vid_ref_active;
+qboolean	vid_ref_modified;
 
 /*
 ==========================================================================
@@ -32,11 +34,10 @@ DIRECT LINK GLUE
 ==========================================================================
 */
 
-
-void VID_NewWindow (int width, int height)
+void VID_NewWindow( int width, int height )
 {
-        viddef.width = width;
-        viddef.height = height;
+	viddef.width = width;
+	viddef.height = height;
 }
 
 /*
@@ -51,24 +52,24 @@ typedef struct vidmode_s
 
 vidmode_t vid_modes[] =
 {
-    { "Mode 0: 320x240",   320, 240,   0 },
-    { "Mode 1: 400x300",   400, 300,   1 },
-    { "Mode 2: 512x384",   512, 384,   2 },
-    { "Mode 3: 640x480",   640, 480,   3 },
-    { "Mode 4: 800x600",   800, 600,   4 },
-    { "Mode 5: 960x720",   960, 720,   5 },
-    { "Mode 6: 1024x768",  1024, 768,  6 },
-    { "Mode 7: 1152x864",  1152, 864,  7 },
-    { "Mode 8: 1280x960",  1280, 960, 8 },
-    { "Mode 9: 1600x1200", 1600, 1200, 9 },
+	{ "Mode 0: 320x240",   320, 240,   0 },
+	{ "Mode 1: 400x300",   400, 300,   1 },
+	{ "Mode 2: 512x384",   512, 384,   2 },
+	{ "Mode 3: 640x480",   640, 480,   3 },
+	{ "Mode 4: 800x600",   800, 600,   4 },
+	{ "Mode 5: 960x720",   960, 720,   5 },
+	{ "Mode 6: 1024x768",  1024, 768,  6 },
+	{ "Mode 7: 1152x864",  1152, 864,  7 },
+	{ "Mode 8: 1280x960",  1280, 960,  8 },
+	{ "Mode 9: 1600x1200", 1600, 1200, 9 },
 	{ "Mode 10: 2048x1536", 2048, 1536, 10 }
 };
 #define VID_NUM_MODES ( sizeof( vid_modes ) / sizeof( vid_modes[0] ) )
 
 qboolean VID_GetModeInfo( int *width, int *height, int mode )
 {
-    if ( mode < 0 || mode >= VID_NUM_MODES )
-        return qfalse;
+	if ( mode < 0 || mode >= VID_NUM_MODES )
+		return qfalse;
 
     *width  = vid_modes[mode].width;
     *height = vid_modes[mode].height;
@@ -76,38 +77,50 @@ qboolean VID_GetModeInfo( int *width, int *height, int mode )
     return qtrue;
 }
 
-
-void	VID_Init (void)
-{
-    viddef.width = 320;
-    viddef.height = 240;
-
-   	Swap_Init ();
- 
-    // call the init function
-    if (R_Init (NULL, NULL) == -1)
-		Com_Error (ERR_FATAL, "Couldn't start refresh");
+void VID_Restart_f( void ) {
+	VID_Restart ();
 }
 
-void	VID_Shutdown (void)
+void VID_Init( void )
 {
-    if (R_Shutdown)
-	    R_Shutdown ();
+	viddef.width = 320;
+	viddef.height = 240;
+
+	Cmd_AddCommand( "vid_restart", VID_Restart_f );
+
+	vid_ref_active = qfalse;
+	vid_ref_modified = qtrue;
+
+	VID_CheckChanges ();
 }
 
-void	VID_CheckChanges (void)
+void VID_Shutdown( void )
 {
+	if( vid_ref_active ) {
+		R_Shutdown ();
+		vid_ref_active = qfalse;
+	}
+
+	Cmd_RemoveCommand( "vid_restart" );
 }
 
-void	VID_MenuInit (void)
+void VID_CheckChanges( void )
 {
+	if( vid_ref_modified ) {
+		if( vid_ref_active ) {
+			R_Shutdown ();
+			vid_ref_active = qfalse;
+		}
+
+	    if( R_Init (NULL, NULL) == -1 )
+			Com_Error( ERR_FATAL, "Couldn't start refresh" );
+
+		vid_ref_active = qtrue;
+		vid_ref_modified = qfalse;
+	}
 }
 
-void	VID_MenuDraw (void)
+void VID_Restart( void )
 {
-}
-
-const char *VID_MenuKey( int k)
-{
-	return NULL;
+	vid_ref_modified = qtrue;
 }

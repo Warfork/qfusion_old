@@ -95,9 +95,24 @@ void GS_Obituary ( void *victim, int gender, void *attacker, int mod, char *mess
 #define STAT_CHASE				15
 #define STAT_SPECTATOR			16
 
+#define STAT_CTF_TEAM1_PIC			17
+#define STAT_CTF_TEAM1_CAPS			18
+#define STAT_CTF_TEAM2_PIC			19
+#define STAT_CTF_TEAM2_CAPS			20
+#define STAT_CTF_FLAG_PIC			21
+#define STAT_CTF_JOINED_TEAM1_PIC	22
+#define STAT_CTF_JOINED_TEAM2_PIC	23
+#define STAT_CTF_TEAM1_HEADER		24
+#define STAT_CTF_TEAM2_HEADER		25
+#define STAT_CTF_TECH				26
+#define STAT_CTF_ID_VIEW			27
+#define STAT_CTF_MATCH				28
+#define STAT_CTF_ID_VIEW_COLOR		29
+#define STAT_CTF_TEAMINFO			30
+
 //===============================================================
 
-// dmflags->value flags
+// dmflags->integer flags
 #define	DF_NO_HEALTH		0x00000001	// 1
 #define	DF_NO_ITEMS			0x00000002	// 2
 #define	DF_WEAPONS_STAY		0x00000004	// 4
@@ -442,6 +457,13 @@ enum
 	ET_PORTALSURFACE,
 	ET_EVENT,
 	ET_PUSH_TRIGGER,
+
+	ET_GIB,				// leave a trail
+	ET_BLASTER,			// redlight + trail
+	ET_HYPERBLASTER,
+	ET_ROCKET,			// redlight + trail
+	ET_GRENADE,
+	ET_BFG,
 
 	MAX_ENTITY_TYPES = 128
 };

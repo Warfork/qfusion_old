@@ -58,13 +58,13 @@ void MapChangeFunc ( void *self )
 {
 	char path[MAX_QPATH];
 
-	Com_sprintf ( path, sizeof(path), "levelshots/%s.jpg", mapnames[s_startmap_list.curvalue] );
+	Q_snprintfz ( path, sizeof(path), "levelshots/%s.jpg", mapnames[s_startmap_list.curvalue] );
 	
-	if ( !trap_FS_FileExists ( path ) ) 
-		Com_sprintf ( path, sizeof(path), "levelshots/%s.tga", mapnames[s_startmap_list.curvalue] );
-	
-	if ( !trap_FS_FileExists ( path ) ) 
-		Com_sprintf ( path, sizeof(path), "menu/art/unknownmap", mapnames[s_startmap_list.curvalue] );
+	if ( trap_FS_FOpenFile( path, NULL, FS_READ ) == -1 ) 
+		Q_snprintfz ( path, sizeof(path), "levelshots/%s.tga", mapnames[s_startmap_list.curvalue] );
+
+	if ( trap_FS_FOpenFile( path, NULL, FS_READ ) == -1 ) 
+		Q_snprintfz ( path, sizeof(path), "menu/art/unknownmap", mapnames[s_startmap_list.curvalue] );
 	
 	s_levelshot = trap_R_RegisterPic ( path );
 }
@@ -137,8 +137,6 @@ void StartServerActionFunc( void *self )
 	{
 		trap_Cmd_ExecuteText (EXEC_APPEND, va("map %s\n", startmap));
 	}
-
-	M_ForceMenuOff ();
 }
 
 qboolean StartServer_MenuInit( void )
@@ -163,12 +161,11 @@ qboolean StartServer_MenuInit( void )
 	int i;
 	int y = 40;
 	int y_offset = UI_StringHeightOffset ( 0 );
-	char path[MAX_QPATH];
 
 	/*
 	** load the list of maps
 	*/
-	if ( (nummaps = trap_FS_ListFiles( "maps", ".bsp", buffer, sizeof(buffer) )) == 0 ) {
+	if ( (nummaps = trap_FS_GetFileList( "maps", ".bsp", buffer, sizeof(buffer) )) == 0 ) {
 		M_SetMultiplayerStatusBar( "No maps found" );
 		return qfalse;
 	}
@@ -189,12 +186,9 @@ qboolean StartServer_MenuInit( void )
 			shortname[j] = toupper( s[j] );
 		shortname[j] = 0;
 
-		Com_sprintf( scratch, sizeof( scratch ), shortname );
+		Q_snprintfz( scratch, sizeof( scratch ), shortname );
 
 		mapnames[i] = UI_CopyString( scratch );
-
-		Com_sprintf ( path, sizeof(path), "levelshots/%s", mapnames[i] );
-		trap_R_RegisterPic ( path );
 	}
 
 	mapnames[nummaps] = 0;
@@ -336,7 +330,7 @@ qboolean StartServer_MenuInit( void )
 
 void StartServer_MenuDraw(void)
 {
-	trap_Draw_StretchPic ( s_startserver_menu.x - 80, s_startserver_menu.y - 90, 160, 120, 0, 0, 1, 1, colorWhite, s_levelshot );
+	trap_R_DrawStretchPic ( s_startserver_menu.x - 80, s_startserver_menu.y - 90, 160, 120, 0, 0, 1, 1, colorWhite, s_levelshot );
 
 	Menu_Draw( &s_startserver_menu );
 }

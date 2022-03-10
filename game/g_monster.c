@@ -42,9 +42,9 @@ void monster_fire_shotgun (edict_t *self, vec3_t start, vec3_t aimdir, int damag
 	G_AddEvent (self, EV_MUZZLEFLASH2, 0, qtrue);
 }
 
-void monster_fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype, int effect)
+void monster_fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, int flashtype, int type)
 {
-	fire_blaster (self, start, dir, damage, speed, effect, MOD_UNKNOWN);
+	fire_blaster (self, start, dir, damage, speed, type, MOD_UNKNOWN);
 	self->s.weapon = flashtype & 0xff;
 	G_AddEvent (self, EV_MUZZLEFLASH2, 0, qtrue);
 }	
@@ -83,39 +83,10 @@ void monster_fire_bfg (edict_t *self, vec3_t start, vec3_t aimdir, int damage, i
 // Monster utility functions
 //
 
-static void M_FliesOff (edict_t *self)
-{
-	self->s.effects &= ~EF_FLIES;
-	self->s.sound = 0;
-}
-
-static void M_FliesOn (edict_t *self)
-{
-	if (self->waterlevel)
-		return;
-	self->s.effects |= EF_FLIES;
-	self->s.sound = trap_SoundIndex ("sound/infantry/inflies1.wav");
-	self->think = M_FliesOff;
-	self->nextthink = level.time + 60;
-}
-
-void M_FlyCheck (edict_t *self)
-{
-	if (self->waterlevel)
-		return;
-
-	if (random() > 0.5)
-		return;
-
-	self->think = M_FliesOn;
-	self->nextthink = level.time + 5 + 10 * random();
-}
-
 void AttackFinished (edict_t *self, float time)
 {
 	self->monsterinfo.attack_finished = level.time + time;
 }
-
 
 void M_CheckGround (edict_t *ent)
 {
@@ -510,7 +481,7 @@ void monster_death_use (edict_t *self)
 
 qboolean monster_start (edict_t *self)
 {
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		G_FreeEdict (self);
 		return qfalse;

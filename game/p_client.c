@@ -35,7 +35,7 @@ potential spawning position for deathmatch games
 */
 void SP_info_player_deathmatch(edict_t *self)
 {
-	if (!deathmatch->value)
+	if (!deathmatch->integer)
 	{
 		G_FreeEdict (self);
 		return;
@@ -49,7 +49,7 @@ potential spawning position for coop games
 
 void SP_info_player_coop(edict_t *self)
 {
-	if (!coop->value)
+	if (!coop->integer)
 		G_FreeEdict (self);
 }
 
@@ -78,10 +78,10 @@ void ClientObituary (edict_t *self, edict_t *inflictor, edict_t *attacker)
 	char		message2[64];
 	qboolean	ff;
 
-	if (coop->value && attacker->r.client)
+	if (coop->integer && attacker->r.client)
 		meansOfDeath |= MOD_FRIENDLY_FIRE;
 
-	if ( deathmatch->value || coop->value )
+	if ( deathmatch->integer || coop->integer )
 	{
 		ff = meansOfDeath & MOD_FRIENDLY_FIRE;
 		mod = meansOfDeath & ~MOD_FRIENDLY_FIRE;
@@ -91,42 +91,36 @@ void ClientObituary (edict_t *self, edict_t *inflictor, edict_t *attacker)
 		// duplicate message at server console for logging
 		if ( attacker && attacker->r.client ) {
 			if ( attacker != self ) {		// regular death message
-				if ( deathmatch->value ) {
-					if ( ff ) {
+				if ( deathmatch->integer ) {
+					if( ff )
 						attacker->r.client->resp.score--;
-					} else {
+					else
 						attacker->r.client->resp.score++;
-					}
 				}
 
 				self->enemy = attacker;
 
-				if ( dedicated->value ) {
+				if( dedicated->integer )
 					G_Printf ( "%s %s %s%s\n", self->r.client->pers.netname, message, attacker->r.client->pers.netname, message2 );
-				}
 			} else {			// suicide
-				if ( deathmatch->value ) {
+				if( deathmatch->integer )
 					self->r.client->resp.score--;
-				}
 
 				self->enemy = NULL;
 
-				if ( dedicated->value ) {
+				if( dedicated->integer )
 					G_Printf ( "%s %s\n", self->r.client->pers.netname, message );
-				}
 			}
 
 			G_Obituary ( self, attacker, mod );
 		} else {		// wrong place, suicide, etc.
-			if ( deathmatch->value ) {
+			if( deathmatch->integer )
 				self->r.client->resp.score--;
-			}
 
 			self->enemy = NULL;
 
-			if ( dedicated->value ) {
-				G_Printf ( "%s %s\n", self->r.client->pers.netname, message );
-			}
+			if( dedicated->integer )
+				G_Printf( "%s %s\n", self->r.client->pers.netname, message );
 
 			G_Obituary ( self, (attacker == self) ? self : world, mod );
 		}
@@ -140,7 +134,7 @@ void TossClientWeapon (edict_t *self)
 	qboolean	quad;
 	float		spread;
 
-	if (!deathmatch->value)
+	if (!deathmatch->integer)
 		return;
 
 	item = self->r.client->pers.weapon;
@@ -149,7 +143,7 @@ void TossClientWeapon (edict_t *self)
 	if (item && (strcmp (item->pickup_name, "Blaster") == 0))
 		item = NULL;
 
-	if (!((int)(dmflags->value) & DF_QUAD_DROP))
+	if (!(dmflags->integer & DF_QUAD_DROP))
 		quad = qfalse;
 	else
 		quad = (self->r.client->quad_framenum > (level.framenum + 10));
@@ -258,7 +252,7 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 		ClientObituary (self, inflictor, attacker);
 //ZOID
 		// if at start and same team, clear
-		if (ctf->value && meansOfDeath == MOD_TELEFRAG &&
+		if (ctf->integer && meansOfDeath == MOD_TELEFRAG &&
 			self->r.client->resp.ctf_state < 2 &&
 			self->r.client->resp.ctf_team == attacker->r.client->resp.ctf_team) {
 			attacker->r.client->resp.score--;
@@ -295,7 +289,7 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 			}
 		}
 
-		if (deathmatch->value && !self->r.client->showscores)
+		if (deathmatch->integer && !self->r.client->showscores)
 			Cmd_Help_f (self);		// show scores
 	}
 
@@ -402,7 +396,7 @@ void InitClientPersistant (gclient_t *client)
 //ZOID
 
 //ZOID
-	if ( ctf->value ) {
+	if ( ctf->integer ) {
 		item = FindItem("Grapple");
 		client->pers.inventory[ITEM_INDEX(item)] = 1;
 	}
@@ -440,7 +434,7 @@ void InitClientResp (gclient_t *client)
 	client->resp.coop_respawn = client->pers;
  
 //ZOID
-	if (ctf->value && client->resp.ctf_team < CTF_TEAM1)
+	if (ctf->integer && client->resp.ctf_team < CTF_TEAM1)
 		CTFAssignTeam(client);
 //ZOID
 }
@@ -468,7 +462,7 @@ void SaveClientData (void)
 		game.clients[i].pers.health = ent->health;
 		game.clients[i].pers.max_health = ent->max_health;
 		game.clients[i].pers.savedFlags = (ent->flags & (FL_GODMODE|FL_NOTARGET|FL_POWER_ARMOR));
-		if (coop->value)
+		if (coop->integer)
 			game.clients[i].pers.score = ent->r.client->resp.score;
 	}
 }
@@ -478,7 +472,7 @@ void FetchClientEntData (edict_t *ent)
 	ent->health = ent->r.client->pers.health;
 	ent->max_health = ent->r.client->pers.max_health;
 	ent->flags |= ent->r.client->pers.savedFlags;
-	if (coop->value)
+	if (coop->integer)
 		ent->r.client->resp.score = ent->r.client->pers.score;
 }
 
@@ -510,7 +504,7 @@ float	PlayersRangeFromSpot (edict_t *spot)
 
 	bestplayerdistance = 9999999;
 
-	for (n = 1; n <= maxclients->value; n++)
+	for (n = 1; n <= game.maxclients; n++)
 	{
 		player = &game.edicts[n];
 
@@ -633,7 +627,7 @@ edict_t *SelectFarthestDeathmatchSpawnPoint (void)
 
 edict_t *SelectDeathmatchSpawnPoint (void)
 {
-	if ( (int)(dmflags->value) & DF_SPAWN_FARTHEST)
+	if (dmflags->integer & DF_SPAWN_FARTHEST)
 		return SelectFarthestDeathmatchSpawnPoint ();
 	else
 		return SelectRandomDeathmatchSpawnPoint ();
@@ -688,14 +682,14 @@ void	SelectSpawnPoint (edict_t *ent, vec3_t origin, vec3_t angles)
 {
 	edict_t	*spot = NULL;
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 //ZOID
-		if (ctf->value)
+		if (ctf->integer)
 			spot = SelectCTFSpawnPoint(ent);
 		else
 //ZOID
 			spot = SelectDeathmatchSpawnPoint ();
-	else if (coop->value)
+	else if (coop->integer)
 		spot = SelectCoopSpawnPoint (ent);
 
 	// find a single player start spot
@@ -774,7 +768,7 @@ void CopyToBodyQue (edict_t *ent)
 	}
 
 	// grab a body que and cycle to the next one
-	body = &game.edicts[(int)maxclients->value + level.body_que + 1];
+	body = &game.edicts[game.maxclients + level.body_que + 1];
 	level.body_que = (level.body_que + 1) % BODY_QUEUE_SIZE;
 
 	// FIXME: send an effect on the removed body
@@ -790,7 +784,7 @@ void CopyToBodyQue (edict_t *ent)
 	VectorCopy (ent->r.size, body->r.size);
 	body->r.solid = ent->r.solid;
 	body->r.clipmask = CONTENTS_SOLID | CONTENTS_PLAYERCLIP;
-	body->s.effects |= (EF_CORPSE | EF_FLIES);
+	body->s.effects |= EF_CORPSE;
 	body->r.owner = ent->r.owner;
 	body->movetype = ent->movetype;
 
@@ -803,7 +797,7 @@ void CopyToBodyQue (edict_t *ent)
 
 void respawn (edict_t *self)
 {
-	if (deathmatch->value || coop->value)
+	if (deathmatch->integer || coop->integer)
 	{
 		edict_t *event;
 
@@ -862,7 +856,7 @@ void PutClientInServer (edict_t *ent)
 	client = ent->r.client;
 
 	// deathmatch wipes most client data every spawn
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		char		userinfo[MAX_INFO_STRING];
 
@@ -871,7 +865,7 @@ void PutClientInServer (edict_t *ent)
 		InitClientPersistant (client);
 		ClientUserinfoChanged (ent, userinfo);
 	}
-	else if (coop->value)
+	else if (coop->integer)
 	{
 		char		userinfo[MAX_INFO_STRING];
 
@@ -932,7 +926,7 @@ void PutClientInServer (edict_t *ent)
 	client->ps.pmove.pm_flags &= ~PMF_NO_PREDICTION;
 //ZOID
 
-	if (deathmatch->value && ((int)dmflags->value & DF_FIXED_FOV))
+	if (deathmatch->integer && (dmflags->integer & DF_FIXED_FOV))
 	{
 		client->ps.fov = 90;
 	}
@@ -971,7 +965,7 @@ void PutClientInServer (edict_t *ent)
 	VectorCopy (ent->s.angles, client->v_angle);
 
 //ZOID
-	if (ctf->value && CTFStartClient(ent))
+	if (ctf->integer && CTFStartClient(ent))
 		return;
 //ZOID
 
@@ -1038,7 +1032,7 @@ void ClientBegin (edict_t *ent)
 
 	ent->r.client = game.clients + (ent - game.edicts - 1);
 
-	if (deathmatch->value)
+	if (deathmatch->integer)
 	{
 		ClientBeginDeathmatch (ent);
 		return;
@@ -1131,7 +1125,7 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo)
 
 	// combine name and skin into a configstring
 //ZOID
-	if (ctf->value)
+	if (ctf->integer)
 		CTFAssignSkin(ent, s);
 	else
 //ZOID
@@ -1143,7 +1137,7 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo)
 //ZOID
 
 	// fov
-	if (deathmatch->value && ((int)dmflags->value & DF_FIXED_FOV))
+	if (deathmatch->integer && (dmflags->integer & DF_FIXED_FOV))
 	{
 		cl->ps.fov = 90;
 	}
@@ -1180,9 +1174,10 @@ Changing levels will NOT cause this to be called again, but
 loadgames will.
 ============
 */
-qboolean ClientConnect (edict_t *ent, char *userinfo)
+qboolean ClientConnect (edict_t *ent, char *userinfo, qboolean fakeClient)
 {
 	char	*value;
+	int		numents = game.maxentities;
 
 	// check to see if they are on the banned IP list
 	value = Info_ValueForKey (userinfo, "ip");
@@ -1222,7 +1217,11 @@ qboolean ClientConnect (edict_t *ent, char *userinfo)
 	if (game.maxclients > 1)
 		G_Printf ("%s %sconnected\n", ent->r.client->pers.netname, S_COLOR_WHITE);
 
-	ent->r.svflags = 0; // make sure we start with known default
+	// make sure we start with known default
+	if (fakeClient)
+		ent->r.svflags = SVF_FAKECLIENT;
+	else
+		ent->r.svflags = 0;
 	ent->r.client->pers.connected = qtrue;
 	return qtrue;
 }
@@ -1460,7 +1459,7 @@ void ClientThink (edict_t *ent, usercmd_t *ucmd)
 //ZOID
 
 //ZOID
-	for (i = 1; i <= maxclients->value; i++) {
+	for (i = 1; i <= game.maxclients; i++) {
 		other = game.edicts + i;
 		if (other->r.inuse && other->r.client->chase_target == ent)
 			UpdateChaseCam(other);
@@ -1509,13 +1508,13 @@ void ClientBeginServerFrame (edict_t *ent)
 		if (level.time > client->respawn_time)
 		{
 			// in deathmatch, only wait for attack button
-			if (deathmatch->value)
+			if (deathmatch->integer)
 				buttonMask = BUTTON_ATTACK;
 			else
 				buttonMask = -1;
 
 			if ( ( client->latched_buttons & buttonMask ) ||
-				(deathmatch->value && ((int)dmflags->value & DF_FORCE_RESPAWN) ) ||
+				(deathmatch->integer && (dmflags->integer & DF_FORCE_RESPAWN) ) ||
 				CTFMatchOn())
 			{
 				respawn(ent);
@@ -1526,7 +1525,7 @@ void ClientBeginServerFrame (edict_t *ent)
 	}
 
 	// add player trail so monsters can follow
-	if (!deathmatch->value)
+	if (!deathmatch->integer)
 		if (!visible (ent, PlayerTrail_LastSpot() ) )
 			PlayerTrail_Add (ent->s.old_origin);
 

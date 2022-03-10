@@ -43,12 +43,33 @@ static void PF_Layout (edict_t *ent, char *string)
 		return;
 
 	p = NUM_FOR_EDICT(ent);
-	if (p < 1 || p > sv_maxclients->value)
+	if (p < 1 || p > sv_maxclients->integer)
 		return;
 
 	client = svs.clients + (p-1);
 	MSG_WriteByte (&client->datagram, svc_layout);
 	MSG_WriteString (&client->datagram, string);
+}
+
+/*
+===============
+PF_DropClient
+===============
+*/
+void PF_DropClient( edict_t *ent )
+{
+	int			p;
+	client_t	*drop;
+
+	if (!ent)
+		return;
+
+	p = NUM_FOR_EDICT(ent);
+	if( p < 1 || p > sv_maxclients->integer )
+		return;
+
+	drop = svs.clients + (p-1);
+	SV_DropClient( drop );
 }
 
 /*
@@ -80,7 +101,7 @@ static void PF_ServerCmd (edict_t *ent, char *cmd)
 			return;
 
 		p = NUM_FOR_EDICT(ent);
-		if (p < 1 || p > sv_maxclients->value)
+		if (p < 1 || p > sv_maxclients->integer)
 			return;
 
 		client = svs.clients + (p-1);
@@ -99,21 +120,15 @@ Debug print to server console
 */
 static void PF_dprint (char *msg)
 {
-	int		i, j;
-	char	copy[1024];
+	int		i;
+	char	copy[MAX_PRINTMSG];
 
 	if (!msg)
 		return;
 
 	// mask off high bits and colored strings
-	for (i=0, j=0 ; i<sizeof(copy)-1 && msg[j] ; ) {
-		if ( Q_IsColorString( &msg[j] ) ) {
-			j += 2;
-			continue;
-		}
-		
-		copy[i++] = msg[j++]&127;
-	}
+	for (i=0 ; i<sizeof(copy)-1 && msg[i] ; i++ )
+		copy[i] = msg[i]&127;
 	copy[i] = 0;
 	
 	Com_Printf ("%s", copy);
@@ -128,8 +143,8 @@ Abort the server with a game error
 */
 static void PF_error (char *msg)
 {
-	int		i, j;
-	char	copy[1024];
+	int		i;
+	char	copy[MAX_PRINTMSG];
 
 	if (!msg)
 	{
@@ -138,14 +153,8 @@ static void PF_error (char *msg)
 	}
 
 	// mask off high bits and colored strings
-	for (i=0, j=0 ; i<sizeof(copy)-1 && msg[j] ; ) {
-		if ( Q_IsColorString( &msg[j] ) ) {
-			j += 2;
-			continue;
-		}
-		
-		copy[i++] = msg[j++]&127;
-	}
+	for (i=0 ; i<sizeof(copy)-1 && msg[i] ; i++ )
+		copy[i] = msg[i]&127;
 	copy[i] = 0;
 
 	Com_Error (ERR_DROP, "Game Error: %s", copy);
@@ -168,7 +177,7 @@ static void PF_StuffCmd (edict_t *ent, char *string)
 		return;
 
 	p = NUM_FOR_EDICT(ent);
-	if (p < 1 || p > sv_maxclients->value)
+	if (p < 1 || p > sv_maxclients->integer)
 		return;
 
 	client = svs.clients + (p-1);
@@ -210,6 +219,41 @@ static void PF_SetBrushModel (edict_t *ent, char *name)
 
 /*
 ===============
+PF_EntityContact
+
+===============
+*/
+static qboolean PF_EntityContact( vec3_t mins, vec3_t maxs, edict_t *ent )
+{
+	trace_t tr;
+	struct cmodel_s *model;
+
+	if (!mins)
+		mins = vec3_origin;
+	if (!maxs)
+		maxs = vec3_origin;
+
+	if( !ent->s.modelindex ) {
+		if( ent->r.solid == SOLID_TRIGGER )
+			return( BoundsIntersect( mins, maxs, ent->r.absmin, ent->r.absmax ) );
+		return qfalse;
+	}
+
+	if( ent->r.solid == SOLID_TRIGGER || ent->r.solid == SOLID_BSP ) {
+		model = CM_InlineModel( ent->s.modelindex );
+		if( !model )
+			Com_Error( ERR_FATAL, "MOVETYPE_PUSH with a non bsp model" );
+
+		CM_TransformedBoxTrace( &tr, vec3_origin, vec3_origin, mins, maxs, model, MASK_ALL, ent->s.origin, ent->s.angles );
+
+		return tr.startsolid || tr.allsolid;
+	}
+
+	return( BoundsIntersect( mins, maxs, ent->r.absmin, ent->r.absmax ) );
+}
+
+/*
+===============
 PF_Configstring
 
 ===============
@@ -223,8 +267,8 @@ static void PF_Configstring (int index, char *val)
 		val = "";
 
 	// change the string in sv
-	strcpy (sv.configstrings[index], val);
-	
+	Q_strncpyz (sv.configstrings[index], val, sizeof(sv.configstrings[index]));
+
 	if (sv.state != ss_loading)
 	{	// send the update to everyone
 		SZ_Clear (&sv.multicast);
@@ -356,7 +400,7 @@ void SV_ShutdownGameProgs (void)
 		return;
 	ge->Shutdown ();
 	Mem_FreePool (&sv_gameprogspool);
-	Sys_UnloadLibrary (LIB_GAME);
+	Sys_UnloadGameLibrary (LIB_GAME);
 	ge = NULL;
 }
 
@@ -408,6 +452,9 @@ void SV_InitGameProgs (void)
 	import.SetBrushModel = PF_SetBrushModel;
 	import.inPVS = PF_inPVS;
 	import.inPHS = PF_inPHS;
+	import.EntityContact = PF_EntityContact;
+
+	import.Milliseconds = Sys_Milliseconds;
 
 	import.ModelIndex = SV_ModelIndex;
 	import.SoundIndex = SV_SoundIndex;
@@ -417,6 +464,17 @@ void SV_InitGameProgs (void)
 	import.Layout = PF_Layout;
 	import.StuffCmd = PF_StuffCmd;
 	import.Sound = SV_StartSound;
+
+	import.FS_FOpenFile = FS_FOpenFile;
+	import.FS_Read = FS_Read;
+	import.FS_Write = FS_Write;
+	import.FS_Tell = FS_Tell;
+	import.FS_Seek = FS_Seek;
+	import.FS_Eof = FS_Eof;
+	import.FS_Flush = FS_Flush;
+	import.FS_FCloseFile = FS_FCloseFile;
+	import.FS_GetFileList = FS_GetFileList;
+	import.FS_Gamedir = FS_Gamedir;
 
 	import.Mem_Alloc = PF_MemAlloc;
 	import.Mem_Free = PF_MemFree;
@@ -436,9 +494,12 @@ void SV_InitGameProgs (void)
 	import.SetAreaPortalState = SV_SetAreaPortalState;
 	import.AreasConnected = CM_AreasConnected;
 
+	import.FakeClientConnect = SVC_FakeConnect;
+	import.DropClient = PF_DropClient;
+
 	import.LocateEntities = SV_LocateEntities;
 
-	ge = (game_export_t *)Sys_LoadLibrary (LIB_GAME, &import);
+	ge = (game_export_t *)Sys_LoadGameLibrary (LIB_GAME, &import);
 
 	if (!ge)
 		Com_Error (ERR_DROP, "failed to load game DLL");

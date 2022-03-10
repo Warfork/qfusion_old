@@ -52,17 +52,6 @@ typedef struct
 	shader_t		*shader;
 } mshaderref_t;
 
-typedef struct
-{
-	cplane_t		*plane;
-} mbrushside_t;
-
-typedef struct
-{
-	int				numsides;
-	mbrushside_t	*firstside;
-} mbrush_t;
-
 typedef struct mfog_s
 {
 	shader_t		*shader;
@@ -70,7 +59,7 @@ typedef struct mfog_s
 	cplane_t		*visibleplane;
 
 	int				numplanes;
-	cplane_t		**planes;
+	cplane_t		*planes;
 } mfog_t;
 
 typedef struct msurface_s
@@ -91,7 +80,7 @@ typedef struct msurface_s
 
 	int				fragmentframe;		// for R_GetClippedFragments
 
-	int				lightmaptexturenum;
+	int				lightmapnum;
 	unsigned int	dlightbits;
 	int				dlightframe;
 } msurface_t;
@@ -100,6 +89,13 @@ typedef struct mnode_s
 {
 // common with leaf
 	cplane_t		*plane;
+
+	int				visframe;
+
+	float			mins[3];
+	float			maxs[3];		// for bounding box culling
+
+	struct mnode_s	*parent;
 
 // node specific
 	struct mnode_s	*children[2];
@@ -110,13 +106,14 @@ typedef struct mleaf_s
 // common with node
 	cplane_t		*plane;
 
-// leaf specific
 	int				visframe;
-	struct mleaf_s	*vischain;
 
 	float			mins[3];
 	float			maxs[3];		// for bounding box culling
 
+	struct mnode_s	*parent;
+
+// leaf specific
 	int				cluster;
 	int				area;
 
@@ -140,57 +137,9 @@ typedef struct
 
 typedef struct
 {
-	int				numsubmodels;
-	mmodel_t		*submodels;
-
-	int				numplanes;
-	cplane_t		*planes;
-
-	int				numleafs;			// number of visible leafs, not counting 0
-	mleaf_t			*leafs;
-
-	int				numvertexes;
-	vec4_t			*xyz_array;
-	vec3_t			*normals_array;		// normals
-	vec2_t			*st_array;			// texture coords		
-	vec2_t			*lmst_array;		// lightmap texture coords
-	byte_vec4_t		*colors_array;		// colors used for vertex lighting
-
-	int				numnodes;
-	mnode_t			*nodes;
-
-	int				numsurfaces;
-	msurface_t		*surfaces;
-
-	int				numsurfindexes;
-	int				*surfindexes;
-
-	int				nummarksurfaces;
-	msurface_t		**marksurfaces;
-
-	int				numshaderrefs;
-	mshaderref_t	*shaderrefs;
-
-	int				numbrushsides;
-	mbrushside_t	*brushsides;
-
-	int				numbrushes;
-	mbrush_t		*brushes;
-
-	int				numlightgridelems;
-	mgridlight_t	*lightgrid;
-
-	int				numfogs;
-	mfog_t			*fogs;
-
-	int				numworldlights;
-	mlight_t		*worldlights;
-
-	dvis_t			*vis;
-
-	int				numlightmaps;
-	qbyte			*lightdata;
-} bmodel_t;
+	int				texNum;
+	float			texMatrix[2][2];
+} mlightmapRect_t;
 
 /*
 ==============================================================================
@@ -203,11 +152,6 @@ ALIAS MODELS
 //
 // in memory representation
 //
-typedef struct maliascoord_s
-{
-	vec2_t			st;
-} maliascoord_t;
-
 typedef struct maliasvertex_s
 {
 	short			point[3];
@@ -225,12 +169,12 @@ typedef struct
 typedef struct
 {
 	char			name[MD3_MAX_PATH];
-	orientation_t	orient;
+	quat_t			quat;
+	vec3_t			origin;
 } maliastag_t;
 
 typedef struct 
 {
-	char			name[MD3_MAX_PATH];
 	shader_t		*shader;
 } maliasskin_t;
 
@@ -240,12 +184,12 @@ typedef struct
 
     int				numverts;
 	maliasvertex_t	*vertexes;
-	maliascoord_t	*stcoords;
+	vec2_t			*stcoords;
 
     int				numtris;
     index_t			*indexes;
 
-#ifdef SHADOW_VOLUMES
+#if SHADOW_VOLUMES
 	int				*trneighbors;
 #endif
 
@@ -282,10 +226,11 @@ SKELETAL MODELS
 
 typedef struct
 {
-	float			matrix[3][4];
+	float			quat[4];
+	float			origin[3];
 } mskbonepose_t;
 
-typedef struct dpmbonevert_s
+typedef struct
 {
 	vec3_t			origin;
 	float			influence;
@@ -301,14 +246,8 @@ typedef struct
 
 typedef struct
 {
-	char			shadername[SKM_MAX_NAME];		// name of the shader to use
 	shader_t		*shader;
 } mskskin_t;
-
-typedef struct
-{
-	float			st[2];
-} mskcoord_t;
 
 typedef struct
 {
@@ -316,7 +255,7 @@ typedef struct
 
 	unsigned int	numverts;
 	mskvertex_t		*vertexes;
-	mskcoord_t		*stcoords;
+	vec2_t			*stcoords;
 
 	unsigned int	numtris;
 	index_t			*indexes;
@@ -324,7 +263,7 @@ typedef struct
 	unsigned int	numreferences;
 	unsigned int	*references;
 
-#ifdef SHADOW_VOLUMES
+#if SHADOW_VOLUMES
 	int				*trneighbors;
 #endif
 
@@ -401,8 +340,6 @@ typedef struct model_s
 {
 	char			name[MAX_QPATH];
 
-	int				registration_sequence;
-
 	modtype_t		type;
 	int				flags;
 
@@ -415,13 +352,57 @@ typedef struct model_s
 //
 // brush model
 //
-	int				nummodelsurfaces;
-	msurface_t		*firstmodelsurface;
-	bmodel_t		*bmodel;
-
 	vec3_t			gridSize;
 	vec3_t			gridMins;
 	int				gridBounds[4];
+
+	int				numsubmodels;
+	mmodel_t		*submodels;
+
+	int				nummodelsurfaces;
+	msurface_t		*firstmodelsurface;
+
+	int				numplanes;
+	cplane_t		*planes;
+
+	int				numleafs;			// number of visible leafs, not counting 0
+	mleaf_t			*leafs;
+
+	int				numvertexes;
+	vec3_t			*xyz_array;
+	vec3_t			*normals_array;		// normals
+	vec2_t			*st_array;			// texture coords		
+	vec2_t			*lmst_array;		// lightmap texture coords
+	byte_vec4_t		*colors_array;		// colors used for vertex lighting
+
+	int				numnodes;
+	mnode_t			*nodes;
+
+	int				numsurfaces;
+	msurface_t		*surfaces;
+
+	int				numsurfindexes;
+	int				*surfindexes;
+
+	int				nummarksurfaces;
+	msurface_t		**marksurfaces;
+
+	int				numshaderrefs;
+	mshaderref_t	*shaderrefs;
+
+	int				numlightgridelems;
+	mgridlight_t	*lightgrid;
+
+	int				numfogs;
+	mfog_t			*fogs;
+
+	int				numworldlights;
+	mlight_t		*worldlights;
+
+	int				numlightmaps;
+	mlightmapRect_t	*lightmapRects;
+
+	dvis_t			*vis;
 
 //
 // alias model
@@ -454,11 +435,13 @@ typedef struct
 
 //============================================================================
 
-void	Mod_Init (void);
+void	R_InitModels (void);
+void	R_ShutdownModels (void);
+
 void	Mod_ClearAll (void);
 model_t *Mod_ForName (char *name, qboolean crash);
-mleaf_t *Mod_PointInLeaf (float *p, bmodel_t *bmodel);
-qbyte	*Mod_ClusterPVS (int cluster, bmodel_t *bmodel);
+mleaf_t *Mod_PointInLeaf (float *p, model_t *model);
+qbyte	*Mod_ClusterPVS (int cluster, model_t *model);
 
 #define Mod_Malloc(mod,size) Mem_Alloc((mod)->extradata,size)
 #define Mod_Free(data) Mem_Free(data)
@@ -466,5 +449,3 @@ qbyte	*Mod_ClusterPVS (int cluster, bmodel_t *bmodel);
 void	Mod_StripLODSuffix ( char *name );
 
 void	Mod_Modellist_f (void);
-void	Mod_FreeModel (model_t *mod);
-void	Mod_Shutdown (void);

@@ -64,6 +64,8 @@ entity_state_t	cl_baselines[MAX_EDICTS];
 
 entity_state_t	cl_parse_entities[MAX_PARSE_ENTITIES];
 
+void CL_RestartMedia( void );
+
 extern	cvar_t *allow_download;
 extern	cvar_t *allow_download_players;
 extern	cvar_t *allow_download_models;
@@ -149,7 +151,7 @@ void CL_ForwardToServer_f (void)
 		Com_Printf ("Can't \"%s\", not connected\n", Cmd_Argv(0));
 		return;
 	}
-	
+
 	// don't forward the first argument
 	if (Cmd_Argc() > 1)
 	{
@@ -173,7 +175,7 @@ void CL_Pause_f (void)
 		return;
 	}
 
-	Cvar_SetValue ("paused", !cl_paused->value);
+	Cvar_SetValue ("paused", !cl_paused->integer);
 }
 
 /*
@@ -196,28 +198,6 @@ void CL_Quit_f (void)
 {
 	CL_Quit ();
 }
-
-/*
-================
-CL_Drop
-
-Called after an ERR_DROP was thrown
-================
-*/
-void CL_Drop (void)
-{
-	if (cls.state == ca_uninitialized)
-		return;
-	if (cls.state == ca_disconnected)
-		return;
-
-	CL_Disconnect ();
-
-	// drop loading plaque unless this is the initial game start
-	if (cls.disable_servercount != -1)
-		SCR_EndLoadingPlaque ();	// get rid of loading plaque
-}
-
 
 /*
 =======================
@@ -259,8 +239,7 @@ void CL_CheckForResend (void)
 {
 	netadr_t	adr;
 
-	// if the local server is running and we aren't
-	// then connect
+	// if the local server is running and we aren't then connect
 	if (cls.state == ca_disconnected && Com_ServerState() )
 	{
 		CL_SetClientState (ca_connecting);
@@ -302,14 +281,12 @@ CL_Connect_f
 */
 void CL_Connect_f (void)
 {
-	char	*server;
-
 	if (Cmd_Argc() != 2)
 	{
 		Com_Printf ("usage: connect <server>\n");
 		return;	
 	}
-	
+
 	if (Com_ServerState ())
 	{	// if running a local server, kill it and reissue
 		SV_Shutdown (va("Server quit\n", msg), qfalse);
@@ -319,16 +296,11 @@ void CL_Connect_f (void)
 		CL_Disconnect ();
 	}
 
-	server = Cmd_Argv (1);
+	NET_Config( qtrue );		// allow remote
 
-	NET_Config (qtrue);		// allow remote
-
-	CL_Disconnect ();
-
-	CL_SetClientState (ca_connecting);
 	memset (cl.configstrings, 0, sizeof(cl.configstrings));
-	CL_GameModule_Shutdown ();
-	Q_strncpyz (cls.servername, server, sizeof(cls.servername));
+	Q_strncpyz (cls.servername, Cmd_Argv (1), sizeof(cls.servername));
+	CL_SetClientState (ca_connecting);
 	cls.connect_time = -99999;	// CL_CheckForResend() will fire immediately
 	cls.connect_count = 0;
 }
@@ -390,7 +362,7 @@ void CL_Rcon_f (void)
 		if (to.port == 0)
 			to.port = BigShort (PORT_SERVER);
 	}
-	
+
 	NET_SendPacket (NS_CLIENT, strlen(message)+1, message, to);
 }
 
@@ -427,6 +399,19 @@ void CL_SetKeyDest (int key_dest)
 	cls.key_dest = key_dest;
 }
 
+
+/*
+=====================
+CL_SetOldKeyDest
+=====================
+*/
+void CL_SetOldKeyDest (int key_dest)
+{
+	if (key_dest < key_game || key_dest > key_menu)
+		Com_Error (ERR_DROP, "CL_SetKeyDest: invalid key_dest");
+	cls.old_key_dest = key_dest;
+}
+
 /*
 =====================
 CL_ResetServerCount
@@ -445,9 +430,6 @@ CL_ClearState
 */
 void CL_ClearState (void)
 {
-	S_StopAllSounds ();
-	CL_GameModule_Shutdown ();
-
 // wipe the entire cl structure
 	memset (&cl, 0, sizeof(cl));
 	memset (cl_baselines, 0, sizeof(cl_baselines));
@@ -469,10 +451,12 @@ void CL_Disconnect (void)
 {
 	qbyte	final[32];
 
-	if (cls.state == ca_disconnected)
+	if (cls.state == ca_uninitialized)
 		return;
+	if (cls.state == ca_disconnected)
+		goto done;
 
-	if (cl_timedemo && cl_timedemo->value)
+	if (cl_timedemo && cl_timedemo->integer)
 	{
 		int	time;
 		
@@ -497,7 +481,7 @@ void CL_Disconnect (void)
 	Netchan_Transmit (&cls.netchan, strlen(final), final);
 	Netchan_Transmit (&cls.netchan, strlen(final), final);
 
-	CL_ClearState ();
+	CL_RestartMedia ();
 
 	// stop download
 	if (cls.download) {
@@ -505,7 +489,13 @@ void CL_Disconnect (void)
 		cls.download = NULL;
 	}
 
+	CL_ClearState ();
 	CL_SetClientState (ca_disconnected);
+
+done:
+	// drop loading plaque unless this is the initial game start
+	if (cls.disable_servercount != -1)
+		SCR_EndLoadingPlaque ();	// get rid of loading plaque
 }
 
 void CL_Disconnect_f (void)
@@ -581,12 +571,8 @@ void CL_Changing_f (void)
 	if (cls.download)
 		return;
 
-	SCR_BeginLoadingPlaque ();
-	CL_SetClientState (ca_connected);	// not active anymore, but not disconnected
 	memset (cl.configstrings, 0, sizeof(cl.configstrings));
-	CL_GameModule_Shutdown ();
-	Com_Printf ("\nChanging map...\n");
-	SCR_UpdateScreen ();
+	CL_SetClientState (ca_connected);	// not active anymore, but not disconnected
 }
 
 
@@ -609,10 +595,8 @@ void CL_Reconnect_f (void)
 	S_StopAllSounds ();
 	if (cls.state == ca_connected) {
 		Com_Printf ("reconnecting...\n");
-		CL_SetClientState (ca_connected);
 		memset (cl.configstrings, 0, sizeof(cl.configstrings));
-		CL_GameModule_Shutdown ();
-		SCR_UpdateScreen ();
+		CL_SetClientState (ca_connected);
 		MSG_WriteChar (&cls.netchan.message, clc_stringcmd);
 		MSG_WriteString (&cls.netchan.message, "new");		
 		return;
@@ -665,11 +649,10 @@ void CL_ParseGetServersResponse ( qbyte *s )
 	while (*s && strncmp (s, "EOT", 3))
 	{
 		port = s[5] | (s[4] << 8);
-		if ( port < 1 || port >= 65535 ) {
+		if( port < 1 || port >= 65535 )
 			break;
-		}
 
-		Com_sprintf ( adrstring, sizeof(adrstring), "%u.%u.%u.%u:%i\n", s[0], s[1], s[2], s[3], port );
+		Q_snprintfz ( adrstring, sizeof(adrstring), "%u.%u.%u.%u:%i\n", s[0], s[1], s[2], s[3], port );
 
 		Com_Printf ( "%s\n", adrstring );
 		if (!NET_StringToAdr (adrstring, &adr))
@@ -690,42 +673,44 @@ void CL_ParseGetServersResponse ( qbyte *s )
 CL_PingServers_f
 =================
 */
-void CL_PingServers_f (void)
+void CL_PingServers_f( void )
 {
 	netadr_t	adr;
 	char		*requeststring;
 	cvar_t		*noudp;
 	cvar_t		*noipx;
 
-	NET_Config ( qtrue );		// allow remote
+	NET_Config( qtrue );		// allow remote
 
 	// send a broadcast packet
-	Com_Printf ( "pinging broadcast...\n" );
+	Com_Printf( "pinging broadcast...\n" );
 
-	noipx = Cvar_Get ( "noipx", "0", CVAR_NOSET );
-	noudp = Cvar_Get ( "noudp", "0", CVAR_NOSET );
+	noipx = Cvar_Get( "noipx", "0", CVAR_NOSET );
+	noudp = Cvar_Get( "noudp", "0", CVAR_NOSET );
 
-	if ( !strcmp (Cmd_Argv(1), "local") ) {
-		requeststring = va ( "info %i %s %s", PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
+	if( !strcmp( Cmd_Argv(1), "local" ) ) {
+		requeststring = va( "info %i %s %s", PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
 
-		if ( !noipx->value ) {
+		if( !noudp->integer ) {
+			adr.type = NA_BROADCAST;
+			adr.port = BigShort( PORT_SERVER );
+			Netchan_OutOfBandPrint( NS_CLIENT, adr, requeststring );
+		} else if( !noipx->integer ) {
 			adr.type = NA_BROADCAST_IPX;
-			adr.port = BigShort ( PORT_SERVER );
-			Netchan_OutOfBandPrint ( NS_CLIENT, adr, requeststring );
+			adr.port = BigShort( PORT_SERVER );
+			Netchan_OutOfBandPrint( NS_CLIENT, adr, requeststring );
 		}
-	} else if ( !noudp->value ) {
-		requeststring = va ( "getservers %i %s %s", PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
+	} else if( !noudp->integer ) {
+		requeststring = va( "getservers %i %s %s", PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
 
-		if ( NET_StringToAdr (cl_masterServer->string, &adr) ) {
-			if ( !adr.port ) {
-				adr.port = BigShort ( PORT_MASTER );
-			}
-
-			Netchan_OutOfBandPrint ( NS_CLIENT, adr, requeststring );
+		if( NET_StringToAdr( cl_masterServer->string, &adr ) ) {
+			if( !adr.port )
+				adr.port = BigShort( PORT_MASTER );
+			Netchan_OutOfBandPrint( NS_CLIENT, adr, requeststring );
 		}
 		else
 		{
-			Com_Printf ( "Bad address: %s\n", cl_masterServer->string );
+			Com_Printf( "Bad address: %s\n", cl_masterServer->string );
 		}
 	}
 }
@@ -769,11 +754,9 @@ void CL_ConnectionlessPacket (void)
 		}
 		Netchan_Setup (NS_CLIENT, &cls.netchan, net_from, cls.quakePort);
 		MSG_WriteChar (&cls.netchan.message, clc_stringcmd);
-		MSG_WriteString (&cls.netchan.message, "new");	
-		CL_SetClientState (ca_connected);
+		MSG_WriteString (&cls.netchan.message, "new");
 		memset (cl.configstrings, 0, sizeof(cl.configstrings));
-		CL_GameModule_Shutdown ();
-		SCR_UpdateScreen ();
+		CL_SetClientState (ca_connected);
 		return;
 	}
 
@@ -938,18 +921,18 @@ void CL_RequestNextDownload (void)
 	if (cls.state != ca_connected)
 		return;
 
-	if (!allow_download->value && precache_check < ENV_CNT)
+	if (!allow_download->integer && precache_check < ENV_CNT)
 		precache_check = ENV_CNT;
 
 //ZOID
 	if (precache_check == CS_MODELS) { // confirm map
 		precache_check = CS_MODELS+2; // 0 isn't used
-		if (allow_download_maps->value)
+		if (allow_download_maps->integer)
 			if (!CL_CheckOrDownloadFile(cl.configstrings[CS_MODELS+1]))
 				return; // started a download
 	}
 	if (precache_check >= CS_MODELS && precache_check < CS_MODELS+MAX_MODELS) {
-		if (allow_download_models->value) {
+		if (allow_download_models->integer) {
 			while (precache_check < CS_MODELS+MAX_MODELS &&
 				cl.configstrings[precache_check][0]) {
 				if (cl.configstrings[precache_check][0] == '*' ||
@@ -967,7 +950,7 @@ void CL_RequestNextDownload (void)
 	}
 
 	if (precache_check >= CS_SOUNDS && precache_check < CS_SOUNDS+MAX_SOUNDS) { 
-		if (allow_download_sounds->value) {
+		if (allow_download_sounds->integer) {
 			if (precache_check == CS_SOUNDS)
 				precache_check++; // zero is blank
 			while (precache_check < CS_SOUNDS+MAX_SOUNDS &&
@@ -977,7 +960,7 @@ void CL_RequestNextDownload (void)
 					continue;
 				}
 
-				Com_sprintf(fn, sizeof(fn), "%s", cl.configstrings[precache_check++]);
+				Q_strncpyz(fn, cl.configstrings[precache_check++], sizeof(fn));
 				if (!CL_CheckOrDownloadFile(fn))
 					return; // started a download
 			}
@@ -993,7 +976,7 @@ void CL_RequestNextDownload (void)
 	// model, weapon model and skin
 	// so precache_check is now *3
 	if (precache_check >= CS_PLAYERSKINS && precache_check < CS_PLAYERSKINS + MAX_CLIENTS * PLAYER_MULT) {
-		if (allow_download_players->value) {
+		if (allow_download_players->integer) {
 			while (precache_check < CS_PLAYERSKINS + MAX_CLIENTS * PLAYER_MULT) {
 				int i, n;
 				char model[MAX_QPATH], skin[MAX_QPATH], *p;
@@ -1029,7 +1012,7 @@ void CL_RequestNextDownload (void)
 
 				switch (n) {
 				case 0: // model
-					Com_sprintf(fn, sizeof(fn), "players/%s/tris.md2", model);
+					Q_snprintfz(fn, sizeof(fn), "players/%s/tris.md2", model);
 					if (!CL_CheckOrDownloadFile(fn)) {
 						precache_check = CS_PLAYERSKINS + i * PLAYER_MULT + 1;
 						return; // started a download
@@ -1038,7 +1021,7 @@ void CL_RequestNextDownload (void)
 					/*FALL THROUGH*/
 
 				case 1: // weapon model
-					Com_sprintf(fn, sizeof(fn), "players/%s/weapon.md2", model);
+					Q_snprintfz(fn, sizeof(fn), "players/%s/weapon.md2", model);
 					if (!CL_CheckOrDownloadFile(fn)) {
 						precache_check = CS_PLAYERSKINS + i * PLAYER_MULT + 2;
 						return; // started a download
@@ -1047,7 +1030,7 @@ void CL_RequestNextDownload (void)
 					/*FALL THROUGH*/
 
 				case 2: // weapon skin
-					Com_sprintf(fn, sizeof(fn), "players/%s/weapon.pcx", model);
+					Q_snprintfz(fn, sizeof(fn), "players/%s/weapon.pcx", model);
 					if (!CL_CheckOrDownloadFile(fn)) {
 						precache_check = CS_PLAYERSKINS + i * PLAYER_MULT + 3;
 						return; // started a download
@@ -1056,7 +1039,7 @@ void CL_RequestNextDownload (void)
 					/*FALL THROUGH*/
 
 				case 3: // skin
-					Com_sprintf(fn, sizeof(fn), "players/%s/%s.pcx", model, skin);
+					Q_snprintfz(fn, sizeof(fn), "players/%s/%s.pcx", model, skin);
 					if (!CL_CheckOrDownloadFile(fn)) {
 						precache_check = CS_PLAYERSKINS + i * PLAYER_MULT + 4;
 						return; // started a download
@@ -1065,7 +1048,7 @@ void CL_RequestNextDownload (void)
 					/*FALL THROUGH*/
 
 				case 4: // skin_i
-					Com_sprintf(fn, sizeof(fn), "players/%s/%s_i.pcx", model, skin);
+					Q_snprintfz(fn, sizeof(fn), "players/%s/%s_i.pcx", model, skin);
 					if (!CL_CheckOrDownloadFile(fn)) {
 						precache_check = CS_PLAYERSKINS + i * PLAYER_MULT + 5;
 						return; // started a download
@@ -1111,8 +1094,8 @@ void CL_RequestNextDownload (void)
 
 //ZOID
 
-	// prepare refresh
-	SCR_PrepRefresh ();
+	// load client game module
+	CL_GameModule_Init ();
 
 	MSG_WriteByte (&cls.netchan.message, clc_stringcmd);
 	MSG_WriteString (&cls.netchan.message, va("begin %i\n", precache_spawncount) );
@@ -1140,8 +1123,7 @@ void CL_Precache_f (void)
 		// check memory integrity
 		Mem_CheckSentinelsGlobal ();
 
-		// prepare refresh at next opportunity
-		SCR_PrepRefresh ();
+		CL_GameModule_Init ();
 
 		return;
 	}
@@ -1164,7 +1146,7 @@ void CL_WriteConfiguration (char *name)
 	FILE	*f;
 	char	path[MAX_QPATH];
 
-	Com_sprintf (path, sizeof(path),"%s/%s", FS_Gamedir(), name);
+	Q_snprintfz (path, sizeof(path),"%s/%s", FS_Gamedir(), name);
 	f = fopen (path, "wt");
 	if (!f)
 	{
@@ -1215,23 +1197,102 @@ void CL_WriteConfig_f (void)
 CL_SetClientState
 =================
 */
-void CL_SetClientState (int state)
+void CL_SetClientState( int state )
 {
 	cls.state = state;
-	Com_SetClientState (state);
+	Com_SetClientState( state );
 
-	if ( state == ca_disconnected ) {
-		CL_SetKeyDest (key_menu);
-		SCR_PrepRefresh ();
-	} else if ( state == ca_connecting || state == ca_active ) {
-		CL_SetKeyDest (key_game);
-		scr_con_current = 0;
-		Con_ClearNotify ();
-	} else if ( state == ca_connected ) {
-		Cvar_FixCheatVars ();
+	switch( state ) {
+		case ca_disconnected:
+			Con_Close ();
+			CL_UIModule_MenuMain ();
+			CL_SetKeyDest( key_menu );
+//			SCR_UpdateScreen ();
+			break;
+		case ca_connecting:
+			Con_Close ();
+			CL_SetKeyDest( key_game );
+//			SCR_UpdateScreen ();
+			break;
+		case ca_connected:
+			Cvar_FixCheatVars ();
+//			SCR_UpdateScreen ();
+			break;
+		case ca_active:
+			Con_Close ();
+			CL_SetKeyDest( key_game );
+//			SCR_UpdateScreen ();
+			break;
+		default:
+			break;
 	}
 }
 
+/*
+=================
+CL_InitMedia
+=================
+*/
+void CL_InitMedia( void )
+{
+	if( cls.mediaInitialized )
+		return;
+	if( cls.state == ca_uninitialized )
+		return;
+
+	cls.mediaInitialized = qtrue;
+
+	// restart renderer
+	R_Restart ();
+
+	// free all sounds
+	S_FreeSounds ();
+
+	// register console font and background
+	SCR_RegisterConsoleMedia ();
+
+	// load user interface
+	CL_UIModule_Init ();
+
+	// check memory integrity
+	Mem_CheckSentinelsGlobal ();
+
+	S_SoundsInMemory ();
+}
+
+/*
+=================
+CL_ShutdownMedia
+=================
+*/
+void CL_ShutdownMedia( void )
+{
+	if( !cls.mediaInitialized )
+		return;
+
+	cls.mediaInitialized = qfalse;
+
+	// shutdown cgame
+	CL_GameModule_Shutdown ();
+
+	// shutdown user interface
+	CL_UIModule_Shutdown ();
+
+	// stop and free all sounds
+	S_StopAllSounds ();
+	S_FreeSounds ();
+}
+
+/*
+=================
+CL_RestartMedia
+=================
+*/
+void CL_RestartMedia( void )
+{
+	CL_ShutdownMedia ();
+	CL_InitMedia ();
+}
 
 /*
 =================
@@ -1240,7 +1301,8 @@ CL_InitLocal
 */
 void CL_InitLocal (void)
 {
-	CL_SetClientState (ca_disconnected);
+	cls.state = ca_disconnected;
+	Com_SetClientState( ca_disconnected );
 	cls.realtime = Sys_Milliseconds ();
 
 	CL_InitInput ();
@@ -1380,6 +1442,8 @@ void CL_FixCvarCheats (void)
 	int			i;
 	cheatvar_t	*var;
 
+	if( cl.attractloop )
+		return;
 	if ( !strcmp(cl.configstrings[CS_MAXCLIENTS], "1") 
 		|| !cl.configstrings[CS_MAXCLIENTS][0] )
 		return;		// single player can cheat
@@ -1440,12 +1504,12 @@ CL_MinFrameFrame
 */
 double CL_MinFrameFrame (void)
 {
-	if (!cl_timedemo->value)
+	if (!cl_timedemo->integer)
 	{
 		if (cls.state == ca_connected)
 			return 0.1;			// don't flood packets out while connecting
-		if (cl_maxfps->value)
-			return 1.0 / (double)cl_maxfps->value;
+		if (cl_maxfps->integer)
+			return 1.0 / (double)cl_maxfps->integer;
 	}
 
 	return 0;
@@ -1463,11 +1527,11 @@ void CL_Frame (int msec)
 	double			minframetime;
 	static int		lasttimecalled;
 
-	if (dedicated->value)
+	if (dedicated->integer)
 		return;
 
 	extratime += msec * 0.001;
-	
+
 	minframetime = CL_MinFrameFrame ();
 	if (extratime < minframetime)
 		return;
@@ -1502,17 +1566,17 @@ void CL_Frame (int msec)
 	VID_CheckChanges ();
 
 	// update the screen
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_before_ref = Sys_Milliseconds ();
 	SCR_UpdateScreen ();
-	if (host_speeds->value)
+	if (host_speeds->integer)
 		time_after_ref = Sys_Milliseconds ();
 
 	// update audio
 	if (cls.state != ca_active || cl.cin.time > 0)
 		S_Update (vec3_origin, vec3_origin, vec3_origin, vec3_origin);
 
-	if ( cl_avidemo->value ) {
+	if ( cl_avidemo->integer ) {
 		char picname[80];
 		static int aviframe;
 
@@ -1536,7 +1600,7 @@ void CL_Frame (int msec)
 
 	cls.framecount++;
 
-	if ( log_stats->value )
+	if ( log_stats->integer )
 	{
 		if ( cls.state == ca_active )
 		{
@@ -1568,12 +1632,14 @@ CL_Init
 */
 void CL_Init (void)
 {
-	if (dedicated->value)
+	if (dedicated->integer)
 		return;		// nothing running on the client
 
 	// all archived variables will now be loaded
 
 	Con_Init ();
+
+	Sys_PrintCPUInfo ();
 
 #ifndef VID_INITFIRST
 	S_Init ();	
@@ -1586,10 +1652,7 @@ void CL_Init (void)
 	SZ_Init (&net_recieved, net_recieved_buffer, sizeof(net_recieved_buffer));
 	SZ_Init (&net_message, net_message_buffer, sizeof(net_message_buffer));
 
-	CL_UIModule_Init ();
-
 	RoQ_Init ();
-
 	SCR_Init ();
 	cls.disable_screen = qtrue;	// don't draw yet
 
@@ -1600,6 +1663,9 @@ void CL_Init (void)
 //	Cbuf_AddText ("exec autoexec.cfg\n");
 	FS_ExecAutoexec ();
 	Cbuf_Execute ();
+
+	CL_InitMedia ();
+	CL_UIModule_MenuMain ();
 }
 
 
@@ -1614,23 +1680,19 @@ to run quit through here before the final handoff to the sys code.
 void CL_Shutdown (void)
 {
 	static qboolean isdown = qfalse;
-	
-	if (isdown)
-	{
+
+	if( cls.state == ca_uninitialized )
 		return;
-	}
+	if( isdown )
+		return;
 
 	isdown = qtrue;
 
-	if ( cls.state != ca_uninitialized ) {
-		CL_WriteConfiguration ("qfconfig.cfg");
-	}
+	CL_WriteConfiguration( "qfconfig.cfg" );
 
 	CL_UIModule_Shutdown ();
 	CL_GameModule_Shutdown ();
 	S_Shutdown ();
 	IN_Shutdown ();
-	VID_Shutdown();
+	VID_Shutdown ();
 }
-
-

@@ -92,7 +92,7 @@ void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, unsign
 		to->modelindex2 = MSG_ReadByte (&net_message);
 	if (bits & U_MODEL3)
 		to->modelindex3 = MSG_ReadByte (&net_message);
-		
+
 	if (bits & U_FRAME8)
 		to->frame = MSG_ReadByte (&net_message);
 	if (bits & U_FRAME16)
@@ -258,7 +258,7 @@ void CL_ParsePacketEntities (frame_t *oldframe, frame_t *newframe)
 
 		while (oldnum < newnum)
 		{	// one or more entities from the old packet are unchanged
-			if (cl_shownet->value == 3)
+			if (cl_shownet->integer == 3)
 				Com_Printf ("   unchanged: %i\n", oldnum);
 			CL_DeltaEntity (newframe, oldnum, oldstate, 0);
 			
@@ -275,7 +275,7 @@ void CL_ParsePacketEntities (frame_t *oldframe, frame_t *newframe)
 
 		if (bits & U_REMOVE)
 		{	// the entity present in oldframe is not in the current frame
-			if (cl_shownet->value == 3)
+			if (cl_shownet->integer == 3)
 				Com_Printf ("   remove: %i\n", newnum);
 			if (oldnum != newnum)
 				Com_Printf ("U_REMOVE: oldnum != newnum\n");
@@ -294,7 +294,7 @@ void CL_ParsePacketEntities (frame_t *oldframe, frame_t *newframe)
 
 		if (oldnum == newnum)
 		{	// delta from previous state
-			if (cl_shownet->value == 3)
+			if (cl_shownet->integer == 3)
 				Com_Printf ("   delta: %i\n", newnum);
 			CL_DeltaEntity (newframe, newnum, oldstate, bits);
 
@@ -312,7 +312,7 @@ void CL_ParsePacketEntities (frame_t *oldframe, frame_t *newframe)
 
 		if (oldnum > newnum)
 		{	// delta from baseline
-			if (cl_shownet->value == 3)
+			if (cl_shownet->integer == 3)
 				Com_Printf ("   baseline: %i\n", newnum);
 			CL_DeltaEntity (newframe, newnum, &cl_baselines[newnum], bits);
 			continue;
@@ -323,10 +323,10 @@ void CL_ParsePacketEntities (frame_t *oldframe, frame_t *newframe)
 	// any remaining entities in the old frame are copied over
 	while (oldnum != 99999)
 	{	// one or more entities from the old packet are unchanged
-		if (cl_shownet->value == 3)
+		if (cl_shownet->integer == 3)
 			Com_Printf ("   unchanged: %i\n", oldnum);
 		CL_DeltaEntity (newframe, oldnum, oldstate, 0);
-		
+
 		oldindex++;
 
 		if (oldindex >= oldframe->numEntities)
@@ -450,13 +450,6 @@ void CL_ParsePlayerstate (frame_t *oldframe, frame_t *newframe)
 		state->gunframe = MSG_ReadShort (&net_message);
 	}
 
-	if (flags & PS_WEAPONANGLES)
-	{
-		state->gunangles[0] = MSG_ReadChar (&net_message)*0.25;
-		state->gunangles[1] = MSG_ReadChar (&net_message)*0.25;
-		state->gunangles[2] = MSG_ReadChar (&net_message)*0.25;
-	}
-
 	if (flags & PS_BLEND)
 	{
 		state->blend[0] = MSG_ReadByte (&net_message)/255.0;
@@ -493,7 +486,7 @@ void CL_ParseFrame (void)
 	cl.frame.serverTime = cl.frame.serverFrame*100;
 	cl.suppressCount = MSG_ReadByte (&net_message);
 
-	if (cl_shownet->value == 3)
+	if (cl_shownet->integer == 3)
 		Com_Printf ("   frame:%i  delta:%i\n", cl.frame.serverFrame,
 		cl.frame.deltaFrame);
 
@@ -552,10 +545,7 @@ void CL_ParseFrame (void)
 	{
 		// getting a valid frame message ends the connection process
 		if (cls.state != ca_active)
-		{
-			// need to prep refresh at next oportunity
-			cl.force_refdef = qtrue;
 			CL_SetClientState (ca_active);
-		}
+		cl.soundPrepped = qtrue;	// can start mixing ambient sounds
 	}
 }

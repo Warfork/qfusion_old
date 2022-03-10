@@ -80,9 +80,8 @@ void JoinServerFunc( void *self )
 	if (index >= m_num_servers)
 		return;
 
-	Com_sprintf (buffer, sizeof(buffer), "connect %s\n", local_server_netadr[index]);
+	Q_snprintfz (buffer, sizeof(buffer), "connect %s\n", local_server_netadr[index]);
 	trap_Cmd_ExecuteText (EXEC_APPEND, buffer);
-	M_ForceMenuOff ();
 }
 
 void SearchGames( char *s )
@@ -162,7 +161,7 @@ void JoinServer_MenuInit( void )
 	s_joinserver_search_global_action.generic.y	= y+=y_offset;
 	s_joinserver_search_global_action.generic.callback = SearchGlobalGamesFunc;
 
-	Com_sprintf ( sbar, sizeof(sbar), "Master server at %s", trap_Cvar_VariableString("cl_masterServer") );
+	Q_snprintfz ( sbar, sizeof(sbar), "Master server at %s", trap_Cvar_VariableString("cl_masterServer") );
 	s_joinserver_search_global_action.generic.statusbar = sbar;
 
 	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );

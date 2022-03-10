@@ -82,9 +82,9 @@ void UI_DrawNonPropChar ( int x, int y, int num, int fontstyle, vec4_t color )
 	fcol = (num&15)*0.0625f;
 
 	if ( fontstyle & FONT_SHADOWED ) {
-		trap_Draw_StretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, uis.charsetShader );
+		trap_R_DrawStretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, uis.charsetShader );
 	}
-	trap_Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, uis.charsetShader );
+	trap_R_DrawStretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, color, uis.charsetShader );
 }
 
 /*
@@ -135,9 +135,9 @@ void UI_DrawNonPropString ( int x, int y, char *str, int fontstyle, vec4_t color
 		fcol = (num&15)*0.0625f;
 
 		if ( fontstyle & FONT_SHADOWED ) {
-			trap_Draw_StretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, uis.charsetShader );
+			trap_R_DrawStretchPic ( x+2, y+2, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colorBlack, uis.charsetShader );
 		}
-		trap_Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, uis.charsetShader );
+		trap_R_DrawStretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolor, uis.charsetShader );
 
 		x += width;
 	}
@@ -287,10 +287,9 @@ void UI_DrawPropString ( int x, int y, char *str, int fontstyle, vec4_t color )
 		width = propfont1[num].width;
 		swidth = width * scale;
 
-		if ( fontstyle & FONT_SHADOWED ) {
-			trap_Draw_StretchPic ( x+2, y+2, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), colorBlack, uis.propfontShader );
-		}
-		trap_Draw_StretchPic ( x, y, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), scolor, uis.propfontShader );
+		if ( fontstyle & FONT_SHADOWED )
+			trap_R_DrawStretchPic ( x+2, y+2, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), colorBlack, uis.propfontShader );
+		trap_R_DrawStretchPic ( x, y, swidth, sheight, fcol, frow, fcol + width/256.0f, frow + height*(1/256.0f), scolor, uis.propfontShader );
 
 		x += swidth + spacing;
 	}
@@ -356,7 +355,7 @@ UI_FillRect
 =============
 */
 void UI_FillRect ( int x, int y, int w, int h, vec4_t color ) {
-	trap_Draw_StretchPic ( x, y, w, h, 0, 0, 1, 1, color, uis.whiteShader );
+	trap_R_DrawStretchPic ( x, y, w, h, 0, 0, 1, 1, color, uis.whiteShader );
 }
 
 /*
@@ -851,7 +850,7 @@ static void	Action_Init( menuaction_s *a )
 
 static void	MenuList_Init( menulist_s *l )
 {
-	const char **n;
+	char **n;
 	int xsize, ysize, len, spacing;
 
 	n = l->itemnames;
@@ -869,7 +868,7 @@ static void	MenuList_Init( menulist_s *l )
 
 	while ( *n )
 	{
-		len = UI_StringWidth ( l->generic.flags, ( char * )*n  );
+		len = UI_StringWidth ( l->generic.flags, *n  );
 		xsize = max ( xsize, len );
 		ysize += spacing;
 
@@ -887,6 +886,8 @@ static void Separator_Init( menuseparator_s *s )
 
 static void Slider_Init( menuslider_s *s )
 {
+	s->generic.flags |= QMF_LEFT_JUSTIFY;
+
 	s->generic.mins[0] = s->generic.x + s->generic.parent->x + RCOLUMN_OFFSET - UI_AdjustStringPosition ( s->generic.flags, ( char * )s->generic.name );
 	s->generic.maxs[0] = s->generic.mins[0] + SLIDER_RANGE * SMALL_CHAR_WIDTH + SMALL_CHAR_WIDTH;
 
@@ -898,7 +899,7 @@ static void SpinControl_Init( menulist_s *s )
 {
 	char buffer[100] = { 0 };
 	int ysize, xsize, spacing, len;
-	const char **n;
+	char **n;
 
 	n = s->itemnames;
 
@@ -917,7 +918,7 @@ static void SpinControl_Init( menulist_s *s )
 	{
 		if ( !strchr( *n, '\n' ) )
 		{
-			len = UI_StringWidth ( s->generic.flags, ( ( char * )*n ) );
+			len = UI_StringWidth ( s->generic.flags, *n );
 			xsize = max ( xsize, len );
 		}
 		else
@@ -1123,7 +1124,7 @@ int Menu_TallySlots( menuframework_s *menu )
 		if ( ( ( menucommon_s * ) menu->items[i] )->type == MTYPE_LIST )
 		{
 			int nitems = 0;
-			const char **n = ( ( menulist_s * ) menu->items[i] )->itemnames;
+			char **n = ( ( menulist_s * ) menu->items[i] )->itemnames;
 
 			while (*n)
 				nitems++, n++;
@@ -1153,7 +1154,7 @@ void Menulist_DoEnter( menulist_s *l )
 
 void MenuList_Draw( menulist_s *l )
 {
-	const char **n;
+	char **n;
 	int x, y;
 
 	x = l->generic.x + l->generic.parent->x + LCOLUMN_OFFSET - 
@@ -1167,7 +1168,7 @@ void MenuList_Draw( menulist_s *l )
   	UI_FillRect ( l->generic.x - 112 + l->generic.parent->x, l->generic.parent->y + l->generic.y + l->curvalue*10 + 10, 128, 10, colorDkGrey );
 	while ( *n )
 	{
-		UI_DrawPropString ( x, y +=  UI_StringHeightOffset (l->generic.flags), ( char * )*n++, 0, colorYellow );
+		UI_DrawPropString ( x, y +=  UI_StringHeightOffset (l->generic.flags), *n++, 0, colorYellow );
 	}
 }
 

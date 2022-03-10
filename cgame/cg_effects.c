@@ -114,17 +114,16 @@ static void CG_FreeDlight ( cdlight_t *dl )
 CG_AddDlights
 ===============
 */
-void CG_AddDlights (void)
+void CG_AddDlights( void )
 {
 	cdlight_t	*dl, *hnode, *next;
 
 	hnode = &cg_dlights_headnode;
-	for ( dl = hnode->next; dl != hnode; dl = next )
-	{
+	for( dl = hnode->next; dl != hnode; dl = next ) {
 		next = dl->next;
 
-		CG_AddLight ( dl->origin, dl->radius, dl->color[0], dl->color[1], dl->color[2] );
-		CG_FreeDlight ( dl );
+		trap_R_AddLightToScene( dl->origin, dl->radius, dl->color[0], dl->color[1], dl->color[2] );
+		CG_FreeDlight( dl );
 	}
 }
 
@@ -845,7 +844,7 @@ void CG_AddParticles (void)
 		p->poly.colors = p->pColor;
 		p->poly.shader = shader;
 
-		CG_AddPoly ( &p->poly );
+		trap_R_AddPolyToScene ( &p->poly );
 	}
 
 	i = 0;
