@@ -344,13 +344,13 @@ local uLong unzlocal_SearchCentralDir(FILE *fin)
 	return uPosFound;
 }
 
-local unsigned int unzlocal_hashstring (const char *str)
+local int unzlocal_hashstring (const char *str)
 {
-	unsigned int hashval = 0;
+	int	hashval = 0;
 	const char *ofs = str;
 
 	while ( *ofs )
-		hashval += ( unsigned int ) * ofs++ + 1;
+		hashval += ( int ) * ofs++ + 1;
 
 	return hashval;
 }
@@ -362,11 +362,12 @@ int Unz_GenCache( unz_s *s )
 	uLong pos_in_central_dirSaved;
 	int amounts[HASHSIZE];
 	cacheelem_t *filecache;
-	int filecount;
-	int i, err, j;
-	unsigned int key;
+	int filecount = 0;
+	int i = 0, err = 0, j = 0;
+	int key = 0;
 	char szCurrentFileName[UNZ_MAXFILENAMEINZIP+1];
 	unzFile	file = (unzFile)s;
+	int numfilescached = 0;
 
 	if ( s == NULL )
 		return 0;
@@ -380,29 +381,29 @@ int Unz_GenCache( unz_s *s )
 	memset (amounts, 0, sizeof(int) * HASHSIZE);
 	memset (s->counts, 0, sizeof(int) * HASHSIZE);
 
-	filecount = 0;
-	err = unzGoToFirstFile(file);
 	while (err == UNZ_OK)
 	{
 		filecount++;	
 		err = unzGoToNextFile(file);
 	}
 
-	filecache = TRYALLOC (sizeof(cacheelem_t) * filecount);
-	memset (filecache, 0, sizeof(cacheelem_t) * filecount);
+	filecache = TRYALLOC (sizeof(cacheelem_t) * (filecount));
+	memset (filecache, 0, sizeof(cacheelem_t) * (filecount));
 
-	filecount = 0;
 	err = unzGoToFirstFile(file);
 	while (err == UNZ_OK)
 	{
 		unzGetCurrentFileInfo (file, NULL, szCurrentFileName, sizeof(szCurrentFileName)-1, NULL, 0, NULL, 0);
-		Com_sprintf (filecache[filecount].name, sizeof(filecache[filecount].name), szCurrentFileName);
-		filecache[filecount].filenum = s->num_file;
-		filecache[filecount++].pos_in_central_dir = s->pos_in_central_dir;
+		Com_sprintf (filecache[i].name, sizeof(filecache[i].name), szCurrentFileName);
+		filecache[i].filenum = s->num_file;
+		filecache[i].pos_in_central_dir = s->pos_in_central_dir;
 		err = unzGoToNextFile(file);
+		i++;
 	}
 
-	for (i = 0; i < filecount; i++)
+	numfilescached = i;
+	
+	for (i = 0; i < numfilescached; i++)
 	{
 		key = unzlocal_hashstring(filecache[i].name) % HASHSIZE;
 		amounts[key]++;
@@ -413,7 +414,7 @@ int Unz_GenCache( unz_s *s )
 	{
 		s->cache[i] = TRYALLOC(sizeof(cacheelem_t) * amounts[i]);
 
-		for (j = 0; j < filecount; j++)
+		for (j = 0; j < numfilescached; j++)
 		{
 			if (unzlocal_hashstring(filecache[j].name) % HASHSIZE == i)
 			{
@@ -426,7 +427,7 @@ int Unz_GenCache( unz_s *s )
 	}
 
 	TRYFREE (filecache);
-	return filecount;
+	return numfilescached;
 }
 
 /*

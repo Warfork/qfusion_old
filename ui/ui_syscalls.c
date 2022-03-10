@@ -100,6 +100,10 @@ void trap_S_StartLocalSound ( char *s ) {
 	uii.S_StartLocalSound ( s );
 }
 
+void trap_CL_Snd_Restart_f (void) {
+	uii.CL_Snd_Restart_f ();
+}
+
 void trap_CL_PingServers_f (void) {
 	uii.CL_PingServers_f ();
 }

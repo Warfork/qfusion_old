@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // common.c -- misc functions used in client and server
 #include "qcommon.h"
 #include <setjmp.h>
+#include <limits.h>
 
 #define	MAXPRINTMSG	4096
 
@@ -262,24 +263,6 @@ void Com_SetServerState (int state)
 	server_state = state;
 }
 
-/*
-==========
-Com_HashKey
-
-Returns hash key for a string
-==========
-*/
-int Com_HashKey (char *name, int hashsize)
-{
-	unsigned char v;
-	int c;
-
-	v = 0;
-	while ( (c = *name++) != 0 )
-		v += c &~ 32;	// very lame, but works (case insensitivity)
-
-	return v % hashsize;
-}
 
 /*
 ==============================================================================
@@ -373,9 +356,22 @@ void MSG_WriteString (sizebuf_t *sb, char *s)
 		SZ_Write (sb, s, strlen(s)+1);
 }
 
-void MSG_WriteInt3 (sizebuf_t *sb, int c)
+void MSG_WriteShortCoord (sizebuf_t *sb, float f)
+{
+	MSG_WriteShort (sb, Q_rint(f*8));
+}
+
+void MSG_WriteShortPos (sizebuf_t *sb, vec3_t pos)
+{
+	MSG_WriteShortCoord (sb, pos[0]);
+	MSG_WriteShortCoord (sb, pos[1]);
+	MSG_WriteShortCoord (sb, pos[2]);
+}
+
+void MSG_WriteLongCoord (sizebuf_t *sb, float f)
 {
 	byte	*buf;
+	int		c = Q_rint(f*8);
 	
 	buf = SZ_GetSpace (sb, 3);
 	buf[0] = c&0xff;
@@ -383,16 +379,11 @@ void MSG_WriteInt3 (sizebuf_t *sb, int c)
 	buf[2] = (c>>16)&0xff;
 }
 
-void MSG_WriteCoord (sizebuf_t *sb, float f)
+void MSG_WriteLongPos (sizebuf_t *sb, vec3_t pos)
 {
-	MSG_WriteInt3 (sb, Q_rint(f*8));
-}
-
-void MSG_WritePos (sizebuf_t *sb, vec3_t pos)
-{
-	MSG_WriteCoord (sb, pos[0]);
-	MSG_WriteCoord (sb, pos[1]);
-	MSG_WriteCoord (sb, pos[2]);
+	MSG_WriteLongCoord (sb, pos[0]);
+	MSG_WriteLongCoord (sb, pos[1]);
+	MSG_WriteLongCoord (sb, pos[2]);
 }
 
 void MSG_WriteAngle (sizebuf_t *sb, float f)
@@ -516,12 +507,24 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if (to->number >= 256)
 		bits |= U_NUMBER16;		// number8 is implicit otherwise
 
-	if ( to->origin[0] != from->origin[0] )
-		bits |= U_ORIGIN1;
-	if ( to->origin[1] != from->origin[1] )
-		bits |= U_ORIGIN2;
-	if ( to->origin[2] != from->origin[2] )
-		bits |= U_ORIGIN3;
+	if (to->origin[0] != from->origin[0]) {
+		if ( fabs( to->origin[0]) > SHRT_MAX*(1.0/8.0) )
+			bits |= U_ORIGIN1L;
+		else 
+			bits |= U_ORIGIN1;
+	}
+	if (to->origin[1] != from->origin[1]) {
+		if ( fabs( to->origin[1]) > SHRT_MAX*(1.0/8.0))
+			bits |= U_ORIGIN2L;
+		else 
+			bits |= U_ORIGIN2;
+	}
+	if (to->origin[2] != from->origin[2]) {
+		if ( fabs( to->origin[2]) > SHRT_MAX*(1.0/8.0))
+			bits |= U_ORIGIN3L;
+		else 
+			bits |= U_ORIGIN3;
+	}
 
 	if ( to->angles[0] != from->angles[0] )
 		bits |= U_ANGLE1;		
@@ -587,8 +590,14 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if ( to->sound != from->sound )
 		bits |= U_SOUND;
 
-	if (newentity || (to->renderfx & RF_BEAM))
-		bits |= U_OLDORIGIN;
+	if (newentity || (to->renderfx & RF_BEAM)) {
+		if ( fabs( to->origin[0]) > SHRT_MAX*(1.0/8.0) ||
+			fabs( to->origin[1]) > SHRT_MAX*(1.0/8.0) ||
+			fabs( to->origin[2]) > SHRT_MAX*(1.0/8.0) )
+			bits |= U_OLDORIGINL;
+		else
+			bits |= U_OLDORIGIN;
+	}
 
 	//
 	// write the message
@@ -666,12 +675,26 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	else if (bits & U_RENDERFX16)
 		MSG_WriteShort (msg, to->renderfx);
 
-	if (bits & U_ORIGIN1)
-		MSG_WriteCoord (msg, to->origin[0]);
-	if (bits & U_ORIGIN2)
-		MSG_WriteCoord (msg, to->origin[1]);
-	if (bits & U_ORIGIN3)
-		MSG_WriteCoord (msg, to->origin[2]);
+	if ( (bits & (U_ORIGIN1|U_ORIGIN1L)) == (U_ORIGIN1|U_ORIGIN1L) )
+		Com_Error (ERR_FATAL, "U_ORIGIN1|U_ORIGIN1L");
+	else if (bits & U_ORIGIN1)
+		MSG_WriteShortCoord (msg, to->origin[0]);
+	else if (bits & U_ORIGIN1L)
+		MSG_WriteLongCoord (msg, to->origin[0]);
+
+	if ( (bits & (U_ORIGIN2|U_ORIGIN2L)) == (U_ORIGIN2|U_ORIGIN2L) )
+		Com_Error (ERR_FATAL, "U_ORIGIN2|U_ORIGIN2L");
+	else if (bits & U_ORIGIN2)
+		MSG_WriteShortCoord (msg, to->origin[1]);
+	else if (bits & U_ORIGIN2L)
+		MSG_WriteLongCoord (msg, to->origin[1]);
+
+	if ( (bits & (U_ORIGIN3|U_ORIGIN3L)) == (U_ORIGIN3|U_ORIGIN3L) )
+		Com_Error (ERR_FATAL, "U_ORIGIN3|U_ORIGIN3L");
+	else if (bits & U_ORIGIN3)
+		MSG_WriteShortCoord (msg, to->origin[2]);
+	else if (bits & U_ORIGIN3L)
+		MSG_WriteLongCoord (msg, to->origin[2]);
 
 	if (bits & U_ANGLE1)
 		MSG_WriteAngle(msg, to->angles[0]);
@@ -680,8 +703,12 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if (bits & U_ANGLE3)
 		MSG_WriteAngle(msg, to->angles[2]);
 
-	if (bits & U_OLDORIGIN)
-		MSG_WritePos (msg, to->old_origin);
+	if ( (bits & (U_OLDORIGIN|U_OLDORIGINL)) == (U_OLDORIGIN|U_OLDORIGINL))
+		Com_Error (ERR_FATAL, "U_OLDORIGIN|U_OLDORIGINL");
+	else if (bits & U_OLDORIGINL)
+		MSG_WriteLongPos (msg, to->old_origin);
+	else if (bits & U_OLDORIGIN)
+		MSG_WriteShortPos (msg, to->old_origin);
 
 	if (bits & U_SOUND)
 		MSG_WriteByte (msg, to->sound);
@@ -742,23 +769,6 @@ int MSG_ReadShort (sizebuf_t *msg_read)
 	
 	msg_read->readcount += 2;
 	
-	return c;
-}
-
-int MSG_ReadInt3 (sizebuf_t *msg_read)
-{
-	int	c;
-	
-	if (msg_read->readcount+3 > msg_read->cursize)
-		c = -1;
-	else
-		c = msg_read->data[msg_read->readcount] | 
-			(msg_read->data[msg_read->readcount+1]<<8) | 
-			(msg_read->data[msg_read->readcount+2]<<16) | 
-			((msg_read->data[msg_read->readcount+2] & 0x80) ? ~0xFFFFFF : 0);
-	
-	msg_read->readcount += 3;
-
 	return c;
 }
 
@@ -844,16 +854,41 @@ char *MSG_ReadStringLine (sizebuf_t *msg_read)
 	return string;
 }
 
-float MSG_ReadCoord (sizebuf_t *msg_read)
+float MSG_ReadShortCoord (sizebuf_t *msg_read)
 {
-	return MSG_ReadInt3( msg_read ) * (1.0/8.0);
+	return MSG_ReadShort(msg_read) * (1.0/8.0);
 }
 
-void MSG_ReadPos (sizebuf_t *msg_read, vec3_t pos)
+void MSG_ReadShortPos (sizebuf_t *msg_read, vec3_t pos)
 {
-	pos[0] = MSG_ReadCoord ( msg_read );
-	pos[1] = MSG_ReadCoord ( msg_read );
-	pos[2] = MSG_ReadCoord ( msg_read );
+	pos[0] = MSG_ReadShortCoord ( msg_read );
+	pos[1] = MSG_ReadShortCoord ( msg_read );
+	pos[2] = MSG_ReadShortCoord ( msg_read );
+}
+
+
+float MSG_ReadLongCoord (sizebuf_t *msg_read)
+{
+	int	c;
+	
+	if (msg_read->readcount+3 > msg_read->cursize)
+		c = -1;
+	else
+		c = msg_read->data[msg_read->readcount] | 
+			(msg_read->data[msg_read->readcount+1]<<8) | 
+			(msg_read->data[msg_read->readcount+2]<<16) | 
+			((msg_read->data[msg_read->readcount+2] & 0x80) ? ~0xFFFFFF : 0);
+	
+	msg_read->readcount += 3;
+	
+	return c * (1.0/8.0);
+}
+
+void MSG_ReadLongPos (sizebuf_t *msg_read, vec3_t pos)
+{
+	pos[0] = MSG_ReadLongCoord ( msg_read );
+	pos[1] = MSG_ReadLongCoord ( msg_read );
+	pos[2] = MSG_ReadLongCoord ( msg_read );
 }
 
 float MSG_ReadAngle (sizebuf_t *msg_read)
@@ -1505,7 +1540,7 @@ void Qcommon_Init (int argc, char **argv)
 		SCR_EndLoadingPlaque ();
 	}
 
-	Com_Printf ("====== %s Initialized ======\n\n", APPLICATION);	
+	Com_Printf ("====== Quake2 Initialized ======\n\n");	
 }
 
 /*
@@ -1565,16 +1600,13 @@ void Qcommon_Frame (int msec)
 		c_pointcontents = 0;
 	}
 
-	if ( dedicated->value ) {
-		do
-		{
-			s = Sys_ConsoleInput ();
-			if (s)
-				Cbuf_AddText (va("%s\n",s));
-		} while (s);
-
-		Cbuf_Execute ();
-	}
+	do
+	{
+		s = Sys_ConsoleInput ();
+		if (s)
+			Cbuf_AddText (va("%s\n",s));
+	} while (s);
+	Cbuf_Execute ();
 
 	if (host_speeds->value)
 		time_before = Sys_Milliseconds ();

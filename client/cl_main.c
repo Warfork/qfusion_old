@@ -116,12 +116,6 @@ void CL_WriteDemoMessage (void)
 	// the first eight bytes are just packet sequencing stuff
 	len = net_message.cursize-8;
 	swlen = LittleLong(len);
-
-	// skip bad packets
-	if ( !swlen ) {
-		return;
-	}
-
 	fwrite (&swlen, 4, 1, cls.demofile);
 	fwrite (net_message.data+8,	len, 1, cls.demofile);
 }
@@ -779,26 +773,17 @@ void CL_Reconnect_f (void)
 
 /*
 =================
-CL_PlayBackgroundMusic
-==================
-*/
-void CL_PlayBackgroundMusic ( void )
-{
-	if ( cl.music_precache )
-		S_StartSound ( NULL, cl.playernum+1, 0, cl.music_precache, 1, 1, 0 );
-}
-
-/*
-=================
 CL_Spawn
 
 Called at first spawn on the server
 =================
 */
+
 void CL_Spawn ( void )
 {
 	// start playing background music
-	CL_PlayBackgroundMusic ();
+	if ( cl.configstrings[CS_AUDIOTRACK][0] )
+		S_StartLocalSound ( cl.configstrings[CS_AUDIOTRACK] );
 }
 
 /*
@@ -1123,7 +1108,6 @@ void CL_Snd_Restart_f (void)
 	S_Shutdown ();
 	S_Init ();
 	CL_RegisterSounds ();
-	CL_PlayBackgroundMusic ();
 }
 
 int precache_check; // for autodownload of precache items
@@ -1232,7 +1216,11 @@ void CL_RequestNextDownload (void)
 					continue;
 				}
 
-				Com_sprintf(fn, sizeof(fn), "%s", cl.configstrings[precache_check++]);
+				if (!strncmp (cl.configstrings[precache_check], "sound/", 6))
+					Com_sprintf(fn, sizeof(fn), "%s", cl.configstrings[precache_check++]);
+				else
+					Com_sprintf(fn, sizeof(fn), "sound/%s", cl.configstrings[precache_check++]);
+
 				if (!CL_CheckOrDownloadFile(fn))
 					return; // started a download
 			}
@@ -1337,7 +1325,7 @@ void CL_RequestNextDownload (void)
 			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "levelshots/%s.tga", cl.mapname );
 
 		if ( !FS_FileExists ( cl.levelshot ) ) 
-			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "menu/art/unknownmap", cl.mapname );
+			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "menu/art/unknownmap" );
 
 		CM_LoadMap (cl.configstrings[CS_MODELS+1], true, &map_checksum);
 
@@ -1604,7 +1592,9 @@ cheatvar_t	cheatvars[] = {
 	{"r_drawflat", "0"},
 	{"paused", "0"},
 	{"fixedtime", "0"},
+	{"sw_draworder", "0"},
 	{"gl_lightmap", "0"},
+	{"gl_saturatelighting", "0"},
 	{NULL, NULL}
 };
 

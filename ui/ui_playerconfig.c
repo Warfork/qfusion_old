@@ -434,7 +434,6 @@ void PlayerConfig_MenuDraw( void )
 		entity.origin[0] = 100;
 		entity.origin[1] = 0;
 		entity.origin[2] = 0;
-		entity.scale = 1.0f;
 		VectorCopy( entity.origin, entity.oldorigin );
 		entity.backlerp = 0.0;
 		entity.angles[1] = yaw++;

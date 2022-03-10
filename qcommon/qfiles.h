@@ -534,6 +534,9 @@ typedef struct {
 	int				visibleside;
 } dfog_t;
 
+#define	ANGLE_UP	-1
+#define	ANGLE_DOWN	-2
+
 typedef struct
 {
 	int				numclusters;
@@ -543,7 +546,7 @@ typedef struct
 
 typedef struct
 {
-	unsigned char	ambient[3];
-	unsigned char	diffuse[3];
-	unsigned char	direction[2];
+	unsigned char	lightAmbient[3];
+	unsigned char	lightDiffuse[3];
+	unsigned char	lightPosition[2];
 } dlightgrid_t;

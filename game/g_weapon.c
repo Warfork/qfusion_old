@@ -211,7 +211,7 @@ static void fire_lead (edict_t *self, vec3_t start, vec3_t aimdir, int damage, i
 	}
 
 	// send gun puff / flash
-	if (!(tr.surface && (tr.surface->flags & SURF_NOIMPACT)))
+	if (!((tr.surface) && (tr.surface->flags & SURF_SKY)))
 	{
 		if (tr.fraction < 1.0)
 		{
@@ -221,7 +221,7 @@ static void fire_lead (edict_t *self, vec3_t start, vec3_t aimdir, int damage, i
 			}
 			else
 			{
-				if ( !(tr.surface->flags & SURF_NOIMPACT) )
+				if ( !(tr.surface->flags & SURF_SKY) )
 				{
 					gi.WriteByte (svc_temp_entity);
 					gi.WriteByte (te_impact);
@@ -305,7 +305,7 @@ void blaster_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *
 	if (other == self->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_NOIMPACT))
+	if (surf && (surf->flags & SURF_SKY))
 	{
 		G_FreeEdict (self);
 		return;
@@ -447,7 +447,7 @@ static void Grenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, csurfa
 	if (other == ent->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_NOIMPACT))
+	if (surf && (surf->flags & SURF_SKY))
 	{
 		G_FreeEdict (ent);
 		return;
@@ -553,7 +553,7 @@ void rocket_touch (edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *su
 	if (other == ent->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_NOIMPACT))
+	if (surf && (surf->flags & SURF_SKY))
 	{
 		G_FreeEdict (ent);
 		return;
@@ -733,7 +733,7 @@ void bfg_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf
 	if (other == self->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_NOIMPACT))
+	if (surf && (surf->flags & SURF_SKY))
 	{
 		G_FreeEdict (self);
 		return;

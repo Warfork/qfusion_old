@@ -119,11 +119,19 @@ void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, int bi
 		to->renderfx = MSG_ReadShort(&net_message);
 
 	if (bits & U_ORIGIN1)
-		to->origin[0] = MSG_ReadCoord (&net_message);
+		to->origin[0] = MSG_ReadShortCoord (&net_message);
+	else if (bits & U_ORIGIN1L)
+		to->origin[0] = MSG_ReadLongCoord (&net_message);
+
 	if (bits & U_ORIGIN2)
-		to->origin[1] = MSG_ReadCoord (&net_message);
+		to->origin[1] = MSG_ReadShortCoord (&net_message);
+	else if (bits & U_ORIGIN2L)
+		to->origin[1] = MSG_ReadLongCoord (&net_message);
+
 	if (bits & U_ORIGIN3)
-		to->origin[2] = MSG_ReadCoord (&net_message);
+		to->origin[2] = MSG_ReadShortCoord (&net_message);
+	else if (bits & U_ORIGIN3L)
+		to->origin[2] = MSG_ReadLongCoord (&net_message);
 		
 	if (bits & U_ANGLE1)
 		to->angles[0] = MSG_ReadAngle(&net_message);
@@ -133,7 +141,9 @@ void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, int bi
 		to->angles[2] = MSG_ReadAngle(&net_message);
 
 	if (bits & U_OLDORIGIN)
-		MSG_ReadPos (&net_message, to->old_origin);
+		MSG_ReadShortPos (&net_message, to->old_origin);
+	else if (bits & U_OLDORIGINL)
+		MSG_ReadLongPos (&net_message, to->old_origin);
 
 	if (bits & U_SOUND)
 		to->sound = MSG_ReadByte (&net_message);
@@ -373,16 +383,16 @@ void CL_ParsePlayerstate (frame_t *oldframe, frame_t *newframe)
 
 	if (flags & PS_M_ORIGIN)
 	{
-		state->pmove.origin[0] = MSG_ReadInt3 (&net_message);
-		state->pmove.origin[1] = MSG_ReadInt3 (&net_message);
-		state->pmove.origin[2] = MSG_ReadInt3 (&net_message);
+		state->pmove.origin[0] = MSG_ReadShort (&net_message);
+		state->pmove.origin[1] = MSG_ReadShort (&net_message);
+		state->pmove.origin[2] = MSG_ReadShort (&net_message);
 	}
 
 	if (flags & PS_M_VELOCITY)
 	{
-		state->pmove.velocity[0] = MSG_ReadInt3 (&net_message);
-		state->pmove.velocity[1] = MSG_ReadInt3 (&net_message);
-		state->pmove.velocity[2] = MSG_ReadInt3 (&net_message);
+		state->pmove.velocity[0] = MSG_ReadShort (&net_message);
+		state->pmove.velocity[1] = MSG_ReadShort (&net_message);
+		state->pmove.velocity[2] = MSG_ReadShort (&net_message);
 	}
 
 	if (flags & PS_M_TIME)
@@ -681,7 +691,7 @@ void CL_AddPacketEntities (void)
 		effects = state->effects;
 		renderfx = state->renderfx;
 
-		// set frame
+			// set frame
 		if (effects & EF_ANIM01)
 			ent.frame = autoanim & 1;
 		else if (effects & EF_ANIM23)
@@ -707,9 +717,6 @@ void CL_AddPacketEntities (void)
 			effects |= EF_COLOR_SHELL;
 			renderfx |= RF_SHELL_BLUE;
 		}
-
-		if ( state->number < MAX_CLIENTS+1 )
-			renderfx |= RF_MINLIGHT;
 
 		ent.oldframe = cent->prev.frame;
 		ent.backlerp = 1.0 - cl.lerpfrac;
@@ -766,13 +773,8 @@ void CL_AddPacketEntities (void)
 			ent.alpha = 0.70;
 
 		// render effects (fullbright, translucent, etc)
-		if (effects & EF_COLOR_SHELL) 
-		{
-			if (renderfx & RF_MINLIGHT)
-				ent.flags = RF_MINLIGHT;	// renderfx go on color shell entity
-			else
-				ent.flags = 0;
-		}
+		if (effects & EF_COLOR_SHELL)
+			ent.flags = 0;	// renderfx go on color shell entity
 		else
 			ent.flags = renderfx;
 
@@ -813,22 +815,15 @@ void CL_AddPacketEntities (void)
 
 		if (state->number == cl.playernum+1)
 		{
-			if ( !cl_thirdPerson->value ) {
-				ent.flags |= RF_VIEWERMODEL;	// only draw from mirrors
-
-				if (effects & EF_FLAG1)
-					V_AddLight (ent.origin, 225, 1.0, 0.1, 0.1);
-				else if (effects & EF_FLAG2)
-					V_AddLight (ent.origin, 225, 0.1, 0.1, 1.0);
-				cl.thirdperson = false;
-			} else { 
-				cl.thirdperson = ( state->modelindex != 0 );
-			}
-
+			ent.flags |= RF_VIEWERMODEL;	// only draw from mirrors
 			// FIXME: still pass to refresh
+
+			if (effects & EF_FLAG1)
+				V_AddLight (ent.origin, 225, 1.0, 0.1, 0.1);
+			else if (effects & EF_FLAG2)
+				V_AddLight (ent.origin, 225, 0.1, 0.1, 1.0);
 	
-			if ( ent.flags & RF_VIEWERMODEL )
-				continue;
+			continue;
 		}
 
 		// if set to invisible, skip
@@ -885,21 +880,8 @@ void CL_AddPacketEntities (void)
 		}
 		if (state->modelindex3)
 		{
-			int frame, oldframe;
-
-			frame = ent.frame;
-			oldframe = ent.oldframe;
-
-			if ( effects & (EF_FLAG1|EF_FLAG2) ) {
-				ent.frame = 0;
-				ent.oldframe = 0;
-			}
-
 			ent.model = cl.model_draw[state->modelindex3];
 			V_AddEntity (&ent);
-
-			ent.frame = frame;
-			ent.oldframe = oldframe;
 		}
 		if (state->modelindex4)
 		{
@@ -961,16 +943,6 @@ void CL_AddPacketEntities (void)
 				}
 				V_AddLight (ent.origin, i, 0, 1, 0);
 			}
-			else if (effects & EF_FLAG1)
-			{
-				CL_FlagTrail (cent->lerp_origin, ent.origin, 242);
-				V_AddLight (ent.origin, 225, 1, 0.1, 0.1);
-			}
-			else if (effects & EF_FLAG2)
-			{
-				CL_FlagTrail (cent->lerp_origin, ent.origin, 115);
-				V_AddLight (ent.origin, 225, 0.1, 0.1, 1);
-			}
 		}
 
 		VectorCopy (ent.origin, cent->lerp_origin);
@@ -990,7 +962,7 @@ void CL_AddViewWeapon (player_state_t *ps, player_state_t *ops)
 	int			i;
 
 	// allow the gun to be completely removed
-	if (!cl_gun->value || cl.thirdperson )
+	if (!cl_gun->value)
 		return;
 
 	// don't draw gun if in wide angle view
@@ -1059,8 +1031,7 @@ void CL_CalcViewValues (void)
 	lerp = cl.lerpfrac;
 
 	// calculate the origin
-	if (cl_predict->value && !(cl.frame.playerstate.pmove.pm_flags & PMF_NO_PREDICTION)
-		&& !cl.thirdperson )
+	if (cl_predict->value && !(cl.frame.playerstate.pmove.pm_flags & PMF_NO_PREDICTION))
 	{	// use predicted values
 		unsigned	delta;
 

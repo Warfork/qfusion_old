@@ -935,7 +935,7 @@ void SV_UserinfoChanged (client_t *cl)
 ===============
 SV_Init
 
-Only called at plat.exe startup, not for each game
+Only called at quake2.exe startup, not for each game
 ===============
 */
 void SV_Init (void)
@@ -1037,7 +1037,7 @@ void SV_Shutdown (char *finalmsg, qboolean reconnect)
 
 	// free current level
 	if (sv.demofile)
-		FS_FCloseFile (sv.demofile);
+		fclose (sv.demofile);
 	memset (&sv, 0, sizeof(sv));
 	Com_SetServerState (sv.state);
 

@@ -201,6 +201,7 @@ qboolean UI_Load( char *name )
 
 	ui.S_StartLocalSound = S_StartLocalSound;
 
+	ui.CL_Snd_Restart_f = CL_Snd_Restart_f;
 	ui.CL_PingServers_f = CL_PingServers_f;
 	ui.CL_Quit_f = CL_Quit_f;
 	ui.CL_GetTime_f = CL_GetTime_f;

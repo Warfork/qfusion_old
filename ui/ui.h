@@ -1,7 +1,7 @@
 
 #include "../client/ref.h"
 
-#define	UI_API_VERSION		5
+#define	UI_API_VERSION		4
 
 typedef struct
 {
@@ -43,6 +43,7 @@ typedef struct
 
 	void	(*S_StartLocalSound) (char *s);
 
+	void	(*CL_Snd_Restart_f) (void);
 	void	(*CL_PingServers_f) (void);
 	float	(*CL_GetTime_f) (void);
 	void	(*CL_SetKeyDest_f) ( enum keydest_t keydest );

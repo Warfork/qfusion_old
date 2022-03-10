@@ -133,14 +133,10 @@ static void M_FindKeysForCommand (char *command, int *twokeys)
 
 static void KeyCursorDrawFunc( menuframework_s *menu )
 {
-	menucommon_s *item;
-
-	item = Menu_ItemAtCursor( menu );
-
 	if ( bind_grab )
-		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, '=', FONT_BIG, colorWhite );
+		trap_DrawChar( menu->x, menu->y + menu->cursor * (BIG_CHAR_HEIGHT+1), '=', FONT_BIG, colorWhite );
 	else
-		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, 12 + ( ( int ) ( Sys_Milliseconds() / 250 ) & 1 ), FONT_BIG, colorWhite );
+		trap_DrawChar( menu->x, menu->y + menu->cursor * (BIG_CHAR_HEIGHT+1), 12 + ( ( int ) ( Sys_Milliseconds() / 250 ) & 1 ), FONT_BIG, colorWhite );
 }
 
 static void DrawKeyBindingFunc( void *self )
@@ -190,15 +186,11 @@ static void KeyBindingFunc( void *self )
 
 static void Keys_MenuInit( void )
 {
-	int w, h;
 	int y = 0;
 	int i = 0;
 	int y_offset = BIG_CHAR_HEIGHT - 2;
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
-
-	s_keys_menu.x = w / 2;
-	s_keys_menu.y = h / 2 - 80;
+	s_keys_menu.x = trap_GetWidth() * 0.50;
 	s_keys_menu.nitems = 0;
 	s_keys_menu.cursordraw = KeyCursorDrawFunc;
 

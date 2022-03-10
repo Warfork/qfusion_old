@@ -23,16 +23,18 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 image_t		gltextures[MAX_GLTEXTURES];
 int			numgltextures;
+int			base_textureid;		// gltextures[i] = base_textureid+i
 
 int			gl_maxtexsize;
+unsigned	*gl_texscaled;
 
 static unsigned char gammatable[256];
 
 unsigned	d_8to24table[256];
 float		d_8to24floattable[256][3];
 
-void GL_Upload8 ( byte *data, int width, int height, int flags );
-void GL_Upload32 ( unsigned *data, int width, int height, int flags );
+qboolean GL_Upload8 ( byte *data, int width, int height, int flags );
+qboolean GL_Upload32 ( unsigned *data, int width, int height, int flags );
 
 
 int		gl_solid_format = 3;
@@ -43,13 +45,6 @@ int		gl_tex_alpha_format = 4;
 
 int		gl_filter_min = GL_LINEAR_MIPMAP_NEAREST;
 int		gl_filter_max = GL_LINEAR;
-
-
-byte	default_pal[] = 
-{
-#include "def_pal.dat"
-};
-
 
 void GL_EnableMultitexture( qboolean enable )
 {
@@ -487,12 +482,11 @@ void LoadTGA (char *name, byte **pic, int *width, int *height)
 	targa_header.attributes = *buf_p++;
 
 	if (targa_header.image_type!=2 
-		&& targa_header.image_type!=10
-		&& targa_header.image_type != 3) 
-		Com_Error (ERR_DROP, "LoadTGA: Only type 2, 3 and 10 targa images supported\n");
+		&& targa_header.image_type!=10) 
+		Com_Error (ERR_DROP, "LoadTGA: Only type 2 and 10 targa RGB images supported\n");
 
-	if (targa_header.image_type != 3 
-		&& (targa_header.pixel_size!=32 && targa_header.pixel_size!=24))
+	if (targa_header.colormap_type !=0 
+		|| (targa_header.pixel_size!=32 && targa_header.pixel_size!=24))
 		Com_Error (ERR_DROP, "LoadTGA: Only 32 or 24 bit images supported (no colormaps)\n");
 
 	columns = targa_header.width;
@@ -510,41 +504,32 @@ void LoadTGA (char *name, byte **pic, int *width, int *height)
 	if (targa_header.id_length != 0)
 		buf_p += targa_header.id_length;  // skip TARGA image comment
 	
-	if (targa_header.image_type==2 || targa_header.image_type==3) {  
-		// Uncompressed, RGB images or greyscale
+	if (targa_header.image_type==2) {  // Uncompressed, RGB images
 		for(row=rows-1; row>=0; row--) {
 			pixbuf = targa_rgba + row*columns*4;
 			for(column=0; column<columns; column++) {
 				unsigned char red,green,blue,alphabyte;
 				switch (targa_header.pixel_size) {
-					case 8:
-						blue = *buf_p++;
-						green = red = blue;
-						*pixbuf++ = red;
-						*pixbuf++ = green;
-						*pixbuf++ = blue;
-						*pixbuf++ = 255;
-						break;
-
 					case 24:
-						blue = *buf_p++;
-						green = *buf_p++;
-						red = *buf_p++;
-						*pixbuf++ = red;
-						*pixbuf++ = green;
-						*pixbuf++ = blue;
-						*pixbuf++ = 255;
-						break;
+							
+							blue = *buf_p++;
+							green = *buf_p++;
+							red = *buf_p++;
+							*pixbuf++ = red;
+							*pixbuf++ = green;
+							*pixbuf++ = blue;
+							*pixbuf++ = 255;
+							break;
 					case 32:
-						blue = *buf_p++;
-						green = *buf_p++;
-						red = *buf_p++;
-						alphabyte = *buf_p++;
-						*pixbuf++ = red;
-						*pixbuf++ = green;
-						*pixbuf++ = blue;
-						*pixbuf++ = alphabyte;
-						break;
+							blue = *buf_p++;
+							green = *buf_p++;
+							red = *buf_p++;
+							alphabyte = *buf_p++;
+							*pixbuf++ = red;
+							*pixbuf++ = green;
+							*pixbuf++ = blue;
+							*pixbuf++ = alphabyte;
+							break;
 				}
 			}
 		}
@@ -559,17 +544,17 @@ void LoadTGA (char *name, byte **pic, int *width, int *height)
 				if (packetHeader & 0x80) {        // run-length packet
 					switch (targa_header.pixel_size) {
 						case 24:
-							blue = *buf_p++;
-							green = *buf_p++;
-							red = *buf_p++;
-							alphabyte = 255;
-							break;
+								blue = *buf_p++;
+								green = *buf_p++;
+								red = *buf_p++;
+								alphabyte = 255;
+								break;
 						case 32:
-							blue = *buf_p++;
-							green = *buf_p++;
-							red = *buf_p++;
-							alphabyte = *buf_p++;
-							break;
+								blue = *buf_p++;
+								green = *buf_p++;
+								red = *buf_p++;
+								alphabyte = *buf_p++;
+								break;
 					}
 	
 					for(j=0;j<packetSize;j++) {
@@ -592,24 +577,24 @@ void LoadTGA (char *name, byte **pic, int *width, int *height)
 					for(j=0;j<packetSize;j++) {
 						switch (targa_header.pixel_size) {
 							case 24:
-								blue = *buf_p++;
-								green = *buf_p++;
-								red = *buf_p++;
-								*pixbuf++ = red;
-								*pixbuf++ = green;
-								*pixbuf++ = blue;
-								*pixbuf++ = 255;
-								break;
+									blue = *buf_p++;
+									green = *buf_p++;
+									red = *buf_p++;
+									*pixbuf++ = red;
+									*pixbuf++ = green;
+									*pixbuf++ = blue;
+									*pixbuf++ = 255;
+									break;
 							case 32:
-								blue = *buf_p++;
-								green = *buf_p++;
-								red = *buf_p++;
-								alphabyte = *buf_p++;
-								*pixbuf++ = red;
-								*pixbuf++ = green;
-								*pixbuf++ = blue;
-								*pixbuf++ = alphabyte;
-								break;
+									blue = *buf_p++;
+									green = *buf_p++;
+									red = *buf_p++;
+									alphabyte = *buf_p++;
+									*pixbuf++ = red;
+									*pixbuf++ = green;
+									*pixbuf++ = blue;
+									*pixbuf++ = alphabyte;
+									break;
 						}
 						column++;
 						if (column==columns) { // pixel packet run spans across rows
@@ -630,17 +615,20 @@ void LoadTGA (char *name, byte **pic, int *width, int *height)
 	FS_FreeFile (buffer);
 }
 
-static void jpg_noop(j_decompress_ptr cinfo)
+static void
+jpg_noop(j_decompress_ptr cinfo)
 {
 }
 
-static boolean jpg_fill_input_buffer(j_decompress_ptr cinfo)
+static boolean
+jpg_fill_input_buffer(j_decompress_ptr cinfo)
 {
     Com_Printf ("Premeture end of jpeg file");
     return true;
 }
 
-static void jpg_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
+static void
+jpg_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
 {
         
     cinfo->src->next_input_byte += (size_t) num_bytes;
@@ -649,7 +637,8 @@ static void jpg_skip_input_data(j_decompress_ptr cinfo, long num_bytes)
 		Com_Printf("Premeture end of jpeg file");
 }
 
-static void jpeg_mem_src(j_decompress_ptr cinfo, byte *mem, int len)
+static void
+jpeg_mem_src(j_decompress_ptr cinfo, byte *mem, int len)
 {
     cinfo->src = (struct jpeg_source_mgr *)
 	(*cinfo->mem->alloc_small)((j_common_ptr) cinfo,
@@ -704,11 +693,11 @@ void LoadJPG (char *name, byte **pic, int *width, int *height)
     {
 		jpeg_read_scanlines (&cinfo, &c, 1);
 
-		for (i = 0; i < cinfo.output_width; i++, img+=4)
+		for (i = 0; i < cinfo.output_width; i++, img+=4, c+=3)
 		{
-			img[0] = *c++;
-			img[1] = *c++;
-			img[2] = *c++;
+			img[0] = c[0];
+			img[1] = c[1];
+			img[2] = c[2];
 			img[3] = 255;
 		}
     }
@@ -987,14 +976,16 @@ void GL_MipMap (byte *in, int width, int height)
 /*
 ===============
 GL_Upload32
+
+Returns has_alpha
 ===============
 */
 
 int		upload_width, upload_height;
-void GL_Upload32 (unsigned *data, int width, int height, int flags)
+qboolean GL_Upload32 (unsigned *data, int width, int height, int flags)
 {
 	int			samples;
-	unsigned	*scaled;
+	unsigned	*scaled = gl_texscaled;
 	int			scaled_width, scaled_height;
 	int			i, c;
 	byte		*scan;
@@ -1032,8 +1023,6 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 
 	if (scaled_width * scaled_height > gl_maxtexsize*gl_maxtexsize)
 		Com_Error (ERR_DROP, "GL_Upload32: too big");
-
-	scaled = (unsigned *)Q_malloc(scaled_width*scaled_height*4);
 
 	// scan the texture for any non-255 alpha
 	c = width*height;
@@ -1117,15 +1106,17 @@ done: ;
 		qglTexParameteri (GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	}
 
-	Q_free ( scaled );
+	return (samples == gl_alpha_format);
 }
 
 /*
 ===============
 GL_Upload8
+
+Returns has_alpha
 ===============
 */
-void GL_Upload8 (byte *data, int width, int height, int flags )
+qboolean GL_Upload8 (byte *data, int width, int height, int flags )
 {
 	unsigned	trans[512*256];
 	int			i, s;
@@ -1163,7 +1154,7 @@ void GL_Upload8 (byte *data, int width, int height, int flags )
 		}
 	}
 	
-	GL_Upload32 (trans, width, height, flags);
+	return GL_Upload32 (trans, width, height, flags);
 }
 
 
@@ -1211,10 +1202,12 @@ image_t *GL_LoadPic (char *name, byte *pic, int width, int height, int flags, in
 
 	if ( !(flags & IT_FOG) ) {
 		if (bits == 8)
-			GL_Upload8 ( pic, width, height, flags );
+			image->has_alpha = GL_Upload8 ( pic, width, height, flags );
 		else
-			GL_Upload32 ((unsigned *)pic, width, height, flags );
+			image->has_alpha = GL_Upload32 ((unsigned *)pic, width, height, flags );
 	} else {
+		image->has_alpha = true;
+
 		upload_width = width;
 		upload_height = height;
 
@@ -1282,7 +1275,7 @@ Tries to load images in this sequence: .tga->.jpg->.pcx.
 image_t	*GL_LoadImage (char *name, int flags)
 {
 	image_t	*image;
-	int		i, len;
+	int		len;
 	byte	*pic, *palette;
 	int		width, height;
 	char	tempname[MAX_QPATH-4], newname[MAX_QPATH];
@@ -1296,23 +1289,14 @@ image_t	*GL_LoadImage (char *name, int flags)
 	palette = NULL;
 	image = NULL;
 
-	if ( name[0] == '/' || name[0] == '\\' ) {
-		strcpy ( tempname, &name[1] );
+	strcpy ( tempname, name );
 
-		if ( name[len-4] == '.' )
-			tempname[len-4-1] = 0;
-	} else {
-		strcpy ( tempname, name );
+	if ( name[len-4] == '.' )
+		tempname[len-4] = 0;
 	
-		if ( name[len-4] == '.' )
-			tempname[len-4] = 0;
-	}
-	
-	// replace all '\' with '/'
-	for ( i = 0; tempname[i]; i++ ) {
-		if ( tempname[i] == '\\' ) 
-			tempname[i] = '/';
-	}
+	// HACK HACK HACK
+	if ( !Q_stricmp ( tempname, "textures/base_wall/steed1gd" ) )
+		strcpy ( tempname, "textures/base_wall/steed1gf" );
 
 	Com_sprintf ( newname, MAX_QPATH, "%s.tga", tempname );
 	LoadTGA ( newname, &pic, &width, &height );
@@ -1396,7 +1380,7 @@ int Draw_GetPalette (void)
 
 	LoadPCX ("pics/colormap.pcx", &pic, &pal, &width, &height);
 	if (!pal)
-		pal = default_pal;
+		Com_Error (ERR_FATAL, "Couldn't load pics/colormap.pcx");
 
 	for (i=0 ; i<256 ; i++)
 	{
@@ -1415,6 +1399,9 @@ int Draw_GetPalette (void)
 
 	d_8to24table[255] &= LittleLong(0xffffff);	// 255 is transparent
 	VectorClear (d_8to24floattable[255]);
+
+//	Q_free (pic);
+//	Q_free (pal);
 
 	return 0;
 }
@@ -1461,6 +1448,8 @@ void	GL_InitImages (void)
 
 
 	qglGetIntegerv (GL_MAX_TEXTURE_SIZE, &gl_maxtexsize);
+
+	gl_texscaled = (unsigned *)Q_malloc(gl_maxtexsize*gl_maxtexsize*4);
 }
 
 /*
@@ -1481,5 +1470,7 @@ void	GL_ShutdownImages (void)
 		qglDeleteTextures (1, &image->texnum);
 		memset (image, 0, sizeof(*image));
 	}
+
+	Q_free (gl_texscaled);
 }
 

@@ -67,7 +67,7 @@ typedef struct
 
 dirty_t		scr_dirty, scr_old_dirty[2];
 
-struct shader_s *crosshair_shader;
+char		crosshair_pic[MAX_QPATH];
 int			crosshairX, crosshairY;
 
 void SCR_TimeRefresh_f (void);
@@ -491,54 +491,23 @@ SCR_DrawConsole
 */
 void SCR_DrawConsole (void)
 {
-	char *s1, *s2, *s3;
-
 	Con_CheckResize ();
-
-	if ( cls.state == ca_disconnected ) {
-		Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
-			0, 0, 1, 1, colorWhite, R_RegisterShaderNoMip ( "menuback" ) );
-
-		if ( scr_con_current )
-			Con_DrawConsole (scr_con_current);
+	
+	if ( cls.state == ca_disconnected )
+	{	// forced full screen console
+		Con_DrawConsole (1.0);
 		return;
 	}
 
-	if ( cls.state != ca_active || !cl.refresh_prepped ) {
+	if ( cls.state != ca_active || !cl.refresh_prepped )
+	{
 		if ( cl.levelshot[0] ) {
-			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
-				0, 0, 1, 1, colorWhite, R_RegisterShaderNoMip ( cl.levelshot ) );
-			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
-				0, 0, 2.5, 2, colorWhite, R_RegisterShaderNoMip ( "levelShotDetail" ) );
-		} else {		// connecting?
-			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
-				0, 0, 1, 1, colorWhite, R_RegisterShaderNoMip ( "menuback" ) );
+			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, cl.levelshot );
+			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, "levelShotDetail" );
+		} else {
+			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, "menuback" );
 		}
 
-		if ( cls.state == ca_connecting ) {
-			s1 = va ( "Connecting to %s", cls.servername );
-			s2 = NULL;
-			s3 = NULL;
-		} else if ( !cl.refresh_prepped ) {
-			s1 = va ( "Connected to %s", cls.servername );
-			s2 = cl.configstrings[CS_MESSAGE];
-
-			if ( cl.checkname[0] )
-				s3 = cl.checkname;
-			else
-				s3 = NULL;
-		} else if ( cls.state == ca_connected ) {
-			extern int precache_check;
-			s1 = va ( "Connected to %s", cls.servername );
-			s2 = cl.configstrings[CS_MESSAGE];
-			s3 = NULL;
-		}
-
-		Draw_StringLen ( viddef.width / 2 - strlen(s1) / 2 * BIG_CHAR_WIDTH, 70, s1, -1, FONT_BIG, colorWhite );
-		if ( s2 )
-			Draw_StringLen ( viddef.width / 2 - strlen(s2) / 2 * BIG_CHAR_WIDTH, 70+BIG_CHAR_HEIGHT, s2, -1, FONT_BIG, colorWhite );
-		if ( s3 )
-			Draw_StringLen ( viddef.width / 2 - strlen(s3) / 2 * BIG_CHAR_WIDTH, 70+BIG_CHAR_HEIGHT * 2, s3, -1, FONT_BIG, colorWhite );
 		return;
 	}
 
@@ -935,13 +904,13 @@ void SCR_TouchPics (void)
 		if (crosshair->value > NUM_CROSSHAIRS || crosshair->value < 0)
 			crosshair->value = NUM_CROSSHAIRS;
 
+		Com_sprintf (crosshair_pic, sizeof(crosshair_pic), "gfx/2d/crosshair%c", 'a'+(int)(crosshair->value));
+
 		crosshairX = max (0, (int)crosshair_x->value);
 		crosshairY = max (0, (int)crosshair_y->value);
 
 		if (crosshair_size->value <= 0)
-			crosshair_shader = NULL;
-		else
-			crosshair_shader = R_RegisterShader( va( "gfx/2d/crosshair%c", 'a'+(int)(crosshair->value) ) );
+			crosshair_pic[0] = 0;
 	}
 }
 
@@ -1327,7 +1296,6 @@ void SCR_UpdateScreen (void)
 		if (scr_draw_loading == 2)
 		{	//  loading plaque over black screen
 			R_SetPalette(NULL);
-			scr_draw_loading = false;
 		} 
 		// if a cinematic is supposed to be running, handle menus
 		// and console specially

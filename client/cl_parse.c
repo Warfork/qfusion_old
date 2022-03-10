@@ -183,11 +183,6 @@ void CL_RegisterSounds (void)
 
 	CL_RegisterMediaSounds ();
 
-	if ( cl.configstrings[CS_AUDIOTRACK][0] )
-		cl.music_precache = S_RegisterSound (cl.configstrings[CS_AUDIOTRACK]);
-	else
-		cl.music_precache = NULL;
-
 	for (i=1 ; i<MAX_SOUNDS ; i++)
 	{
 		if (!cl.configstrings[CS_SOUNDS+i][0])
@@ -537,8 +532,7 @@ void CL_ParseConfigString (void)
 	// do something apropriate 
 
 	if ( i == CS_AUDIOTRACK ) {
-		if (cl.refresh_prepped)
-			cl.music_precache = S_RegisterSound (cl.configstrings[i]);
+		S_RegisterSound (cl.configstrings[i]);
 	} else if ( i >= CS_MODELS && i < CS_MODELS+MAX_MODELS ) {
 		if (cl.refresh_prepped)
 		{
@@ -618,10 +612,17 @@ void CL_ParseStartSoundPacket(void)
 		channel = 0;
 	}
 
-	if (flags & SND_POS)
+	if (flags & SND_POSL)
 	{	// positioned in space
-		MSG_ReadPos (&net_message, pos_v);
- 		pos = pos_v;
+		MSG_ReadLongPos (&net_message, pos_v);
+ 
+		pos = pos_v;
+	}
+	else if (flags & SND_POSS)
+	{	// positioned in space
+		MSG_ReadShortPos (&net_message, pos_v);
+ 
+		pos = pos_v;
 	}
 	else	// use entity number
 		pos = NULL;

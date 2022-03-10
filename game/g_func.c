@@ -2151,7 +2151,7 @@ func_bobbing_blocked
 */
 void func_bobbing_blocked (edict_t *self, edict_t *other)
 {
-	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
+	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, self->dmg, 1, 0, MOD_CRUSH);
 }
 
 /*
@@ -2181,10 +2181,8 @@ void func_bobbing_think ( edict_t *ent )
 	float phase;
 
 	delta = ( level.time - ent->moveinfo.wait ) * ent->moveinfo.phase;
-	phase = sin( delta * M_TWOPI );
-
-	VectorMA( ent->moveinfo.start_origin, phase, ent->moveinfo.dir, ent->velocity );
-	VectorSubtract( ent->velocity, ent->s.origin, ent->velocity );
+	phase = cos( delta * M_TWOPI ) * 0.5f;
+	VectorScale( ent->moveinfo.dir, phase, ent->velocity );
 
 	ent->nextthink = level.time + FRAMETIME;
 }
@@ -2206,7 +2204,7 @@ void SP_func_bobbing ( edict_t *ent )
 		st.height = 32;
 
 	ent->moveinfo.phase = 1.0f / (float)ent->speed;
-	ent->moveinfo.wait = ent->speed * st.phase;
+	ent->moveinfo.wait = ent->speed * st.phase + FRAMETIME * 2;
 
 	VectorClear ( ent->moveinfo.dir );
 
@@ -2218,9 +2216,6 @@ void SP_func_bobbing ( edict_t *ent )
 	} else {
 		ent->moveinfo.dir[2] = st.height;
 	}
-
-	VectorClear ( ent->s.angles );
-	VectorCopy ( ent->s.origin, ent->moveinfo.start_origin );
 
 	ent->think = func_bobbing_think;
 	ent->nextthink = level.time + FRAMETIME;
@@ -2245,7 +2240,7 @@ func_pendulum_blocked
 */
 void func_pendulum_blocked (edict_t *self, edict_t *other)
 {
-	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
+	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, self->dmg, 1, 0, MOD_CRUSH);
 }
 
 /*
@@ -2274,10 +2269,9 @@ void func_pendulum_think ( edict_t *ent )
 	float delta;
 	float phase;
 
-	delta = ( level.time + ent->moveinfo.wait ) * ent->moveinfo.phase;
+	delta = ( level.time - ent->moveinfo.wait ) / ent->moveinfo.phase;
 	phase = sin( delta * M_TWOPI );
-	VectorMA( ent->moveinfo.start_angles, phase, ent->moveinfo.dir, ent->avelocity );
-	VectorSubtract( ent->avelocity, ent->s.angles, ent->avelocity );
+	VectorScale( ent->moveinfo.dir, phase, ent->avelocity );
 
 	ent->nextthink = level.time + FRAMETIME;
 }
@@ -2313,8 +2307,8 @@ void SP_func_pendulum ( edict_t *ent )
 
 	VectorCopy( ent->s.angles, ent->moveinfo.start_angles );
 	VectorClear ( ent->moveinfo.dir );
-	ent->moveinfo.phase = freq;
-	ent->moveinfo.wait = st.phase / ent->moveinfo.phase;
+	ent->moveinfo.phase = 1 / freq;
+	ent->moveinfo.wait = st.phase * ent->moveinfo.phase;
 	ent->moveinfo.dir[2] = ent->speed;
 
 	ent->think = func_pendulum_think;

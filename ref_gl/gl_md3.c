@@ -21,12 +21,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "gl_local.h"
 
-static vec3_t	md3_mins, md3_maxs;
-meshlistmember_t *R_AddMeshToList ( mesh_t *mesh, mfog_t *fog );
-
-static	mvertex_t md3_verts[MAX_VERTS];
-static	int		  md3_indexes[MAX_VERTS*3];
-static  mesh_t	  md3_mesh;
+extern	float	shadelight[3];
+static qboolean prefog;
 
 /*
 ==============================================================================
@@ -35,27 +31,6 @@ MD3 MODELS
 
 ==============================================================================
 */
-
-/*
-=================
-R_InitMd3
-=================
-*/
-void R_InitMd3 (void)
-{
-	int i;
-
-	md3_mesh.firstindex = md3_indexes;
-	md3_mesh.firstvert = md3_verts;
-	md3_mesh.lightmaptexturenum = -1;
-
-	for ( i = 0; i < MAX_VERTS; i++ ) {
-		md3_verts[i].colour[0] = 1;
-		md3_verts[i].colour[1] = 1;
-		md3_verts[i].colour[2] = 1;
-		md3_verts[i].colour[3] = 1;
-	}
-}
 
 /*
 =================
@@ -264,8 +239,8 @@ void R_RegisterMd3 ( model_t *mod )
 		pmeshheader = ( md3mesh_file_t * )( meshdata );
 		pskin = ( md3mesh_skin_t * )( meshdata + pmeshheader->ofs_skins );
 
-		for ( j = 0, l = 0; j < pmeshheader->num_skins; j++, l++, pskin++ ) {
-			mod->skins[i][l]->registration_sequence = registration_sequence;
+		for ( j = 0, l = 0; j < pmeshheader->num_skins; j++, pskin++ ) {
+			mod->skins[i][l++] = R_RegisterShaderMD3 ( pskin->name );
 		}
 
 		meshdata += pmeshheader->meshsize;
@@ -275,22 +250,35 @@ void R_RegisterMd3 ( model_t *mod )
 }
 
 /*
-** R_Md3BBox
+** R_CullAliasModel
 */
-void R_Md3BBox ( int frame, int oldframe, entity_t *e )
+qboolean R_CullMd3Model( vec3_t bbox[8], entity_t *e )
 {
 	int			i;
-	md3frame_t	*pframe, *poldframe;
 	vec3_t		mins, maxs;
 	vec3_t		thismins, oldmins, thismaxs, oldmaxs;
+	md3frame_t	*pframe, *poldframe;
 	md3header_t	*md3header;
 
 	md3header = ( md3header_t * )currentmodel->extradata;
 
+	if ( ( e->frame >= md3header->num_frames ) || ( e->frame < 0 ) )
+	{
+		Com_Printf ("R_CullMd3Model %s: no such frame %d\n", 
+			currentmodel->name, e->frame);
+		e->frame = 0;
+	}
+	if ( ( e->oldframe >= md3header->num_frames ) || ( e->oldframe < 0 ) )
+	{
+		Com_Printf ("R_CullMd3Model %s: no such oldframe %d\n", 
+			currentmodel->name, e->oldframe);
+		e->oldframe = 0;
+	}
+
 	pframe = ( md3frame_t * )( ( byte * )md3header + md3header->ofs_frames +
-			frame * sizeof( md3frame_t ) );
+			e->frame * sizeof( md3frame_t ) );
 	poldframe = ( md3frame_t * )( ( byte * )md3header + md3header->ofs_frames +
-			oldframe * sizeof( md3frame_t ) );
+			e->oldframe * sizeof( md3frame_t ) );
 
 	/*
 	** compute axially aligned mins and maxs
@@ -322,47 +310,13 @@ void R_Md3BBox ( int frame, int oldframe, entity_t *e )
 				maxs[i] = thismaxs[i];
 			else
 				maxs[i] = oldmaxs[i];
+
+			if ( currententity->scale != 1.0f ) {
+				VectorScale ( mins, currententity->scale, mins );
+				VectorScale ( maxs, currententity->scale, maxs );
+			}
 		}
 	}
-
-	if ( e->scale != 1.0f ) {
-		VectorScale ( mins, e->scale, mins );
-		VectorScale ( maxs, e->scale, maxs );
-	}
-
-	VectorAdd ( e->origin, mins, md3_mins );
-	VectorAdd ( e->origin, maxs, md3_maxs );
-}
-
-/*
-** R_CullAliasModel
-*/
-qboolean R_CullMd3Model( vec3_t bbox[8], entity_t *e )
-{
-	int			i;
-	vec3_t		mins, maxs;
-	md3header_t	*md3header;
-
-	md3header = ( md3header_t * )currentmodel->extradata;
-
-	if ( ( e->frame >= md3header->num_frames ) || ( e->frame < 0 ) )
-	{
-		Com_Printf ("R_CullMd3Model %s: no such frame %d\n", 
-			currentmodel->name, e->frame);
-		e->frame = 0;
-	}
-	if ( ( e->oldframe >= md3header->num_frames ) || ( e->oldframe < 0 ) )
-	{
-		Com_Printf ("R_CullMd3Model %s: no such oldframe %d\n", 
-			currentmodel->name, e->oldframe);
-		e->oldframe = 0;
-	}
-
-
-	R_Md3BBox ( e->frame, e->oldframe, e );
-
-	VectorSubtract ( md3_mins, e->origin, mins );
-	VectorSubtract ( md3_maxs, e->origin, maxs );
 
 	/*
 	** compute a full bounding box
@@ -418,14 +372,20 @@ qboolean R_CullMd3Model( vec3_t bbox[8], entity_t *e )
 	}
 }
 
+static	mvertex_t md3_verts[MAX_VERTS];
+static	int		  md3_indexes[MAX_VERTS*3];
+static  mesh_t	  md3_mesh;
+
+void GL_CalcMeshCentre ( mesh_t *mesh );
+
 void R_MD3PushMesh ( md3mesh_file_t *pmeshheader, float move[3], float backlerp )
 {
 	int				i;
 	md3vertex_t		*v, *ov;
 	md3coord_t		*coords;
 	md3elem_t		*melems;
-	float			frontlerp = (1.0 - backlerp) * MD3_XYZ_SCALE;
-	backlerp *= MD3_XYZ_SCALE;
+	float			frontlerp = 1.0 - backlerp;
+	float			sin_a, sin_b, cos_a, cos_b;
 
 	c_alias_polys += pmeshheader->num_verts;
 
@@ -438,80 +398,40 @@ void R_MD3PushMesh ( md3mesh_file_t *pmeshheader, float move[3], float backlerp 
 
 	md3_mesh.numverts = pmeshheader->num_verts;
 	md3_mesh.numindexes = pmeshheader->num_tris * 3;
+	md3_mesh.firstindex = md3_indexes;
+	md3_mesh.firstvert = md3_verts;
+	md3_mesh.lightmaptexturenum = -1;
 	
-	for ( i = 0; i < md3_mesh.numindexes; i+=3, melems++ ) {
-		md3_indexes[i+0] = melems->index[0];
-		md3_indexes[i+1] = melems->index[1];
-		md3_indexes[i+2] = melems->index[2];
+	for ( i = 0; i < pmeshheader->num_tris; i++, melems++ ) {
+		md3_indexes[i*3+0] = melems->index[0];
+		md3_indexes[i*3+1] = melems->index[1];
+		md3_indexes[i*3+2] = melems->index[2];
 	}
 
 	for ( i = 0; i < pmeshheader->num_verts; i++, v++, ov++, coords++ ) {
 		Vector2Copy ( coords->tc, md3_verts[i].tex_st );
-		VectorCopy ( r_uvnorms[v->norm[0]][v->norm[1]], md3_verts[i].normal );
+
+		sin_a = (float)v->norm[0] * M_TWOPI / 255.f;
+		cos_a = cos ( sin_a );
+		sin_a = sin ( sin_a );
+
+		sin_b = (float)v->norm[1] * M_TWOPI / 255.f;
+		cos_b = cos ( sin_b );
+		sin_b = sin ( sin_b );
+
+		VectorSet ( md3_verts[i].normal, cos_b * sin_a, sin_b * sin_a, cos_a );
 		VectorSet ( md3_verts[i].position, 
-			move[0] + ov->point[0]*backlerp + v->point[0]*frontlerp,
-			move[1] + ov->point[1]*backlerp + v->point[1]*frontlerp,
-			move[2] + ov->point[2]*backlerp + v->point[2]*frontlerp);
-	}
-}
+			move[0] + (ov->point[0]*backlerp + v->point[0]*frontlerp)*MD3_XYZ_SCALE,
+			move[1] + (ov->point[1]*backlerp + v->point[1]*frontlerp)*MD3_XYZ_SCALE,
+			move[2] + (ov->point[2]*backlerp + v->point[2]*frontlerp)*MD3_XYZ_SCALE);
 
-/*
-=============
-GL_Md3FindFog
-=============
-*/
-mfog_t *GL_Md3FindFog (void)
-{
-	int i, j;
-	mbrushside_t *brushside;
-	cplane_t *plane;
-	mfog_t *fog;
-
-	if ( !r_worldmodel )
-		return NULL;
-
-	fog = r_worldmodel->fogs;
-	for ( i = 0; i < r_worldmodel->numfogs; i++, fog++ ) {
-		if ( !fog->brush )
-			continue;
-
-		brushside = fog->brush->firstside;
-
-		for ( j = 0; j < fog->brush->numsides; j++, brushside++ ) {
-			plane = brushside->plane;
-
-			if ( plane->type < 3 ) {
-				if ( plane->dist < md3_mins[plane->type] )
-					break;
-			} else {
-				if ( plane->dist < DotProduct (md3_mins, plane->normal) ) 
-					break;
-			}
-		}
-
-		if ( j == fog->brush->numsides ) {
-			return fog;
-		}
-
-		brushside = fog->brush->firstside;
-		for ( j = 0; j < fog->brush->numsides; j++, brushside++ ) {
-			plane = brushside->plane;
-
-			if ( plane->type < 3 ) {
-				if ( plane->dist < md3_maxs[plane->type] )
-					break;
-			} else {
-				if ( plane->dist < DotProduct (md3_maxs, plane->normal) ) 
-					break;
-			}
-		}
-
-		if ( j == fog->brush->numsides ) {
-			return fog;
-		}
+		md3_verts[i].colour[0] = 1;
+		md3_verts[i].colour[1] = 1;
+		md3_verts[i].colour[2] = 1;
+		md3_verts[i].colour[3] = 1;
 	}
 
-	return NULL;
+	GL_CalcMeshCentre ( &md3_mesh );
 }
 
 /*
@@ -529,7 +449,6 @@ void GL_DrawMd3AliasFrameLerp (md3header_t *paliashdr, float backlerp)
 	byte			*meshdata;
 	md3frame_t		*frame, *oldframe;
 	md3mesh_file_t	*pmeshheader;
-	mfog_t			*fog;
 
 	frame = ( md3frame_t * )( ( byte * )paliashdr + paliashdr->ofs_frames +
 		currententity->frame * sizeof( md3frame_t ) );
@@ -551,8 +470,6 @@ void GL_DrawMd3AliasFrameLerp (md3header_t *paliashdr, float backlerp)
 		move[i] = backlerp*move[i] + (1.0f-backlerp)*frame->translate[i];
 	}
 
-	R_Md3BBox ( currententity->frame, currententity->oldframe, currententity );
-	fog = GL_Md3FindFog();
 	for ( i = 0; i < paliashdr->num_meshes; i++ ) {
 		pmeshheader = ( md3mesh_file_t * )( meshdata );
 
@@ -560,126 +477,14 @@ void GL_DrawMd3AliasFrameLerp (md3header_t *paliashdr, float backlerp)
 		for ( j = 0; j < pmeshheader->num_skins; j++ ) {
 			md3_mesh.shader = currentmodel->skins[i][j];
 			R_MD3PushMesh ( pmeshheader, move, backlerp );
-			md3_mesh.shader->flush ( &md3_mesh, fog, NULL );
+			R_RenderMeshGeneric ( &md3_mesh );
 		}
 
 		meshdata += pmeshheader->meshsize;
 	}
-}
 
-/*
-=================
-R_DrawMd3Model
-
-=================
-*/
-void R_DrawMd3Model (entity_t *e)
-{
-	md3header_t	*md3header;
-	md3header = ( md3header_t * )currentmodel->extradata;
-
-	if ( ( e->frame >= md3header->num_frames ) || ( e->frame < 0 ) )
-	{
-		Com_Printf ("R_DrawMd3Model %s: no such frame %d\n", 
-			currentmodel->name, e->frame);
-		e->frame = 0;
-	}
-	if ( ( e->oldframe >= md3header->num_frames ) || ( e->oldframe < 0 ) )
-	{
-		Com_Printf ("R_DrawMd3Model %s: no such oldframe %d\n", 
-			currentmodel->name, e->oldframe);
-		e->oldframe = 0;
-	}
-
-	AngleVectors( e->angles, e->angleVectors[0], e->angleVectors[1], e->angleVectors[2] );
-
-	//
-	// draw all the triangles
-	//
-	if (currententity->flags & RF_DEPTHHACK) // hack the depth range to prevent view model from poking into walls
-		qglDepthRange (gldepthmin, gldepthmin + 0.3*(gldepthmax-gldepthmin));
-
-	if ( ( currententity->flags & RF_WEAPONMODEL ) && ( r_lefthand->value == 1.0F ) )
-	{
-		extern void MYgluPerspective( GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble zFar );
-
-		qglMatrixMode( GL_PROJECTION );
-		qglPushMatrix();
-		qglLoadIdentity();
-		qglScalef( -1, 1, 1 );
-		MYgluPerspective( r_newrefdef.fov_y, ( float ) r_newrefdef.width / r_newrefdef.height, 4, 12288);
-		qglMatrixMode( GL_MODELVIEW );
-
-		qglCullFace( GL_BACK );
-	}
-
-    qglPushMatrix ();
-
-    qglTranslatef (e->origin[0],  e->origin[1],  e->origin[2]);
-
-	if ( e->scale != 1.0f )
-		qglScalef ( e->scale, e->scale, e->scale );
-
-    qglRotatef (e->angles[1],  0, 0, 1);
-    qglRotatef (e->angles[0],  0, 1, 0);		// sigh.
-    qglRotatef (-e->angles[2],  1, 0, 0);
-
-	if ( !r_lerpmodels->value ) {
-		currententity->backlerp = 0;
-	}
-
-	GL_DrawMd3AliasFrameLerp ( md3header, currententity->backlerp );
-
-	qglPopMatrix ();
-
-	if ( ( currententity->flags & RF_WEAPONMODEL ) && ( r_lefthand->value == 1.0F ) ) {
-		qglMatrixMode( GL_PROJECTION );
-		qglPopMatrix();
-		qglMatrixMode( GL_MODELVIEW );
-		qglCullFace( GL_FRONT );
-	}
-
-	if ( currententity->flags & RF_DEPTHHACK ) {
-		qglDepthRange (gldepthmin, gldepthmax);
-	}
-}
-
-void R_AddMd3ToList (entity_t *e)
-{
-	int	i, j;
-	md3header_t *paliashdr;
-	md3mesh_file_t *pmeshheader;
-	byte *meshdata;
-	vec3_t bbox[8];
-
-	if ( !e->scale ) {
-		return;
-	}
-
-	if ( e->flags & RF_WEAPONMODEL )
-	{
-		if ( r_lefthand->value == 2 )
-			return;
-	}
-	else
-	{
-		if ( R_CullMd3Model ( bbox, e ) ) {
-			return;
-		}
-	}
-
-	paliashdr = (md3header_t *)e->model->extradata;
-	meshdata = ( byte * )paliashdr + paliashdr->ofs_meshes;
-
-	for ( i = 0; i < paliashdr->num_meshes; i++ ) {
-		pmeshheader = ( md3mesh_file_t * )( meshdata );
-
-		// select skin
-		for ( j = 0; j < pmeshheader->num_skins; j++ ) {
-			md3_mesh.shader = currentmodel->skins[i][j];
-			R_AddMeshToList ( &md3_mesh, NULL );
-		}
-
-		meshdata += pmeshheader->meshsize;
-	}
+	qglDisable (GL_POLYGON_OFFSET);
+	qglBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	GLSTATE_DISABLE_ALPHATEST
+	GLSTATE_DISABLE_BLEND
 }

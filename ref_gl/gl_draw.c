@@ -24,9 +24,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 shader_t	*chars_shader;
 
+void R_SetShaderState ( shader_t *shader );
+void R_SetShaderpassState ( shaderpass_t *pass );
+int R_ShaderpassTex ( shaderpass_t *pass, int lmtex );
+
 mesh_t	r_picture_mesh;
 mvertex_t r_picture_verts[4];
 unsigned r_picture_indexes[6];
+float r_picture_defcolour[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
 /*
 ===============
@@ -36,7 +41,7 @@ Draw_InitLocal
 void Draw_InitLocal (void)
 {
 	// load console characters (don't bilerp characters)
-	chars_shader = R_RegisterShaderNoMip( "gfx/2d/bigchars" );
+	chars_shader = R_RegisterShaderNoMip("gfx/2d/bigchars");
 
 	r_picture_mesh.numindexes = 6;
 	r_picture_mesh.firstindex = r_picture_indexes;
@@ -50,6 +55,9 @@ void Draw_InitLocal (void)
 	r_picture_mesh.numverts = 4;
 	r_picture_mesh.firstvert = r_picture_verts;
 
+	r_picture_mesh.tex_centre_tc[0] = 0.5f;
+	r_picture_mesh.tex_centre_tc[1] = 0.5f;
+
 	r_picture_mesh.lightmaptexturenum = -1;
 }
 
@@ -58,42 +66,39 @@ void Draw_InitLocal (void)
 Draw_GenericPic
 ===============
 */
-void Draw_StretchPic ( int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *colour, shader_t *shader )
+void Draw_GenericPic ( shader_t *shader, int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *colour )
 {
 	r_picture_mesh.firstvert[0].position[0] = x;
 	r_picture_mesh.firstvert[0].position[1] = y;
 	r_picture_mesh.firstvert[0].position[2] = 0;
 	r_picture_mesh.firstvert[0].tex_st[0] = s1; 
 	r_picture_mesh.firstvert[0].tex_st[1] = t1;
-	r_picture_mesh.firstvert[0].colour[3] = 1.0f;
-	VectorCopy ( colour, r_picture_mesh.firstvert[0].colour );
+	Vector4Copy ( colour, r_picture_mesh.firstvert[0].colour );
 
 	r_picture_mesh.firstvert[1].position[0] = x+w;
 	r_picture_mesh.firstvert[1].position[1] = y;
 	r_picture_mesh.firstvert[1].position[2] = 0;
 	r_picture_mesh.firstvert[1].tex_st[0] = s2; 
 	r_picture_mesh.firstvert[1].tex_st[1] = t1;
-	r_picture_mesh.firstvert[1].colour[3] = 1.0f;
-	VectorCopy ( colour, r_picture_mesh.firstvert[1].colour );
+	Vector4Copy ( colour, r_picture_mesh.firstvert[1].colour );
 
 	r_picture_mesh.firstvert[2].position[0] = x+w;
 	r_picture_mesh.firstvert[2].position[1] = y+h;
 	r_picture_mesh.firstvert[2].position[2] = 0;
 	r_picture_mesh.firstvert[2].tex_st[0] = s2; 
 	r_picture_mesh.firstvert[2].tex_st[1] = t2;
-	r_picture_mesh.firstvert[2].colour[3] = 1.0f;
-	VectorCopy ( colour, r_picture_mesh.firstvert[2].colour );
+	Vector4Copy ( colour, r_picture_mesh.firstvert[2].colour );
 
 	r_picture_mesh.firstvert[3].position[0] = x;
 	r_picture_mesh.firstvert[3].position[1] = y+h;
 	r_picture_mesh.firstvert[3].position[2] = 0;
 	r_picture_mesh.firstvert[3].tex_st[0] = s1; 
 	r_picture_mesh.firstvert[3].tex_st[1] = t2;
-	r_picture_mesh.firstvert[3].colour[3] = 1.0f;
-	VectorCopy ( colour, r_picture_mesh.firstvert[3].colour );
+	Vector4Copy ( colour, r_picture_mesh.firstvert[3].colour );
 
 	r_picture_mesh.shader = shader;
-	shader->flush ( &r_picture_mesh, NULL, NULL );
+
+	R_RenderMeshGeneric ( &r_picture_mesh );
 }
 
 /*
@@ -132,7 +137,7 @@ void Draw_Char ( int x, int y, int num, fontstyle_t fntstl, vec4_t colour )
 	frow = (num>>4)*0.0625f;
 	fcol = (num&15)*0.0625f;
 
-	Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colour, chars_shader );
+	Draw_GenericPic ( chars_shader, x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, colour );
 }
 
 /*
@@ -167,7 +172,6 @@ void Draw_StringLen (int x, int y, char *str, int len, fontstyle_t fntstl, vec4_
 	while (*str && len--) {
 		if ( Q_IsColorString( str ) ) {
 			VectorCopy ( color_table[ColorIndex(str[1])], scolour );
-			len -= 2;
 			str += 2;
 			continue;
 		}
@@ -183,9 +187,20 @@ void Draw_StringLen (int x, int y, char *str, int len, fontstyle_t fntstl, vec4_
 		frow = (num>>4)*0.0625f;
 		fcol = (num&15)*0.0625f;
 
-		Draw_StretchPic ( x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolour, chars_shader );
+		Draw_GenericPic ( chars_shader, x, y, width, height, fcol, frow, fcol+0.0625f, frow+0.0625f, scolour );
 		x += width;
 	}
+}
+
+/*
+=============
+Draw_StretchPic
+=============
+*/
+void Draw_StretchPic (int x, int y, int w, int h, char *pic)
+{
+	shader_t *shader = R_RegisterShaderNoMip (pic);
+	Draw_GenericPic ( shader, x, y, w, h, 0, 0, 1, 1, r_picture_defcolour );
 }
 
 /*
@@ -205,13 +220,13 @@ void Draw_Pic (int x, int y, char *pic)
 		int frame = (int)(r_shadertime * shader->pass[0].anim_fps) % shader->pass[0].anim_numframes;
 		gl = shader->pass[0].anim_frames[frame];
 	} else {
-		gl = shader->pass[0].anim_frames[0];
+		gl = shader->pass[0].texref;
 	}
 
 	if ( !gl )
 		return;
 
-	Draw_StretchPic ( x, y, gl->width, gl->height, 0, 0, 1, 1, colorWhite, shader );
+	Draw_GenericPic ( shader, x, y, gl->width, gl->height, 0, 0, 1, 1, r_picture_defcolour );
 }
 
 /*
@@ -227,7 +242,7 @@ void Draw_TileClear (int x, int y, int w, int h, char *pic)
 	float	v[3];
 	float	tc[2];
 	shader_t *shader = R_RegisterShaderNoMip ( pic );
-	image_t  *image = shader->pass[0].anim_frames[0];
+	image_t  *image = shader->pass[0].texref;
 
 	if (!image)
 	{
@@ -388,61 +403,45 @@ Draw_StretchRaw
 void Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, byte *data)
 {
 	extern unsigned	r_rawpalette[256];
-	unsigned	image32[256*256];
-	unsigned	*dest = image32;
-	int			i, j, trows;
-	byte		*source;
+	extern unsigned *gl_texscaled;
+	unsigned	*dest = gl_texscaled;
+	unsigned char *inrow;
+	int			i, j;
 	int			frac, fracstep;
-	float		hscale;
-	int			row;
-	float		t, tc[2], v[3];
+	float		t, v[3], tc[2], hscale = (float)rows/256.0;
 
-	GL_Bind (0);
-
-	if (rows <= 256)
-	{
-		hscale = 1;
-		trows = rows;
-	}
-	else
-	{
-		hscale = rows/256.0;
-		trows = 256;
-	}
-
-	t = rows*hscale / 256;
+	t = hscale*hscale - 1.0/512.0;
 	fracstep = cols*0x10000/256;
 
-	memset ( image32, 0, sizeof(unsigned)*256*256 );
-	
-	for (i=0 ; i<trows ; i++, dest+=256)
+	memset ( gl_texscaled, 0, sizeof(gl_texscaled) );
+
+	for (i=0 ; i<256 ; i++, dest += 256)
 	{
-		row = (int)(i*hscale);
-		if (row > rows)
-			break;
-		source = data + cols*row;
+		inrow = data + cols*(int)(i*hscale);
 		frac = fracstep >> 1;
-		for (j=0 ; j<256 ; j+=4)
+
+		for (j = 0 ; j<256 ; j+=4)
 		{
-			dest[j] = r_rawpalette[source[frac>>16]];
+			dest[j] = r_rawpalette[inrow[frac>>16]];
 			frac += fracstep;
-			dest[j+1] = r_rawpalette[source[frac>>16]];
+			dest[j+1] = r_rawpalette[inrow[frac>>16]];
 			frac += fracstep;
-			dest[j+2] = r_rawpalette[source[frac>>16]];
+			dest[j+2] = r_rawpalette[inrow[frac>>16]];
 			frac += fracstep;
-			dest[j+3] = r_rawpalette[source[frac>>16]];
+			dest[j+3] = r_rawpalette[inrow[frac>>16]];
 			frac += fracstep;
 		}
 	}
-	
-	qglTexImage2D (GL_TEXTURE_2D, 0, gl_tex_solid_format, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, image32);
 
+	GL_Bind (0);
+
+	qglTexImage2D (GL_TEXTURE_2D, 0, gl_tex_solid_format, 256, 256, 0, GL_RGBA, GL_UNSIGNED_BYTE, gl_texscaled);
 	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
 	if ( ( gl_config.renderer == GL_RENDERER_MCD ) || ( gl_config.renderer & GL_RENDERER_RENDITION ) ) 
-		qglDisable (GL_ALPHA_TEST);
-
+		GLSTATE_DISABLE_ALPHATEST
+	
 	R_PushElem (0);
 	R_PushElem (1);
 	R_PushElem (2);
@@ -474,8 +473,5 @@ void Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, byte *data
 	R_FlushArrays ();
 	R_UnlockArrays ();
 	R_ClearArrays ();
-
-	if ( ( gl_config.renderer == GL_RENDERER_MCD ) || ( gl_config.renderer & GL_RENDERER_RENDITION ) ) 
-		qglEnable (GL_ALPHA_TEST);
 }
 

@@ -49,7 +49,7 @@ extern	cvar_t		*crosshair_y;
 
 extern	vrect_t		scr_vrect;		// position of render window
 
-extern	struct shader_s *crosshair_shader;
+extern	char		crosshair_pic[MAX_QPATH];
 extern	int			crosshairX, crosshairY;
 
 void SCR_AddDirtyPoint (int x, int y);

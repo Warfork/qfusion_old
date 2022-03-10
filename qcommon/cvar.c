@@ -123,7 +123,7 @@ char *Cvar_CompleteVariable (char *partial)
 Cvar_Get
 
 If the variable already exists, the value will not be set
-The flags will be or'ed and default value overwritten in if the variable exists.
+The flags will be or'ed in if the variable exists.
 ============
 */
 cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
@@ -142,11 +142,6 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 	var = Cvar_FindVar (var_name);
 	if (var)
 	{
-		if ( var_value ) {
-			Z_Free (var->dvalue);	// free the old default value string
-			var->dvalue = CopyString (var_value);
-		}
-
 		var->flags |= flags;
 		return var;
 	}
@@ -165,7 +160,6 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 
 	var = Z_Malloc (sizeof(*var));
 	var->name = CopyString (var_name);
-	var->dvalue = CopyString (var_value);
 	var->string = CopyString (var_value);
 	var->modified = true;
 	var->value = atof (var->string);
@@ -377,8 +371,7 @@ qboolean Cvar_Command (void)
 // perform a variable print or set
 	if (Cmd_Argc() == 1)
 	{
-		Com_Printf ("\"%s\" is \"%s%s\" default: \"%s%s\"\n", v->name, 
-			v->string, S_COLOR_WHITE, v->dvalue, S_COLOR_WHITE);
+		Com_Printf ("\"%s\" is \"%s%s\"\n", v->name, v->string, S_COLOR_WHITE);
 		return true;
 	}
 
@@ -396,47 +389,33 @@ Allows setting and defining of arbitrary cvars from console
 */
 void Cvar_Set_f (void)
 {
-	if (Cmd_Argc() != 3)
+	int		c;
+	int		flags;
+
+	c = Cmd_Argc();
+	if (c != 3 && c != 4)
 	{
-		Com_Printf ("usage: set <variable> <value>\n");
+		Com_Printf ("usage: set <variable> <value> [u / s]\n");
 		return;
 	}
 
-	Cvar_Set (Cmd_Argv(1), Cmd_Argv(2));
-}
-
-void Cvar_Seta_f (void)
-{
-	if (Cmd_Argc() != 3)
+	if (c == 4)
 	{
-		Com_Printf ("usage: seta <variable> <value>\n");
-		return;
+		if (!strcmp(Cmd_Argv(3), "u"))
+			flags = CVAR_USERINFO;
+		else if (!strcmp(Cmd_Argv(3), "s"))
+			flags = CVAR_SERVERINFO;
+		else
+		{
+			Com_Printf ("flags can only be 'u' or 's'\n");
+			return;
+		}
+		Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), flags);
 	}
-
-	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_ARCHIVE);
+	else
+		Cvar_Set (Cmd_Argv(1), Cmd_Argv(2));
 }
 
-void Cvar_Sets_f (void)
-{
-	if (Cmd_Argc() != 3)
-	{
-		Com_Printf ("usage: sets <variable> <value>\n");
-		return;
-	}
-
-	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_SERVERINFO);
-}
-
-void Cvar_Setu_f (void)
-{
-	if (Cmd_Argc() != 3)
-	{
-		Com_Printf ("usage: setu <variable> <value>\n");
-		return;
-	}
-
-	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_USERINFO);
-}
 
 /*
 ============
@@ -455,7 +434,7 @@ void Cvar_WriteVariables (FILE *f)
 	{
 		if (var->flags & CVAR_ARCHIVE)
 		{
-			Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
+			Com_sprintf (buffer, sizeof(buffer), "set %s \"%s\"\n", var->name, var->string);
 			fprintf (f, "%s", buffer);
 		}
 	}
@@ -596,8 +575,6 @@ Reads in all archived cvars
 void Cvar_Init (void)
 {
 	Cmd_AddCommand ("set", Cvar_Set_f);
-	Cmd_AddCommand ("seta", Cvar_Seta_f);
-	Cmd_AddCommand ("setu", Cvar_Setu_f);
-	Cmd_AddCommand ("sets", Cvar_Sets_f);
 	Cmd_AddCommand ("cvarlist", Cvar_List_f);
+
 }

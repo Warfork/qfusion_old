@@ -832,10 +832,11 @@ void SP_worldspawn (edict_t *ent)
 		strncpy ( level.level_name, level.mapname, sizeof(level.level_name) );
 
 	// send gridsize
-	if ( st.gridsize && st.gridsize[0] )
+	if (st.gridsize && st.gridsize[0]) {
 		gi.configstring ( CS_GRIDSIZE, st.gridsize );
-	else
+	} else {
 		gi.configstring ( CS_GRIDSIZE, "64.0 64.0 128.0" );
+	}
 
 	// send music
 	if ( st.music ) {
@@ -880,7 +881,7 @@ void SP_worldspawn (edict_t *ent)
 	gi.soundindex ("sound/misc/pc_up.wav");
 	gi.soundindex ("sound/misc/talk1.wav");
 
-	gi.soundindex ("sound/misc/udeath.wav");
+	gi.soundindex ("misc/udeath.wav");
 
 	// sexed sounds
 	gi.soundindex ("*death1.wav");

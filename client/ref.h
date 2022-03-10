@@ -79,8 +79,6 @@ typedef struct entity_s
 	float	scale;
 
 	qboolean	transignore;
-
-	int		visframe;
 } entity_t;
 
 #define ENTITY_FLAGS  68
@@ -102,7 +100,7 @@ typedef struct
 typedef struct refdef_s
 {
 	int			x, y, width, height;// in virtual screen coordinates
-	float		fov_x, fov_y, cos_half_fox_x;
+	float		fov_x, fov_y;
 	float		vieworg[3];
 	float		viewangles[3];
 	float		blend[4];			// rgba 0-1 full screen blend
@@ -134,13 +132,13 @@ struct shader_s *R_RegisterShaderMD3 (char *name);
 
 int		R_ModelNumFrames ( struct model_s *model );
 
-void	R_SetGridsize (int x, int y, int z);
+void	R_SetGridsize (float x, float y, float z);
 void	R_EndRegistration (void);
 
 void	R_RenderFrame (refdef_t *fd);
 
 void	Draw_Pic (int x, int y, char *name);
-void	Draw_StretchPic (int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *colour, struct shader_s *shader);
+void	Draw_StretchPic (int x, int y, int w, int h, char *name);
 void	Draw_Char (int x, int y, int num, fontstyle_t fntstl, vec4_t colour);
 void	Draw_StringLen (int x, int y, char *str, int len, fontstyle_t fntstl, vec4_t colour);
 void	Draw_TileClear (int x, int y, int w, int h, char *name);

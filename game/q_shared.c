@@ -307,7 +307,7 @@ BoxOnPlaneSide
 Returns 1, 2, or 1 + 2
 ==================
 */
-#if !id386 || defined __linux__
+#if !id386 || defined __linux__ 
 int BoxOnPlaneSide (vec3_t emins, vec3_t emaxs, struct cplane_s *p)
 {
 	float	dist1, dist2;
@@ -608,7 +608,6 @@ Lerror:
 }
 #pragma warning( default: 4035 )
 #endif
-
 
 void AddPointToBounds (vec3_t v, vec3_t mins, vec3_t maxs)
 {
@@ -1095,14 +1094,23 @@ void COM_DefaultExtension (char *path, char *extension)
 ============================================================================
 */
 
-#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
-short   (*BigShort) (short l);
-short   (*LittleShort) (short l);
-int     (*BigLong) (int l);
-int     (*LittleLong) (int l);
-float   (*BigFloat) (float l);
-float   (*LittleFloat) (float l);
-#endif
+qboolean	bigendien;
+
+// can't just use function pointers, or dll linkage can
+// mess up when qcommon is included in multiple places
+short	(*_BigShort) (short l);
+short	(*_LittleShort) (short l);
+int		(*_BigLong) (int l);
+int		(*_LittleLong) (int l);
+float	(*_BigFloat) (float l);
+float	(*_LittleFloat) (float l);
+
+short	BigShort(short l){return _BigShort(l);}
+short	LittleShort(short l) {return _LittleShort(l);}
+int		BigLong (int l) {return _BigLong(l);}
+int		LittleLong (int l) {return _LittleLong(l);}
+float	BigFloat (float l) {return _BigFloat(l);}
+float	LittleFloat (float l) {return _LittleFloat(l);}
 
 short   ShortSwap (short l)
 {
@@ -1114,12 +1122,10 @@ short   ShortSwap (short l)
 	return (b1<<8) + b2;
 }
 
-#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
-short   ShortNoSwap (short l)
+short	ShortNoSwap (short l)
 {
 	return l;
 }
-#endif
 
 int    LongSwap (int l)
 {
@@ -1133,22 +1139,20 @@ int    LongSwap (int l)
 	return ((int)b1<<24) + ((int)b2<<16) + ((int)b3<<8) + b4;
 }
 
-#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
-int     LongNoSwap (int l)
+int	LongNoSwap (int l)
 {
 	return l;
 }
-#endif
 
 float FloatSwap (float f)
 {
 	union
 	{
-		float   f;
-		byte    b[4];
+		float	f;
+		byte	b[4];
 	} dat1, dat2;
-
-
+	
+	
 	dat1.f = f;
 	dat2.b[0] = dat1.b[3];
 	dat2.b[1] = dat1.b[2];
@@ -1157,13 +1161,10 @@ float FloatSwap (float f)
 	return dat2.f;
 }
 
-#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
 float FloatNoSwap (float f)
 {
 	return f;
 }
-#endif
-
 
 /*
 ================
@@ -1172,29 +1173,30 @@ Swap_Init
 */
 void Swap_Init (void)
 {
-#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
-	byte    swaptest[2] = {1,0};
+	byte	swaptest[2] = {1,0};
 
-// set the byte swapping variables in a portable manner
+// set the byte swapping variables in a portable manner	
 	if ( *(short *)swaptest == 1)
 	{
-		BigShort = ShortSwap;
-		LittleShort = ShortNoSwap;
-		BigLong = LongSwap;
-		LittleLong = LongNoSwap;
-		BigFloat = FloatSwap;
-		LittleFloat = FloatNoSwap;
+		bigendien = false;
+		_BigShort = ShortSwap;
+		_LittleShort = ShortNoSwap;
+		_BigLong = LongSwap;
+		_LittleLong = LongNoSwap;
+		_BigFloat = FloatSwap;
+		_LittleFloat = FloatNoSwap;
 	}
 	else
 	{
-		BigShort = ShortNoSwap;
-		LittleShort = ShortSwap;
-		BigLong = LongNoSwap;
-		LittleLong = LongSwap;
-		BigFloat = FloatNoSwap;
-		LittleFloat = FloatSwap;
+		bigendien = true;
+		_BigShort = ShortNoSwap;
+		_LittleShort = ShortSwap;
+		_BigLong = LongNoSwap;
+		_LittleLong = LongSwap;
+		_BigFloat = FloatNoSwap;
+		_LittleFloat = FloatSwap;
 	}
-#endif
+
 }
 
 
@@ -1214,13 +1216,7 @@ char	*va(char *format, ...)
 	static char		string[1024];
 	
 	va_start (argptr, format);
-
-#ifdef _WIN32
-	_vsnprintf (string, sizeof(string), format, argptr);
-#else
-	vsnprintf (string, sizeof(string), format, argptr);
-#endif
-
+	vsprintf (string, format,argptr);
 	va_end (argptr);
 
 	return string;	

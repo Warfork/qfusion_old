@@ -18,28 +18,34 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 // GL_RSURF.C: surface-related refresh code
+#include <assert.h>
+
 #include "gl_local.h"
+
+static vec3_t	mesh_vertex[MAX_VERTS];
+
+msurface_t	*r_mtex_surfaces;
+msurface_t	*r_generic_surfaces;
+msurface_t	*r_additive_surfaces;
+msurface_t	*r_flare_surfaces;
+msurface_t	*r_fog_surfaces;
 
 extern float bubble_sintable[17], bubble_costable[17];
 
 entity_t	r_worldent;
 
-static meshlist_t	r_meshlist;
-static meshlist_t	*currentlist;
-
-static vec3_t	modelorg;		// relative to viewpoint
-
-static int num_flares;
-static msurface_t *flare_surfaces[MAX_RENDER_MESHES];
-
-static float r_flarescale;
-
+#define LIGHTMAP_BYTES 4
 #define GL_LIGHTMAP_FORMAT GL_RGBA
 
 #define	BLOCK_WIDTH		128
 #define	BLOCK_HEIGHT	128
 
 #define	MAX_LIGHTMAPS	128
+
+int		c_visible_lightmaps;
+int		c_visible_textures;
+
+qboolean alpha_surface;
 
 typedef struct
 {
@@ -64,39 +70,161 @@ void R_BuildLightMap (byte *data, byte *dest);
 */
 
 /*
+** R_DrawTriangleOutlines
+*/
+void R_DrawTriangleOutlines (void)
+{
+	if (!gl_showtris->value)
+		return;
+
+	GL_EnableMultitexture ( false );
+
+	qglDisable (GL_TEXTURE_2D);
+	qglDisable (GL_DEPTH_TEST);
+	qglColor4f (1,1,1,1);
+
+	qglEnable (GL_DEPTH_TEST);
+	qglEnable (GL_TEXTURE_2D);
+}
+
+/*
 =================
-R_AddMeshToList
+R_AddSurfaceToList
 =================
 */
-meshlistmember_t *R_AddMeshToList ( mesh_t *mesh, mfog_t *fog )
+qboolean R_AddSurfaceToList ( msurface_t *surf )
 {
-	meshlistmember_t *meshmember;
 	shader_t *shader;
 
-	if ( r_meshlist.num_meshes >= MAX_RENDER_MESHES ) {
-		return NULL;
+	if ( !surf->mesh.shader ) {
+		return false;
 	}
-	if ( !mesh->shader ) {
-		return NULL;
+	if ( surf->shaderref->flags & SURF_NODRAW ) {
+		return false;
 	}
 
-	shader = mesh->shader;
+	shader = surf->mesh.shader;
 
-	meshmember = &currentlist->meshlist[r_meshlist.num_meshes++];
-	meshmember->mesh = mesh;
-	meshmember->surf = NULL;
-	meshmember->entity = currententity;
-	meshmember->fog = fog;
+	// perform culling
+	if ( !r_nocull->value && ( shader->flags & SHADER_DOCULL ) ) {
+		if ( surf->facetype == FACETYPE_PLANAR ) {
+			if ( r_faceplanecull->value ) {
+				if ( PlaneDiff (r_origin, surf->plane) < 0 )
+					return false;
+			}
+		} else if ( surf->facetype == FACETYPE_MESH ) {
+			if ( R_CullBox ( surf->mins, surf->maxs ) )
+				return false;
+		} else if ( surf->facetype == FACETYPE_TRISURF ) {
+		} else if ( surf->facetype == FACETYPE_FLARE ) {
+			if ( r_faceplanecull->value ) {
+				if ( PlaneDiff (r_origin, surf->plane) < 0 )
+					return false;
+			}
+		}
+	}
 
-	if ( currententity->model->type == mod_brush ) {
-		meshmember->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | ((mesh->lightmaptexturenum+1) << 8) |
-			(fog ? fog - r_worldmodel->fogs + 1 : 0);
+	if ( surf->facetype == FACETYPE_FLARE ) {
+		surf->texturechain = r_flare_surfaces;
+		r_flare_surfaces = surf;
+		return true;
+	}
+
+	if ( surf && surf->fog ) {
+		surf->fogchain = r_fog_surfaces;
+		r_fog_surfaces = surf;
+	}
+
+	if ( shader->flags & SHADER_SKY ) {
+		R_AddSkySurface ( &surf->mesh );
+		return true;
+	}
+
+	// nodraw, hint, fog, skybox, etc.
+	if ( !shader->numpasses ) {
+		return true;
+	}
+
+	if ( shader->flush == SHADER_FLUSH_MULTITEXTURE_2 ||
+		 shader->flush == SHADER_FLUSH_MULTITEXTURE_COMBINE ) {
+		surf->texturechain = r_mtex_surfaces;
+		r_mtex_surfaces = surf;
+		return true;
+	}
+
+	if ( shader->sort == SHADER_SORT_ADDITIVE ) {
+		surf->texturechain = r_additive_surfaces;
+		r_additive_surfaces = surf;
+		return true;
+	}
+
+	surf->texturechain = r_generic_surfaces;
+	r_generic_surfaces = surf;
+	return true;
+}
+
+/*
+================
+DrawFogSurface
+================
+*/
+void DrawFogSurface ( mesh_t *mesh, mfog_t *fog )
+{
+	int			i, *lindex;
+	shader_t	*shader = fog->shader;
+	float		tc[2];
+	vec3_t		diff;
+	float		dist, vdist;
+
+	// upside-down
+	if ( fog->ptype > 2 ) {
+		dist = -r_origin[fog->ptype-3] - fog->pdist;
 	} else {
-		meshmember->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | ((currententity-r_newrefdef.entities) << 1) |
-			(fog ? fog - r_worldmodel->fogs + 1 : 0);
+		dist = r_origin[fog->ptype] - fog->pdist;
 	}
 
-	return meshmember;
+	qglColor3ubv ( shader->fog_color );
+
+	lindex = mesh->firstindex;
+	for (i = 0; i < mesh->numindexes; i++, lindex++)
+		R_PushElem (*lindex);
+
+	R_DeformVertices ( mesh, mesh_vertex, MAX_VERTS );
+
+	for (i = 0; i < mesh->numverts; i++)
+	{
+		VectorAdd ( currententity->origin, mesh_vertex[i], diff );
+
+		if ( fog->ptype > 2 ) {
+			vdist = -diff[fog->ptype-3] - fog->pdist;
+		} else {
+			vdist = diff[fog->ptype] - fog->pdist;
+		}
+
+		VectorSubtract ( diff, r_origin, diff );
+
+		if ( dist < 0 ) {	// camera is inside the fog brush
+			tc[0] = DotProduct ( diff, vpn );
+		} else {
+			if ( vdist < 0 ) {
+				tc[0] = vdist / ( vdist - dist );
+				tc[0] *= DotProduct ( diff, vpn );
+			} else {
+				tc[0] = 0.0f;
+			}
+		}
+	
+		tc[0] *= shader->fog_dist;
+		tc[1] *= shader->fog_dist;
+		tc[1] = -vdist + 1.5f/256.0f;
+
+		R_PushCoord ( tc );
+	}
+
+	R_LockArrays ();
+	R_FlushArrays ();
+	R_UnlockArrays ();
+	R_ClearArrays ();
 }
 
 /*
@@ -109,7 +237,7 @@ void DrawFlareSurface ( msurface_t *surf )
 	vec3_t v;
 	vec3_t v_right, v_up;
 	float dist, intensity;
-	float radius = r_flaresize->value * 0.5f;
+	float radius = 20.0f;		// FIXME?
 	float *bub_sin = bubble_sintable, 
 		*bub_cos = bubble_costable;
 	int i, j;
@@ -121,13 +249,8 @@ void DrawFlareSurface ( msurface_t *surf )
 		return;
 	}
 
-	intensity = dist / 1024.0f;
-	radius = r_flaresize->value * intensity;
-
-	if ( radius < r_flaresize->value * 0.3f )
-		radius = r_flaresize->value * 0.3f;
-	else if ( radius > r_flaresize->value )
-		radius = r_flaresize->value;
+	intensity = (1024.0f - dist) / 1024.0f;
+	intensity = 1.0f - intensity;
 
 	// clamp, but don't let the flare disappear.
 	if (intensity > 1.0f) 
@@ -145,9 +268,9 @@ void DrawFlareSurface ( msurface_t *surf )
 
 	qglBegin ( GL_TRIANGLE_FAN );
 	qglColor3f (
-		surf->mins[0] * r_flarescale, 
-		surf->mins[1] * r_flarescale, 
-		surf->mins[2] * r_flarescale);
+		surf->mins[0]*intensity, 
+		surf->mins[1]*intensity, 
+		surf->mins[2]*intensity);
 
 	qglVertex3fv ( v );
 	qglColor3f ( 0, 0, 0 );
@@ -163,185 +286,139 @@ void DrawFlareSurface ( msurface_t *surf )
 	qglEnd ();
 }
 
-
-static int face_cmp (const void *a, const void *b)
-{
-    return ((meshlistmember_t*)a)->sortkey - ((meshlistmember_t*)b)->sortkey;
-}
-
-static void R_SortFaces (void)
-{
-    qsort ((void*)r_meshlist.meshlist, r_meshlist.num_meshes, sizeof(meshlistmember_t), face_cmp);
-}
-
 /*
 ================
-R_DrawSortedPolys
+DrawSurfaceChains
 ================
 */
-void R_DrawSortedPolys (void)
+void DrawSurfaceChains (void)
 {
-	int i, lastsort;
-	meshlistmember_t *meshmember;
-	
-	currententity = &r_worldent;
-	currentmodel = r_worldmodel;
+	msurface_t *s;
 
-	if ( r_meshlist.num_meshes ) {
-		qboolean skydrawn = false;
+	if ( r_mtex_surfaces ) {
+		GLSTATE_DISABLE_BLEND
+		GLSTATE_DISABLE_ALPHATEST
+		qglDisable ( GL_POLYGON_OFFSET );
+		qglDepthMask ( GL_TRUE );
+		qglDepthFunc ( GL_LEQUAL );
 
-		R_SortFaces ();
+		GL_EnableMultitexture ( true );
 
-		meshmember = r_meshlist.meshlist;
-		lastsort = SHADER_SORT_NONE;
-		for ( i = 0; i < r_meshlist.num_meshes; i++, meshmember++ ) {
-			if ( (meshmember->mesh->shader->flags & SHADER_SKY) ) {
-				if ( !skydrawn && !r_fastsky->value ) {
-					R_DrawSkydome ();
-					skydrawn = true;
-				}
-
-				if ( !r_fastsky->value ) {
-					GL_EnableMultitexture ( false );
-					R_RenderSkySurface ( meshmember->mesh, meshmember->fog );
-				} else if ( !skydrawn ) {
-					R_DrawFastSky ();
-					skydrawn = true;
-				}
-
-				lastsort = SHADER_SORT_SKY;
-				continue;
-			}
-			if ( (meshmember->mesh->shader->sort > SHADER_SORT_SKY ) && 
-				lastsort < SHADER_SORT_SKY && !skydrawn)  {
-				if ( r_fastsky->value ) {
-					R_DrawFastSky ();
-				} else {
-					R_DrawSkydome ();
-				}
-
-				skydrawn = true;
-			}
-			lastsort = meshmember->mesh->shader->sort;
-
-			currententity = meshmember->entity;
-			currentmodel = currententity->model;
-
-			if ( !currentmodel ) {		// FIXME?
-				continue;
-			}
-			if ( currententity->visframe == r_framecount ) {
-				continue;
-			}
-
-			if ( currentmodel->aliastype == ALIASTYPE_MD3 ) {
-				R_DrawMd3Model ( currententity );
+		for ( s = r_mtex_surfaces; s; s = s->texturechain ) {
+			if ( s->mesh.shader->flush == SHADER_FLUSH_MULTITEXTURE_2 ) {
+				R_RenderMeshMultitextured ( &s->mesh );
 			} else {
-				if ( currententity != &r_worldent ) {
-					qglPushMatrix ();
-					
-					qglTranslatef ( currententity->origin[0], currententity->origin[1], currententity->origin[2] );
-					
-					qglRotatef ( currententity->angles[YAW],	0, 0, 1 );
-					qglRotatef ( currententity->angles[PITCH],	0, 1, 0 );	// stupid quake bug
-					qglRotatef ( currententity->angles[ROLL],	1, 0, 0 );	// stupid quake bug
-				}
-
-				meshmember->mesh->shader->flush ( meshmember->mesh, meshmember->fog, meshmember->surf );
-
-				if ( currententity != &r_worldent ) {
-					qglPopMatrix ();
-				}
+				R_RenderMeshCombined ( &s->mesh );
 			}
 		}
 
-		r_meshlist.num_meshes = 0;
+		GL_EnableMultitexture ( false );
 	}
 
-	GL_EnableMultitexture ( false );
-	qglDisable ( GL_POLYGON_OFFSET_FILL );
+	if ( r_generic_surfaces ) {
+		for ( s = r_generic_surfaces; s; s = s->texturechain ) {
+			R_RenderMeshGeneric ( &s->mesh );
+		}
+	}
+
+	if ( r_additive_surfaces ) {
+		GL_TexEnv ( GL_MODULATE );
+
+		for ( s = r_additive_surfaces; s; s = s->texturechain ) {
+			R_RenderMeshGeneric ( &s->mesh );
+		}
+	}
+
+	qglDisable ( GL_POLYGON_OFFSET );
 	GLSTATE_DISABLE_ALPHATEST
-	GLSTATE_DISABLE_BLEND
+
+	if ( r_fog_surfaces ) {
+		shaderpass_t *pass;
+
+		GLSTATE_ENABLE_BLEND
+		qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+		GL_TexEnv ( GL_MODULATE );
+		GL_Bind ( r_fogtexture->texnum );
+
+		for ( s = r_fog_surfaces; s; s = s->fogchain ) {
+			if ( s->mesh.shader->numpasses ) {
+				pass = &s->mesh.shader->pass[s->mesh.shader->numpasses-1];
+				if ( pass->flags & SHADER_PASS_DEPTHWRITE ) {
+					qglDepthMask ( GL_TRUE ); // enable zbuffer updates
+					if ( pass->depthfunc == GL_LEQUAL )
+						qglDepthFunc ( GL_EQUAL );
+					else
+						qglDepthFunc ( pass->depthfunc );
+				} else {
+					qglDepthMask ( GL_FALSE ); // disable zbuffer updates
+					qglDepthFunc ( GL_LEQUAL );
+				}
+			} else {
+				qglDepthMask ( GL_FALSE ); // disable zbuffer updates
+				qglDepthFunc ( GL_LEQUAL );
+			}
+
+			DrawFogSurface ( &s->mesh, s->fog );
+		}
+	}
+
 	qglDepthFunc ( GL_LEQUAL );
 
-	if ( num_flares ) {
+	if ( r_flare_surfaces && r_flare->value ) {
 		GLSTATE_ENABLE_BLEND
 		qglDepthMask ( GL_FALSE );
 		qglDisable ( GL_TEXTURE_2D );
-//		qglDisable ( GL_DEPTH_TEST );
-		qglBlendFunc ( GL_ONE, GL_ONE );
+		qglBlendFunc ( GL_ONE, GL_SRC_ALPHA );
 
-		r_flarescale = 1.0f / r_flarefade->value;
-
-		for ( i = 0; i < num_flares; i++ ) {
-			DrawFlareSurface ( flare_surfaces[i] );
+		for ( s = r_flare_surfaces; s; s = s->texturechain ) {
+			DrawFlareSurface ( s );
 		}
 
-		qglColor3f ( 1, 1, 1 );
-//		qglEnable ( GL_DEPTH_TEST );
 		qglEnable ( GL_TEXTURE_2D );
 		GLSTATE_DISABLE_BLEND
-		num_flares = 0;
 	}
 
+	qglColor3f ( 1, 1, 1 );
 	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 	qglDepthMask ( GL_TRUE );
+	GLSTATE_DISABLE_BLEND
+	GL_TexEnv ( GL_REPLACE );
 }
 
 /*
 =================
-R_AddSurfaceToList
+R_RenderDlights
 =================
 */
-void R_AddSurfaceToList (msurface_t *surf)
+void R_RenderDlights ( void )
 {
-	meshlistmember_t *meshmember;
-
-	if ( surf->facetype == FACETYPE_FLARE ) {
-		if ( num_flares < MAX_RENDER_MESHES && r_flares->value && 
-			(r_flaresize->value > 0) && (r_flarefade->value > 0) ) {
-			flare_surfaces[num_flares++] = surf;
-			c_brush_polys++;
-		}
+	if ( !r_dynamiclight->value )
 		return;
+	if ( !r_dlighttexture )
+		return;
+
+	if ( !r_newrefdef.num_dlights ||
+		(!r_mtex_surfaces && !r_generic_surfaces ))
+		return;
+
+	GL_EnableMultitexture ( false );
+
+	GL_Bind ( r_dlighttexture->texnum );
+
+	GLSTATE_ENABLE_BLEND
+	qglBlendFunc ( GL_DST_COLOR, GL_ONE );
+	GL_TexEnv ( GL_MODULATE );
+
+	if ( r_mtex_surfaces ) {
+		R_MarkLights ( r_mtex_surfaces );
 	}
 
-	if ( !r_nocull->value && (surf->mesh.shader->flags & (SHADER_CULL_FRONT|SHADER_CULL_BACK)) ) {
-		switch ( surf->facetype )
-		{
-			case FACETYPE_PLANAR:
-				if ( r_faceplanecull->value ) {
-					if ( surf->plane->type < 3 ) {
-//						if ( vpn[surf->plane->type] > r_newrefdef.cos_half_fox_x )
-//							return;
-						if ( modelorg[surf->plane->type] - surf->plane->dist <= BACKFACE_EPSILON )
-							return;
-					} else {
-						if ( DotProduct (modelorg, surf->plane->normal) - surf->plane->dist <= BACKFACE_EPSILON )
-							return;
-					}
-				}
-				break;
-
-			case FACETYPE_MESH:
-			case FACETYPE_TRISURF:
-				if ( R_CullBox ( surf->mins, surf->maxs ) )
-					return;
-
-			default:
-				break;
-		}
+	if ( r_generic_surfaces ) {
+		R_MarkLights ( r_generic_surfaces );
 	}
 
-	meshmember = R_AddMeshToList ( &surf->mesh, surf->fog );
-	if ( meshmember ) {
-		meshmember->surf = surf;
-
-		if ( surf->mesh.shader->flags & SHADER_SKY )
-			R_AddSkySurface ( surf );
-
-		c_brush_polys++;
-	}
+	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+	GLSTATE_DISABLE_BLEND
 }
 
 /*
@@ -356,13 +433,24 @@ void R_DrawInlineBModel (void)
 
 	psurf = &currentmodel->surfaces[currentmodel->firstmodelsurface];
 	for ( i=0 ; i<currentmodel->nummodelsurfaces ; i++, psurf++ ) {
-		if ( psurf->visframe == r_framecount ) {
-			continue;
+		if ( psurf->visframe != r_framecount ) {
+			if ( R_AddSurfaceToList ( psurf ) ) {
+				psurf->visframe = r_framecount;
+				c_brush_polys++;
+			}
 		}
-
-		psurf->visframe = r_framecount;
-		R_AddSurfaceToList ( psurf );
 	}
+
+	DrawSurfaceChains();
+	R_RenderDlights ();
+
+	R_DrawTriangleOutlines ();
+
+	r_mtex_surfaces = NULL;
+	r_generic_surfaces = NULL;
+	r_additive_surfaces = NULL;
+	r_flare_surfaces = NULL;
+	r_fog_surfaces = NULL;
 }
 
 /*
@@ -398,20 +486,17 @@ void R_DrawBrushModel (entity_t *e)
 	if (R_CullBox (mins, maxs))
 		return;
 
-	VectorSubtract (r_newrefdef.vieworg, e->origin, modelorg);
-	if (rotated)
-	{
-		vec3_t	temp;
-		vec3_t	forward, right, up;
+    qglPushMatrix ();
 
-		VectorCopy (modelorg, temp);
-		AngleVectors (e->angles, forward, right, up);
-		modelorg[0] = DotProduct (temp, forward);
-		modelorg[1] = -DotProduct (temp, right);
-		modelorg[2] = DotProduct (temp, up);
-	}
+	qglTranslatef ( e->origin[0], e->origin[1], e->origin[2] );
+
+    qglRotatef ( e->angles[YAW],	0, 0, 1 );
+    qglRotatef ( e->angles[PITCH],	0, 1, 0 );	// stupid quake bug
+    qglRotatef ( e->angles[ROLL],	1, 0, 0 );	// stupid quake bug
 
 	R_DrawInlineBModel ();
+
+	qglPopMatrix ();
 }
 
 /*
@@ -430,8 +515,10 @@ R_RecursiveWorldNode
 void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 {
 	int			c;
+	cplane_t	*plane;
 	msurface_t	*surf, **mark;
 	mleaf_t		*pleaf;
+	float		dot;
 
 	if ( node->contents == CONTENTS_SOLID )
 		return;		// solid
@@ -449,6 +536,7 @@ void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 			clipped = BoxOnPlaneSide (node->mins, node->maxs, &frustum[2]);
 		else if (clipflags & 8) 
 			clipped = BoxOnPlaneSide (node->mins, node->maxs, &frustum[3]);
+
 		if (clipped == 2)
 			return;
 		else if (clipped == 1)
@@ -477,20 +565,34 @@ void R_RecursiveWorldNode (mnode_t *node, int clipflags)
 			{
 				surf = *mark++;
 
-				if ( surf->visframe == r_framecount ) {
-					continue;
+				if ( surf->visframe != r_framecount ) {
+					if ( R_AddSurfaceToList ( surf ) ) {
+						surf->visframe = r_framecount;
+						c_brush_polys++;
+					}
 				}
-
-				surf->visframe = r_framecount;
-				R_AddSurfaceToList ( surf );
 			} while (--c);
 		}
+
 		return;
 	}
 
-	// recurse down the children
-	R_RecursiveWorldNode (node->children[0], clipflags);
-	R_RecursiveWorldNode (node->children[1], clipflags);
+// node is just a decision point, so go down the apropriate sides
+
+// find which side of the node we are on
+	plane = node->plane;
+
+	if ( plane->type < 3 ) {
+		dot = r_origin[plane->type] - plane->dist;
+	} else {
+		dot = DotProduct (r_origin, plane->normal) - plane->dist;
+	}
+
+// recurse down the children, front side first
+	R_RecursiveWorldNode (node->children[(dot < 0)], clipflags);
+
+// recurse down the back side
+	R_RecursiveWorldNode (node->children[(dot >= 0)], clipflags);
 }
 
 
@@ -508,16 +610,38 @@ void R_DrawWorld (void)
 		return;
 
 	currentmodel = r_worldmodel;
-	VectorCopy (r_newrefdef.vieworg, modelorg);
 
 	// auto cycle the world frame for texture animation
 	r_worldent.frame = (int)(r_newrefdef.time*2);
 	r_worldent.model = r_worldmodel;
+
 	currententity = &r_worldent;
-	currentlist = &r_meshlist;
+
+	gl_state.currenttextures[0] = gl_state.currenttextures[1] = -1;
+
+	r_mtex_surfaces = NULL;
+	r_generic_surfaces = NULL;
+	r_additive_surfaces = NULL;
+	r_flare_surfaces = NULL;
+	r_fog_surfaces = NULL;
 
 	R_ClearSkyBox ();
-	R_RecursiveWorldNode( r_worldmodel->nodes, 15 );
+
+	R_RecursiveWorldNode (r_worldmodel->nodes, 15);
+
+	R_DrawSkydome (&r_worldmodel->skydome);
+
+	DrawSurfaceChains ();
+
+	R_RenderDlights ();
+
+	R_DrawTriangleOutlines ();
+
+	r_mtex_surfaces = NULL;
+	r_generic_surfaces = NULL;
+	r_additive_surfaces = NULL;
+	r_flare_surfaces = NULL;
+	r_fog_surfaces = NULL;
 }
 
 
@@ -543,10 +667,8 @@ void R_MarkLeaves (void)
 
 	// development aid to let you run around and see exactly where
 	// the pvs ends
-	if ( Com_ServerState() && developer->value ) {
-		if (gl_lockpvs->value)
-			return;
-	}
+	if (gl_lockpvs->value)
+		return;
 
 	r_visframecount++;
 	r_oldviewcluster = r_viewcluster;
@@ -592,6 +714,33 @@ void R_MarkLeaves (void)
 		}
 	}
 }
+/*
+================
+GL_CalcCentreTC
+================
+*/
+void GL_CalcMeshCentre ( mesh_t *mesh )
+{
+	int i;
+	mvertex_t *vert;
+	vec2_t total = { 0.0f, 0.0f };
+	float scale;
+
+	if ( !mesh->numverts )
+		return;
+
+	scale = 1.0f / (float)mesh->numverts;
+
+	vert = mesh->firstvert;
+	for (i = 0; i < mesh->numverts; i++, vert++)
+	{
+		total[0] += vert->tex_st[0];
+		total[1] += vert->tex_st[1];
+	}
+
+	mesh->tex_centre_tc[0] = total[0] * scale;
+	mesh->tex_centre_tc[1] = total[1] * scale;
+}
 
 /*
 ================
@@ -611,7 +760,7 @@ void GL_PretransformAutosprites (msurface_t *surf)
 
 	shader = surf->mesh.shader;
 
-	if ( !shader->numdeforms )
+	if ( !( shader->flags & SHADER_DEFORMVERTS ) )
 		return;
 
 	if ( surf->facetype != FACETYPE_PLANAR && 
@@ -657,6 +806,7 @@ void GL_PretransformAutosprites (msurface_t *surf)
 			VectorSubtract ( v[j]->position, normal, tempvec );
 			Matrix3_Multiply_Vec3 ( imatrix, tempvec, tv );
 			VectorAdd ( normal, tv, v[j]->position );
+			VectorCopy ( normal, v[j]->rot_centre );
 		}
 	}
 }
@@ -677,9 +827,12 @@ GL_BeginBuildingLightmaps
 */
 void GL_BeginBuildingLightmaps (model_t *m)
 {
+	unsigned		dummy[128*128];
+
 	r_framecount = 1;
 
-	memset ( &r_meshlist, 0, sizeof(meshlist_t) );
+	GL_EnableMultitexture( true );
+	GL_SelectTexture( GL_TEXTURE1 );
 
 	if (!gl_state.lightmap_textures)
 		gl_state.lightmap_textures	= TEXNUM_LIGHTMAPS;
@@ -712,6 +865,19 @@ void GL_BeginBuildingLightmaps (model_t *m)
 	} else {
 		gl_lms.internal_format = gl_tex_solid_format;
 	}
+
+	// initialize the dynamic lightmap texture
+	GL_Bind( gl_state.lightmap_textures + 0 );
+	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	qglTexImage2D( GL_TEXTURE_2D, 
+				   0, 
+				   gl_lms.internal_format,
+				   BLOCK_WIDTH, BLOCK_HEIGHT, 
+				   0, 
+				   GL_LIGHTMAP_FORMAT, 
+				   GL_UNSIGNED_BYTE, 
+				   dummy );
 }
 
 /*
@@ -721,6 +887,7 @@ GL_EndBuildingLightmaps
 */
 void GL_EndBuildingLightmaps (void)
 {
+	GL_EnableMultitexture( false );
 }
 
 void R_BuildLightmaps (model_t *model)

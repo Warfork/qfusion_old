@@ -40,8 +40,6 @@ void M_Menu_Main_f (void);
 			void M_Menu_DMOptions_f (void);
 	void M_Menu_Options_f (void);
 		void M_Menu_Keys_f (void);
-	void M_Menu_Sound_f (void);
-	void M_Menu_Gfx_f (void);
 	void M_Menu_Video_f (void);
 	void M_Menu_Quit_f (void);
 
@@ -375,8 +373,6 @@ void M_Init (void)
 			trap_Cmd_AddCommand ("menu_downloadoptions", M_Menu_DownloadOptions_f);
 		trap_Cmd_AddCommand ("menu_credits", M_Menu_Credits_f );
 	trap_Cmd_AddCommand ("menu_multiplayer", M_Menu_Multiplayer_f );
-	trap_Cmd_AddCommand ("menu_sound", M_Menu_Sound_f);
-	trap_Cmd_AddCommand ("menu_gfx", M_Menu_Gfx_f);
 	trap_Cmd_AddCommand ("menu_video", M_Menu_Video_f);
 	trap_Cmd_AddCommand ("menu_options", M_Menu_Options_f);
 		trap_Cmd_AddCommand ("menu_keys", M_Menu_Keys_f);
@@ -402,8 +398,6 @@ void M_Shutdown (void)
 	trap_Cmd_RemoveCommand ("menu_downloadoptions");
 	trap_Cmd_RemoveCommand ("menu_credits");
 	trap_Cmd_RemoveCommand ("menu_multiplayer");
-	trap_Cmd_RemoveCommand ("menu_gfx");
-	trap_Cmd_RemoveCommand ("menu_sound");
 	trap_Cmd_RemoveCommand ("menu_video");
 	trap_Cmd_RemoveCommand ("menu_options");
 	trap_Cmd_RemoveCommand ("menu_keys");

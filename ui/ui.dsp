@@ -126,10 +126,6 @@ SOURCE=.\ui_dmoptions.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\ui_gfx.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\ui_keys.c
 # End Source File
 # Begin Source File
@@ -155,10 +151,6 @@ SOURCE=.\ui_playerconfig.c
 # Begin Source File
 
 SOURCE=.\ui_quit.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\ui_sound.c
 # End Source File
 # Begin Source File
 

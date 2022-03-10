@@ -333,19 +333,9 @@ void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 		ch->rightvol = 255;
 
 	if ( sc->music ) {
-		if ( !s_musicvolume->value ) {
-			ch->pos += count;
-			return;
-		}
-
 		lscale = snd_musicscaletable[ch->leftvol >> 3];
 		rscale = snd_musicscaletable[ch->rightvol >> 3];
 	} else {
-		if ( !s_volume->value ) {
-			ch->pos += count;
-			return;
-		}
-
 		lscale = snd_scaletable[ch->leftvol >> 3];
 		rscale = snd_scaletable[ch->rightvol >> 3];
 	}
@@ -384,19 +374,9 @@ void S_PaintChannelFrom16 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 	portable_samplepair_t	*samp;
 
 	if ( sc->music ) {
-		if ( !music_vol ) {
-			ch->pos += count;
-			return;
-		}
-
 		leftvol = ch->leftvol*music_vol;
 		rightvol = ch->rightvol*music_vol;
 	} else {
-		if ( !snd_vol ) {
-			ch->pos += count;
-			return;
-		}
-
 		leftvol = ch->leftvol*snd_vol;
 		rightvol = ch->rightvol*snd_vol;
 	}

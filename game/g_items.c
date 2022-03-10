@@ -1406,7 +1406,7 @@ always owned, never in the world
 		WEAP_MACHINEGUN,
 		NULL,
 		0,
-/* precache */ "sound/weapons/machgf1b.wav sound/weapons/machgf2b.wav sound/weapons/machgf3b.wav sound/weapons/machgf4b.wav sound/weapons/machgf5b.wav"
+/* precache */ "sound/weapons/machgf1b.wav sound/weapons/machgf2b.wav sound/weapons/machgf3b.wav sound/weapons/machgf4b.wav weapons/machgf5b.wav"
 	},
 
 /*QUAKED weapon_chaingun (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1452,7 +1452,7 @@ always owned, never in the world
 		WEAP_GRENADES,
 		NULL,
 		AMMO_GRENADES,
-/* precache */ "sound/weapons/hgrent1a.wav sound/weapons/hgrena1b.wav sound/weapons/hgrenc1b.wav sound/weapons/hgrenb1a.wav sound/weapons/hgrenb2a.wav "
+/* precache */ "weapons/hgrent1a.wav weapons/hgrena1b.wav weapons/hgrenc1b.wav weapons/hgrenb1a.wav weapons/hgrenb2a.wav "
 	},
 
 /*QUAKED weapon_grenadelauncher (.3 .3 1) (-16 -16 -16) (16 16 16)

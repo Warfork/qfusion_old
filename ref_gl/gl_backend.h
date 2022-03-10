@@ -23,10 +23,15 @@ typedef struct
     float		tex_st[2];			// texture coords
 	float		lm_st[2];			// lightmap texture coords
     vec3_t		normal;				// normal
-    float		colour[4];			// colour used for vertex lighting
+    float		colour[4];			// colour used for vertex lighting?
+
+	float		patchRel;			// FIXME: this is a bad place
+									// for this stuff
+
+	vec3_t		rot_centre;			// for autosprites
 } mvertex_t;
 
-typedef struct mesh_s
+typedef struct
 {
 	shader_t	*shader;
 
@@ -35,6 +40,8 @@ typedef struct mesh_s
 
     int			numindexes;
     unsigned	*firstindex;
+
+	vec2_t		tex_centre_tc;
 
 	int			patchWidth;
 	int			patchHeight;
@@ -64,10 +71,8 @@ void R_DeformVertices ( mesh_t *mesh, vec3_t *out, int outlen );
 void R_ModifyTextureCoords ( mesh_t *mesh, int pass, qboolean mtex, vec2_t *out, int outlen );
 void R_ModifyColour ( mesh_t *mesh, int pass, qboolean mtex, vec4_t *out, int outlen );
 
-void R_RenderSkySurface ( mesh_t *mesh, struct mfog_s *fog );
-
-void R_RenderMeshGeneric ( mesh_t *mesh, struct mfog_s *fog, struct msurface_s *s );
-void R_RenderMeshMultitextured ( mesh_t *mesh, struct mfog_s *fog, struct msurface_s *s );
-void R_RenderMeshCombined ( mesh_t *mesh, struct mfog_s *fog, struct msurface_s *s );
+void R_RenderMeshGeneric ( mesh_t *mesh );
+void R_RenderMeshMultitextured ( mesh_t *mesh );
+void R_RenderMeshCombined ( mesh_t *mesh );
 
 

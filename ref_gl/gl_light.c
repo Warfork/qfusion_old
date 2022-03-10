@@ -21,127 +21,119 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "gl_local.h"
 
-#define R_Interpolate_Trilinear(t,v,dst) ((dst)=(t)[0]*(v)[0]+(t)[1]*(v)[1]+ \
-	(t)[2]*(v)[2]+(t)[3]*(v)[3]+(t)[4]*(v)[4]+(t)[5]*(v)[5]+(t)[6]*(v)[6]+(t)[7]*(v)[7])
+static vec3_t	light_vertex[MAX_VERTS];
 
 /*
 =================
-R_AddDynamicLights
+R_MarkLights
+
+Optimize it someday...
 =================
 */
-void R_AddDynamicLights ( msurface_t *s, vec4_t *vertexArray )
+void R_MarkLights ( msurface_t *slist )
 {
+	msurface_t *s;
 	dlight_t *light;
-	vec3_t point, v, lmins, lmaxs;
+	vec3_t point, v, lastnormal;
 	mvertex_t *vert;
-	float dist, scale, tc[2], vcolor[4], color[4];
-	int i, j, div;
-
-	if ( !r_dynamiclight->value || 
-		!r_dlighttexture || 
-		!r_newrefdef.num_dlights ||
-		r_vertexlight->value ) {
-		return;
-	}
-	if ( (s->flags & (SURF_SKY|SURF_NOLIGHTMAP|SURF_NODLIGHT)) || 
-		!s->mesh.shader->numpasses ) {
-		return;
-	}
-
-	div = floor ( r_mapoverbrightbits->value - r_overbrightbits->value );
-	if ( div > 0 ) {
-		div = pow( 2, div );
-	} else {
-		div = 1.0;
-	}
+	float dist, scale, cs, tc[2], color[4];
+	int i, j, *lindex;
 
 	color[3] = 1.0f;
-	
-	GL_Bind ( r_dlighttexture->texnum );
-	qglBlendFunc ( GL_DST_COLOR, GL_ONE );
-	qglDepthFunc ( GL_LEQUAL );
 
-	light = r_newrefdef.dlights;
-	for ( i = 0; i < r_newrefdef.num_dlights; i++, light++ ) {
-		VectorCopy ( light->origin, lmins );
-		VectorCopy ( light->origin, lmaxs );
-		lmins[0] -= light->intensity;
-		lmins[1] -= light->intensity;
-		lmins[2] -= light->intensity;
-		lmaxs[0] += light->intensity;
-		lmaxs[1] += light->intensity;
-		lmaxs[2] += light->intensity;
+	VectorClear ( lastnormal );
 
-		if ( s->facetype == FACETYPE_PLANAR ) {
-			if ( lmaxs[0] <= s->origin[0] || lmaxs[1] <= s->origin[1] || lmaxs[2] <= s->origin[2] ) {
-				continue;
-			}
-
-			dist = PlaneDiff ( light->origin, s->plane );
-			
-			if ( dist < 0 )
-				dist = -dist;
-			
-			if ( dist > light->intensity )
-				continue;
-			
-			if ( s->plane->type < 3 ) {
-				VectorCopy ( light->origin, point );
-				point[s->plane->type] -= dist;
-			} else {
-				VectorMA ( light->origin, -dist, s->plane->normal, point );
-			}
-			scale = 0.08f / ( 2*light->intensity - dist );
-		} else {
-			if ( lmins[0] >= s->maxs[0] || lmins[1] >= s->maxs[1]	|| lmins[2] >= s->maxs[2]
-				|| lmaxs[0] <= s->mins[0] || lmaxs[1] <= s->mins[1] || lmaxs[2] <= s->mins[2] ) {
-				continue;
-			}
+	for ( s = slist; s; s = s->texturechain ) {
+		if ( s->shaderref->flags & SURF_NODLIGHT ) {
+			continue;
+		}
+		if ( s->shaderref->flags & SURF_SKY ) {
+			continue;
+		}
+		if ( s->shaderref->contents & MASK_WATER ) {
+			continue;
+		}
+		if ( s->facetype == FACETYPE_TRISURF ) {
+			continue;
 		}
 
-		VectorScale ( light->color, div, color );
-		color[0] = min ( color[0], 1 );
-		color[1] = min ( color[1], 1 );
-		color[2] = min ( color[2], 1 );
-
-		vert = s->mesh.firstvert;
-		for (j = 0; j < s->mesh.numverts; j++, vert++)
-		{
-			if ( s->facetype != FACETYPE_PLANAR ) {	
-				// Project the light image onto the face
-				VectorAdd ( vertexArray[j], currententity->origin, v );
-				VectorSubtract ( light->origin, v, v );
-				dist = DotProduct ( v, vert->normal );
+		light = r_newrefdef.dlights;
+		for ( i = 0; i < r_newrefdef.num_dlights; i++, light++ ) {
+			if ( s->facetype == FACETYPE_PLANAR ) {
+				VectorClear ( lastnormal );
+				dist = PlaneDiff ( light->origin, s->plane );
 				
 				if ( dist < 0 )
 					dist = -dist;
 				
-				VectorCopy ( color, vcolor );
-				VectorMA ( light->origin, -dist, vert->normal, point );
-				scale = 1.0 / ( 2*light->intensity - dist );
-			} else {
-				VectorCopy ( color, vcolor );
-			}
-				
-			// Get our texture coordinates
-			// Project the light image onto the face
-			VectorAdd ( vertexArray[j], currententity->origin, v );
-			VectorSubtract( v, point, v );
-			
-			if ( s->facetype == FACETYPE_MESH ) {	
-				tc[0] = DotProduct( v, s->mesh.lm_mins[j] ) * scale + 0.5f;
-				tc[1] = DotProduct( v, s->mesh.lm_maxs[j] ) * scale + 0.5f;
-			} else {
-				tc[0] = DotProduct( v, s->mins ) * scale + 0.5f;
-				tc[1] = DotProduct( v, s->maxs ) * scale + 0.5f;
+				if ( dist > light->intensity )
+					continue;
+
+				ProjectPointOnPlane ( point, light->origin, s->plane->normal );
+
+				scale = 0.08f / ( 2*light->intensity - dist );
+				cs = 1.0f - ( dist / light->intensity );
+				VectorScale ( light->color, cs, color );
 			}
 
-			R_PushCoord ( tc );
-			R_PushColor ( vcolor );
+			lindex = s->mesh.firstindex;
+			for (j = 0; j < s->mesh.numindexes; j++, lindex++)
+				R_PushElem (*lindex);
+
+			R_DeformVertices ( &s->mesh, light_vertex, MAX_VERTS );
+
+			vert = s->mesh.firstvert;
+			for (j = 0; j < s->mesh.numverts; j++, vert++)
+			{
+				if ( s->facetype != FACETYPE_PLANAR ) {
+					if ( !VectorCompare (vert->normal, lastnormal) ) {
+						VectorCopy ( vert->normal, lastnormal );
+
+						// Project the light image onto the face
+						VectorSubtract ( light->origin, light_vertex[j], v );
+						dist = DotProduct ( v, vert->normal );
+						
+						if ( dist < 0 )
+							dist = -dist;
+						
+						if ( dist > light->intensity ) {
+							cs = 0;
+						} else {
+							ProjectPointOnPlane ( point, light->origin, vert->normal );
+
+							scale = 1.0f / ( 2*light->intensity - dist );
+							cs = 1.0f - ( dist / light->intensity );
+						}
+
+						VectorScale ( light->color, cs, color );
+					} else {
+						VectorScale ( light->color, cs, color );
+					}					
+				}
+
+				// Project the light image onto the face
+				VectorAdd ( light_vertex[j], currententity->origin, v );
+				VectorSubtract( v, point, v );
+
+				// Get our texture coordinates
+				if ( s->facetype == FACETYPE_MESH ) {	
+					tc[0] = DotProduct( v, s->mesh.lm_mins[j] ) * scale + 0.5f;
+					tc[1] = DotProduct( v, s->mesh.lm_maxs[j] ) * scale + 0.5f;
+				} else {
+					tc[0] = DotProduct( v, s->mins ) * scale + 0.5f;
+					tc[1] = DotProduct( v, s->maxs ) * scale + 0.5f;
+				}
+				
+				R_PushCoord ( tc );
+				R_PushColor ( color );
+			}
+
+			R_LockArrays ();
+			R_FlushArrays ();
+			R_UnlockArrays ();
+			R_ClearArrays ();
 		}
-		
-		R_FlushArrays ();
-	}
+	}	
 }
 
 /*
@@ -152,97 +144,86 @@ LIGHT SAMPLING
 =============================================================================
 */
 
+vec3_t			pointcolor;
+cplane_t		*lightplane;		// used as shadow plane
+vec3_t			lightspot;
+
 vec3_t			gridSize;
 vec3_t			gridMins;
 int				gridBounds[3];
 
-float R_FastSin ( float t );
+int RecursiveLightPoint (mnode_t *node, vec3_t start, vec3_t end)
+{
+	return 255;
+}
 
 /*
 ===============
-R_LightForPoint
+R_LightOfPoint
 ===============
 */
-void R_LightForPoint ( vec3_t p, vec3_t ambient, vec3_t diffuse, vec3_t direction )
+mlightgrid_t *R_LightOfPoint ( vec3_t p )
 {
-	vec3_t vf, vf2;
-	float v[8], t[8], direction_uv[2];
-	int vi[3], i, j, index[4];
+	int v[3], index;
 
-	VectorSet ( ambient, 1, 1, 1 );
-	VectorSet ( diffuse, 0, 0, 0 );
-	VectorSet ( direction, 0, 0, 1 );
+	if ( !r_worldmodel || !r_worldmodel->lightgrid )
+		return NULL;
 
-	if ( !r_worldmodel || !r_worldmodel->lightgrid ) {
+	v[0] = p[0] - gridMins[0];
+	v[1] = p[1] - gridMins[1];
+	v[2] = p[2] - gridMins[2];
+	v[0] /= gridSize[0];
+	v[1] /= gridSize[1];
+	v[2] /= gridSize[2];
+
+	index = v[2]*gridBounds[1]*gridBounds[0]+v[1]*gridBounds[0]+v[0];
+	return &r_worldmodel->lightgrid[index % r_worldmodel->numlightgridelems];
+}
+
+void R_SetVertexColour ( vec3_t v, vec3_t norm, float *colour )
+{
+	int i;
+	float dot;
+	vec3_t org, normal;
+	mlightgrid_t *light;
+
+	if ( !currententity ) {
+		colour[0] = colour[1] = colour[2] = 1.0f;
 		return;
 	}
 
-	for ( i = 0; i < 3; i++ ) {
-		vf[i] = (p[i] - gridMins[i]) / gridSize[i];
-		vi[i] = (int)vf[i];
-		vf[i] = vf[i] - floor(vf[i]);
-		vf2[i] = 1.0f - vf[i];
-	}
+	// rotate normal
+	normal[0] = DotProduct ( norm, currententity->angleVectors[0] );
+	normal[1] = -DotProduct ( norm, currententity->angleVectors[1] );
+	normal[2] = DotProduct ( norm, currententity->angleVectors[2] );
 
-	index[0] = vi[2]*gridBounds[1]*gridBounds[0]+vi[1]*gridBounds[0]+vi[0];
-	index[1] = index[0] + gridBounds[0];
-	index[2] = index[1] + gridBounds[1]*gridBounds[0];
-	index[3] = index[2] - gridBounds[0];
+	if ( !( currententity->flags & RF_WEAPONMODEL ) )
+		VectorAdd ( v, currententity->origin, org );
+	else
+		VectorAdd ( v, r_origin, org );
+		
+	light = R_LightOfPoint ( org );
 
-	for ( i = 0; i < 4; i++ ) {
-		if ( index[i] < 0 || index[i] >= r_worldmodel->numlightgridelems )
-			return;
-	}
+	if ( light ) {
+		dot = DotProduct ( normal, light->lightPosition );
 
-	t[0] = vf2[0] * vf2[1] * vf2[2];
-	t[1] = vf[0] * vf2[1] * vf2[2];
-	t[2] = vf2[0] * vf[1] * vf2[2];
-	t[3] = vf[0] * vf[1] * vf2[2];
-	t[4] = vf2[0] * vf2[1] * vf[2];
-	t[5] = vf[0] * vf2[1] * vf[2];
-	t[6] = vf2[0] * vf[1] * vf[2];
-	t[7] = vf[0] * vf[1] * vf[2];
-
-	for ( j = 0; j < 3; j++ ) {
-		for ( i = 0; i < 4; i++ ) {
-			v[i*2] = r_worldmodel->lightgrid[ index[i] ].ambient[j];
-			v[i*2+1] = r_worldmodel->lightgrid[ index[i] + 1 ].ambient[j];
+		for ( i = 0; i < 3; i++ ){
+			colour[i] = light->lightAmbient[i] + dot * light->lightDiffuse[i];
+			colour[i] = max ( 0, min( colour[i], 1 ) );
 		}
-
-		R_Interpolate_Trilinear ( t, v, ambient[j] );
-
-		for ( i = 0; i < 4; i++ ) {
-			v[i*2] = r_worldmodel->lightgrid[ index[i] ].diffuse[j];
-			v[i*2+1] = r_worldmodel->lightgrid[ index[i] + 1 ].diffuse[j];
-		}
-
-		R_Interpolate_Trilinear ( t, v, diffuse[j] );
-
-		if ( j < 2 ) {
-			for ( i = 0; i < 4; i++ ) {
-				v[i*2] = r_worldmodel->lightgrid[ index[i] ].direction[j];
-				v[i*2+1] = r_worldmodel->lightgrid[ index[i] + 1 ].direction[j];
-			}
-
-			R_Interpolate_Trilinear ( t, v, direction_uv[j] );
-		}
+	} else {
+		VectorSet ( colour, 1, 1, 1 );
 	}
-
-	t[0] = R_FastSin ( direction_uv[0] + 0.25 );
-	t[1] = R_FastSin ( direction_uv[0] );
-	t[2] = R_FastSin ( direction_uv[1] + 0.25 );
-	t[3] = R_FastSin ( direction_uv[1] );
-	VectorSet ( direction, t[2] * t[1], t[3] * t[1], t[0] );
 }
 
-void R_SetGridsize (int x, int y, int z)
+void R_SetGridsize (float x, float y, float z)
 {
 	int i;
-	vec3_t maxs;
+	vec3_t	maxs;
 
-	gridSize[0] = x ? x : 64;
-	gridSize[1] = y ? y : 64;
-	gridSize[2] = z ? z : 128;
+	gridSize[0] = x;
+	gridSize[1] = y;
+	gridSize[2] = z;
 
 	for ( i = 0 ; i < 3 ; i++ ) 
 	{
@@ -272,24 +253,12 @@ void R_BuildLightMap (byte *data, byte *dest)
 		goto store;
 	}
 	
-	r = (int)(r_mapoverbrightbits->value - r_overbrightbits->value);
 	bl = s_blocklights;
-
-	if ( r > 0 ) {
-		r = 1 << r;
-		for (i=0 ; i<size ; i++, bl+=3)
-		{
-			bl[0] = data[i*3+0]*r;
-			bl[1] = data[i*3+1]*r;
-			bl[2] = data[i*3+2]*r;
-		}
-	} else {
-		for (i=0 ; i<size ; i++, bl+=3)
-		{
-			bl[0] = data[i*3+0];
-			bl[1] = data[i*3+1];
-			bl[2] = data[i*3+2];
-		}
+	for (i=0 ; i<size ; i++, bl+=3)
+	{
+		bl[0] = data[i*3+0]*gl_modulate->value;
+		bl[1] = data[i*3+1]*gl_modulate->value;
+		bl[2] = data[i*3+2]*gl_modulate->value;
 	}
 
 store:

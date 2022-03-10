@@ -260,7 +260,10 @@ void PF_WriteShort (int c) {MSG_WriteShort (&sv.multicast, c);}
 void PF_WriteLong (int c) {MSG_WriteLong (&sv.multicast, c);}
 void PF_WriteFloat (float f) {MSG_WriteFloat (&sv.multicast, f);}
 void PF_WriteString (char *s) {MSG_WriteString (&sv.multicast, s);}
-void PF_WritePos (vec3_t pos) {MSG_WritePos (&sv.multicast, pos);}
+//void PF_WritePos (vec3_t pos) {MSG_WritePos (&sv.multicast, pos);}
+
+// Vic: FIXME!!!
+void PF_WritePos (vec3_t pos) {MSG_WriteLongPos (&sv.multicast, pos);}
 void PF_WriteDir (vec3_t dir) {MSG_WriteDir (&sv.multicast, dir);}
 void PF_WriteAngle (float f) {MSG_WriteAngle (&sv.multicast, f);}
 

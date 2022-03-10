@@ -17,11 +17,13 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+#include <float.h>
+
 #include "../client/client.h"
 #include "../client/snd_loc.h"
 #include "winquake.h"
 
-#include <dsound.h>
+#define iDirectSoundCreate(a,b,c)	pDirectSoundCreate(a,b,c)
 
 HRESULT (WINAPI *pDirectSoundCreate)(GUID FAR *lpGUID, LPDIRECTSOUND FAR *lplpDS, IUnknown FAR *pUnkOuter);
 
@@ -387,7 +389,7 @@ sndinitstat SNDDMA_InitDirect (void)
 	}
 
 	Com_DPrintf( "...creating DS object: " );
-	while ( ( hresult = pDirectSoundCreate( NULL, &pDS, NULL ) ) != DS_OK )
+	while ( ( hresult = iDirectSoundCreate( NULL, &pDS, NULL ) ) != DS_OK )
 	{
 		if (hresult != DSERR_ALLOCATED)
 		{
@@ -485,7 +487,7 @@ qboolean SNDDMA_InitWav (void)
 
 		if (MessageBox (NULL,
 						"The sound hardware is in use by another app.\n\n"
-					    "Select Retry to try to start sound again or Cancel to run " APPLICATION " with no sound.",
+					    "Select Retry to try to start sound again or Cancel to run Quake 2 with no sound.",
 						"Sound not available",
 						MB_RETRYCANCEL | MB_SETFOREGROUND | MB_ICONEXCLAMATION) != IDRETRY)
 		{

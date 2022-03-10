@@ -22,8 +22,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "gl_local.h"
 #include "jpeglib.h"
 
-vec3_t	r_uvnorms[255][255];
-
 /*
 ==================
 R_InitParticleTexture
@@ -126,9 +124,8 @@ float bubble_sintable[17], bubble_costable[17];
 void R_InitBubble(void) 
 {
 	float a;
-	int i, j;
+	int i;
 	float *bub_sin, *bub_cos;
-	double sin_a, sin_b, cos_a, cos_b;
 
 	bub_sin = bubble_sintable;
 	bub_cos = bubble_costable;
@@ -139,20 +136,21 @@ void R_InitBubble(void)
 		*bub_sin++ = sin(a);
 		*bub_cos++ = cos(a);
 	}
+}
 
-	for ( i = 0; i < 255; i++ ) {
-		sin_a = (double)i * M_TWOPI / 255.0;
-		cos_a = cos ( sin_a );
-		sin_a = sin ( sin_a );
+/*
+=================
+R_InitFastsin
+=================
+*/
+float r_fastsin[256];
 
-		for ( j = 0; j < 255; j++ ) {
-			sin_b = (double)j * M_TWOPI / 255.0;
-			cos_b = cos ( sin_b );
-			sin_b = sin ( sin_b );
+void R_InitFastsin (void)
+{
+	int i;
 
-			VectorSet ( r_uvnorms[i][j], cos_b * sin_a, sin_b * sin_a, cos_a );
-		}
-	}
+	for (i = 0; i < 256; i++)
+		r_fastsin[i] = (float)sin(i * M_TWOPI);
 }
 
 /* 
@@ -185,12 +183,12 @@ void GL_ScreenShot_JPG (void)
 	Sys_Mkdir (checkname);
 
 	// Find a file name to save it to 
-	strcpy (picname, "qfusion00.jpg");
+	strcpy (picname, "l33t00.jpg");
 
 	for (i=0 ; i<=99 ; i++) 
 	{ 
-		picname[7] = i/10 + '0'; 
-		picname[8] = i%10 + '0'; 
+		picname[4] = i/10 + '0'; 
+		picname[5] = i%10 + '0'; 
 		Com_sprintf (checkname, sizeof(checkname), "%s/scrnshot/%s", FS_Gamedir(), picname);
 		file = fopen (checkname, "rb");
 		if (!file)
@@ -299,12 +297,12 @@ void GL_ScreenShot_f (void)
 // 
 // find a file name to save it to 
 // 
-	strcpy(picname, "qfusion00.tga");
+	strcpy(picname, "l33t00.tga");
 
 	for (i=0 ; i<=99 ; i++) 
 	{ 
-		picname[7] = i/10 + '0'; 
-		picname[8] = i%10 + '0'; 
+		picname[4] = i/10 + '0'; 
+		picname[5] = i%10 + '0'; 
 		Com_sprintf (checkname, sizeof(checkname), "%s/scrnshot/%s", FS_Gamedir(), picname);
 		f = fopen (checkname, "rb");
 		if (!f)

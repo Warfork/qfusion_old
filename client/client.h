@@ -226,17 +226,13 @@ typedef struct
 
 	char		configstrings[MAX_CONFIGSTRINGS][MAX_QPATH];
 	char		mapname[MAX_QPATH-4-5];
-	char		levelshot[MAX_QPATH];
-	char		checkname[MAX_QPATH];
-	qboolean	thirdperson;
+	char		levelshot[MAX_QPATH+10];
 
 	//
 	// locally derived information from server state
 	//
 	struct model_s	*model_draw[MAX_MODELS];
 	struct cmodel_s	*model_clip[MAX_MODELS];
-
-	struct sfx_s	*music_precache;
 
 	struct sfx_s	*sound_precache[MAX_SOUNDS];
 	struct shader_s	*image_precache[MAX_IMAGES];
@@ -372,10 +368,6 @@ extern	cvar_t	*cl_timedemo;
 
 extern	cvar_t	*cl_vwep;
 
-extern	cvar_t	*cl_thirdPerson;
-extern	cvar_t	*cl_thirdPersonAngle;
-extern	cvar_t	*cl_thirdPersonRange;
-
 typedef struct
 {
 	int		key;				// so entities can reuse same entry
@@ -484,7 +476,6 @@ void CL_Disconnect_f (void);
 void CL_GetChallengePacket (void);
 void CL_PingServers_f (void);
 void CL_Snd_Restart_f (void);
-void CL_PlayBackgroundMusic (void); 
 void CL_RequestNextDownload (void);
 
 //

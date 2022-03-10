@@ -562,12 +562,6 @@ void S_IssuePlaysound (playsound_t *ps)
 		S_FreePlaysound (ps);
 		return;
 	}
-	sc = S_LoadSound (ps->sfx);
-	if (!sc)
-	{
-		S_FreePlaysound (ps);
-		return;
-	}
 
 	// spatialize
 	if (ps->attenuation == ATTN_STATIC)
@@ -584,6 +578,7 @@ void S_IssuePlaysound (playsound_t *ps)
 	S_Spatialize(ch);
 
 	ch->pos = 0;
+	sc = S_LoadSound (ch->sfx);
     ch->end = paintedtime + sc->length;
 
 	// free the playsound

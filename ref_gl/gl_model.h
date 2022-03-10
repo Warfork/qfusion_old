@@ -79,56 +79,55 @@ typedef struct
     unsigned		firstindex[ELEM_LEN];
 } skydome_t;
 
+typedef struct 
+{
+	int				flags;
+	int				contents;
+	char			name[MAX_QPATH];
+} mshaderref_t;
+
 typedef struct
 {
-	cplane_t		*plane;
-} mbrushside_t;
-
-typedef struct mbrush_s
-{
-	mbrushside_t	*firstside;
-	int				numsides;
-} mbrush_t;
-
-typedef struct mfog_s
-{
-	cplane_t		*plane;
-	mbrush_t		*brush;
+	float			pdist;
+	byte			ptype;
 	shader_t		*shader;
 } mfog_t;
 
 typedef struct msurface_s
 {
 	int				visframe;		// should be drawn when node is crossed
-	int				flags;			// copied from shaderrefs
 
 	int				facetype;
+
 	mesh_t			mesh;
 
+    int				lm_offset[2];
+    int				lm_size[2];
+
     float			origin[3];		// FACETYPE_TRISURF only
+
     float			mins[3];
     float			maxs[3];		// FACETYPE_MESH only
 
+	mshaderref_t	*shaderref;
 	mfog_t			*fog;
+
     cplane_t		*plane;			// FACETYPE_PLANAR only
+	
+	struct	msurface_s	*texturechain;
+	struct  msurface_s	*fogchain;
 } msurface_t;
 
-#define MAX_RENDER_MESHES	3000
+typedef struct
+{
+	cplane_t		*plane;
+} mbrushside_t;
 
 typedef struct
 {
-	int				sortkey;
-	entity_t		*entity;
-	msurface_t		*surf;
-	mesh_t			*mesh;
-	mfog_t			*fog;
-} meshlistmember_t;
-
-typedef struct
-{
-	int					num_meshes;
-	meshlistmember_t	meshlist[MAX_RENDER_MESHES];
-} meshlist_t;
+	mbrushside_t	*firstside;
+	int				numsides;
+} mbrush_t;
 
 typedef struct mnode_s
 {
@@ -171,9 +170,9 @@ typedef struct mleaf_s
 
 typedef struct
 {
-	float		ambient[3];
-	float		diffuse[3];
-	float		direction[2];
+	float		lightAmbient[3];
+	float		lightDiffuse[3];
+	float		lightPosition[3];
 } mlightgrid_t;
 
 //===================================================================
@@ -208,6 +207,7 @@ typedef struct model_s
 // brush model
 //
 	int			firstmodelsurface, nummodelsurfaces;
+	int			lightmap;		// only for submodels
 
 	int			numsubmodels;
 	mmodel_t	*submodels;
@@ -223,6 +223,9 @@ typedef struct model_s
 
 	int			numnodes;
 	mnode_t		*nodes;
+
+	int			numshaderrefs;
+	mshaderref_t	*shaderrefs;
 
 	int			numsurfaces;
 	msurface_t	*surfaces;

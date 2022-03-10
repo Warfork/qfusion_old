@@ -58,7 +58,7 @@ static qboolean VerifyDriver( void )
 /*
 ** VID_CreateWindow
 */
-#define	WINDOW_CLASS_NAME	"QPlatinum"
+#define	WINDOW_CLASS_NAME	"L33T"
 
 qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 {
@@ -121,7 +121,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	glw_state.hWnd = CreateWindowEx (
 		 exstyle, 
 		 WINDOW_CLASS_NAME,
-		 APPLICATION,
+		 "l33t",
 		 stylebits,
 		 x, y, w, h,
 		 NULL,
@@ -607,22 +607,24 @@ fail:
 
 void UpdateGammaRamp (void)
 {
-	int i;
-	signed int v;
-	double div;
+	int i, o;
 
 	if (!gl_state.gammaramp)
 		return;
 	
 	memcpy (gamma_ramp, original_ramp, sizeof(original_ramp));
-	
-	div = (double)(1 << (int)r_overbrightbits->value) / 255.5;
-	for (i = 0; i < 256; i++) 
+
+	for (o = 0; o < 3; o++) 
 	{
-		v = 255 * pow ((i+0.5)*div, vid_gamma->value ) + 0.5;
-		if (v > 255) v = 255;
-		if (v < 0) v = 0;
-		gamma_ramp[0][i] = gamma_ramp[1][i] = gamma_ramp[2][i] = ((WORD)v) << 8;
+		for (i = 0; i < 256; i++) 
+		{
+			signed int v;
+
+			v = 255 * pow ((i+0.5)/255.5, vid_gamma->value ) + 0.5;
+			if (v > 255) v = 255;
+			if (v < 0) v = 0;
+			gamma_ramp[o][i] = ((WORD)v) << 8;
+		}
 	}
 
 	if( qwglSetDeviceGammaRamp3DFX ) {
@@ -671,7 +673,7 @@ void GLimp_BeginFrame( float camera_separation )
 		qglDrawBuffer( GL_BACK );
 	}
 
-	r_shadertime = curtime * 0.001;
+	r_shadertime = curtime * 0.001f;
 }
 
 /*

@@ -24,8 +24,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 void M_Menu_Game_f (void);
 void M_Menu_Multiplayer_f( void );
 void M_Menu_Options_f (void);
-void M_Menu_Sound_f (void);
-void M_Menu_Gfx_f (void);
 void M_Menu_Video_f (void);
 void M_Menu_Quit_f (void);
 
@@ -43,8 +41,6 @@ static menuseparator_s	s_main_title;
 static menuaction_s		s_game_menu_action;
 static menuaction_s		s_multiplayer_menu_action;
 static menuaction_s		s_options_setup_action;
-static menuaction_s		s_sound_menu_action;
-static menuaction_s		s_gfx_menu_action;
 static menuaction_s		s_video_menu_action;
 static menuaction_s		s_quit_menu_action;
 
@@ -62,16 +58,6 @@ static void MultiplayerMenuFunc( void *unused )
 static void OptionsSetupFunc( void *unused )
 {
 	M_Menu_Options_f ();
-}
-
-static void SoundMenuFunc( void *unused )
-{
-	M_Menu_Sound_f();
-}
-
-static void GfxMenuFunc( void *unused )
-{
-	M_Menu_Gfx_f();
 }
 
 static void VideoMenuFunc( void *unused )
@@ -119,20 +105,6 @@ void M_MainInit( void )
 	s_options_setup_action.generic.name		= "Options";
 	s_options_setup_action.generic.callback	= OptionsSetupFunc;
 
-	s_sound_menu_action.generic.type		= MTYPE_ACTION;
-	s_sound_menu_action.generic.flags		= QMF_LEFT_JUSTIFY;
-	s_sound_menu_action.generic.x			= 0;
-	s_sound_menu_action.generic.y			= y+=y_offset;
-	s_sound_menu_action.generic.name		= "Sound Options";
-	s_sound_menu_action.generic.callback	= SoundMenuFunc;
-
-	s_gfx_menu_action.generic.type			= MTYPE_ACTION;
-	s_gfx_menu_action.generic.flags			= QMF_LEFT_JUSTIFY;
-	s_gfx_menu_action.generic.x				= 0;
-	s_gfx_menu_action.generic.y				= y+=y_offset;
-	s_gfx_menu_action.generic.name			= "Graphics Options";
-	s_gfx_menu_action.generic.callback		= GfxMenuFunc;
-
 	s_video_menu_action.generic.type		= MTYPE_ACTION;
 	s_video_menu_action.generic.flags		= QMF_LEFT_JUSTIFY;
 	s_video_menu_action.generic.x			= 0;
@@ -151,8 +123,6 @@ void M_MainInit( void )
 	Menu_AddItem( &s_main_menu, ( void * ) &s_game_menu_action );
 	Menu_AddItem( &s_main_menu, ( void * ) &s_multiplayer_menu_action );
 	Menu_AddItem( &s_main_menu, ( void * ) &s_options_setup_action );
-	Menu_AddItem( &s_main_menu, ( void * ) &s_sound_menu_action );
-	Menu_AddItem( &s_main_menu, ( void * ) &s_gfx_menu_action );
 	Menu_AddItem( &s_main_menu, ( void * ) &s_video_menu_action );
 	Menu_AddItem( &s_main_menu, ( void * ) &s_quit_menu_action );
 

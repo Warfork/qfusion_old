@@ -43,8 +43,17 @@ static menulist_s		s_options_alwaysrun_box;
 static menulist_s		s_options_invertmouse_box;
 static menulist_s		s_options_lookspring_box;
 static menulist_s		s_options_lookstrafe_box;
+static menulist_s		s_options_crosshair_box;
+static menuslider_s		s_options_sfxvolume_slider;
+static menuslider_s		s_options_musicvolume_slider;
 static menulist_s		s_options_joystick_box;
+static menulist_s		s_options_compatibility_list;
 static menulist_s		s_options_console_action;
+
+static void CrosshairFunc( void *unused )
+{
+	trap_Cvar_SetValue( "crosshair", s_options_crosshair_box.curvalue );
+}
 
 static void JoystickFunc( void *unused )
 {
@@ -78,6 +87,8 @@ static void NoAltTabFunc( void *unused )
 
 static void ControlsSetMenuItemValues( void )
 {
+	s_options_sfxvolume_slider.curvalue		= trap_Cvar_VariableValue( "s_volume" ) * 10;
+	s_options_musicvolume_slider.curvalue 	= trap_Cvar_VariableValue( "s_musicvolume" ) * 10;
 	s_options_sensitivity_slider.curvalue	= ( trap_Cvar_VariableValue("sensitivity") ) * 2;
 
 	trap_Cvar_SetValue( "cl_run", M_ClampCvar( 0, 1, trap_Cvar_VariableValue("cl_run") ) );
@@ -93,6 +104,9 @@ static void ControlsSetMenuItemValues( void )
 
 	trap_Cvar_SetValue( "freelook", M_ClampCvar( 0, 1, trap_Cvar_VariableValue("freelook") ) );
 	s_options_freelook_box.curvalue			= trap_Cvar_VariableValue("freelook");
+
+	trap_Cvar_SetValue( "crosshair", M_ClampCvar( 0, NUM_CROSSHAIRS, trap_Cvar_VariableValue("crosshair") ) );
+	s_options_crosshair_box.curvalue		= trap_Cvar_VariableValue("crosshair");
 
 	trap_Cvar_SetValue( "in_joystick", M_ClampCvar( 0, 1, trap_Cvar_VariableValue("in_joystick") ) );
 	s_options_joystick_box.curvalue		= trap_Cvar_VariableValue("in_joystick");
@@ -123,6 +137,16 @@ static void LookstrafeFunc( void *unused )
 	trap_Cvar_SetValue( "lookstrafe", !-trap_Cvar_VariableValue ("lookstrafe") );
 }
 
+static void UpdateSfxVolumeFunc( void *unused )
+{
+	trap_Cvar_SetValue( "s_volume", s_options_sfxvolume_slider.curvalue * 0.1f );
+}
+
+static void UpdateMusicVolumeFunc( void *unused )
+{
+	trap_Cvar_SetValue( "s_musicvolume", s_options_musicvolume_slider.curvalue * 0.1f );
+}
+
 static void ConsoleFunc( void *unused )
 {
 	if (!trap_Con_Func ())
@@ -133,12 +157,58 @@ static void ConsoleFunc( void *unused )
 	trap_CL_SetKeyDest_f ( key_console );
 }
 
+static void UpdateSoundQualityFunc( void *unused )
+{
+	trap_Cvar_SetValue( "s_primary", s_options_compatibility_list.curvalue );
+
+	M_DrawTextBox( 8, 120 - 48, 36, 3 );
+	M_Print( 16 + 16, 120 - 48 + 8,  "Restarting the sound system. This" );
+	M_Print( 16 + 16, 120 - 48 + 16, "could take up to a minute, so" );
+	M_Print( 16 + 16, 120 - 48 + 24, "please be patient." );
+
+	// the text box won't show up unless we do a buffer swap
+	trap_EndFrame();
+
+	trap_CL_Snd_Restart_f();
+}
+
 void Options_MenuInit( void )
 {
+	static const char *cd_music_items[] =
+	{
+		"disabled",
+		"enabled",
+		0
+	};
+	static const char *quality_items[] =
+	{
+		"low", "high", 0
+	};
+
+	static const char *compatibility_items[] =
+	{
+		"max compatibility", "max performance", 0
+	};
+
 	static const char *yesno_names[] =
 	{
 		"no",
 		"yes",
+		0
+	};
+
+	static const char *crosshair_names[] =
+	{
+		"a",
+		"b",
+		"c",
+		"d",
+		"e",
+		"f",
+		"g",
+		"h",
+		"i",
+		"j",
 		0
 	};
 
@@ -160,6 +230,33 @@ void Options_MenuInit( void )
 	s_options_title.generic.x    = 48;
 	s_options_title.generic.y	 = y;
 	y+=y_offset;
+
+	s_options_sfxvolume_slider.generic.type	= MTYPE_SLIDER;
+	s_options_sfxvolume_slider.generic.x	= 0;
+	s_options_sfxvolume_slider.generic.y	= y+=y_offset;
+	s_options_sfxvolume_slider.generic.name	= "effects volume";
+	s_options_sfxvolume_slider.generic.callback	= UpdateSfxVolumeFunc;
+	s_options_sfxvolume_slider.minvalue		= 0;
+	s_options_sfxvolume_slider.maxvalue		= 10;
+	s_options_sfxvolume_slider.curvalue		= trap_Cvar_VariableValue( "s_volume" ) * 10;
+
+	s_options_musicvolume_slider.generic.type	= MTYPE_SLIDER;
+	s_options_musicvolume_slider.generic.x		= 0;
+	s_options_musicvolume_slider.generic.y		= y += y_offset;
+	s_options_musicvolume_slider.generic.name	= "music volume";
+	s_options_musicvolume_slider.generic.callback	= UpdateMusicVolumeFunc;
+	s_options_musicvolume_slider.minvalue		= 0;
+	s_options_musicvolume_slider.maxvalue		= 10;
+	s_options_musicvolume_slider.curvalue 		= trap_Cvar_VariableValue( "s_musicvolume" ) * 10;
+
+	s_options_compatibility_list.generic.type	= MTYPE_SPINCONTROL;
+	s_options_compatibility_list.generic.x		= 0;
+	s_options_compatibility_list.generic.y		= y += y_offset;
+	s_options_compatibility_list.generic.name	= "sound compatibility";
+	s_options_compatibility_list.generic.callback = UpdateSoundQualityFunc;
+	s_options_compatibility_list.itemnames		= compatibility_items;
+	s_options_compatibility_list.curvalue		= trap_Cvar_VariableValue( "s_primary" );
+	y += y_offset;
 
 	s_options_sensitivity_slider.generic.type	= MTYPE_SLIDER;
 	s_options_sensitivity_slider.generic.x		= 0;
@@ -221,6 +318,15 @@ void Options_MenuInit( void )
 	s_options_joystick_box.itemnames			= yesno_names;
 	y += y_offset;
 
+	s_options_crosshair_box.generic.type		= MTYPE_SPINCONTROL;
+	s_options_crosshair_box.generic.flags		= QMF_NOITEMNAMES;
+	s_options_crosshair_box.generic.x			= 0;
+	s_options_crosshair_box.generic.y			= y += y_offset;
+	s_options_crosshair_box.generic.name		= "crosshair";
+	s_options_crosshair_box.generic.callback	= CrosshairFunc;
+	s_options_crosshair_box.itemnames			= crosshair_names;
+	y += y_offset;
+
 	s_options_customize_options_action.generic.type	= MTYPE_ACTION;
 	s_options_customize_options_action.generic.x		= 0;
 	s_options_customize_options_action.generic.y		= y += y_offset;
@@ -242,6 +348,9 @@ void Options_MenuInit( void )
 	ControlsSetMenuItemValues();
 
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_title );
+	Menu_AddItem( &s_options_menu, ( void * ) &s_options_sfxvolume_slider );
+	Menu_AddItem( &s_options_menu, ( void * ) &s_options_musicvolume_slider );
+	Menu_AddItem( &s_options_menu, ( void * ) &s_options_compatibility_list );
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_sensitivity_slider );
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_alwaysrun_box );
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_invertmouse_box );
@@ -255,6 +364,8 @@ void Options_MenuInit( void )
 
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_joystick_box );
 
+	Menu_AddItem( &s_options_menu, ( void * ) &s_options_crosshair_box );
+
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_customize_options_action );
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_defaults_action );
 	Menu_AddItem( &s_options_menu, ( void * ) &s_options_console_action );
@@ -263,6 +374,11 @@ void Options_MenuInit( void )
 void Options_MenuDraw (void)
 {
 	Menu_AdjustCursor( &s_options_menu, 1 );
+
+	trap_DrawPic ( BIG_CHAR_WIDTH*1.2 + s_options_menu.x + s_options_crosshair_box.generic.x,
+		s_options_menu.y + s_options_crosshair_box.generic.y - BIG_CHAR_WIDTH / 2,
+		va ("gfx/2d/crosshair%s", s_options_crosshair_box.itemnames[s_options_crosshair_box.curvalue]) );
+
 	Menu_Draw( &s_options_menu );
 }
 

@@ -1,24 +1,24 @@
-# Microsoft Developer Studio Project File - Name="qfusion" - Package Owner=<4>
+# Microsoft Developer Studio Project File - Name="quake2" - Package Owner=<4>
 # Microsoft Developer Studio Generated Build File, Format Version 6.00
 # ** DO NOT EDIT **
 
 # TARGTYPE "Win32 (x86) Application" 0x0101
 
-CFG=qfusion - WIN32 RELEASE
+CFG=QUAKE2 - WIN32 RELEASE
 !MESSAGE This is not a valid makefile. To build this project using NMAKE,
 !MESSAGE use the Export Makefile command and run
 !MESSAGE 
-!MESSAGE NMAKE /f "qfusion.mak".
+!MESSAGE NMAKE /f "quake2.mak".
 !MESSAGE 
 !MESSAGE You can specify a configuration when running NMAKE
 !MESSAGE by defining the macro CFG on the command line. For example:
 !MESSAGE 
-!MESSAGE NMAKE /f "qfusion.mak" CFG="qfusion - WIN32 RELEASE"
+!MESSAGE NMAKE /f "quake2.mak" CFG="QUAKE2 - WIN32 RELEASE"
 !MESSAGE 
 !MESSAGE Possible choices for configuration are:
 !MESSAGE 
-!MESSAGE "qfusion - Win32 Release" (based on "Win32 (x86) Application")
-!MESSAGE "qfusion - Win32 Debug" (based on "Win32 (x86) Application")
+!MESSAGE "quake2 - Win32 Release" (based on "Win32 (x86) Application")
+!MESSAGE "quake2 - Win32 Debug" (based on "Win32 (x86) Application")
 !MESSAGE 
 
 # Begin Project
@@ -29,7 +29,7 @@ CPP=cl.exe
 MTL=midl.exe
 RSC=rc.exe
 
-!IF  "$(CFG)" == "qfusion - Win32 Release"
+!IF  "$(CFG)" == "quake2 - Win32 Release"
 
 # PROP BASE Use_MFC 0
 # PROP BASE Use_Debug_Libraries 0
@@ -43,7 +43,8 @@ RSC=rc.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /W3 /GX /O2 /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /YX /c
-# ADD CPP /nologo /G5 /MD /W3 /GX /O2 /I "qcommon" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /Fp".\release/q2platinum.pch" /YX /FD /c
+# ADD CPP /nologo /G5 /MD /W3 /GX /O2 /I "qcommon" /D "WIN32" /D "NDEBUG" /D "_WINDOWS" /YX /FD /c
+# SUBTRACT CPP /Z<none>
 # ADD BASE MTL /nologo /D "NDEBUG" /win32
 # ADD MTL /nologo /D "NDEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "NDEBUG"
@@ -53,10 +54,10 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /machine:I386
-# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlib.lib libjpeg.lib /nologo /subsystem:windows /machine:I386 /out:"..\..\qfusion.exe" /libpath:"win32\lib\\"
+# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlib.lib libjpeg.lib /nologo /subsystem:windows /machine:I386 /out:"..\..\l33t.exe" /libpath:"win32\lib\\"
 # SUBTRACT LINK32 /incremental:yes /debug /nodefaultlib
 
-!ELSEIF  "$(CFG)" == "qfusion - Win32 Debug"
+!ELSEIF  "$(CFG)" == "quake2 - Win32 Debug"
 
 # PROP BASE Use_MFC 0
 # PROP BASE Use_Debug_Libraries 1
@@ -70,7 +71,7 @@ LINK32=link.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /YX /c
-# ADD CPP /nologo /G5 /MDd /W3 /GX /ZI /Od /I "qcommon" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /FR /Fp".\debug/q2platinum.pch" /YX /FD /c
+# ADD CPP /nologo /G5 /MDd /W3 /GX /ZI /Od /I "qcommon" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /FR /YX /FD /c
 # ADD BASE MTL /nologo /D "_DEBUG" /win32
 # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
@@ -80,14 +81,15 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /debug /machine:I386
-# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlib.lib libjpeg.lib /nologo /subsystem:windows /profile /map:"..\..\qfusion.map" /debug /machine:I386 /out:"..\..\qfusion.exe" /libpath:"win32\lib\\"
+# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlib.lib libjpeg.lib /nologo /subsystem:windows /map:"..\q3amr.map" /debug /machine:I386 /out:"..\..\l33t.exe" /libpath:"win32\lib\\"
+# SUBTRACT LINK32 /profile /incremental:no
 
 !ENDIF 
 
 # Begin Target
 
-# Name "qfusion - Win32 Release"
-# Name "qfusion - Win32 Debug"
+# Name "quake2 - Win32 Release"
+# Name "quake2 - Win32 Debug"
 # Begin Group "Source Files"
 
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;hpj;bat;for;f90"

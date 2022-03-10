@@ -200,14 +200,14 @@ model_t *Mod_ForName (char *name, qboolean crash)
 		loadmodel->extradata = Hunk_Begin (0x10000);
 		Mod_LoadSpriteModel (mod, buf);
 		break;
-
+	
 	case IDBSPHEADER:
-		loadmodel->extradata = Hunk_Begin (0x4000000);
+		loadmodel->extradata = Hunk_Begin (0x2000000);
 		Mod_LoadBrushModel (mod, buf);
 		break;
 
 	case MD3_ID_HEADER:
-		loadmodel->extradata = Hunk_Begin (0x800000);
+		loadmodel->extradata = Hunk_Begin (0x200000);
 		Mod_LoadMd3Model (mod, buf);
 		break;
 
@@ -242,7 +242,7 @@ Mod_LoadLighting
 */
 void Mod_LoadLighting (lump_t *l)
 {
-	if (!l->filelen || r_vertexlight->value)
+	if (!l->filelen)
 	{
 		loadmodel->lightdata = NULL;
 		return;
@@ -287,7 +287,6 @@ void Mod_LoadVertexes (lump_t *l)
 	dvertex_t	*in;
 	mvertex_t	*out;
 	int			i, count, j;
-	float		div;
 
 	in = (void *)(mod_base + l->fileofs);
 	if (l->filelen % sizeof(*in))
@@ -297,13 +296,6 @@ void Mod_LoadVertexes (lump_t *l)
 
 	loadmodel->vertexes = out;
 	loadmodel->numvertexes = count;
-
-	div = floor( r_mapoverbrightbits->value - r_overbrightbits->value );
-	if ( div > 0 ) {
-		div = pow( 2, div ) / 255.0;
-	} else {
-		div = 1.0 / 255.0;
-	}
 
 	for ( i=0 ; i<count ; i++, in++, out++)
 	{
@@ -319,11 +311,10 @@ void Mod_LoadVertexes (lump_t *l)
 			out->tex_st[j] = LittleFloat ( in->tex_st[j] );
 		}
 
-		for ( j=0 ; j < 3 ; j++) {
-			out->colour[j] = (float)((double)in->colour[j] * div);
-			out->colour[j] = min( out->colour[j], 1 );
-		}
-		out->colour[3] = (float)((double)in->colour[3] / 255.0);
+		for ( j=0 ; j < 4 ; j++)
+			out->colour[j] = (float)in->colour[j] / 255.0f;
+
+		VectorClear ( out->rot_centre );
 	}
 }
 
@@ -382,24 +373,16 @@ void Mod_LoadSubmodels (lump_t *l)
 	}
 }
 
-void GL_CreateSurfaceLightmap (msurface_t *surf);
-void GL_MeshCreate (msurface_t *surf, int numverts, mvertex_t *verts, int *mesh_cp);
-void GL_PretransformAutosprites (msurface_t *surf);
-
 /*
 =================
-Mod_LoadFaces
+Mod_LoadShaderrefs
 =================
 */
-void Mod_LoadFaces (lump_t *l, lump_t *sl)
+void Mod_LoadShaderrefs (lump_t *l)
 {
-	dface_t		*in;
-	shaderref_t *in_shaderrefs, *shaderref;
-	msurface_t 	*out;
-	mfog_t		*fog;
-	int			i, count, surfnum, bits;
-	int			ti, mesh_cp[2], numshaderrefs;
-	byte		type;
+	shaderref_t *in;
+	mshaderref_t	*out;
+	int 	i, count;
 
 	in = (void *)(mod_base + l->fileofs);
 	if (l->filelen % sizeof(*in))
@@ -407,8 +390,41 @@ void Mod_LoadFaces (lump_t *l, lump_t *sl)
 	count = l->filelen / sizeof(*in);
 	out = Hunk_Alloc ( count*sizeof(*out));	
 
-	in_shaderrefs = (void *)(mod_base + sl->fileofs);
-	numshaderrefs = sl->filelen / sizeof(*in_shaderrefs);
+	loadmodel->shaderrefs = out;
+	loadmodel->numshaderrefs = count;
+
+	for ( i=0 ; i<count ; i++, in++, out++)
+	{
+		Com_sprintf ( out->name, sizeof( out->name ), in->shader );
+		out->flags = LittleLong ( in->flags );
+		out->contents = LittleLong ( in->contents );
+	}
+}
+
+void GL_CreateSurfaceLightmap (msurface_t *surf);
+void GL_MeshCreate ( msurface_t *surf, int numverts, mvertex_t *verts, int patchWidth, int patchHeight );
+void GL_CalcMeshCentre ( mesh_t *mesh );
+void GL_PretransformAutosprites (msurface_t *surf);
+
+/*
+=================
+Mod_LoadFaces
+=================
+*/
+void Mod_LoadFaces (lump_t *l)
+{
+	dface_t		*in;
+	msurface_t 	*out;
+	mfog_t		*fog;
+	int			i, count, surfnum, bits;
+	int			ti, mesh_cp[2];
+	byte		type;
+
+	in = (void *)(mod_base + l->fileofs);
+	if (l->filelen % sizeof(*in))
+		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size in %s",loadmodel->name);
+	count = l->filelen / sizeof(*in);
+	out = Hunk_Alloc ( count*sizeof(*out));	
 
 	loadmodel->surfaces = out;
 	loadmodel->numsurfaces = count;
@@ -426,24 +442,26 @@ void Mod_LoadFaces (lump_t *l, lump_t *sl)
 
 		for (i=0 ; i<2 ; i++)
 		{
+			out->lm_offset[i] = LittleLong ( in->lm_offset[i] );
+			out->lm_size[i] = LittleLong ( in->lm_size[i] );
+			
 			mesh_cp[i] = LittleLong ( in->mesh_cp[i] );
 		}
 
 		out->facetype = LittleLong ( in->facetype );
 
+		out->texturechain = NULL;
+		out->fogchain = NULL;
+
 	// lighting info
-		if ( !r_vertexlight->value ) {
-			out->mesh.lightmaptexturenum = LittleLong ( in->lm_texnum );
+		out->mesh.lightmaptexturenum = LittleLong ( in->lm_texnum );
 
-			if ( out->mesh.lightmaptexturenum >= loadmodel->numlightmaps )
-				out->mesh.lightmaptexturenum = -1;
+		if ( out->mesh.lightmaptexturenum >= loadmodel->numlightmaps )
+			Com_Error ( ERR_DROP, "MOD_LoadBmodel: bad lightmap number" );
+
+		if ( out->facetype == FACETYPE_MESH ) {
+			GL_MeshCreate ( out, LittleLong ( in->numverts ), loadmodel->vertexes + LittleLong ( in->firstvert ), mesh_cp[0], mesh_cp[1] );
 		} else {
-			out->mesh.lightmaptexturenum = -1;
-		}
-
-		if ( mesh_cp[0] && mesh_cp[1] && out->facetype == FACETYPE_MESH ) {
-			GL_MeshCreate ( out, LittleLong ( in->numverts ), loadmodel->vertexes + LittleLong ( in->firstvert ), mesh_cp );
-		} else if ( out->facetype != FACETYPE_FLARE ) {
 			out->mesh.numverts = LittleLong ( in->numverts );
 			out->mesh.firstvert = loadmodel->vertexes + LittleLong ( in->firstvert );
 
@@ -451,18 +469,8 @@ void Mod_LoadFaces (lump_t *l, lump_t *sl)
 			out->mesh.firstindex = loadmodel->surfindexes + LittleLong ( in->firstindex );
 		}
 
-		if ( out->facetype == FACETYPE_MESH || out->facetype == FACETYPE_TRISURF ) {
-			int j;
-			mvertex_t *vert;
-
-			ClearBounds ( out->mins, out->maxs );
-
-			vert = out->mesh.firstvert;
-			for ( j = 0; j < out->mesh.numverts; j++, vert++ )
-				AddPointToBounds ( vert->position, out->mins, out->maxs );
-		}
-
-		if ( out->facetype == FACETYPE_PLANAR) {
+		if ( out->facetype == FACETYPE_PLANAR ||
+			 out->facetype == FACETYPE_FLARE ) {
 			out->plane = (cplane_t *)Hunk_Alloc ( sizeof(cplane_t) );
 
 			bits = 0;
@@ -482,12 +490,11 @@ void Mod_LoadFaces (lump_t *l, lump_t *sl)
 		}
 
 		ti = LittleLong ( in->shadernum );
-		if ( ti < 0 || ti >= numshaderrefs )
+		if ( ti < 0 || ti >= loadmodel->numshaderrefs )
 			Com_Error ( ERR_DROP, "MOD_LoadBmodel: bad shader number" );
 
-		shaderref = in_shaderrefs + ti;
-		out->flags = LittleLong ( shaderref->flags );
-		ti = R_LoadShader (shaderref->shader, SHADER_BSP, out);
+		out->shaderref = loadmodel->shaderrefs + ti;
+		ti = R_LoadShader (out->shaderref->name, SHADER_BSP, out);
 
 		if ( ti != -1 ) {
 			out->mesh.shader = &r_shaders[ti];
@@ -499,12 +506,13 @@ void Mod_LoadFaces (lump_t *l, lump_t *sl)
 		if ( ti != -1 ) {
 			fog = loadmodel->fogs + ti;
 
-			if ( fog->brush && fog->shader )
+			if ( fog->ptype < 6 && fog->shader )
 				out->fog = fog;
 		} else {
 			out->fog = NULL;
 		}
 
+		GL_CalcMeshCentre ( &out->mesh );
 		GL_PretransformAutosprites ( out );
 	}
 }
@@ -630,6 +638,7 @@ void Mod_LoadFogs (lump_t *l)
 	mfog_t 	*out;
 	mbrush_t *brush;
 	mbrushside_t *brushside;
+	cplane_t *plane;
 	int		i, count;
 
 	in = (void *)(mod_base + l->fileofs);
@@ -645,9 +654,28 @@ void Mod_LoadFogs (lump_t *l)
 	{
 		brush = loadmodel->brushes + LittleLong ( in->brushnum );
 		brushside = brush->firstside + LittleLong ( in->visibleside );
-		out->brush = brush;
-		out->plane = brushside->plane;
-		out->shader = R_RegisterShader ( in->shader );
+		plane = brushside->plane;
+
+		if ( plane->type > 2 && ((plane->normal[0] != -1) &&
+			(plane->normal[1] != -1) && (plane->normal[2] != -1)) ) {
+			Com_Printf ( S_COLOR_YELLOW "WARNING: Non-axial fog plane.\n");
+			out->ptype = 6;
+			out->pdist = 0;
+			out->shader = NULL;
+		} else {
+			if ( plane->signbits & 1 ) {
+				out->ptype = 3;
+			} else if ( plane->signbits & 2 ) {
+				out->ptype = 4;
+			} else if ( plane->signbits & 4 ) {
+				out->ptype = 5;
+			} else {
+				out->ptype = plane->type;
+			}
+
+			out->pdist = plane->dist;
+			out->shader = R_RegisterShader ( in->shader );
+		}
 	}
 }
 
@@ -831,7 +859,7 @@ void Mod_LoadLightgrid (lump_t *l)
 	dlightgrid_t 	*in;
 	mlightgrid_t 	*out;
 	int	i, count, j;
-	double div;
+	float sin_a, sin_b, cos_a, cos_b;
 			
 	in = (void *)(mod_base + l->fileofs);
 	if (l->filelen % sizeof(*in))
@@ -842,25 +870,25 @@ void Mod_LoadLightgrid (lump_t *l)
 	loadmodel->lightgrid = out;
 	loadmodel->numlightgridelems = count;
 
-	div = floor ( r_mapoverbrightbits->value - r_overbrightbits->value );
-	if ( div > 0 ) {
-		div = pow( 2, div ) / 255.0;
-	} else {
-		div = 1.0 / 255.0;
-	}
-
 	for ( i=0 ; i<count ; i++, in++, out++)
 	{
-		for ( j = 0; j < 3; j++ ) {
-			out->ambient[j] = (float)((double)in->ambient[j] * div);
-			out->diffuse[j] = (float)((double)in->diffuse[j] * div);
-			out->ambient[j] = min ( out->ambient[j], 1 );
-			out->diffuse[j] = min ( out->diffuse[j], 1 );
+		for ( j = 0; j < 3; j++ )
+		{
+			out->lightAmbient[j] = (float)in->lightAmbient[j] / 255.0f;
+			out->lightDiffuse[j] = (float)in->lightDiffuse[j] / 255.0f;
 		}
 
-		for ( j = 0; j < 2; j++ ) {
-			out->direction[j] = (float)((double)in->direction[j] / 255.0);
-		}
+		sin_a = (float)in->lightPosition[0] * M_TWOPI / 255.0f;
+		cos_a = cos ( sin_a );
+		sin_a = sin ( sin_a );
+
+		sin_b = (float)in->lightPosition[1] * M_TWOPI / 255.0f;
+		cos_b = cos ( sin_b );
+		sin_b = sin ( sin_b );
+
+		out->lightPosition[0] = cos_b * sin_a;
+		out->lightPosition[1] = sin_b * sin_a;
+		out->lightPosition[2] = cos_a;
 	}
 }
 
@@ -899,16 +927,19 @@ void Mod_LoadBrushModel (model_t *mod, void *buffer)
 	Mod_LoadLightgrid (&header->lumps[LUMP_LIGHTGRID]);
 	Mod_LoadVisibility (&header->lumps[LUMP_VISIBILITY]);
 	Mod_LoadPlanes (&header->lumps[LUMP_PLANES]);
+	Mod_LoadShaderrefs (&header->lumps[LUMP_SHADERREFS]);
 	Mod_LoadBrushsides (&header->lumps[LUMP_BRUSHSIDES]);
 	Mod_LoadBrushes (&header->lumps[LUMP_BRUSHES]);
 	Mod_LoadFogs (&header->lumps[LUMP_FOGS]);
-	Mod_LoadFaces (&header->lumps[LUMP_FACES], &header->lumps[LUMP_SHADERREFS]);
+	Mod_LoadFaces (&header->lumps[LUMP_FACES]);
 	Mod_LoadMarksurfaces (&header->lumps[LUMP_LEAFFACES]);
 	Mod_LoadLeafBrushes (&header->lumps[LUMP_LEAFBRUSHES]);
 	Mod_LoadLeafs (&header->lumps[LUMP_LEAFS]);
 	Mod_LoadNodes (&header->lumps[LUMP_NODES]);
 	Mod_LoadSubmodels (&header->lumps[LUMP_MODELS]);
 	mod->numframes = 2;		// regular and alternate animation
+
+	R_CreateSkydome (mod);
 
 //
 // set up the submodels

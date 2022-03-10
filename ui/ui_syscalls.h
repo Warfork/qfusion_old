@@ -39,6 +39,7 @@ void trap_EndFrame (void);
 
 void trap_S_StartLocalSound ( char *s );
 
+void trap_CL_Snd_Restart_f (void);
 void trap_CL_PingServers_f (void);
 float trap_CL_GetTime_f (void);
 void trap_CL_SetKeyDest_f ( enum keydest_t keydest );

@@ -538,8 +538,6 @@ update the rendering DLL and/or video mode to match.
 */
 void VID_CheckChanges (void)
 {
-	qboolean vid_ref_was_modified = false;
-
 	if ( win_noalttab->modified )
 	{
 		if ( win_noalttab->value )
@@ -555,7 +553,6 @@ void VID_CheckChanges (void)
 
 	if ( vid_ref_modified )
 	{
-		vid_ref_was_modified = true;
 		cl.force_refdef = true;		// can't use a paused refdef
 		S_StopAllSounds();
 	}
@@ -582,9 +579,6 @@ void VID_CheckChanges (void)
 
 		cls.disable_screen = false;
 	}
-
-	if ( reflib_active && vid_ref_was_modified )
-		CL_PlayBackgroundMusic ();
 
 	/*
 	** update our window position

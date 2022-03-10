@@ -43,8 +43,8 @@ static menulist_s		s_ref_list;
 static menuslider_s		s_tq_slider;
 static menuslider_s		s_screensize_slider;
 static menuslider_s		s_brightness_slider;
-static menulist_s		s_lighting_box;
 static menulist_s  		s_fs_box;
+static menulist_s  		s_finish_box;
 static menuaction_s		s_cancel_action;
 static menuaction_s		s_defaults_action;
 
@@ -70,13 +70,20 @@ static void ResetDefaults( void *unused )
 
 static void ApplyChanges( void *unused )
 {
+	float gamma;
+
+	/*
+	** invert sense so greater = brighter, and scale to a range of 0.5 to 1.3
+	*/
+	gamma = ( 0.8 - ( s_brightness_slider.curvalue/10.0 - 0.5 ) ) + 0.5;
+
+	trap_Cvar_SetValue( "vid_gamma", gamma );
 	trap_Cvar_SetValue( "gl_picmip", 3 - s_tq_slider.curvalue );
-	trap_Cvar_SetValue( "r_vertexlight", s_lighting_box.curvalue );
 	trap_Cvar_SetValue( "vid_fullscreen", s_fs_box.curvalue );
+	trap_Cvar_SetValue( "gl_finish", s_finish_box.curvalue );
 	trap_Cvar_SetValue( "gl_mode", s_mode_list.curvalue );
 
-	trap_Cmd_ExecuteText (EXEC_APPEND, "vid_restart\n");
-	trap_Cmd_Execute();
+	trap_Cmd_ExecuteText (EXEC_INSERT, "vid_restart\n");
 
 	M_ForceMenuOff();
 }
@@ -118,13 +125,6 @@ static void Video_MenuInit( void )
 	{
 		"no",
 		"yes",
-		0
-	};
-
-	static const char *lighting_names[] =
-	{
-		"lightmap",
-		"vertex",
 		0
 	};
 
@@ -188,16 +188,16 @@ static void Video_MenuInit( void )
 	s_tq_slider.generic.x		= 0;
 	s_tq_slider.generic.y		= y+=y_offset;
 	s_tq_slider.generic.name	= "texture quality";
-	s_tq_slider.minvalue		= 0;
-	s_tq_slider.maxvalue		= 3;
-	s_tq_slider.curvalue		= 3-trap_Cvar_VariableValue( "gl_picmip" );
+	s_tq_slider.minvalue = 0;
+	s_tq_slider.maxvalue = 3;
+	s_tq_slider.curvalue = 3-trap_Cvar_VariableValue( "gl_picmip" );
 
-	s_lighting_box.generic.type = MTYPE_SPINCONTROL;
-	s_lighting_box.generic.x	= 0;
-	s_lighting_box.generic.y	= y+=y_offset;
-	s_lighting_box.generic.name	= "lighting";
-	s_lighting_box.curvalue		= trap_Cvar_VariableValue( "r_vertexlight" );
-	s_lighting_box.itemnames	= lighting_names;
+	s_finish_box.generic.type = MTYPE_SPINCONTROL;
+	s_finish_box.generic.x	= 0;
+	s_finish_box.generic.y	= y+=y_offset;
+	s_finish_box.generic.name	= "sync every frame";
+	s_finish_box.curvalue = trap_Cvar_VariableValue("gl_finish");
+	s_finish_box.itemnames = yesno_names;
 	y+=y_offset;
 
 	s_defaults_action.generic.type = MTYPE_ACTION;
@@ -218,7 +218,7 @@ static void Video_MenuInit( void )
 	Menu_AddItem( &s_video_menu, ( void * ) &s_brightness_slider );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_fs_box );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_tq_slider );
-	Menu_AddItem( &s_video_menu, ( void * ) &s_lighting_box );
+	Menu_AddItem( &s_video_menu, ( void * ) &s_finish_box );
 
 	Menu_AddItem( &s_video_menu, ( void * ) &s_defaults_action );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_cancel_action );
@@ -252,7 +252,40 @@ Video_MenuKey
 */
 const char *Video_MenuKey( int key )
 {
-	return Default_MenuKey( &s_video_menu, key );
+	menuframework_s *m = &s_video_menu;
+	static const char *sound = "misc/menu1.wav";
+
+	switch ( key )
+	{
+	case K_ESCAPE:
+		M_PopMenu();
+		return NULL;
+	case K_KP_UPARROW:
+	case K_UPARROW:
+		m->cursor--;
+		Menu_AdjustCursor( m, -1 );
+		break;
+	case K_KP_DOWNARROW:
+	case K_DOWNARROW:
+		m->cursor++;
+		Menu_AdjustCursor( m, 1 );
+		break;
+	case K_KP_LEFTARROW:
+	case K_LEFTARROW:
+		Menu_SlideItem( m, -1 );
+		break;
+	case K_KP_RIGHTARROW:
+	case K_RIGHTARROW:
+		Menu_SlideItem( m, 1 );
+		break;
+	case K_KP_ENTER:
+	case K_ENTER:
+		if ( !Menu_SelectItem( m ) ) {
+		}
+		break;
+	}
+
+	return sound;
 }
 
 void M_Menu_Video_f (void)

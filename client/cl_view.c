@@ -35,9 +35,6 @@ cvar_t		*cl_testblend;
 
 cvar_t		*cl_stats;
 
-cvar_t		*cl_thirdPerson;
-cvar_t		*cl_thirdPersonAngle;
-cvar_t		*cl_thirdPersonRange;
 
 int			r_numdlights;
 dlight_t	r_dlights[MAX_DLIGHTS];
@@ -227,8 +224,7 @@ void CL_PrepRefresh (void)
 	char		mapname[32];
 	int			i;
 	char		name[MAX_QPATH];
-	int			xi, yi, zi;
-	float		xf, yf, zf;
+	float		r, g, b;
 
 	if (!cl.configstrings[CS_MODELS+1][0])
 		return;		// no map loaded
@@ -241,10 +237,16 @@ void CL_PrepRefresh (void)
 	mapname[strlen(mapname)-4] = 0;		// cut off ".bsp"
 
 	// register models, pics, and skins
+	Com_Printf ("Map: %s\r", mapname); 
+	SCR_UpdateScreen ();
 	R_BeginRegistration (mapname);
+	Com_Printf ("                                     \r");
 
 	// precache status bar pics
+	Com_Printf ("pics\r"); 
+	SCR_UpdateScreen ();
 	SCR_TouchPics ();
+	Com_Printf ("                                     \r");
 
 	CL_RegisterMediaModels ();
 
@@ -256,7 +258,7 @@ void CL_PrepRefresh (void)
 		strcpy (name, cl.configstrings[CS_MODELS+i]);
 		name[37] = 0;	// never go beyond one line
 		if (name[0] != '*')
-			Com_sprintf ( cl.checkname, sizeof(cl.checkname), name); 
+			Com_Printf ("%s\r", name); 
 		SCR_UpdateScreen ();
 		Sys_SendKeyEvents ();	// pump message loop
 		if (name[0] == '#')
@@ -277,176 +279,48 @@ void CL_PrepRefresh (void)
 			else
 				cl.model_clip[i] = NULL;
 		}
+		if (name[0] != '*')
+			Com_Printf ("                                     \r");
 	}
+
+	Com_Printf ("images\r", i); 
+	SCR_UpdateScreen ();
 
 	CL_RegisterMediaPics ();
 
 	for (i=1 ; i<MAX_IMAGES && cl.configstrings[CS_IMAGES+i][0] ; i++)
 	{
-		Com_sprintf ( cl.checkname, sizeof(cl.checkname), cl.configstrings[CS_IMAGES+i]);
-		SCR_UpdateScreen ();
 		cl.image_precache[i] = R_RegisterShaderNoMip (cl.configstrings[CS_IMAGES+i]);
 		Sys_SendKeyEvents ();	// pump message loop
 	}
 	
+	Com_Printf ("                                     \r");
 	for (i=0 ; i<MAX_CLIENTS ; i++)
 	{
 		if (!cl.configstrings[CS_PLAYERSKINS+i][0])
 			continue;
-
-		Com_sprintf ( cl.checkname, sizeof(cl.checkname), "client %i", i );
+		Com_Printf ("client %i\r", i); 
 		SCR_UpdateScreen ();
 		Sys_SendKeyEvents ();	// pump message loop
 		CL_ParseClientinfo (i);
+		Com_Printf ("                                     \r");
 	}
-
-	cl.checkname[0] = 0;
 
 	CL_LoadClientinfo (&cl.baseclientinfo, "unnamed\\male/grunt");
 
 	// the renderer can now free unneeded stuff
 	R_EndRegistration ();
 
-	sscanf (cl.configstrings[CS_GRIDSIZE], "%f %f %f", &xf, &yf, &zf);
-
-	// try intergers
-	if ( !xf && !yf && !zf ) {
-		sscanf (cl.configstrings[CS_GRIDSIZE], "%i %i %i", &xi, &yi, &zi);
-		R_SetGridsize ( xi, yi, zi );
-	} else {
-		R_SetGridsize ( (int)xf, (int)yf, (int)zf );
-	}
-
+	sscanf (cl.configstrings[CS_GRIDSIZE], "%f %f %f", 
+		&r, &g, &b);
+	R_SetGridsize (r, g, b);
+	
 	// clear any lines of console text
 	Con_ClearNotify ();
 
 	SCR_UpdateScreen ();
 	cl.refresh_prepped = true;
 	cl.force_refdef = true;	// make sure we have a valid refdef
-}
-
-//============================================================================
-/*
-====================
-Camera_ClipMoveToBmodels
-====================
-*/
-void Camera_ClipMoveToBmodels ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, trace_t *tr )
-{
-	int			i;
-	trace_t		trace;
-	int			headnode;
-	float		*angles;
-	entity_state_t	*ent;
-	int			num;
-	cmodel_t	*cmodel;
-
-	for (i=0 ; i<cl.frame.num_entities ; i++)
-	{
-		num = (cl.frame.parse_entities + i)&(MAX_PARSE_ENTITIES-1);
-		ent = &cl_parse_entities[num];
-
-		// special value for bmodel
-		if (ent->solid != 31)
-			continue;
-
-		if (ent->number == cl.playernum+1)
-			continue;
-
-		
-		cmodel = cl.model_clip[ent->modelindex];
-		if (!cmodel)
-			continue;
-		headnode = cmodel->headnode;
-		angles = ent->angles;
-
-		if (tr->allsolid)
-			return;
-
-		trace = CM_TransformedBoxTrace (start, end,
-			mins, maxs, headnode,  MASK_PLAYERSOLID,
-			ent->origin, angles);
-
-		if (trace.allsolid || trace.startsolid ||
-		trace.fraction < tr->fraction)
-		{
-			trace.ent = (struct edict_s *)ent;
-		 	if (tr->startsolid)
-			{
-				*tr = trace;
-				tr->startsolid = true;
-			}
-			else
-				*tr = trace;
-		}
-		else if (trace.startsolid)
-			tr->startsolid = true;
-	}
-}
-
-
-/*
-================
-Camera_Trace
-================
-*/
-void Camera_Trace ( trace_t *trace, vec3_t start, vec3_t end )
-{
-	static vec3_t mins = { -4, -4, -4 };
-	static vec3_t maxs = { 4, 4, 4 };
-
-	*trace = CM_BoxTrace ( start, end, mins, maxs, 0, MASK_SOLID );
-
-	if (trace->fraction < 1.0)
-		trace->ent = (struct edict_s *)1;
-
-	Camera_ClipMoveToBmodels ( start, mins, maxs, end, trace );
-}
-
-/*
-================
-Camera_Update
-================
-*/
-void Camera_Update (void)
-{
-	float	dist, f, r;
-	vec3_t	dest, stop;
-	vec3_t	chase_dest;
-	trace_t	trace;
-
-	// calc exact destination
-	VectorCopy ( cl.refdef.vieworg, chase_dest );
-	f = cos( cl_thirdPersonAngle->value / 180 * M_PI );
-	r = sin( cl_thirdPersonAngle->value / 180 * M_PI );
-	VectorMA( chase_dest, -cl_thirdPersonRange->value * f, cl.v_forward, chase_dest );
-	VectorMA( chase_dest, -cl_thirdPersonRange->value * r, cl.v_right, chase_dest );
-	chase_dest[2] += 8;
-
-	// find the spot the player is looking at
-	VectorMA ( cl.refdef.vieworg, 512, cl.v_forward, dest );
-	Camera_Trace ( &trace, cl.refdef.vieworg, dest );
-
-	// calculate pitch to look at the same spot from camera
-	VectorSubtract ( trace.endpos, cl.refdef.vieworg, stop );
-	dist = DotProduct ( stop, cl.v_forward );
-	if (dist < 1)
-		dist = 1;
-	cl.refdef.viewangles[PITCH] = -atan( stop[2] / dist ) / M_PI * 180;
-	cl.refdef.viewangles[YAW] -= cl_thirdPersonAngle->value;
-	AngleVectors ( cl.refdef.viewangles, cl.v_forward, cl.v_right, cl.v_up );
-
-	// move towards destination
-	Camera_Trace ( &trace, cl.refdef.vieworg, chase_dest );
-
-	if ( trace.fraction != 1.0 ) {
-		VectorCopy ( trace.endpos, stop );
-		stop[2] += ( 1.0 - trace.fraction ) * 32;
-		Camera_Trace ( &trace, cl.refdef.vieworg, stop );
-		VectorCopy ( trace.endpos, chase_dest );
-	}
-
-	VectorCopy ( chase_dest, cl.refdef.vieworg );
 }
 
 //============================================================================
@@ -469,14 +343,13 @@ void SCR_DrawCrosshair (void)
 		SCR_TouchPics ();
 	}
 
-	if (!crosshair_shader)
+	if (!crosshair_pic[0])
 		return;
 
 	w = (int)crosshair_size->value;
 	h = (int)crosshair_size->value;
 
-	Draw_StretchPic (scr_vrect.x + crosshairX + ((scr_vrect.width - w)>>1), scr_vrect.y + crosshairY + ((scr_vrect.height - h)>>1), w, h, 
-		0, 0, 1, 1, colorWhite, crosshair_shader);
+	Draw_StretchPic (crosshairX + ((scr_vrect.width - w)>>1), crosshairY + ((scr_vrect.height - h)>>1), w, h, crosshair_pic);
 }
 
 /*
@@ -541,10 +414,6 @@ void V_RenderView( float stereo_separation )
 			VectorAdd( cl.refdef.vieworg, tmp, cl.refdef.vieworg );
 		}
 
-		if ( cl.thirdperson ) {
-			Camera_Update ();
-		}
-
 		// never let it sit exactly on a node line, because a water plane can
 		// dissapear when viewed with the eye exactly on it.
 		// the server protocol only specifies to 1/8 pixel, so add 1/16 in each axis
@@ -556,7 +425,6 @@ void V_RenderView( float stereo_separation )
 		cl.refdef.y = scr_vrect.y;
 		cl.refdef.width = scr_vrect.width;
 		cl.refdef.height = scr_vrect.height;
-		cl.refdef.cos_half_fox_x = cos ( DEG2RAD(cl.refdef.fov_x) * 0.5f );
 		cl.refdef.fov_y = CalcFov (cl.refdef.fov_x, cl.refdef.width, cl.refdef.height);
 
 		cl.refdef.time = cl.time*0.001;
@@ -642,8 +510,4 @@ void V_Init (void)
 	cl_testlights = Cvar_Get ("cl_testlights", "0", 0);
 
 	cl_stats = Cvar_Get ("cl_stats", "0", 0);
-
-	cl_thirdPerson = Cvar_Get ( "cl_thirdperson", "0", 0 );
-	cl_thirdPersonAngle = Cvar_Get ( "cl_thirdpersonangle", "0", 0 );
-	cl_thirdPersonRange = Cvar_Get ( "cl_thirdpersonrange", "70", 0 );
 }

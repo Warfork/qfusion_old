@@ -35,33 +35,13 @@ typedef struct
 
 typedef struct
 {
-	vec3_t		xyz;
-	vec3_t		normal;
-} cvertex_t;
-
-typedef struct
-{
-	int			shadernum;
-	int			facetype;
-	int			numverts;
-	int			firstvert;
-	int			mesh_cp[2];
-
-	vec3_t		mins, maxs;
-} cface_t;
-
-typedef struct
-{
 	int			contents;
 	int			cluster;
 	int			area;
-	int			firstleafface;
-	int			numleaffaces;
 	int			firstleafbrush;
 	int			numleafbrushes;
-
-	int			numfacets;
-	int			firstfacet;
+	int			mins[3];
+	int			maxs[3];
 } cleaf_t;
 
 typedef struct
@@ -99,15 +79,6 @@ cleaf_t		map_leafs[MAX_MAP_LEAFS];
 int			numleafbrushes;
 int			map_leafbrushes[MAX_MAP_LEAFBRUSHES];
 
-int			numverts;
-cvertex_t	map_verts[MAX_MAP_VERTS];
-
-int			numfaces;
-cface_t		map_faces[MAX_MAP_FACES];
-
-int			numleaffaces;
-cface_t		*map_leaffaces[MAX_MAP_LEAFFACES];
-
 int			numcmodels;
 cmodel_t	map_cmodels[MAX_MAP_MODELS];
 
@@ -133,18 +104,15 @@ char		map_entitystring[MAX_MAP_ENTSTRING];
 int			numareas = 1;
 carea_t		map_areas[MAX_MAP_AREAS];
 
-csurface_t	nullsurface;
+int			numclusters = 1;
 
-int			emptyleaf;
+csurface_t	nullsurface;
 
 cvar_t		*map_noareas;
 
-int			numfacets;
-cbrushside_t map_facets[MAX_MAP_BRUSHSIDES];
-
 void	CM_InitBoxHull (void);
-void	CM_CreateMeshes (void);
 void	FloodAreaConnections (void);
+
 
 int		c_pointcontents;
 int		c_traces, c_brush_traces;
@@ -206,6 +174,11 @@ void CMod_LoadSubmodels (lump_t *l)
 			}
 
 			numleafbrushes += bleaf->numleafbrushes;
+
+			for (j=0 ; j<3 ; j++) {
+				bleaf->mins[j] = LittleLong ( (int)in->mins[j] ) - 1;
+				bleaf->maxs[j] = LittleLong ( (int)in->maxs[j] ) + 1;
+			}
 		}
 
 		for (j=0 ; j<3 ; j++)
@@ -313,80 +286,6 @@ void CMod_LoadShaders (lump_t *l)
 
 /*
 =================
-CMod_LoadVertexes
-
-=================
-*/
-void CMod_LoadVertexes (lump_t *l)
-{
-	dvertex_t	*in;
-	cvertex_t	*out;
-	int			i, j, count;
-	
-	in = (void *)(cmod_base + l->fileofs);
-	if (l->filelen % sizeof(*in))
-		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size");
-	count = l->filelen / sizeof(*in);
-
-	if (count > MAX_MAP_VERTS)
-		Com_Error (ERR_DROP, "Map has too many vertexes");
-
-	out = map_verts;
-	numverts = count;
-
-	for (i=0 ; i<count ; i++, out++, in++)
-	{
-		for ( j = 0; j < 3; j++ ) 
-		{
-			out->xyz[j] = LittleFloat ( in->point[j] );
-			out->normal[j] = LittleFloat ( in->normal[j] );
-		}
-	}
-}
-
-/*
-=================
-CMod_LoadFaces
-
-=================
-*/
-void CMod_LoadFaces (lump_t *l)
-{
-	dface_t		*in;
-	cface_t		*out;
-	int			i, count, j;
-	
-	in = (void *)(cmod_base + l->fileofs);
-	if (l->filelen % sizeof(*in))
-		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size");
-	count = l->filelen / sizeof(*in);
-
-	if (count > MAX_MAP_FACES)
-		Com_Error (ERR_DROP, "Map has too many faces");
-
-	out = map_faces;
-	numfaces = count;
-
-	for (i=0 ; i<count ; i++, out++, in++)
-	{
-		out->firstvert = LittleLong( in->firstvert );
-		out->numverts = LittleLong ( in->numverts );
-		out->shadernum = LittleLong ( in->shadernum );
-		out->facetype = LittleLong ( in->facetype );
-
-		for ( j = 0; j < 2; j++ ) {
-			out->mesh_cp[j] = LittleLong ( in->mesh_cp[j] );
-		}
-
-		for ( j = 0; j < 3; j++ ) {
-			out->mins[j] = LittleFloat ( in->mins[j] );
-			out->maxs[j] = LittleFloat ( in->maxs[j] );
-		}
-	}
-}
-
-/*
-=================
 CMod_LoadBrushes
 
 =================
@@ -446,17 +345,20 @@ void CMod_LoadLeafs (lump_t *l)
 
 	out = map_leafs;	
 	numleafs = count;
-	emptyleaf = -1;
+	numclusters = 0;
 
 	for ( i=0 ; i<count ; i++, in++, out++)
 	{
 		out->cluster = LittleLong ( in->cluster );
 		out->area = LittleLong ( in->area ) + 1;
-		out->firstleafface = LittleLong ( in->firstleafface );
-		out->numleaffaces = LittleLong ( in->numleaffaces );
 		out->firstleafbrush = LittleLong ( in->firstleafbrush );
 		out->numleafbrushes = LittleLong ( in->numleafbrushes );
 		out->contents = 0;
+
+		for ( j = 0; j < 3; j++ ) {
+			out->mins[j] = LittleLong ( in->mins[j] );
+			out->maxs[j] = LittleLong ( in->maxs[j] );
+		}
 
 		for ( j=0 ; j<out->numleafbrushes ; j++)
 		{
@@ -464,28 +366,11 @@ void CMod_LoadLeafs (lump_t *l)
 			out->contents |= brush->contents;
 		}
 
-		if ( out->area >= numareas ) {
+		if (out->cluster >= numclusters)
+			numclusters = out->cluster + 1;
+
+		if (out->area >= numareas)
 			numareas = out->area + 1;
-		}
-
-		if ( !out->contents ) {
-			emptyleaf = i;
-		}
-	}
-
-	// if map doesn't have an empty leaf - force one
-	if ( emptyleaf == -1 ) {
-		if (numleafs >= MAX_MAP_LEAFS-1)
-			Com_Error (ERR_DROP, "Map does not have an empty leaf");
-
-		out->cluster = -1;
-		out->area = -1;
-		out->numleafbrushes = 0;
-		out->contents = 0;
-		out->firstleafbrush = 0;
-
-		Com_DPrintf ( "Forcing an empty leaf: %i\n", numleafs );
-		emptyleaf = numleafs++;
 	}
 }
 
@@ -535,36 +420,6 @@ void CMod_LoadPlanes (lump_t *l)
 		out->type = type;
 		out->signbits = bits;
 	}
-}
-
-/*
-=================
-CMod_LoadLeafFaces
-=================
-*/
-void CMod_LoadLeafFaces (lump_t *l)
-{
-	int			i;
-	cface_t		**out;
-	int		 	*in;
-	int			count;
-	
-	in = (void *)(cmod_base + l->fileofs);
-	if (l->filelen % sizeof(*in))
-		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size");
-	count = l->filelen / sizeof(*in);
-
-	if (count < 1)
-		Com_Error (ERR_DROP, "Map with no faces");
-	// need to save space for box planes
-	if (count > MAX_MAP_LEAFFACES)
-		Com_Error (ERR_DROP, "Map has too many leaffaces");
-
-	out = map_leaffaces;
-	numleaffaces = count;
-
-	for ( i=0 ; i<count ; i++, in++, out++)
-		*out = map_faces + LittleLong (*in);
 }
 
 /*
@@ -663,11 +518,6 @@ void CMod_LoadEntityString (lump_t *l)
 	memcpy (map_entitystring, cmod_base + l->fileofs, l->filelen);
 }
 
-/*
-=================
-CM_CalcPHS
-=================
-*/
 void CM_CalcPHS (void)
 {
 	int		rowbytes, rowwords;
@@ -770,13 +620,13 @@ cmodel_t *CM_LoadMap (char *name, qboolean clientload, unsigned *checksum)
 	numcmodels = 0;
 	numvisibility = 0;
 	numentitychars = 0;
-	numfacets = 0;
 	map_entitystring[0] = 0;
 	map_name[0] = 0;
 
 	if (!name || !name[0])
 	{
 		numleafs = 1;
+		numclusters = 1;
 		numareas = 1;
 		*checksum = 0;
 		return &map_cmodels[0];			// cinematic servers won't have anything at all
@@ -805,13 +655,10 @@ cmodel_t *CM_LoadMap (char *name, qboolean clientload, unsigned *checksum)
 	// load into heap
 	CMod_LoadSurfaces (&header.lumps[LUMP_SHADERREFS]);
 	CMod_LoadPlanes (&header.lumps[LUMP_PLANES]);
-	CMod_LoadLeafFaces (&header.lumps[LUMP_LEAFFACES]);
 	CMod_LoadLeafBrushes (&header.lumps[LUMP_LEAFBRUSHES]);
 	CMod_LoadShaders (&header.lumps[LUMP_SHADERREFS]);
 	CMod_LoadBrushes (&header.lumps[LUMP_BRUSHES]);
 	CMod_LoadBrushSides (&header.lumps[LUMP_BRUSHSIDES]);
-	CMod_LoadVertexes (&header.lumps[LUMP_VERTEXES]);
-	CMod_LoadFaces (&header.lumps[LUMP_FACES]);
 	CMod_LoadLeafs (&header.lumps[LUMP_LEAFS]);
 	CMod_LoadSubmodels (&header.lumps[LUMP_MODELS]);
 	CMod_LoadNodes (&header.lumps[LUMP_NODES]);
@@ -820,7 +667,6 @@ cmodel_t *CM_LoadMap (char *name, qboolean clientload, unsigned *checksum)
 
 	FS_FreeFile (buf);
 
-	CM_CreateMeshes ();
 	CM_InitBoxHull ();
 	FloodAreaConnections ();
 
@@ -853,7 +699,7 @@ cmodel_t	*CM_InlineModel (char *name)
 
 int		CM_NumClusters (void)
 {
-	return map_pvs->numclusters;
+	return numclusters;
 }
 
 int		CM_NumInlineModels (void)
@@ -887,267 +733,22 @@ int		CM_LeafArea (int leafnum)
 	return map_leafs[leafnum].area;
 }
 
-//=======================================================================
-
-#define LEVEL_WIDTH(lvl) ((1 << (lvl+1)) + 1)
-
-int r_imaxmeshlevel = 4;
-int r_isubdivisions = 4;
-
-static int CM_MeshFindLevel (vec3_t *v)
+int		*CM_LeafMins (int leafnum)
 {
-    int level;
-    vec3_t a, b, dist;
-
-    // subdivide on the left until tolerance is reached
-    for (level = 0; level < r_imaxmeshlevel-1; level++)
-    {
-		// subdivide on the left
-		VectorAvg( v[0], v[1], a );
-		VectorAvg( v[1], v[2], b );
-		VectorAvg( a, b, v[2] );
-
-		// find distance moved
-		VectorSubtract( v[2], v[1], dist );
-
-		// check for tolerance
-		if (DotProduct( dist, dist ) < r_isubdivisions * r_isubdivisions)
-			break;
-
-		// insert new middle vertex
-		VectorCopy( a, v[1] );
-    }
-
-    return level;
+	if (leafnum < 0 || leafnum >= numleafs)
+		Com_Error (ERR_DROP, "CM_LeafCluster: bad number");
+	return map_leafs[leafnum].mins;
 }
 
-static void CM_MeshFindSize (int *numcp, vec3_t *cp, int *size)
+int		*CM_LeafMaxs (int leafnum)
 {
-    int u, v, found, level;
-    float *a, *b;
-    vec3_t test[3];
-    
-    // find non-coincident pairs in u direction
-    found = 0;
-    for (v=0; v < numcp[1]; v++)
-    {
-		for (u=0; u < numcp[0]-1; u += 2)
-		{
-			a = cp[v * numcp[0] + u];
-			b = cp[v * numcp[0] + u + 2];
-			if (!VectorCompare( a, b ))
-			{
-				found = 1;
-				break;
-			}
-		}
-		if (found) break;
-    }
-    if (!found) Com_Error( ERR_DROP, "Bad mesh control points" );
-
-    /* Find subdivision level in u */
-    VectorCopy( a, test[0] );
-    VectorCopy( (a+3), test[1] );
-    VectorCopy( b, test[2] );
-    level = CM_MeshFindLevel( test );
-    size[0] = (LEVEL_WIDTH(level) - 1) * ((numcp[0]-1) / 2) + 1;
-    
-    // find non-coincident pairs in v direction
-    found = 0;
-    for (u=0; u < numcp[0]; u++)
-    {
-		for (v=0; v < numcp[1]-1; v += 2)
-		{
-			a = cp[v * numcp[0] + u];
-			b = cp[(v + 2) * numcp[0] + u];
-			if (!VectorCompare( a, b ))
-			{
-				found = 1;
-				break;
-			}
-		}
-		if (found) break;
-    }
-    if (!found) Com_Error( ERR_DROP, "Bad mesh control points" );
-
-    // find subdivision level in v
-    VectorCopy( a, test[0] );
-    VectorCopy( (a+numcp[0]*3), test[1] );
-    VectorCopy( b, test[2] );
-    level = CM_MeshFindLevel(test);
-    size[1] = (LEVEL_WIDTH(level) - 1)* ((numcp[1]-1) / 2) + 1;    
-}
-
-static void CM_MeshFillCurve_3 (int numcp, int size, int stride, vec3_t *p)
-{
-    int step, halfstep, i, mid;
-    vec3_t a, b;
-
-    step = (size-1) / (numcp-1);
-
-    while (step > 0)
-    {
-		halfstep = step / 2;
-		for (i = 0; i < size-1; i += step*2)
-		{
-			mid = (i+step)*stride;
-			VectorAvg( p[i*stride], p[mid], a );
-			VectorAvg( p[mid], p[(i+step*2)*stride], b );
-			VectorAvg( a, b, p[mid] );
-
-			if (halfstep > 0)
-			{
-				VectorCopy( a, p[(i+halfstep)*stride] );
-				VectorCopy( b, p[(i+3*halfstep)*stride] );
-			}
-		}
-		
-		step /= 2;
-    }
-}
-
-static void CM_MeshFillPatch_3 (int *numcp, int *size, vec3_t *p)
-{
-    int step, u, v;
-
-    // fill in control points in v direction
-    step = (size[0]-1) / (numcp[0]-1);    
-    for (u = 0; u < size[0]; u += step)
-    {
-		CM_MeshFillCurve_3( numcp[1], size[1], size[0], p + u );
-    }
-
-    // fill in the rest in the u direction
-    for (v = 0; v < size[1]; v++)
-    {
-		CM_MeshFillCurve_3( numcp[0], size[0], 1, p + v * size[0] );
-    }
-}
-
-void CM_CreateMesh (cleaf_t *leaf, cface_t *face)
-{
-    int step[2], size[2], i, u, v, p, b, bits, type;
-	int newnumverts, numverts = face->numverts;
-	cvertex_t *vert;
-	vec3_t points[MAX_VERTS], normals[MAX_VERTS], normals2[MAX_VERTS];
-	cplane_t brushsides[MAX_VERTS];
-	cbrushside_t *brushside;
-
-	vert = map_verts + face->firstvert;
-	for ( i = 0; i < numverts; i++, vert++ )
-		VectorCopy ( vert->xyz, points[i] );
-	
-// find the degree of subdivision in the u and v directions
-	CM_MeshFindSize ( face->mesh_cp, points, size );
-	newnumverts = size[0] * size[1];
-
-// fill in sparse mesh control points
-    step[0] = (size[0]-1) / (face->mesh_cp[0]-1);
-    step[1] = (size[1]-1) / (face->mesh_cp[1]-1);
-
-	vert = map_verts + face->firstvert;
-    for (v = 0; v < size[1]; v += step[1])
-    {
-		for (u = 0; u < size[0]; u += step[0])
-		{
-			p = v * size[0] + u;
-			VectorCopy ( vert->xyz, points[p] );
-			VectorCopy ( vert->normal, normals[p] );
-			VectorCopy ( vert->normal, normals2[p] );
-			vert++;
-		}
-    }
-
-// fill in each mesh
-	CM_MeshFillPatch_3 ( face->mesh_cp, size, normals );
-	CM_MeshFillPatch_3 ( face->mesh_cp, size, normals2 );
-	CM_MeshFillPatch_3 ( face->mesh_cp, size, points );
-
-	b = 0;
-	newnumverts = face->numverts;
-
-	memset ( brushsides, 0, sizeof(cplane_t)*MAX_VERTS );
-
-	for ( i = 0; i < newnumverts; i++ )
-		VectorNormalize ( normals[i] );
-
-	for ( i = 0; i < newnumverts; i++ )
-	{
-//		for ( v = 0; v < b; v++ ) 
-//		{
-//			if ( VectorCompare( normals[i], brushsides[v].normal ) )
-//				break;
-//		}
-/*
-		if ( v == b )
-		{
-			vert = map_verts + face->firstvert;
-			for ( v = 0; v < numverts; v++, vert++ )
-			{
-				if ( VectorCompare( normals2[i], vert->normal) )
-					break;
-			}
-		}
-*/
-		v = b;
-		if ( v == b )
-		{
-			bits = 0;
-			type = PLANE_ANYZ;
-
-			for (p=0 ; p<3 ; p++)
-			{
-				if (normals[i][p] < 0)
-					bits |= 1<<p;
-				if (normals[i][p] == 1.0f)
-					type = p;
-			}
-
-			VectorCopy ( normals[i], brushsides[b].normal );
-			brushsides[b].dist = DotProduct ( points[i], normals[i] );
-			brushsides[b].type = type;
-			brushsides[b].signbits = bits;
-			b++;
-		}
-	}
-
-	for ( i = 0; i < b; i ++ )
-	{
-		brushside = &map_facets[numfacets++];
-		brushside->surface = &map_surfaces[face->shadernum];
-		brushside->plane = &map_planes[numplanes++];
-		*brushside->plane = brushsides[i];
-	}
-
-	leaf->numfacets += b;
-}
-
-
-void CM_CreateMeshes (void)
-{
-	int i, j;
-	cleaf_t *leaf;
-	cface_t **mark, *face;
-
-	leaf = map_leafs;
-	for ( i = 1; i < numleafs; i++, leaf++ )
-	{
-		leaf->numfacets = 0;
-		leaf->firstfacet = numfacets;
-
-		mark = map_leaffaces + leaf->firstleafface;
-		for ( j = 0; j < leaf->numleaffaces; j++)
-		{
-			face = *mark++;
-//			if ( face->facetype == FACETYPE_MESH )
-//				CM_CreateMesh ( leaf, face );
-		}
-
-//		Com_Printf ( "leaf %i, %i facets, %i firstfacet\n", i, leaf->numfacets, leaf->firstfacet );
-	}
+	if (leafnum < 0 || leafnum >= numleafs)
+		Com_Error (ERR_DROP, "CM_LeafCluster: bad number");
+	return map_leafs[leafnum].maxs;
 }
 
 //=======================================================================
+
 
 cplane_t	*box_planes;
 int			box_headnode;
@@ -1203,7 +804,7 @@ void CM_InitBoxHull (void)
 		// nodes
 		c = &map_nodes[box_headnode+i];
 		c->plane = map_planes + (numplanes+i*2);
-		c->children[side] = -1 - emptyleaf;
+		c->children[side] = -1;
 		if (i != 5)
 			c->children[side^1] = box_headnode+i + 1;
 		else
@@ -1477,118 +1078,6 @@ qboolean	trace_ispoint;		// optimized case
 CM_ClipBoxToBrush
 ================
 */
-void CM_ClipBoxToFacet (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
-					  trace_t *trace, cbrushside_t	*side)
-{
-	int			j;
-	cplane_t	*plane, *clipplane;
-	float		dist;
-	float		enterfrac, leavefrac;
-	vec3_t		ofs;
-	float		d1, d2;
-	qboolean	getout, startout;
-	float		f;
-	cbrushside_t *leadside;
-
-	enterfrac = -1;
-	leavefrac = 1;
-	clipplane = NULL;
-	getout = false;
-	startout = false;
-	leadside = NULL;
-	plane = side->plane;
-
-	if (!trace_ispoint)
-	{	// general box case
-		
-		// push the plane out apropriately for mins/maxs
-		
-		// FIXME: use signbits into 8 way lookup for each mins/maxs
-		for (j=0 ; j<3 ; j++)
-		{
-			if (plane->normal[j] < 0)
-				ofs[j] = maxs[j];
-			else
-				ofs[j] = mins[j];
-		}
-		
-		if ( plane->type < 3 ) {
-			dist = ofs[plane->type];
-		} else {
-			dist = DotProduct (ofs, plane->normal);
-		}
-		
-		dist = plane->dist - dist;
-	}
-	else
-	{	// special point case
-		dist = plane->dist;
-	}
-	
-	if ( plane->type < 3 ) {
-		d1 = p1[plane->type] - dist;
-		d2 = p2[plane->type] - dist;
-	} else {
-		d1 = DotProduct (p1, plane->normal) - dist;
-		d2 = DotProduct (p2, plane->normal) - dist;
-	}
-	
-	if (d2 > 0)
-		getout = true;	// endpoint is not in solid
-	if (d1 > 0)
-		startout = true;
-	
-	// if completely in front of face, no intersection
-	if (d1 > 0 && d2 >= d1)
-		return;
-	
-	if (d1 <= 0 && d2 <= 0)
-		return;
-	
-	// crosses face
-	if (d1 > d2)
-	{	// enter
-		f = (d1-DIST_EPSILON) / (d1-d2);
-		if (f > enterfrac)
-		{
-			enterfrac = f;
-			clipplane = plane;
-			leadside = side;
-		}
-	}
-	else
-	{	// leave
-		f = (d1+DIST_EPSILON) / (d1-d2);
-		if (f < leavefrac)
-			leavefrac = f;
-	}
-
-	if (!startout)
-	{	// original point was inside brush
-		trace->startsolid = true;
-		if (!getout)
-			trace->allsolid = true;
-		return;
-	}
-	if (enterfrac < leavefrac)
-	{
-		if (enterfrac > -1 && enterfrac < trace->fraction)
-		{
-			if (enterfrac < 0)
-				enterfrac = 0;
-			trace->fraction = enterfrac;
-			trace->plane = *clipplane;
-			trace->surface = leadside->surface;
-			trace->contents = leadside->surface->contents;
-		}
-	}
-}
-
-/*
-================
-CM_ClipBoxToBrush
-================
-*/
 void CM_ClipBoxToBrush (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
 					  trace_t *trace, cbrush_t *brush)
 {
@@ -1635,13 +1124,7 @@ void CM_ClipBoxToBrush (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
 				else
 					ofs[j] = mins[j];
 			}
-
-			if ( plane->type < 3 ) {
-				dist = ofs[plane->type];
-			} else {
-				dist = DotProduct (ofs, plane->normal);
-			}
-
+			dist = DotProduct (ofs, plane->normal);
 			dist = plane->dist - dist;
 		}
 		else
@@ -1649,13 +1132,8 @@ void CM_ClipBoxToBrush (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
 			dist = plane->dist;
 		}
 
-		if ( plane->type < 3 ) {
-			d1 = p1[plane->type] - dist;
-			d2 = p2[plane->type] - dist;
-		} else {
-			d1 = DotProduct (p1, plane->normal) - dist;
-			d2 = DotProduct (p2, plane->normal) - dist;
-		}
+		d1 = DotProduct (p1, plane->normal) - dist;
+		d2 = DotProduct (p2, plane->normal) - dist;
 
 		if (d2 > 0)
 			getout = true;	// endpoint is not in solid
@@ -1746,18 +1224,15 @@ void CM_TestBoxInBrush (vec3_t mins, vec3_t maxs, vec3_t p1,
 			else
 				ofs[j] = mins[j];
 		}
+		dist = DotProduct (ofs, plane->normal);
+		dist = plane->dist - dist;
 
-		if ( plane->type < 3 ) {
-			dist = plane->dist - ofs[plane->type];
-			d1 = p1[plane->type] - dist;
-		} else {
-			dist = plane->dist - DotProduct (ofs, plane->normal);
-			d1 = DotProduct (p1, plane->normal) - dist;
-		}
+		d1 = DotProduct (p1, plane->normal) - dist;
 
 		// if completely in front of face, no intersection
 		if (d1 > 0)
 			return;
+
 	}
 
 	// inside this brush
@@ -1799,14 +1274,6 @@ void CM_TraceToLeaf (int leafnum)
 			return;
 	}
 
-	if ( !leaf->numfacets )
-		return;
-
-	for (k=0 ; k<leaf->numfacets ; k++)
-	{
-//		CM_ClipBoxToFacet ( trace_mins, trace_maxs, trace_start, trace_end, &trace_trace, &map_facets[leaf->firstfacet+k] );
-//		Com_Printf ( "%i\n", map_facets[leaf->firstfacet+k].surface->contents );
-	}
 }
 
 

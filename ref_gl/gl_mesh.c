@@ -42,33 +42,35 @@ float	r_avertexnormals[NUMVERTEXNORMALS][3] = {
 typedef float vec4_t[4];
 
 static	vec4_t	s_lerped[MAX_VERTS];
+//static	vec3_t	lerped[MAX_VERTS];
 static	float	shadescale;
 
-vec3_t	shadevector, shadelight;
+vec3_t	shadevector;
+float	shadelight[3];
+
+// precalculated dot products for quantized angles
+#define SHADEDOT_QUANT 16
+float	r_avertexnormal_dots[SHADEDOT_QUANT][256] =
+#include "anormtab.h"
+;
+
+float	*shadedots = r_avertexnormal_dots[0];
+
+// Vic
+// light lerping - pox@planetquake.com
+float *shadedots2 = r_avertexnormal_dots[0];
+float lightlerpoffset;
+// Vic
 
 void GL_LerpVerts( int nverts, dtrivertx_t *v, dtrivertx_t *ov, float *lerp, float move[3], float frontv[3], float backv[3] )
 {
 	int i;
 
-	if ( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE ) )
+	for (i=0 ; i < nverts; i++, v++, ov++, lerp+=4)
 	{
-		for (i=0 ; i < nverts; i++, v++, ov++, lerp+=4 )
-		{
-			float *normal = r_avertexnormals[v->lightnormalindex];
-
-			lerp[0] = move[0] + ov->v[0]*backv[0]+v->v[0]*frontv[0]+normal[0]*POWERSUIT_SCALE;
-			lerp[1] = move[1] + ov->v[1]*backv[1]+v->v[1]*frontv[1]+normal[1]*POWERSUIT_SCALE;
-			lerp[2] = move[2] + ov->v[2]*backv[2]+v->v[2]*frontv[2]+normal[2]*POWERSUIT_SCALE; 
-		}
-	}
-	else
-	{
-		for (i=0 ; i < nverts; i++, v++, ov++, lerp+=4)
-		{
-			lerp[0] = move[0] + ov->v[0]*backv[0] + v->v[0]*frontv[0];
-			lerp[1] = move[1] + ov->v[1]*backv[1] + v->v[1]*frontv[1];
-			lerp[2] = move[2] + ov->v[2]*backv[2] + v->v[2]*frontv[2];
-		}
+		lerp[0] = move[0] + ov->v[0]*backv[0] + v->v[0]*frontv[0];
+		lerp[1] = move[1] + ov->v[1]*backv[1] + v->v[1]*frontv[1];
+		lerp[2] = move[2] + ov->v[2]*backv[2] + v->v[2]*frontv[2];
 	}
 }
 
@@ -87,14 +89,12 @@ void GL_DrawAliasFrameLerp (dmdl_t *paliashdr, float backlerp)
 	int		*order;
 	int		count;
 	float	frontlerp;
-	float	alpha, dot;
-	vec3_t	move, delta, normal;
+	float	alpha;
+	vec3_t	move, delta;
 	vec3_t	frontv, backv;
 	int		i;
 	int		index_xyz;
-	float	*lerp;
-	vec4_t	c;
-	vec3_t	ambient, diffuse, direction;
+	float	*lerp, l;
 
 	frame = (daliasframe_t *)((byte *)paliashdr + paliashdr->ofs_frames 
 		+ currententity->frame * paliashdr->framesize);
@@ -112,9 +112,6 @@ void GL_DrawAliasFrameLerp (dmdl_t *paliashdr, float backlerp)
 		alpha = 1.0;
 
 	frontlerp = 1.0 - backlerp;
-
-	if ( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE ) )
-		qglDisable( GL_TEXTURE_2D );
 
 	// move should be the delta back to the previous frame * backlerp
 	VectorSubtract (currententity->oldorigin, currententity->origin, delta);
@@ -140,18 +137,6 @@ void GL_DrawAliasFrameLerp (dmdl_t *paliashdr, float backlerp)
 
 	GL_LerpVerts( paliashdr->num_xyz, v, ov, lerp, move, frontv, backv );
 	
-	if ( !( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_FULLBRIGHT )) ) {
-		vec3_t dir;
-
-		VectorAdd ( currententity->origin, s_lerped[0], delta );
-		R_LightForPoint ( delta, ambient, diffuse, dir );
-
-		// rotate light
-		direction[0] = DotProduct ( dir, currententity->angleVectors[0] );
-		direction[1] = -DotProduct ( dir, currententity->angleVectors[1] );
-		direction[2] = DotProduct ( dir, currententity->angleVectors[2] );
-	}
-
 	while (count = *order++)
 	{
 		// get the vertex count and primitive type
@@ -173,50 +158,13 @@ void GL_DrawAliasFrameLerp (dmdl_t *paliashdr, float backlerp)
 			index_xyz = order[2];
 			order += 3;
 
-			if ( !( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE | RF_FULLBRIGHT )) ) {
-				if ( VectorCompare ( direction, vec3_origin ) || 
-					VectorCompare ( diffuse, vec3_origin ) )
-					dot = 0;
-				else {
-#if 0
-					normal[0] = r_avertexnormals[verts[index_xyz].lightnormalindex][0]*frontlerp+
-						r_avertexnormals[ov[index_xyz].lightnormalindex][0]*backlerp;
-					normal[1] = r_avertexnormals[verts[index_xyz].lightnormalindex][1]*frontlerp+
-						r_avertexnormals[ov[index_xyz].lightnormalindex][1]*backlerp;
-					normal[2] = r_avertexnormals[verts[index_xyz].lightnormalindex][2]*frontlerp+
-						r_avertexnormals[ov[index_xyz].lightnormalindex][2]*backlerp;
-					VectorNormalize ( normal );
-#else
-					VectorCopy ( r_avertexnormals[verts[index_xyz].lightnormalindex], normal );
-#endif
-					dot = DotProduct ( normal, direction );
-				}
-
-				if ( dot <= 0 ) {
-					for ( i = 0; i < 3; i++ ){
-						c[i] = ambient[i];
-					}
-				} else {
-					for ( i = 0; i < 3; i++ ){
-						c[i] = ambient[i] + dot * diffuse[i];
-						c[i] = max ( 0, min( c[i], 1 ) );
-					}
-				}
-
-				c[3] = alpha;
-				qglColor4fv ( c );
-			} else {
-				qglColor4f ( shadelight[0], shadelight[1], shadelight[2], alpha );
-			}
-
+			l = shadedots[verts[index_xyz].lightnormalindex];
+			qglColor3f ( l, l, l );
 			qglVertex3fv ( s_lerped[index_xyz] );
 		} while (--count);
 
 		qglEnd ();
 	}
-
-	if ( currententity->flags & ( RF_SHELL_RED | RF_SHELL_GREEN | RF_SHELL_BLUE) )
-		qglEnable( GL_TEXTURE_2D );
 }
 
 
@@ -225,6 +173,8 @@ void GL_DrawAliasFrameLerp (dmdl_t *paliashdr, float backlerp)
 GL_DrawAliasShadow
 =============
 */
+extern	vec3_t			lightspot;
+
 void GL_DrawAliasShadow (dmdl_t *paliashdr, int posenum)
 {
 	dtrivertx_t	*verts;
@@ -234,7 +184,7 @@ void GL_DrawAliasShadow (dmdl_t *paliashdr, int posenum)
 	int		count;
 	daliasframe_t	*frame;
 
-	lheight = currententity->origin[2];
+	lheight = currententity->origin[2] - lightspot[2];
 
 	frame = (daliasframe_t *)((byte *)paliashdr + paliashdr->ofs_frames 
 		+ currententity->frame * paliashdr->framesize);
@@ -246,11 +196,13 @@ void GL_DrawAliasShadow (dmdl_t *paliashdr, int posenum)
 
 	height = -lheight + 0.01;
 
+	// Vic
 	if( gl_state.stencil_enabled ) {
 		qglEnable ( GL_STENCIL_TEST );
 		qglStencilFunc ( GL_EQUAL, 1, 2 );
 		qglStencilOp ( GL_KEEP, GL_KEEP, GL_INCR );
 	}
+	// Vic
 
 	while (count = *order++)
 	{
@@ -280,9 +232,11 @@ void GL_DrawAliasShadow (dmdl_t *paliashdr, int posenum)
 		qglEnd ();
 	}
 
+	// Vic
 	if( gl_state.stencil_enabled ) {
-		qglDisable( GL_STENCIL_TEST );
+		qglDisable(GL_STENCIL_TEST);
 	}
+	// Vic
 }
 
 /*
@@ -295,6 +249,11 @@ static qboolean R_CullAliasModel( vec3_t bbox[8], entity_t *e )
 	dmdl_t		*paliashdr;
 	vec3_t		thismins, oldmins, thismaxs, oldmaxs;
 	daliasframe_t *pframe, *poldframe;
+
+	// Vic
+	if ( currentmodel->aliastype == ALIASTYPE_MD3 ) {
+		 return R_CullMd3Model ( bbox, e );
+	}
 
 	paliashdr = (dmdl_t *)currentmodel->extradata;
 
@@ -442,7 +401,7 @@ void R_DrawAliasModel (entity_t *e)
 	dmdl_t		*paliashdr;
 	vec3_t		bbox[8];
 	image_t		*skin;
-	int			i;
+	md3header_t *md3header;		// Vic
 
 	if ( !e->scale ) {
 		return;
@@ -461,76 +420,21 @@ void R_DrawAliasModel (entity_t *e)
 	}
 
 	AngleVectors( e->angles, e->angleVectors[0], e->angleVectors[1], e->angleVectors[2] );
-	paliashdr = (dmdl_t *)currentmodel->extradata;
+
+	if ( currentmodel->aliastype == ALIASTYPE_MD2 )
+		paliashdr = (dmdl_t *)currentmodel->extradata;
+	else if ( currentmodel->aliastype == ALIASTYPE_MD3 )
+		md3header = (md3header_t *)currentmodel->extradata;
 
 	//
 	// locate the proper data
 	//
-	c_alias_polys += paliashdr->num_tris;
 
+	shadedots = r_avertexnormal_dots[((int)(e->angles[1] * (SHADEDOT_QUANT / 360.0))) & (SHADEDOT_QUANT - 1)];
 
-	if ( e->flags & ( RF_SHELL_GREEN | RF_SHELL_RED | RF_SHELL_BLUE ) )
-	{
-		VectorClear (shadelight);
-		
-		if ( e->flags & RF_SHELL_RED )
-			shadelight[0] = 1.0;
-		if ( e->flags & RF_SHELL_GREEN )
-			shadelight[1] = 1.0;
-		if ( e->flags & RF_SHELL_BLUE )
-			shadelight[2] = 1.0;
-	}
-	else if ( e->flags & RF_FULLBRIGHT )
-	{
-		for (i=0 ; i<3 ; i++)
-			shadelight[i] = 1.0;
-	}
-	else
-	{
-		if ( gl_monolightmap->string[0] != '0' )
-		{
-			float s = shadelight[0];
-			
-			if ( s < shadelight[1] )
-				s = shadelight[1];
-			if ( s < shadelight[2] )
-				s = shadelight[2];
-			
-			shadelight[0] = s;
-			shadelight[1] = s;
-			shadelight[2] = s;
-		}
-	}
-	
-	if ( currententity->flags & RF_MINLIGHT )
-	{
-		for (i=0 ; i<3 ; i++)
-			if (shadelight[i] > 0.1)
-				break;
+	if ( currentmodel->aliastype == ALIASTYPE_MD2 )
+		c_alias_polys += paliashdr->num_tris;
 
-		if (i == 3)
-		{
-			shadelight[0] = 0.1;
-			shadelight[1] = 0.1;
-			shadelight[2] = 0.1;
-		}
-	}
-	
-	if ( currententity->flags & RF_GLOW )
-	{	// bonus items will pulse with time
-		float	scale;
-		float	min;
-		
-		scale = 0.1 * sin(r_newrefdef.time*7);
-		for (i=0 ; i<3 ; i++)
-		{
-			min = shadelight[i] * 0.8;
-			shadelight[i] += scale;
-			if (shadelight[i] < min)
-				shadelight[i] = min;
-		}
-	}
-	
 	//
 	// draw all the triangles
 	//
@@ -565,53 +469,60 @@ void R_DrawAliasModel (entity_t *e)
     qglRotatef (e->angles[0],  0, 1, 0);		// sigh.
     qglRotatef (-e->angles[2],  1, 0, 0);
 
-	// select skin
-	if (currententity->skin)
-		skin = currententity->skin->pass[0].anim_frames[0];	// custom player skin
-	else
+	if ( currentmodel->aliastype == ALIASTYPE_MD2 )
 	{
-		if (currententity->skinnum >= MAX_MD2SKINS)
-			skin = currentmodel->skins[0][0]->pass[0].anim_frames[0];
+		// select skin
+		if (currententity->skin)
+			skin = currententity->skin->pass[0].texref;	// custom player skin
 		else
 		{
-			skin = currentmodel->skins[0][currententity->skinnum]->pass[0].anim_frames[0];
-			if (!skin)
-				skin = currentmodel->skins[0][0]->pass[0].anim_frames[0];
+			if (currententity->skinnum >= MAX_MD2SKINS)
+				skin = currentmodel->skins[0][0]->pass[0].texref;
+			else
+			{
+				skin = currentmodel->skins[0][currententity->skinnum]->pass[0].texref;
+				if (!skin)
+					skin = currentmodel->skins[0][0]->pass[0].texref;
+			}
 		}
+		if (!skin)
+			skin = r_notexture;	// fallback...
+		GL_Bind(skin->texnum);
 	}
-	if (!skin)
-		skin = r_notexture;	// fallback...
 
-	GL_Bind(skin->texnum);
 	GL_TexEnv( GL_MODULATE );
-	
-	if ( currententity->flags & RF_TRANSLUCENT )
-		GLSTATE_ENABLE_BLEND
 
 	// draw it
-	if ( (currententity->frame >= paliashdr->num_frames) 
-		|| (currententity->frame < 0) )
+	if ( currentmodel->aliastype == ALIASTYPE_MD2 )
 	{
-		Com_DPrintf ("R_DrawAliasModel %s: no such frame %d\n",
-			currentmodel->name, currententity->frame);
-		currententity->frame = 0;
-		currententity->oldframe = 0;
-	}
-	
-	if ( (currententity->oldframe >= paliashdr->num_frames)
-		|| (currententity->oldframe < 0))
-	{
-		Com_DPrintf ("R_DrawAliasModel %s: no such oldframe %d\n",
-			currentmodel->name, currententity->oldframe);
-		currententity->frame = 0;
-		currententity->oldframe = 0;
+		if ( (currententity->frame >= paliashdr->num_frames) 
+			|| (currententity->frame < 0) )
+		{
+			Com_DPrintf ("R_DrawAliasModel %s: no such frame %d\n",
+				currentmodel->name, currententity->frame);
+			currententity->frame = 0;
+			currententity->oldframe = 0;
+		}
+
+		if ( (currententity->oldframe >= paliashdr->num_frames)
+			|| (currententity->oldframe < 0))
+		{
+			Com_DPrintf ("R_DrawAliasModel %s: no such oldframe %d\n",
+				currentmodel->name, currententity->oldframe);
+			currententity->frame = 0;
+			currententity->oldframe = 0;
+		}
 	}
 
 	if ( !r_lerpmodels->value ) {
 		currententity->backlerp = 0;
 	}
 
-	GL_DrawAliasFrameLerp (paliashdr, currententity->backlerp);
+	if ( currentmodel->aliastype == ALIASTYPE_MD2 ) {
+		GL_DrawAliasFrameLerp (paliashdr, currententity->backlerp);
+	} else if ( currentmodel->aliastype == ALIASTYPE_MD3 ) {
+		GL_DrawMd3AliasFrameLerp ( md3header, currententity->backlerp );
+	}
 
 	qglPopMatrix ();
 
@@ -626,47 +537,43 @@ void R_DrawAliasModel (entity_t *e)
 		qglDepthRange (gldepthmin, gldepthmax);
 	}
 
-	if ( currententity->flags & RF_TRANSLUCENT )
-		GLSTATE_DISABLE_BLEND;
+	if ( gl_shadows->value && !(currententity->flags & (RF_TRANSLUCENT | RF_WEAPONMODEL)) &&
+		( currentmodel->aliastype == ALIASTYPE_MD2 ) )
+	{
+		float an = -currententity->angles[1]/180*M_PI;
+		
+		if (!shadescale)
+			shadescale = 1 / sqrt( 2 );
 
-	if ( 0 ) {
-		if ( gl_shadows->value && !(currententity->flags & (RF_TRANSLUCENT | RF_WEAPONMODEL)) )
-		{
-			float an = -currententity->angles[1]/180*M_PI;
-			
-			if (!shadescale)
-				shadescale = 1 / sqrt( 2 );
+		shadevector[0] = cos(an) * shadescale;
+		shadevector[1] = sin(an) * shadescale;
+		shadevector[2] = shadescale;
 
-			shadevector[0] = cos(an) * shadescale;
-			shadevector[1] = sin(an) * shadescale;
-			shadevector[2] = shadescale;
+		qglPushMatrix ();
+// Vic
+		qglTranslatef (e->origin[0], e->origin[1], e->origin[2]);
+		qglRotatef (e->angles[1], 0, 0, 1);
+// Vic
 
-			qglPushMatrix ();
-	// Vic
-			qglTranslatef (e->origin[0], e->origin[1], e->origin[2]);
-			qglRotatef (e->angles[1], 0, 0, 1);
-	// Vic
-
-			qglDisable (GL_TEXTURE_2D);
-			GLSTATE_ENABLE_BLEND
-			qglDepthMask (GL_FALSE);		// Vic: don't bother 
-											// writing to Z-buffer
-
-			qglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-
-			qglColor4f (0, 0, 0, 0.5);
-			GL_DrawAliasShadow (paliashdr, currententity->frame);
-
-			qglDepthMask (GL_TRUE);		// Vic: restore
+		qglDisable (GL_TEXTURE_2D);
+		GLSTATE_ENABLE_BLEND
+		qglDepthMask (GL_FALSE);		// Vic: don't bother 
 										// writing to Z-buffer
-			qglEnable (GL_TEXTURE_2D);
 
-			GLSTATE_DISABLE_BLEND
-			qglPopMatrix ();
-		}
+		qglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-		qglColor4f (1,1,1,1);
+		qglColor4f (0, 0, 0, 0.5);
+		GL_DrawAliasShadow (paliashdr, currententity->frame);
+
+		qglDepthMask (GL_TRUE);		// Vic: restore
+									// writing to Z-buffer
+		qglEnable (GL_TEXTURE_2D);
+
+		GLSTATE_DISABLE_BLEND
+		qglPopMatrix ();
 	}
+
+	qglColor4f (1,1,1,1);
 
 	if ( 0 )
 	{ 
@@ -694,124 +601,112 @@ void R_DrawAliasModel (entity_t *e)
 #define LEVEL_WIDTH(lvl) ((1 << (lvl+1)) + 1)
 
 int r_maxmeshlevel = 4;
-int r_subdivlevel = 4;
- 
-static int GL_MeshFindLevel (vec3_t *v)
+
+static int mesh_find_level(vec3_t *v)
 {
     int level;
     vec3_t a, b, dist;
 
-    // subdivide on the left until tolerance is reached
+    /* Subdivide on the left until tolerance is reached */
     for (level=0; level < r_maxmeshlevel-1; level++)
     {
-		// subdivide on the left
-		VectorAvg ( v[0], v[1], a );
-		VectorAvg ( v[1], v[2], b );
-		VectorAvg ( a, b, v[2] );
+		/* Subdivide on the left */
+		VectorAvg(v[0], v[1], a);
+		VectorAvg(v[1], v[2], b);
+		VectorAvg(a, b, v[2]);
 
-		// find distance moved
-		VectorSubtract ( v[2], v[1], dist );
+		/* Find distance moved */
+		VectorSubtract(v[2], v[1], dist);
 
-		// check for tolerance
-		if ( DotProduct ( dist, dist ) < r_subdivlevel ) {
+		/* Check for tolerance */
+		if (DotProduct(dist, dist) < r_subdivisions->value * r_subdivisions->value)
 			break;
-		}
 
-		// insert new middle vertex
-		VectorCopy ( a, v[1] );
+		/* Insert new middle vertex */
+		VectorCopy(a, v[1]);
     }
 
     return level;
 }
 
-static void GL_MeshFindSize (int *numcp, vec4_t *cp, int *size)
+static void mesh_find_size(int *numcp, vec3_t *cp, int *size)
 {
     int u, v, found, level;
     float *a, *b;
     vec3_t test[3];
     
-    // find non-coincident pairs in u direction
+    /* Find non-coincident pairs in u direction */
     found = 0;
-    for (v = 0; v < numcp[1]; v++)
+    for (v=0; v < numcp[1]; v++)
     {
-		for (u = 0; u < numcp[0]-1; u += 2)
+		for (u=0; u < numcp[0]-1; u += 2)
 		{
 			a = cp[v * numcp[0] + u];
 			b = cp[v * numcp[0] + u + 2];
-
-			if (!VectorCompare ( a, b ))
+			if (!VectorCompare(a, b))
 			{
 				found = 1;
 				break;
 			}
 		}
-
-		if (found) 
-			break;
+		if (found) break;
     }
+    if (!found) Com_Error (ERR_DROP, "Bad mesh control points");
 
-    if (!found) 
-		Com_Error ( ERR_DROP, "Bad mesh control points" );
-
-    // find subdivision level in u
-    VectorCopy ( a, test[0] );
-    VectorCopy ( (a + 4), test[1] );
-    VectorCopy ( b, test[2] );
-    level = GL_MeshFindLevel ( test );
-    size[0] = (LEVEL_WIDTH( level ) - 1) * ((numcp[0]-1) / 2) + 1;
+    /* Find subdivision level in u */
+    VectorCopy(a, test[0]);
+    VectorCopy((a+3), test[1]);
+    VectorCopy(b, test[2]);
+    level = mesh_find_level(test);
+    size[0] = (LEVEL_WIDTH(level) - 1) * ((numcp[0]-1) / 2) + 1;
     
-    // find non-coincident pairs in v direction
+    /* Find non-coincident pairs in v direction */
     found = 0;
-    for (u = 0; u < numcp[0]; u++)
+    for (u=0; u < numcp[0]; u++)
     {
-		for (v = 0; v < numcp[1]-1; v += 2)
+		for (v=0; v < numcp[1]-1; v += 2)
 		{
 			a = cp[v * numcp[0] + u];
 			b = cp[(v + 2) * numcp[0] + u];
-
-			if (!VectorCompare ( a, b ))
+			if (!VectorCompare(a,b))
 			{
 				found = 1;
 				break;
 			}
 		}
-
-		if (found)
-			break;
+		if (found) break;
     }
+    if (!found) Com_Error (ERR_DROP, "Bad mesh control points");
 
-    if (!found) 
-		Com_Error ( ERR_DROP, "Bad mesh control points" );
-
-    // Find subdivision level in v
-    VectorCopy ( a, test[0] );
-    VectorCopy ( (a + numcp[0] * 4), test[1] );
-    VectorCopy ( b, test[2] );
-    level = GL_MeshFindLevel ( test );
-    size[1] = (LEVEL_WIDTH( level ) - 1)* ((numcp[1]-1) / 2) + 1;    
+    /* Find subdivision level in v */
+    VectorCopy(a, test[0]);
+    VectorCopy((a+numcp[0]*3), test[1]);
+    VectorCopy(b, test[2]);
+    level = mesh_find_level(test);
+    size[1] = (LEVEL_WIDTH(level) - 1)* ((numcp[1]-1) / 2) + 1;    
 }
 
-static void GL_MeshFillCurve (int numcp, int size, int stride, vec4_t *p)
+static void mesh_fill_curve_3(int numcp, int size, int stride, vec3_t *p)
 {
     int step, halfstep, i, mid;
-    vec4_t a, b;
+    vec3_t a, b;
 
     step = (size-1) / (numcp-1);
 
-    while ( step > 0 )
+    while (step > 0)
     {
 		halfstep = step / 2;
-		for ( i = 0; i < size-1; i += step*2 )
+		for (i=0; i < size-1; i += step*2)
 		{
-			mid = (i + step)*stride;
-			Vector4Avg ( p[i*stride], p[mid], a ); 
-			Vector4Avg ( p[mid], p[(i+step*2)*stride], b ); 
-			Vector4Avg ( a, b, p[mid] ); 
+			mid = (i+step)*stride;
+			VectorAvg(p[i*stride], p[mid], a);
+			VectorAvg(p[mid], p[(i+step*2)*stride], b);
+			VectorAvg(a, b, p[mid]);
 
 			if (halfstep > 0)
 			{
-				Vector4Copy ( a, p[(i+halfstep)*stride] ); 
-				Vector4Copy ( b, p[(i+3*halfstep)*stride] ); 
+				VectorCopy(a, p[(i+halfstep)*stride]);
+				VectorCopy(b, p[(i+3*halfstep)*stride]);
 			}
 		}
 		
@@ -819,52 +714,148 @@ static void GL_MeshFillCurve (int numcp, int size, int stride, vec4_t *p)
     }
 }
 
-static void GL_MeshFillPatch (int *numcp, int *size, vec4_t *p)
+static void mesh_fill_curve_2(int numcp, int size, int stride, vec2_t *p)
+{
+    int step, halfstep, i, mid;
+    vec2_t a, b;
+
+    step = (size-1) / (numcp-1);
+
+    while (step > 0)
+    {
+		halfstep = step / 2;
+		for (i=0; i < size-1; i += step*2)
+		{
+			mid = (i+step)*stride;
+			Vector2Avg(p[i*stride], p[mid], a);
+			Vector2Avg(p[mid], p[(i+step*2)*stride], b);
+			Vector2Avg(a, b, p[mid]);
+
+			if (halfstep > 0)
+			{
+				Vector2Copy(a, p[(i+halfstep)*stride]);
+				Vector2Copy(b, p[(i+3*halfstep)*stride]);
+			}
+		}
+		
+		step /= 2;
+    }
+}
+
+static void mesh_fill_curve_c(int numcp, int size, int stride, vec4_t *p)
+{
+    int step, halfstep, i, mid;
+    vec4_t a, b;
+
+    step = (size-1) / (numcp-1);
+
+    while (step > 0)
+    {
+		halfstep = step / 2;
+		for (i=0; i < size-1; i += step*2)
+		{
+			mid = (i+step)*stride;
+			Vector4Avg(p[i*stride], p[mid], a);
+			Vector4Avg(p[mid], p[(i+step*2)*stride], b);
+			Vector4Avg(a, b, p[mid]);
+
+			if (halfstep > 0)
+			{
+				Vector4Copy(a, p[(i+halfstep)*stride]);
+				Vector4Copy(b, p[(i+3*halfstep)*stride]);
+			}
+		}
+		
+		step /= 2;
+    }
+}
+
+static void mesh_fill_patch_3(int *numcp, int *size, vec3_t *p)
 {
     int step, u, v;
 
-    // fill in control points in v direction
+    /* Fill in control points in v direction */
     step = (size[0]-1) / (numcp[0]-1);    
     for (u = 0; u < size[0]; u += step)
-		GL_MeshFillCurve ( numcp[1], size[1], size[0], p + u );
+    {
+		mesh_fill_curve_3(numcp[1], size[1], size[0], p + u);
+    }
 
-    // fill in the rest in the u direction
+    /* Fill in the rest in the u direction */
     for (v = 0; v < size[1]; v++)
-		GL_MeshFillCurve ( numcp[0], size[0], 1, p + v * size[0] );
+    {
+		mesh_fill_curve_3(numcp[0], size[0], 1, p + v * size[0]);
+    }
 }
 
-void GL_MeshCreate ( msurface_t *surf, int numverts, mvertex_t *verts, int *mesh_cp )
+static void mesh_fill_patch_2(int *numcp, int *size, vec2_t *p)
 {
-    int step[2], size[2], len, i, u, v, p;
-	vec4_t colour[MAX_VERTS], points[MAX_VERTS], normals[MAX_VERTS];
-	vec4_t lm_st[MAX_VERTS], tex_st[MAX_VERTS];
+    int step, u, v;
+
+    /* Fill in control points in v direction */
+    step = (size[0]-1) / (numcp[0]-1);    
+    for (u = 0; u < size[0]; u += step)
+    {
+		mesh_fill_curve_2(numcp[1], size[1], size[0], p + u);
+    }
+
+    /* Fill in the rest in the u direction */
+    for (v = 0; v < size[1]; v++)
+    {
+		mesh_fill_curve_2(numcp[0], size[0], 1, p + v * size[0]);
+    }
+}
+
+static void mesh_fill_patch_c(int *numcp, int *size, vec4_t *p)
+{
+    int step, u, v;
+
+    /* Fill in control points in v direction */
+    step = (size[0]-1) / (numcp[0]-1);    
+    for (u = 0; u < size[0]; u += step)
+    {
+		mesh_fill_curve_c(numcp[1], size[1], size[0], p + u);
+    }
+
+    /* Fill in the rest in the u direction */
+    for (v = 0; v < size[1]; v++)
+    {
+		mesh_fill_curve_c(numcp[0], size[0], 1, p + v * size[0]);
+    }
+}
+
+void GL_MeshCreate ( msurface_t *surf, int numverts, mvertex_t *verts, int patchWidth, int patchHeight )
+{
+    int step[2], size[2], mesh_cp[2], len, i, u, v, p;
+    vec3_t points[MAX_VERTS], normals[MAX_VERTS];
+	vec2_t lm_st[MAX_VERTS], tex_st[MAX_VERTS];
+	vec4_t colour[MAX_VERTS];
     mvertex_t *vert;
 	mesh_t *mesh = &surf->mesh;
 
-	r_subdivlevel = (int)(r_subdivisions->value + 0.5f);
-	if ( r_subdivlevel < 4 )
-		r_subdivlevel = 4;
-	r_subdivlevel *= r_subdivlevel;
+	mesh->patchWidth = patchWidth;
+	mesh->patchHeight = patchHeight;
+	mesh_cp[0] = patchWidth;
+	mesh_cp[1] = patchHeight;
 	
     vert = verts;
     for ( i = 0; i < numverts; i++, vert++ )
 		VectorCopy ( vert->position, points[i] );
 
 // find the degree of subdivision in the u and v directions
-    GL_MeshFindSize ( mesh_cp, points, size );
+    mesh_find_size ( mesh_cp, points, size );
 
 // allocate space for mesh
     len = size[0] * size[1];
 	mesh->numverts = len;
-	mesh->patchWidth = size[0];
-	mesh->patchHeight = size[1];
-	mesh->firstvert = (mvertex_t *)Hunk_Alloc ( len * sizeof(mvertex_t) );
-	mesh->lm_mins = (vec3_t *)Hunk_Alloc ( len * sizeof(vec3_t) );
-	mesh->lm_maxs = (vec3_t *)Hunk_Alloc ( len * sizeof(vec3_t) );
+	mesh->firstvert = (mvertex_t *)Hunk_Alloc(len * sizeof(mvertex_t));
+
+	mesh->lm_mins = (vec3_t *)Hunk_Alloc(len * sizeof(vec3_t));
+	mesh->lm_maxs = (vec3_t *)Hunk_Alloc(len * sizeof(vec3_t));
 
 // fill in sparse mesh control points
-    step[0] = (size[0]-1) / (mesh_cp[0]-1);
-    step[1] = (size[1]-1) / (mesh_cp[1]-1);
+    step[0] = (size[0]-1) / (patchWidth-1);
+    step[1] = (size[1]-1) / (patchHeight-1);
 
     vert = verts;
     for (v = 0; v < size[1]; v += step[1])
@@ -872,38 +863,43 @@ void GL_MeshCreate ( msurface_t *surf, int numverts, mvertex_t *verts, int *mesh
 		for (u = 0; u < size[0]; u += step[0])
 		{
 			p = v * size[0] + u;
-			VectorCopy  ( vert->position, points[p] );
-			VectorCopy  ( vert->normal, normals[p] );
-			Vector4Copy ( vert->colour, colour[p] );
-			Vector2Copy ( vert->tex_st, tex_st[p] );
-			Vector2Copy ( vert->lm_st, lm_st[p] );
+			VectorCopy (vert->position, points[p]);
+			VectorCopy (vert->normal, normals[p]);
+			Vector4Copy (vert->colour, colour[p]);
+			Vector2Copy (vert->tex_st, tex_st[p]);
+			Vector2Copy (vert->lm_st, lm_st[p]);
 			vert++;
 		}
     }
 
 // fill in each mesh
-	GL_MeshFillPatch ( mesh_cp, size, points );
-	GL_MeshFillPatch ( mesh_cp, size, normals );
-	GL_MeshFillPatch ( mesh_cp, size, colour );
-	GL_MeshFillPatch ( mesh_cp, size, tex_st );
-	GL_MeshFillPatch ( mesh_cp, size, lm_st );
+	mesh_fill_patch_3 (mesh_cp, size, points);
+	mesh_fill_patch_3 (mesh_cp, size, normals);
+	mesh_fill_patch_c (mesh_cp, size, colour);
+	mesh_fill_patch_2 (mesh_cp, size, tex_st);
+	mesh_fill_patch_2 (mesh_cp, size, lm_st);
 
     vert = mesh->firstvert;
 	p = 0;
+
+	ClearBounds ( surf->mins, surf->maxs );
 
     for (v = 0; v < size[1]; v++)
     {
 		for (u = 0; u < size[0]; u++)
 		{
-			VectorNormalize ( normals[p] );
+			VectorCopy (points[p], vert->position);
+			VectorCopy (normals[p], vert->normal);
+			Vector4Copy (colour[p], vert->colour);
+			Vector2Copy (tex_st[p], vert->tex_st);
+			Vector2Copy (lm_st[p], vert->lm_st);
 
-			VectorCopy  ( points[p], vert->position );
-			VectorCopy  ( normals[p], vert->normal );
-			Vector4Copy ( colour[p], vert->colour );
-			Vector2Copy ( tex_st[p], vert->tex_st );
-			Vector2Copy ( lm_st[p], vert->lm_st );
+			// reletive position (for deformv "bulge")
+			vert->patchRel = (float)v / (float)size[1];
 
-			MakeNormalVectors ( vert->normal, mesh->lm_mins[p], mesh->lm_maxs[p] );
+			AddPointToBounds ( points[p], surf->mins, surf->maxs );
+
+			MakeNormalVectors ( normals[p], mesh->lm_mins[p], mesh->lm_maxs[p] );
 
 			vert++;
 			p++;
@@ -912,7 +908,7 @@ void GL_MeshCreate ( msurface_t *surf, int numverts, mvertex_t *verts, int *mesh
 
 // allocate and fill index table
     mesh->numindexes = (size[0]-1) * (size[1]-1) * 6;
-    mesh->firstindex = (unsigned int *)Hunk_Alloc ( mesh->numindexes * sizeof(unsigned int) );
+    mesh->firstindex = (unsigned int *)Hunk_Alloc (mesh->numindexes * sizeof(unsigned int));
 
     i = 0;
     for (v = 0; v < size[1]-1; v++)

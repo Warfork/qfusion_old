@@ -87,9 +87,11 @@ typedef struct image_s
 	int			width, height;				// source image
 	int			upload_width, upload_height;	// after power of two and picmip
 	int			registration_sequence;		// 0 = free
+	struct msurface_s	*texturechain;	// for sort-by-texture world drawing
 	int			texnum;						// gl texture binding
 	float		sl, tl, sh, th;				// 0,0 - 1,1 unless part of the scrap
 	qboolean	scrap;
+	qboolean	has_alpha;
 } image_t;
 
 #define	TEXNUM_LIGHTMAPS	1024
@@ -181,11 +183,8 @@ extern	cvar_t	*r_lerpmodels;
 extern	cvar_t	*r_fastsky;
 extern	cvar_t	*r_ignorehwgamma;
 extern	cvar_t	*r_overbrightbits;
-extern	cvar_t	*r_mapoverbrightbits;
 extern	cvar_t	*r_vertexlight;
-extern	cvar_t	*r_flares;
-extern	cvar_t	*r_flaresize;
-extern	cvar_t	*r_flarefade;
+extern	cvar_t	*r_flare;
 extern	cvar_t	*r_dynamiclight;
 extern	cvar_t	*r_detailtextures;
 extern	cvar_t	*r_subdivisions;
@@ -196,11 +195,20 @@ extern cvar_t	*gl_ext_multitexture;
 extern cvar_t	*gl_ext_mtexcombine;
 extern cvar_t	*gl_ext_compiled_vertex_array;
 
+extern cvar_t	*gl_particle_min_size;
+extern cvar_t	*gl_particle_max_size;
+extern cvar_t	*gl_particle_size;
+extern cvar_t	*gl_particle_att_a;
+extern cvar_t	*gl_particle_att_b;
+extern cvar_t	*gl_particle_att_c;
+
+extern	cvar_t	*gl_nosubimage;
 extern	cvar_t	*gl_bitdepth;
 extern	cvar_t	*gl_mode;
 extern	cvar_t	*gl_log;
 extern	cvar_t	*gl_lightmap;
 extern	cvar_t	*gl_shadows;
+extern	cvar_t	*gl_dynamic;
 extern  cvar_t  *gl_monolightmap;
 extern	cvar_t	*gl_nobind;
 extern	cvar_t	*gl_round_down;
@@ -211,7 +219,11 @@ extern	cvar_t	*gl_finish;
 extern	cvar_t	*gl_ztrick;
 extern	cvar_t	*gl_clear;
 extern	cvar_t	*gl_cull;
+extern	cvar_t	*gl_poly;
+extern	cvar_t	*gl_texsort;
 extern	cvar_t	*gl_polyblend;
+extern	cvar_t	*gl_lightmaptype;
+extern	cvar_t	*gl_modulate;
 extern	cvar_t	*gl_playermip;
 extern	cvar_t	*gl_drawbuffer;
 extern	cvar_t	*gl_3dlabs_broken;
@@ -220,6 +232,7 @@ extern	cvar_t	*gl_swapinterval;
 extern	cvar_t	*gl_texturemode;
 extern	cvar_t	*gl_texturealphamode;
 extern	cvar_t	*gl_texturesolidmode;
+extern  cvar_t  *gl_saturatelighting;
 extern  cvar_t  *gl_lockpvs;
 
 extern	cvar_t	*gl_screenshot_jpeg;			// Heffo - JPEG Screenshots
@@ -228,7 +241,7 @@ extern	cvar_t	*gl_screenshot_jpeg_quality;	// Heffo - JPEG Screenshots
 extern	cvar_t	*vid_fullscreen;
 extern	cvar_t	*vid_gamma;
 
-extern	cvar_t	*intensity;
+extern	cvar_t		*intensity;
 
 extern	int		gl_lightmap_format;
 extern	int		gl_solid_format;
@@ -249,7 +262,7 @@ void GL_TexEnv( GLenum value );
 void GL_EnableMultitexture( qboolean enable );
 void GL_SelectTexture( GLenum );
 
-void R_LightForPoint ( vec3_t p, vec3_t ambient, vec3_t diffuse, vec3_t direction );
+mlightgrid_t *R_LightOfPoint (vec3_t p);
 
 //====================================================================
 
@@ -260,7 +273,6 @@ extern	float		d_8to24floattable[256][3];
 
 extern	int		registration_sequence;
 
-extern	vec3_t	r_uvnorms[255][255];
 
 void V_AddBlend (float r, float g, float b, float a, float *v_blend);
 
@@ -272,33 +284,32 @@ void GL_ScreenShot_f (void);
 void R_DrawAliasModel (entity_t *e);
 void R_DrawBrushModel (entity_t *e);
 void R_DrawSpriteModel (entity_t *e);
-void R_DrawMd3Model (entity_t *e);
 void R_DrawBeam( entity_t *e );
 void R_DrawWorld (void);
-void R_DrawSortedPolys (void);
-void R_AddMd3ToList (entity_t *e);
+void R_DrawAlphaSurfaces (void);
 void R_RenderBrushPoly (msurface_t *fa);
 void R_InitParticleTexture (void);
+void R_InitFastsin (void);
 void R_InitBubble(void);
-void R_InitMd3 (void);
 void Draw_InitLocal (void);
 void GL_SubdivideSurface (msurface_t *fa);
 qboolean R_CullBox (vec3_t mins, vec3_t maxs);
 void R_RotateForEntity (entity_t *e);
 void R_MarkLeaves (void);
-void R_AddDynamicLights (msurface_t *s, vec4_t *vertexArray);
-void R_DrawFastSky (void);
+void R_MarkLights ( msurface_t *slist );
 
-void R_AddSkySurface (msurface_t *fa);
+void R_SetVertexColour ( vec3_t v, vec3_t norm, float *colour );
+
+void R_AddSkySurface (mesh_t *mesh);
 void R_ClearSkyBox (void);
 void R_SetSky (char *name);
-void R_CreateSkydome (void);
-void R_DrawSkydome (void);
+void R_CreateSkydome (model_t *model);
+void R_DrawSkydome (skydome_t *skydome);
 
 void COM_StripExtension (char *in, char *out);
 
 void	Draw_Pic (int x, int y, char *name);
-void	Draw_StretchPic ( int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *colour, shader_t *shader );
+void	Draw_StretchPic (int x, int y, int w, int h, char *name);
 void	Draw_Char (int x, int y, int num, fontstyle_t fntstl, vec4_t colour);
 void	Draw_StringLen (int x, int y, char *str, int len, fontstyle_t fntstl, vec4_t colour);
 void	Draw_TileClear (int x, int y, int w, int h, char *name);

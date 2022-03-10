@@ -33,13 +33,14 @@
 // Shader flags
 enum
 {
-	SHADER_DEPTHWRITE    = 1 << 0,
-	SHADER_SKY           = 1 << 1,
-	SHADER_POLYGONOFFSET = 1 << 2,
+	SHADER_DEPTHWRITE    = 1 << 1,		// Also used for pass flag
+	SHADER_SKY           = 1 << 2,
 	SHADER_NOMIPMAPS     = 1 << 3,
-	SHADER_NOPICMIP      = 1 << 4,
-	SHADER_CULL_FRONT	 = 1 << 5,
-	SHADER_CULL_BACK	 = 1 << 6
+	SHADER_DEFORMVERTS   = 1 << 4,
+	SHADER_POLYGONOFFSET = 1 << 5,
+	SHADER_FOG           = 1 << 6,
+	SHADER_NOPICMIP      = 1 << 7,
+	SHADER_DOCULL		 = 1 << 8
 };
 
 // Shaderpass flags
@@ -49,9 +50,10 @@ enum
     SHADER_PASS_LIGHTMAP	= 1 << 1,
     SHADER_PASS_BLEND		= 1 << 2,
     SHADER_PASS_ALPHAFUNC	= 1 << 3,
-    SHADER_PASS_ANIMMAP		= 1 << 4,
-	SHADER_PASS_DETAIL		= 1 << 5,
-	SHADER_PASS_NOCOLORARRAY = 1 << 6
+    SHADER_PASS_TCMOD		= 1 << 4,
+    SHADER_PASS_ANIMMAP		= 1 << 5,
+	SHADER_PASS_CLAMP		= 1 << 6,		// will just be used for texture loading
+	SHADER_PASS_DETAIL		= 1 << 7
 };	
 
 // Transform functions
@@ -61,9 +63,7 @@ enum
     SHADER_FUNC_TRIANGLE        = 2,
     SHADER_FUNC_SQUARE          = 3,
     SHADER_FUNC_SAWTOOTH        = 4,
-    SHADER_FUNC_INVERSESAWTOOTH = 5,
-	SHADER_FUNC_NOISE			= 6,
-	SHADER_FUNC_CONSTANT		= 7
+    SHADER_FUNC_INVERSESAWTOOTH = 5
 };
 
 // tcmod functions
@@ -95,10 +95,8 @@ enum
 // RedBlueGreen pal generation
 enum 
 {
-	RGB_GEN_UNKNOWN,
 	RGB_GEN_IDENTITY,
 	RGB_GEN_IDENTITY_LIGHTING,
-	RGB_GEN_CONST,
 	RGB_GEN_WAVE,
 	RGB_GEN_ENTITY,
 	RGB_GEN_ONE_MINUS_ENTITY,
@@ -125,7 +123,7 @@ enum
 	TC_GEN_BASE,
 	TC_GEN_LIGHTMAP,
 	TC_GEN_ENVIRONMENT,
-	TC_GEN_VECTOR
+	TC_GEN_VECTOR,
 };
 
 // vertices deformation
@@ -148,84 +146,80 @@ enum
 	SHADER_FLUSH_MULTITEXTURE_COMBINE
 };
 
-// AlphaFunc
-enum
+// Culling
+enum 
 {
-	SHADER_ALPHA_GT0,
-	SHADER_ALPHA_LT128,
-	SHADER_ALPHA_GE128
+	SHADER_CULL_DISABLE,
+	SHADER_CULL_FRONT,
+	SHADER_CULL_BACK
 };
 
 // Periodic functions
 typedef struct
 {
-    int				func;				// SHADER_FUNC enum
+    unsigned int	func;				// SHADER_FUNC enum
     float			args[4];			// offset, amplitude, phase_offset, rate
 } shaderfunc_t;
 
-typedef struct 
-{
+typedef struct {
 	int				type;
 	float			args[6];
 } tc_mod_t;
 
-// Per-pass rendering state information
+/* Per-pass rendering state information */
 typedef struct
 {
     unsigned int	flags;
-
+    image_t			*texref;			// texture ref (if not lightmap)
     unsigned int	blendsrc, blenddst; // glBlend args
 	unsigned int	blendmode;
-
     unsigned int	depthfunc;			// glDepthFunc arg
-    unsigned int	alphafunc;
-
+    unsigned int	alphafunc;			// glAlphaFunc arg1
+    float			alphafuncref;		// glAlphaFunc arg2
     int				rgbgen;             
     shaderfunc_t	rgbgen_func;
-
-	int				alphagen;
-    shaderfunc_t	alphagen_func;
-
 	int				tc_gen;
 	vec3_t			tc_gen_s;
 	vec3_t			tc_gen_t;
-
     int				num_tc_mod;               
 	tc_mod_t		tc_mod[SHADER_TCMOD_MAX];
+	shaderfunc_t	tc_mod_stretch;
+
+	int				alphagen;
+    shaderfunc_t	alphagen_func;
 
     float			anim_fps;			// animation frames per sec
     int				anim_numframes;
     image_t			*anim_frames[SHADER_ANIM_FRAMES_MAX];  // texture refs
 } shaderpass_t;
 
-// Shader information
+/* Shader info */
 typedef struct shader_s
 {	
 	char			name[MAX_QPATH];
-
-	void			(*flush)(struct mesh_s *mesh, struct mfog_s *fog, struct msurface_s *s);
-
-    int				flags;
-	int				sort;
+	byte			sortkey;			// a precalculated sortkey which is added to the shaderkey ; (TODO )
+	byte			flush;				// FLUSH_ENUM
+	byte			cull;
+    unsigned int	flags;
 	int				registration_sequence;
-
+	int				contents;
     int				numpasses;
-    shaderpass_t	pass[SHADER_PASS_MAX];
-
+	int				sort;
 	int				numdeforms;
 	int				deform_vertices[SHADER_DEFORM_MAX];
+    shaderpass_t	pass[SHADER_PASS_MAX];
+    float			skyheight;          // height for skybox
     float			deform_params[SHADER_DEFORM_MAX][4];
-    shaderfunc_t	deformv_func[SHADER_DEFORM_MAX];
-
-	byte			fog_color[4];
+	byte			fog_color[3];
 	float			fog_dist;
+    shaderfunc_t	deformv_func[SHADER_DEFORM_MAX];
 } shader_t;
 
 typedef struct shaderkey_s
 {
     char			*keyword;
     int				minargs, maxargs;
-    void			(*func)(shader_t *shader, shaderpass_t *pass,
+    void			(* func)(shader_t *shader, shaderpass_t *pass,
 						int numargs, char **args);
 	struct shaderkey_s *hash_next;
 	struct shaderkey_s *next;
@@ -234,7 +228,7 @@ typedef struct shaderkey_s
 extern shader_t r_shaders[MAX_SHADERS];
 extern shader_t *r_skyshader;
 
-extern double r_shadertime;
+extern float r_shadertime;
 
 qboolean Shader_Init (void);
 void Shader_Shutdown (void);

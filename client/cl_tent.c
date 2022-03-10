@@ -316,8 +316,8 @@ int CL_ParseBeam (struct model_s *model)
 	
 	ent = MSG_ReadShort (&net_message);
 	
-	MSG_ReadPos (&net_message, start);
-	MSG_ReadPos (&net_message, end);
+	MSG_ReadLongPos (&net_message, start);
+	MSG_ReadLongPos (&net_message, end);
 
 // override any beam with the same entity
 	for (i=0, b=cl_beams ; i< MAX_BEAMS ; i++, b++)
@@ -364,9 +364,9 @@ int CL_ParseBeam2 (struct model_s *model)
 	
 	ent = MSG_ReadShort (&net_message);
 	
-	MSG_ReadPos (&net_message, start);
-	MSG_ReadPos (&net_message, end);
-	MSG_ReadPos (&net_message, offset);
+	MSG_ReadLongPos (&net_message, start);
+	MSG_ReadLongPos (&net_message, end);
+	MSG_ReadLongPos (&net_message, offset);
 
 // override any beam with the same entity
 
@@ -416,9 +416,9 @@ int CL_ParsePlayerBeam (struct model_s *model)
 	
 	ent = MSG_ReadShort (&net_message);
 	
-	MSG_ReadPos (&net_message, start);
-	MSG_ReadPos (&net_message, end);
-	MSG_ReadPos (&net_message, offset);
+	MSG_ReadLongPos (&net_message, start);
+	MSG_ReadLongPos (&net_message, end);
+	MSG_ReadLongPos (&net_message, offset);
 
 // override any beam with the same entity
 // PMM - For player beams, we only want one per player (entity) so..
@@ -470,8 +470,8 @@ int CL_ParseLightning (struct model_s *model)
 	srcEnt = MSG_ReadShort (&net_message);
 	destEnt = MSG_ReadShort (&net_message);
 
-	MSG_ReadPos (&net_message, start);
-	MSG_ReadPos (&net_message, end);
+	MSG_ReadLongPos (&net_message, start);
+	MSG_ReadLongPos (&net_message, end);
 
 // override any beam with the same source AND destination entities
 	for (i=0, b=cl_beams ; i< MAX_BEAMS ; i++, b++)
@@ -518,8 +518,8 @@ void CL_ParseLaser (int colors)
 	laser_t	*l;
 	int		i;
 
-	MSG_ReadPos (&net_message, start);
-	MSG_ReadPos (&net_message, end);
+	MSG_ReadLongPos (&net_message, start);
+	MSG_ReadLongPos (&net_message, end);
 
 	for (i=0, l=cl_lasers ; i< MAX_LASERS ; i++, l++)
 	{
@@ -560,7 +560,7 @@ void CL_ParseTEnt (void)
 	switch (type)
 	{
 	case TE_BLOOD:			// bullet hitting flesh
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		CL_ParticleEffect (pos, dir, 0xe8, 60);
 		break;
@@ -568,7 +568,7 @@ void CL_ParseTEnt (void)
 	case TE_GUNSHOT:			// bullet hitting wall
 	case TE_SPARKS:
 	case TE_BULLET_SPARKS:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 
 		if (type == TE_GUNSHOT)
@@ -594,7 +594,7 @@ void CL_ParseTEnt (void)
 		
 	case TE_SCREEN_SPARKS:
 	case TE_SHIELD_SPARKS:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		if (type == TE_SCREEN_SPARKS)
 			CL_ParticleEffect (pos, dir, 0xd0, 40);
@@ -605,7 +605,7 @@ void CL_ParseTEnt (void)
 		break;
 		
 	case TE_SHOTGUN:			// bullet hitting wall
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		CL_ParticleEffect (pos, dir, 0, 20);
 		CL_SmokeAndFlash(pos);
@@ -613,7 +613,7 @@ void CL_ParseTEnt (void)
 
 	case TE_SPLASH:			// bullet hitting water
 		cnt = MSG_ReadByte (&net_message);
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		r = MSG_ReadByte (&net_message);
 		if (r > 6)
@@ -636,14 +636,14 @@ void CL_ParseTEnt (void)
 
 	case TE_LASER_SPARKS:
 		cnt = MSG_ReadByte (&net_message);
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		color = MSG_ReadByte (&net_message);
 		CL_ParticleEffect2 (pos, dir, color, cnt);
 		break;
 
 	case TE_BLASTER:			// blaster hitting wall
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		CL_BlasterParticles (pos, dir);
 
@@ -673,8 +673,8 @@ void CL_ParseTEnt (void)
 		break;
 		
 	case TE_RAILTRAIL:			// railgun effect
-		MSG_ReadPos (&net_message, pos);
-		MSG_ReadPos (&net_message, pos2);
+		MSG_ReadLongPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos2);
 		CL_RailTrail (pos, pos2);
 		S_StartSound (pos2, 0, 0, cl.media.sfxRailg, 1, ATTN_NORM, 0);
 		break;
@@ -682,7 +682,7 @@ void CL_ParseTEnt (void)
 	case TE_EXPLOSION2:
 	case TE_GRENADE_EXPLOSION:
 	case TE_GRENADE_EXPLOSION_WATER:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 
 		ex = CL_AllocExplosion ();
 		VectorCopy (pos, ex->ent.origin);
@@ -707,7 +707,7 @@ void CL_ParseTEnt (void)
 	case TE_EXPLOSION1:
 	case TE_ROCKET_EXPLOSION:
 	case TE_ROCKET_EXPLOSION_WATER:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 
 		ex = CL_AllocExplosion ();
 		VectorCopy (pos, ex->ent.origin);
@@ -731,7 +731,7 @@ void CL_ParseTEnt (void)
 		break;
 
 	case TE_BFG_EXPLOSION:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 
 		ex = CL_AllocExplosion ();
 		VectorCopy (pos, ex->ent.origin);
@@ -749,7 +749,7 @@ void CL_ParseTEnt (void)
 		break;
 
 	case TE_BFG_BIGEXPLOSION:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 
 		CL_BFGExplosionParticles (pos);
 		break;
@@ -759,8 +759,8 @@ void CL_ParseTEnt (void)
 		break;
 
 	case TE_BUBBLETRAIL:
-		MSG_ReadPos (&net_message, pos);
-		MSG_ReadPos (&net_message, pos2);
+		MSG_ReadLongPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos2);
 		CL_BubbleTrail (pos, pos2, 32);
 		break;
 
@@ -770,7 +770,7 @@ void CL_ParseTEnt (void)
 		break;
 
 	case TE_BOSSTPORT:			// boss teleporting to station
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		CL_BigTeleportParticles (pos);
 		S_StartSound (pos, 0, 0, S_RegisterSound ("sound/misc/bigtele.wav"), 1, ATTN_NONE, 0);
 		break;
@@ -780,13 +780,13 @@ void CL_ParseTEnt (void)
 		break;
 
 	case TE_PLAYER_TELEPORT_IN:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		S_StartSound (pos, 0, 0, cl.media.sfxTeleportIn, 1, ATTN_NORM, 0);
 		CL_TeleportParticles (pos);
 		break;
 
 	case TE_PLAYER_TELEPORT_OUT:
-		MSG_ReadPos (&net_message, pos);
+		MSG_ReadLongPos (&net_message, pos);
 		S_StartSound (pos, 0, 0, cl.media.sfxTeleportOut, 1, ATTN_NORM, 0);
 		CL_TeleportParticles (pos);
 		break;

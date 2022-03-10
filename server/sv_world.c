@@ -406,24 +406,26 @@ with the same entity.
 */
 void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 {
-	int	leafs[MAX_TOTAL_ENT_LEAFS];
-	int i, num_leafs;
-	int areaportal;
+	int			i;
+	int			leafs[MAX_TOTAL_ENT_LEAFS];
+	int			num_leafs;
+	int			areaportal, area1, area2, area;
+	vec3_t		mins, maxs, apmins, apmaxs;
 
 	// entity must touch at least two areas
-	if ( !ent->areanum || !ent->areanum2 ) {
+	if ( !ent->areanum || !ent->areanum2 )
 		return;
-	}
 
 	// get all leafs, including solids
 	num_leafs = CM_BoxLeafnums (ent->absmin, ent->absmax,
 		leafs, MAX_TOTAL_ENT_LEAFS, NULL);
 
-	if ( !num_leafs ) {
+	if ( !num_leafs )
 		return;
-	}
 
 	areaportal = 0;
+	area1 = 0;
+	area2 = 0;
 	for (i=0 ; i<num_leafs ; i++)
 	{
 		if ( !CM_LeafCluster ( leafs[i] ) )
@@ -431,15 +433,54 @@ void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 
 		if ( CM_LeafContents( leafs[i] ) & CONTENTS_AREAPORTAL ) {
 			areaportal = leafs[i];
+			VectorCopy ( CM_LeafMins ( areaportal ), apmins );
+			VectorCopy ( CM_LeafMaxs ( areaportal ), apmaxs );
 			break;
 		}
 	}
 
-	if ( !areaportal ) {
+	if ( !areaportal )
 		return;
+
+	for (i=0 ; i<num_leafs ; i++)
+	{
+		if ( !CM_LeafCluster ( leafs[i] ) )
+			continue;
+		if ( leafs[i] == areaportal )
+			continue;
+
+		area = CM_LeafArea( leafs[i] );
+
+		if ( !area1 && area ) {
+			VectorCopy ( CM_LeafMins ( leafs[i] ), mins );
+			VectorCopy ( CM_LeafMaxs ( leafs[i] ), maxs );
+		
+			if ( CheckBounds ( mins, maxs, apmins, apmaxs ) ) {
+				area1 = area;
+			}
+		}
+
+		if ( !area2 && area && (area1 != area) ) {
+			VectorCopy ( CM_LeafMins ( leafs[i] ), mins );
+			VectorCopy ( CM_LeafMaxs ( leafs[i] ), maxs );
+
+			if ( CheckBounds ( mins, maxs, apmins, apmaxs ) ) {
+				area2 = area;
+			}
+		}
+
+		if ( area1 && area2 )
+			break;
 	}
 
-	CM_SetAreaPortalState ( ent->areanum, ent->areanum2, open );
+	// if areas were not detected, try using areanums of the entity
+	if ( !area1 || !area2 ) {
+		area1 = ent->areanum;
+		area2 = ent->areanum2;
+	}
+
+	CM_SetAreaPortalState ( area1, area2, open );
+	Com_DPrintf ( "area%i-area%i: %s\n", area1, area2, open ? "open" : "close" );
 }
 
 /*

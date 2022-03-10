@@ -83,17 +83,22 @@ cvar_t	*r_lefthand;
 cvar_t	*r_fastsky;
 cvar_t	*r_ignorehwgamma;
 cvar_t	*r_overbrightbits;
-cvar_t	*r_mapoverbrightbits;
 cvar_t	*r_vertexlight;
-cvar_t	*r_flares;
-cvar_t	*r_flaresize;
-cvar_t	*r_flarefade;
+cvar_t	*r_flare;
 cvar_t	*r_dynamiclight;
 cvar_t	*r_detailtextures;
 cvar_t	*r_subdivisions;
 cvar_t	*r_faceplanecull;
 
+cvar_t	*gl_nosubimage;
 cvar_t	*gl_allow_software;
+
+cvar_t	*gl_particle_min_size;
+cvar_t	*gl_particle_max_size;
+cvar_t	*gl_particle_size;
+cvar_t	*gl_particle_att_a;
+cvar_t	*gl_particle_att_b;
+cvar_t	*gl_particle_att_c;
 
 cvar_t	*gl_ext_swapinterval;
 cvar_t	*gl_ext_multitexture;
@@ -107,7 +112,9 @@ cvar_t  *gl_driver;
 cvar_t	*gl_lightmap;
 cvar_t	*gl_shadows;
 cvar_t	*gl_mode;
+cvar_t	*gl_dynamic;
 cvar_t  *gl_monolightmap;
+cvar_t	*gl_modulate;
 cvar_t	*gl_nobind;
 cvar_t	*gl_round_down;
 cvar_t	*gl_picmip;
@@ -119,6 +126,7 @@ cvar_t	*gl_clear;
 cvar_t	*gl_cull;
 cvar_t	*gl_polyblend;
 cvar_t	*gl_playermip;
+cvar_t  *gl_saturatelighting;
 cvar_t	*gl_swapinterval;
 cvar_t	*gl_texturemode;
 cvar_t	*gl_texturealphamode;
@@ -199,7 +207,7 @@ void R_DrawSpriteModel (entity_t *e)
 
 	qglColor4f( 1, 1, 1, alpha );
 
-    GL_Bind(currentmodel->skins[0][e->frame]->pass[0].anim_frames[0]->texnum);
+    GL_Bind(currentmodel->skins[0][e->frame]->pass[0].texref->texnum);
 
 	GL_TexEnv( GL_MODULATE );
 
@@ -241,7 +249,7 @@ void R_DrawSpriteModel (entity_t *e)
 
 //==================================================================================
 
-static vec3_t nullmodel_vec[5];
+static float nullmodel_sin[5], nullmodel_cos[5];
 
 void R_InitNullModel (void)
 {
@@ -249,9 +257,8 @@ void R_InitNullModel (void)
 
 	for (i = 0; i < 5; i++)
 	{
-		nullmodel_vec[i][0] = 16*cos(i*M_PI/2);
-		nullmodel_vec[i][1] = 16*sin(i*M_PI/2);
-		nullmodel_vec[i][2] = 0;
+		nullmodel_cos[i] = 16*cos(i*M_PI/2);
+		nullmodel_sin[i] = 16*sin(i*M_PI/2);
 	}
 }
 
@@ -262,7 +269,10 @@ R_DrawNullModel
 */
 void R_DrawNullModel (void)
 {
+	mlightgrid_t	*light;
 	int		i;
+
+	light = R_LightOfPoint (currententity->origin);
 
     qglPushMatrix ();
 
@@ -279,64 +289,17 @@ void R_DrawNullModel (void)
 	qglBegin (GL_TRIANGLE_FAN);
 	qglVertex3f (0, 0, -16);
 	for (i=0 ; i<=4 ; i++)
-		qglVertex3fv (nullmodel_vec[i]);
+		qglVertex3f (nullmodel_cos[i], nullmodel_sin[i], 0);
 	qglEnd ();
 
 	qglBegin (GL_TRIANGLE_FAN);
 	qglVertex3f (0, 0, 16);
 	for (i=4 ; i>=0 ; i--)
-		qglVertex3fv (nullmodel_vec[i]);
+		qglVertex3f (nullmodel_cos[i], nullmodel_sin[i], 0);
 	qglEnd ();
 
 	qglPopMatrix ();
 	qglEnable (GL_TEXTURE_2D);
-}
-
-/*
-=============
-R_SortEntitiesOnList
-=============
-*/
-void R_SortEntitiesOnList (void)
-{
-	int		i;
-
-	if (!r_drawentities->value)
-		return;
-
-	// draw non-transparent first
-	for (i=0 ; i<r_newrefdef.num_entities ; i++)
-	{
-		currententity = &r_newrefdef.entities[i];
-
-		if ( currententity->flags & RF_BEAM )
-		{
-			continue;
-		}
-		else
-		{
-			currentmodel = currententity->model;
-			if (!currentmodel)
-			{
-				continue;
-			}
-			switch (currentmodel->type)
-			{
-			case mod_alias:
-				if ( currentmodel->aliastype == ALIASTYPE_MD3 )
-					R_AddMd3ToList (currententity);
-				break;
-			case mod_brush:
-				R_DrawBrushModel (currententity);
-				break;
-			case mod_sprite:
-				break;
-			default:
-				Com_Error (ERR_DROP, "%s: bad modeltype", currentmodel->name);
-				break;
-			}
-		}
-	}
 }
 
 /*
@@ -364,7 +327,7 @@ transgetent:
 			continue;	// transparent
 		if (currententity->transignore)
 			continue;
-		if (currententity->alpha == 1 || currententity->alpha == 0)
+		if (currententity->alpha == 1 || currententity->alpha ==0)
 			continue;
 
 		VectorCopy (currententity->origin, test);
@@ -405,10 +368,10 @@ transgetent:
 			switch (currentmodel->type)
 			{
 			case mod_alias:
-				if ( currentmodel->aliastype == ALIASTYPE_MD2 )
-					R_DrawAliasModel (currententity);
+				R_DrawAliasModel (currententity);
 				break;
 			case mod_brush:
+				R_DrawBrushModel (currententity);
 				break;
 			case mod_sprite:
 				R_DrawSpriteModel (currententity);
@@ -457,10 +420,10 @@ void R_DrawEntitiesOnList (void)
 			switch (currentmodel->type)
 			{
 			case mod_alias:
-				if ( currentmodel->aliastype == ALIASTYPE_MD2 )
-					R_DrawAliasModel (currententity);
+				R_DrawAliasModel (currententity);
 				break;
 			case mod_brush:
+				R_DrawBrushModel (currententity);
 				break;
 			case mod_sprite:
 				R_DrawSpriteModel (currententity);
@@ -487,7 +450,7 @@ R_DrawParticles
 void R_DrawParticles (void)
 {
 	const particle_t *p;
-	int				i, maxp = MAX_PARTICLES / 4;
+	int				i, maxv = MAX_PARTICLES / 16;
 	vec3_t			r_pup, r_pright, corner;
 	float			scale;
 	float			v[3], pcolor[4];
@@ -506,7 +469,6 @@ void R_DrawParticles (void)
 	qglDepthMask( GL_FALSE );		// no z buffering
 
 	GLSTATE_ENABLE_BLEND
-	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 	
 	for ( p = r_newrefdef.particles, i=0 ; i < r_newrefdef.num_particles ; i++, p++ )
 	{
@@ -573,7 +535,7 @@ void R_DrawParticles (void)
 
 		// draw if there are already too many particles,
 		// that might not fit into our array
-		if ( (i%maxp) == 0 ) {
+		if ( (i%maxv) == 0 ) {
 			R_LockArrays ();
 			R_FlushArrays ();
 			R_UnlockArrays ();
@@ -599,29 +561,29 @@ void R_PolyBlend (void)
 {
 	if (!gl_polyblend->value)
 		return;
-	if (v_blend[3] < 0.01f)
+	if (!v_blend[3])
 		return;
 
 	GLSTATE_ENABLE_BLEND
 	qglDisable (GL_DEPTH_TEST);
 	qglDisable (GL_TEXTURE_2D);
 
-	qglMatrixMode(GL_PROJECTION);
     qglLoadIdentity ();
-	qglOrtho (0, 1, 1, 0, -99999, 99999);
 
-	qglMatrixMode(GL_MODELVIEW);
-    qglLoadIdentity ();
+	// FIXME: get rid of these
+    qglRotatef (-90,  1, 0, 0);	    // put Z going up
+    qglRotatef (90,  0, 0, 1);	    // put Z going up
 
 	qglColor4fv (v_blend);
 
-	qglBegin (GL_TRIANGLES);
-	qglVertex2f (-5, -5);
-	qglVertex2f (10, -5);
-	qglVertex2f (-5, 10);
+	qglBegin (GL_QUADS);
+
+	qglVertex3f (10, 100, 100);
+	qglVertex3f (10, -100, 100);
+	qglVertex3f (10, -100, -100);
+	qglVertex3f (10, 100, -100);
 	qglEnd ();
 
-	GLSTATE_DISABLE_BLEND
 	qglEnable (GL_TEXTURE_2D);
 
 	qglColor4f(1,1,1,1);
@@ -785,7 +747,7 @@ void R_SetupGL (void)
     screenaspect = (float)r_newrefdef.width/r_newrefdef.height;
 	qglMatrixMode(GL_PROJECTION);
     qglLoadIdentity ();
-	MYgluPerspective (r_newrefdef.fov_y, screenaspect, 4, 128000);
+	MYgluPerspective (r_newrefdef.fov_y, screenaspect, 4, 12288);
 
 	qglCullFace(GL_FRONT);
 
@@ -803,6 +765,14 @@ void R_SetupGL (void)
 
 	Matrix4_Matrix3 ( r_world_matrix, temp );
 	Matrix3_Transponse ( temp, r_inverse_world_matrix );
+
+	//
+	// set drawing parms
+	//
+	if (gl_cull->value)
+		qglEnable(GL_CULL_FACE);
+	else
+		qglDisable(GL_CULL_FACE);
 
 	GLSTATE_DISABLE_BLEND
 	GLSTATE_DISABLE_ALPHATEST
@@ -897,10 +867,6 @@ void R_RenderView (refdef_t *fd)
 
 	R_DrawWorld ();
 
-	R_SortEntitiesOnList ();
-
-	R_DrawSortedPolys ();
-
 	R_DrawEntitiesOnList ();
 
 	R_DrawParticles ();
@@ -909,9 +875,11 @@ void R_RenderView (refdef_t *fd)
 
 	if (r_speeds->value)
 	{
-		Com_Printf( "%4i wpoly %4i epoly\n",
+		Com_Printf( "%4i wpoly %4i epoly %i tex %i lmaps\n",
 			c_brush_polys, 
-			c_alias_polys); 
+			c_alias_polys, 
+			c_visible_textures, 
+			c_visible_lightmaps); 
 	}
 }
 
@@ -1002,25 +970,32 @@ void R_Register( void )
 	r_speeds = Cvar_Get ("r_speeds", "0", 0);
 
 	r_fastsky = Cvar_Get ("r_fastsky", "0", CVAR_ARCHIVE);
-	r_ignorehwgamma = Cvar_Get ("r_ignorehwgamma", "0", CVAR_ARCHIVE|CVAR_LATCH);
-	r_overbrightbits = Cvar_Get ("r_overbrightbits", "1", CVAR_ARCHIVE|CVAR_LATCH);
-	r_mapoverbrightbits = Cvar_Get ("r_mapoverbrightbits", "2", CVAR_ARCHIVE|CVAR_LATCH);
+	r_ignorehwgamma = Cvar_Get ("r_ignorehwgamma", "0", CVAR_ARCHIVE);
+	r_overbrightbits = Cvar_Get ("r_overbrightbits", "1", CVAR_ARCHIVE);
 	r_vertexlight = Cvar_Get ("r_vertexlight", "0", CVAR_ARCHIVE|CVAR_LATCH);
-	r_flares = Cvar_Get ("r_flares", "1", CVAR_ARCHIVE);
-	r_flaresize = Cvar_Get ("r_flaresize", "40", CVAR_ARCHIVE);
-	r_flarefade = Cvar_Get ("r_flarefade", "7", CVAR_ARCHIVE);
+	r_flare = Cvar_Get ("r_flare", "1", CVAR_ARCHIVE);
 	r_dynamiclight = Cvar_Get ("r_dynamiclight", "1", CVAR_ARCHIVE);
 	r_detailtextures = Cvar_Get ("r_detailtextures", "1", CVAR_ARCHIVE);
 	r_subdivisions = Cvar_Get ("r_subdivisions", "4", CVAR_ARCHIVE);
 	r_faceplanecull = Cvar_Get ("r_faceplanecull", "1", CVAR_ARCHIVE);
 
+	gl_nosubimage = Cvar_Get( "gl_nosubimage", "0", 0 );
 	gl_allow_software = Cvar_Get( "gl_allow_software", "0", 0 );
 
+	gl_particle_min_size = Cvar_Get( "gl_particle_min_size", "2", CVAR_ARCHIVE );
+	gl_particle_max_size = Cvar_Get( "gl_particle_max_size", "40", CVAR_ARCHIVE );
+	gl_particle_size = Cvar_Get( "gl_particle_size", "40", CVAR_ARCHIVE );
+	gl_particle_att_a = Cvar_Get( "gl_particle_att_a", "0.01", CVAR_ARCHIVE );
+	gl_particle_att_b = Cvar_Get( "gl_particle_att_b", "0.0", CVAR_ARCHIVE );
+	gl_particle_att_c = Cvar_Get( "gl_particle_att_c", "0.01", CVAR_ARCHIVE );
+
+	gl_modulate = Cvar_Get ("gl_modulate", "1", CVAR_ARCHIVE );
 	gl_log = Cvar_Get( "gl_log", "0", 0 );
 	gl_bitdepth = Cvar_Get( "gl_bitdepth", "0", 0 );
 	gl_mode = Cvar_Get( "gl_mode", "3", CVAR_ARCHIVE|CVAR_LATCH );
 	gl_lightmap = Cvar_Get ("gl_lightmap", "0", 0);
 	gl_shadows = Cvar_Get ("gl_shadows", "0", CVAR_ARCHIVE );
+	gl_dynamic = Cvar_Get ("gl_dynamic", "1", 0);
 	gl_nobind = Cvar_Get ("gl_nobind", "0", 0);
 	gl_round_down = Cvar_Get ("gl_round_down", "1", 0);
 	gl_picmip = Cvar_Get ("gl_picmip", "0", 0);
@@ -1048,7 +1023,9 @@ void R_Register( void )
 	gl_ext_compiled_vertex_array = Cvar_Get( "gl_ext_compiled_vertex_array", "1", CVAR_ARCHIVE|CVAR_LATCH );
 
 	gl_drawbuffer = Cvar_Get( "gl_drawbuffer", "GL_BACK", 0 );
-	gl_swapinterval = Cvar_Get( "gl_swapinterval", "0", CVAR_ARCHIVE );
+	gl_swapinterval = Cvar_Get( "gl_swapinterval", "1", CVAR_ARCHIVE );
+
+	gl_saturatelighting = Cvar_Get( "gl_saturatelighting", "0", 0 );
 
 	gl_3dlabs_broken = Cvar_Get( "gl_3dlabs_broken", "1", CVAR_ARCHIVE );
 
@@ -1359,7 +1336,7 @@ qboolean R_Init( void *hinstance, void *hWnd )
 
 	if ( strstr( gl_config.extensions_string, "GL_ARB_texture_env_combine" ) )
 	{
-		if ( gl_ext_mtexcombine->value && qglMTexCoord2fSGIS )
+		if ( gl_ext_mtexcombine->value )
 		{
 			Com_Printf( "...using GL_ARB_texture_env_combine\n" );
 			gl_config.mtexcombine = true;
@@ -1378,7 +1355,7 @@ qboolean R_Init( void *hinstance, void *hWnd )
 	{
 		if ( strstr( gl_config.extensions_string, "GL_EXT_texture_env_combine" ) )
 		{
-			if ( gl_ext_mtexcombine->value && qglMTexCoord2fSGIS )
+			if ( gl_ext_mtexcombine->value )
 			{
 				Com_Printf( "...using GL_EXT_texture_env_combine\n" );
 				gl_config.mtexcombine = true;
@@ -1428,8 +1405,8 @@ qboolean R_Init( void *hinstance, void *hWnd )
 	GL_InitImages ();
 	Mod_Init ();
 	R_InitParticleTexture ();
+	R_InitFastsin ();
 	R_InitBubble ();
-	R_InitMd3 ();
 
 	Shader_Init ();
 
@@ -1644,7 +1621,7 @@ void R_DrawBeam( entity_t *e )
 	}
 
 	qglDisable( GL_TEXTURE_2D );
-	GLSTATE_ENABLE_BLEND
+	qglEnable( GL_BLEND );
 	qglDepthMask( GL_FALSE );
 
 	r = ( d_8to24table[e->skinnum & 0xFF] ) & 0xFF;

@@ -23,11 +23,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../game/q_shared.h"
 
 
-#define	VERSION		3.00
+#define	VERSION		3.21
 
 #define	BASEDIRNAME	"baseq3"
-
-#define APPLICATION "QFusion"
 
 #ifdef WIN32
 
@@ -98,12 +96,14 @@ struct entity_state_s;
 void MSG_WriteChar (sizebuf_t *sb, int c);
 void MSG_WriteByte (sizebuf_t *sb, int c);
 void MSG_WriteShort (sizebuf_t *sb, int c);
-void MSG_WriteInt3 (sizebuf_t *sb, int c);
 void MSG_WriteLong (sizebuf_t *sb, int c);
 void MSG_WriteFloat (sizebuf_t *sb, float f);
 void MSG_WriteString (sizebuf_t *sb, char *s);
-void MSG_WriteCoord (sizebuf_t *sb, float f);
-void MSG_WritePos (sizebuf_t *sb, vec3_t pos);
+void MSG_WriteShortCoord (sizebuf_t *sb, float f);
+void MSG_WriteShortPos (sizebuf_t *sb, vec3_t pos);
+void MSG_WriteLongCoord (sizebuf_t *sb, float f);
+void MSG_WriteLongCoord (sizebuf_t *sb, float f);
+void MSG_WriteLongPos (sizebuf_t *sb, vec3_t pos);
 void MSG_WriteAngle (sizebuf_t *sb, float f);
 void MSG_WriteAngle16 (sizebuf_t *sb, float f);
 void MSG_WriteDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
@@ -116,14 +116,15 @@ void	MSG_BeginReading (sizebuf_t *sb);
 int		MSG_ReadChar (sizebuf_t *sb);
 int		MSG_ReadByte (sizebuf_t *sb);
 int		MSG_ReadShort (sizebuf_t *sb);
-int		MSG_ReadInt3 (sizebuf_t *sb);
 int		MSG_ReadLong (sizebuf_t *sb);
 float	MSG_ReadFloat (sizebuf_t *sb);
 char	*MSG_ReadString (sizebuf_t *sb);
 char	*MSG_ReadStringLine (sizebuf_t *sb);
 
-float	MSG_ReadCoord (sizebuf_t *sb);
-void	MSG_ReadPos (sizebuf_t *sb, vec3_t pos);
+float	MSG_ReadShortCoord (sizebuf_t *sb);
+void	MSG_ReadShortPos (sizebuf_t *sb, vec3_t pos);
+float	MSG_ReadLongCoord (sizebuf_t *sb);
+void	MSG_ReadLongPos (sizebuf_t *sb, vec3_t pos);
 float	MSG_ReadAngle (sizebuf_t *sb);
 float	MSG_ReadAngle16 (sizebuf_t *sb);
 void	MSG_ReadDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
@@ -131,6 +132,20 @@ void	MSG_ReadDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd
 void	MSG_ReadDir (sizebuf_t *sb, vec3_t vector);
 
 void	MSG_ReadData (sizebuf_t *sb, void *buffer, int size);
+
+//============================================================================
+
+extern	qboolean		bigendien;
+
+extern	short	BigShort (short l);
+extern	short	LittleShort (short l);
+extern	int		BigLong (int l);
+extern	int		LittleLong (int l);
+extern	float	BigFloat (float l);
+extern	float	LittleFloat (float l);
+
+//============================================================================
+
 
 int	COM_Argc (void);
 char *COM_Argv (int arg);	// range and null checked
@@ -167,7 +182,7 @@ PROTOCOL
 
 // protocol.h -- communications protocols
 
-#define	PROTOCOL_VERSION	37
+#define	PROTOCOL_VERSION	36
 
 //=========================================
 
@@ -274,9 +289,10 @@ enum clc_ops_e
 // a sound without an ent or pos will be a local only sound
 #define	SND_VOLUME		(1<<0)		// a byte
 #define	SND_ATTENUATION	(1<<1)		// a byte
-#define	SND_POS			(1<<2)		// three short coordinates
+#define	SND_POSS		(1<<2)		// three short coordinates
 #define	SND_ENT			(1<<3)		// a short 0-2: channel, 3-12: entity
 #define	SND_OFFSET		(1<<4)		// a byte, msec offset from frame start
+#define	SND_POSL		(1<<5)		// three long coordinates
 
 #define DEFAULT_SOUND_PACKET_VOLUME	1.0
 #define DEFAULT_SOUND_PACKET_ATTENUATION 1.0
@@ -319,6 +335,10 @@ enum clc_ops_e
 #define	U_SKIN16	(1<<25)
 #define	U_SOUND		(1<<26)
 #define	U_SOLID		(1<<27)
+#define	U_ORIGIN1L	(1<<28)		// weapons, flags, etc
+#define	U_ORIGIN2L	(1<<29)
+#define	U_ORIGIN3L	(1<<30)
+#define	U_OLDORIGINL (1<<30)	// FIXME: get rid of this
 
 
 /*
@@ -663,6 +683,8 @@ int			CM_BoxLeafnums (vec3_t mins, vec3_t maxs, int *list,
 int			CM_LeafContents (int leafnum);
 int			CM_LeafCluster (int leafnum);
 int			CM_LeafArea (int leafnum);
+int			*CM_LeafMins (int leafnum);
+int			*CM_LeafMaxs (int leafnum);
 
 void		CM_SetAreaPortalState (int area1, int area2, qboolean open);
 qboolean	CM_AreasConnected (int area1, int area2);
@@ -753,8 +775,6 @@ void		Com_SetServerState (int state);
 
 unsigned	Com_BlockChecksum (void *buffer, int length);
 byte		COM_BlockSequenceCRCByte (byte *base, int length, int sequence);
-
-int			Com_HashKey (char *name, int hashsize);
 
 float	frand(void);	// 0 ti 1
 float	crand(void);	// -1 to 1

@@ -76,8 +76,7 @@ field_t fields[] = {
 	{"nextmap", STOFS(nextmap), F_LSTRING, FFL_SPAWNTEMP},
 	{"notsingle", STOFS(notsingle), F_INT, FFL_SPAWNTEMP},
 	{"notteam", STOFS(notteam), F_INT, FFL_SPAWNTEMP},
-	{"notfree", STOFS(notfree), F_INT, FFL_SPAWNTEMP},
-	{"gridsize", STOFS(gridsize), F_LSTRING, FFL_SPAWNTEMP}
+	{"notfree", STOFS(notfree), F_INT, FFL_SPAWNTEMP}
 };
 
 // -------- just for savegames ----------

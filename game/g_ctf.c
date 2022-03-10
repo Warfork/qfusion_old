@@ -939,6 +939,14 @@ qboolean CTFDrop_Flag(edict_t *ent, gitem_t *item)
 	return false;
 }
 
+static void CTFFlagThink(edict_t *ent)
+{
+	if (ent->solid != SOLID_NOT)
+		ent->s.frame = 173 + (((ent->s.frame - 173) + 1) % 16);
+	ent->nextthink = level.time + FRAMETIME;
+}
+
+
 void CTFFlagSetup (edict_t *ent)
 {
 	trace_t		tr;
@@ -973,6 +981,9 @@ void CTFFlagSetup (edict_t *ent)
 	VectorCopy (tr.endpos, ent->s.origin);
 
 	gi.linkentity (ent);
+
+	ent->nextthink = level.time + FRAMETIME;
+	ent->think = CTFFlagThink;
 }
 
 void CTFEffects(edict_t *player)
@@ -1294,7 +1305,7 @@ void CTFGrappleTouch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t
 	if (self->owner->client->ctf_grapplestate != CTF_GRAPPLE_STATE_FLY)
 		return;
 
-	if (surf && (surf->flags & SURF_NOIMPACT))
+	if (surf && (surf->flags & SURF_SKY))
 	{
 		CTFResetGrapple(self);
 		return;

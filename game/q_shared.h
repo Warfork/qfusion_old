@@ -332,43 +332,13 @@ int Q_strcasecmp (char *s1, char *s2);
 int Q_strncasecmp (char *s1, char *s2, int n);
 
 //=============================================
-#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
-# if defined(__i386__) || defined(__ia64__) || defined(WIN32) || (defined(__alpha__) || defined(__alpha)) || defined(__arm__) || (defined(__mips__) && defined(__MIPSEL__)) || defined(__LITTLE_ENDIAN__)
-#  define ENDIAN_LITTLE
-# else
-#  define ENDIAN_BIG
-# endif
-#endif
 
-short ShortSwap (short l);
-int LongSwap (int l);
-float FloatSwap (float f);
-
-#ifdef ENDIAN_LITTLE
-// little endian
-# define BigShort(l) ShortSwap(l)
-# define LittleShort(l) (l)
-# define BigLong(l) LongSwap(l)
-# define LittleLong(l) (l)
-# define BigFloat(l) FloatSwap(l)
-# define LittleFloat(l) (l)
-#elif ENDIAN_BIG
-// big endian
-# define BigShort(l) (l)
-# define LittleShort(l) ShortSwap(l)
-# define BigLong(l) (l)
-# define LittleLong(l) LongSwap(l)
-# define BigFloat(l) (l)
-# define LittleFloat(l) FloatSwap(l)
-#else
-// figure it out at runtime
-extern short (*BigShort) (short l);
-extern short (*LittleShort) (short l);
-extern int (*BigLong) (int l);
-extern int (*LittleLong) (int l);
-extern float (*BigFloat) (float l);
-extern float (*LittleFloat) (float l);
-#endif
+short	BigShort(short l);
+short	LittleShort(short l);
+int		BigLong (int l);
+int		LittleLong (int l);
+float	BigFloat (float l);
+float	LittleFloat (float l);
 
 void	Swap_Init (void);
 char	*va(char *format, ...);
@@ -450,7 +420,6 @@ typedef struct cvar_s
 {
 	char		*name;
 	char		*string;
-	char		*dvalue;
 	char		*latched_string;	// for CVAR_LATCH vars
 	int			flags;
 	qboolean	modified;	// set each time the cvar is changed
@@ -616,8 +585,8 @@ typedef struct
 {
 	pmtype_t	pm_type;
 
-	int			origin[3];		// 12.3
-	int			velocity[3];	// 12.3
+	short		origin[3];		// 12.3
+	short		velocity[3];	// 12.3
 	byte		pm_flags;		// ducked, jump_held, etc
 	byte		pm_time;		// each unit = 8 ms
 	short		gravity;

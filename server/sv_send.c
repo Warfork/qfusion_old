@@ -20,6 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // sv_main.c -- server main program
 
 #include "server.h"
+#include <limits.h>
 
 /*
 =============================================================================
@@ -347,8 +348,14 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 		}
 	}
 
-	if (send_org)
-		flags |= SND_POS;
+	if (send_org) {
+		if ( fabs( origin[0] ) > SHRT_MAX*(1.0/8.0) ||
+			fabs( origin[1] ) > SHRT_MAX*(1.0/8.0) ||
+			fabs( origin[2] ) > SHRT_MAX*(1.0/8.0) )
+			flags |= SND_POSS;
+		else
+			flags |= SND_POSL;
+	}
 
 	MSG_WriteByte (&sv.multicast, svc_sound);
 	MSG_WriteByte (&sv.multicast, flags);
@@ -364,8 +371,10 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 	if (flags & SND_ENT)
 		MSG_WriteShort (&sv.multicast, sendchan);
 
-	if (flags & SND_POS)
-		MSG_WritePos (&sv.multicast, origin);
+	if (flags & SND_POSL)
+		MSG_WriteLongPos (&sv.multicast, origin);
+	else if (flags & SND_POSS)
+		MSG_WriteShortPos (&sv.multicast, origin);
 
 	// if the sound doesn't attenuate,send it to everyone
 	// (global radio chatter, voiceovers, etc)
@@ -453,8 +462,8 @@ void SV_DemoCompleted (void)
 {
 	if (sv.demofile)
 	{
-		FS_FCloseFile (sv.demofile);
-		sv.demofile = 0;
+		fclose (sv.demofile);
+		sv.demofile = NULL;
 	}
 	SV_Nextserver ();
 }
@@ -505,6 +514,7 @@ void SV_SendClientMessages (void)
 	client_t	*c;
 	int			msglen;
 	byte		msgbuf[MAX_MSGLEN];
+	int			r;
 
 	msglen = 0;
 
@@ -515,16 +525,13 @@ void SV_SendClientMessages (void)
 			msglen = 0;
 		else
 		{
-			if (sv.demolen <= 0)
+			// get the next message
+			r = fread (&msglen, 4, 1, sv.demofile);
+			if (r != 1)
 			{
 				SV_DemoCompleted ();
 				return;
 			}
-
-			// get the next message
-			FS_Read (&msglen, 4, sv.demofile);
-			sv.demolen -= 4;
-
 			msglen = LittleLong (msglen);
 			if (msglen == -1)
 			{
@@ -533,13 +540,12 @@ void SV_SendClientMessages (void)
 			}
 			if (msglen > MAX_MSGLEN)
 				Com_Error (ERR_DROP, "SV_SendClientMessages: msglen > MAX_MSGLEN");
-			if (sv.demolen <= 0)
+			r = fread (msgbuf, msglen, 1, sv.demofile);
+			if (r != 1)
 			{
 				SV_DemoCompleted ();
 				return;
 			}
-			FS_Read (msgbuf, msglen, sv.demofile);
-			sv.demolen -= msglen;
 		}
 	}
 

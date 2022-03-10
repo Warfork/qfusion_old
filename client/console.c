@@ -52,6 +52,12 @@ void Con_ToggleConsole_f (void)
 		return;
 	}
 
+	if (cls.state == ca_disconnected)
+	{	// start the demo loop again
+		Cbuf_AddText ("d1\n");
+		return;
+	}
+
 	Key_ClearTyping ();
 	Con_ClearNotify ();
 
@@ -224,7 +230,7 @@ void Con_CheckResize (void)
 
 	if (width < 1)			// video hasn't been initialized yet
 	{
-		width = 78;
+		width = 38;
 		con.linewidth = width;
 		con.totallines = CON_TEXTSIZE / con.linewidth;
 		memset (con.text, ' ', CON_TEXTSIZE);
@@ -323,12 +329,9 @@ void Con_Print (char *txt)
 	int		y;
 	int		c, l;
 	static int	cr;
-	int		colour;
 
 	if (!con.initialized)
 		return;
-
-	colour = ColorIndex ( COLOR_WHITE );
 
 	while ( (c = *txt) )
 	{
@@ -340,6 +343,8 @@ void Con_Print (char *txt)
 	// word wrap
 		if (l != con.linewidth && (con.x + l > con.linewidth) )
 			con.x = 0;
+
+		txt++;
 
 		if (cr)
 		{
@@ -354,25 +359,15 @@ void Con_Print (char *txt)
 		// mark time for transparent overlay
 			if (con.current >= 0)
 				con.times[con.current % NUM_CON_TIMES] = cls.realtime;
-
-			y = con.current % con.totallines;
-
-			if ( colour != ColorIndex ( COLOR_WHITE ) ) {
-				con.text[y*con.linewidth] = '^';
-				con.text[y*con.linewidth+1] = '0' + colour;
-				con.x += 2;
-			}
 		}
 
 		switch (c)
 		{
 		case '\n':
-			colour = ColorIndex ( COLOR_WHITE );
 			con.x = 0;
 			break;
 
 		case '\r':
-			colour = ColorIndex ( COLOR_WHITE );
 			con.x = 0;
 			cr = 1;
 			break;
@@ -383,14 +378,9 @@ void Con_Print (char *txt)
 			con.x++;
 			if (con.x >= con.linewidth)
 				con.x = 0;
-
-			if ( Q_IsColorString( txt ) ) {
-				colour = ColorIndex ( *(txt+1) );
-			}
 			break;
 		}
-
-		txt++;
+		
 	}
 }
 
@@ -447,10 +437,10 @@ void Con_DrawInput (void)
 		text += 1 + key_linepos - con.linewidth;
 		
 // draw it
-	Draw_StringLen ( 8, con.vislines-SMALL_CHAR_HEIGHT-14, text, con.linewidth, FONT_SMALL, colorWhite );
+	Draw_StringLen ( 8, con.vislines-SMALL_CHAR_HEIGHT, text, con.linewidth, FONT_SMALL, colorWhite );
 
 // add the cursor frame
-	Draw_Char ( 8+key_linepos*SMALL_CHAR_WIDTH, con.vislines-SMALL_CHAR_HEIGHT-14, 10+((int)(cls.realtime>>8)&1), FONT_SMALL, colorWhite);
+	Draw_Char ( 8+key_linepos*SMALL_CHAR_WIDTH, con.vislines-SMALL_CHAR_HEIGHT, 10+((int)(cls.realtime>>8)&1), FONT_SMALL, colorWhite);
 }
 
 
@@ -542,20 +532,19 @@ void Con_DrawConsole (float frac)
 		lines = viddef.height;
 
 // draw the background
-	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, 
-		0, 0, 1, 1, colorWhite, R_RegisterShaderNoMip( "console" ) );
-	Draw_StretchPic (0, -(int)viddef.height+lines+viddef.height, viddef.width, 3, 
-		0, 0, 1, 1, colorRed, R_RegisterShaderNoMip( "***r_whitetexture***" ) );
+	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, "console");
+	SCR_AddDirtyPoint (0,0);
+	SCR_AddDirtyPoint (viddef.width-1,lines-1);
 
-	Com_sprintf (version, sizeof(version), APPLICATION " v%4.2f", VERSION);
-	Draw_StringLen (viddef.width-strlen(version)*SMALL_CHAR_WIDTH-4, lines-20, version, -1, FONT_SMALL, colorRed );
+	Com_sprintf (version, sizeof(version), "v%4.2f", VERSION);
+	Draw_StringLen (viddef.width-44, lines-20, version, -1, FONT_SMALL, colorWhite );
 
 // draw the text
 	con.vislines = lines;
 	
-	rows = (lines-SMALL_CHAR_HEIGHT-14) / SMALL_CHAR_HEIGHT;		// rows of text to draw
+	rows = (lines-22) / SMALL_CHAR_WIDTH;		// rows of text to draw
 
-	y = lines - SMALL_CHAR_HEIGHT-14-SMALL_CHAR_HEIGHT;
+	y = lines - 30;
 
 // draw from the bottom up
 	if (con.display != con.current)
@@ -703,7 +692,7 @@ void Con_CompleteCommandLine (void)
 	a = Cmd_CompleteAliasCountPossible(s);
 	
 	if (!(c + v + a)) {	// No possible matches, let the user know they're insane
-		Com_Printf("\nNo matching aliases, commands, or cvars were found.\n\n");
+		Com_Printf("\n\nNo matching aliases, commands, or cvars were found.\n\n");
 		return;
 	}
 	
@@ -742,17 +731,17 @@ void Con_CompleteCommandLine (void)
 
 		// Print Possible Commands
 		if (c) {
-			Com_Printf(S_COLOR_RED "%i possible command%s%s\n", c, (c > 1) ? "s: " : ":", S_COLOR_WHITE);
+			Com_Printf(S_COLOR_RED "%i possible command%s%s\n\n", c, (c > 1) ? "s: " : ":", S_COLOR_WHITE);
 			Con_DisplayList(list[0]);
 		}
 		
 		if (v) {
-			Com_Printf(S_COLOR_RED "%i possible variable%s%s\n", v, (v > 1) ? "s: " : ":", S_COLOR_WHITE);
+			Com_Printf(S_COLOR_RED "%i possible variable%s%s\n\n", v, (v > 1) ? "s: " : ":", S_COLOR_WHITE);
 			Con_DisplayList(list[1]);
 		}
 		
 		if (a) {
-			Com_Printf(S_COLOR_RED "%i possible alias%s%s\n", a, (a > 1) ? "es: " : ":", S_COLOR_WHITE);
+			Com_Printf(S_COLOR_RED "%i possible alias%s%s\n\n", a, (a > 1) ? "es: " : ":", S_COLOR_WHITE);
 			Con_DisplayList(list[2]);
 		}
 	}
