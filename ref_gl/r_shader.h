@@ -29,6 +29,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // shader types
 enum
 {
+	SHADER_INVALID = -1,
+	SHADER_UNKNOWN,
 	SHADER_BSP,
 	SHADER_BSP_VERTEX,
 	SHADER_BSP_FLARE,
@@ -50,27 +52,48 @@ enum
 	SHADER_CULL_BACK			= 1 << 6,
 	SHADER_VIDEOMAP				= 1 << 7,
 	SHADER_AGEN_PORTAL			= 1 << 8,
-	SHADER_DEFORMV_BULGE		= 1 << 9,
+	SHADER_DEFORMV_NORMAL		= 1 << 9,
 	SHADER_ENTITY_MERGABLE		= 1 << 10,
 	SHADER_FLARE				= 1 << 11,
 	SHADER_AUTOSPRITE			= 1 << 12,
 	SHADER_NO_MODULATIVE_DLIGHTS= 1 << 13,
-	SHADER_LIGHTMAP				= 1 << 14
+	SHADER_LIGHTMAP				= 1 << 14,
+	SHADER_NOCOMPRESS			= 1 << 15
+};
+
+// sorting
+enum 
+{
+	SHADER_SORT_NONE			= 0,
+	SHADER_SORT_PORTAL			= 1,
+	SHADER_SORT_SKY				= 2,
+	SHADER_SORT_OPAQUE			= 3,
+	SHADER_SORT_DECAL			= 4,
+	SHADER_SORT_ALPHATEST		= 5,
+	SHADER_SORT_BANNER			= 6,
+	SHADER_SORT_UNDERWATER		= 8,
+	SHADER_SORT_ADDITIVE		= 9,
+	SHADER_SORT_NEAREST			= 16
 };
 
 // shaderpass flags
+#define SHADERPASS_MARK_BEGIN	0x10000	// same as GLSTATE_MARK_END
 enum
 {
-	SHADER_PASS_DEPTHWRITE		= 1 << 0,
-    SHADER_PASS_LIGHTMAP		= 1 << 1,
-	SHADER_PASS_VIDEOMAP		= 1 << 2,
-    SHADER_PASS_BLEND			= 1 << 3,
-    SHADER_PASS_ALPHAFUNC		= 1 << 4,
-    SHADER_PASS_ANIMMAP			= 1 << 5,
-	SHADER_PASS_DETAIL			= 1 << 6,
-	SHADER_PASS_NOCOLORARRAY	= 1 << 7,
-	SHADER_PASS_DLIGHT			= 1 << 8
-};	
+    SHADERPASS_LIGHTMAP			= SHADERPASS_MARK_BEGIN,
+	SHADERPASS_VIDEOMAP			= SHADERPASS_MARK_BEGIN << 1,
+	SHADERPASS_DETAIL			= SHADERPASS_MARK_BEGIN << 2,
+	SHADERPASS_NOCOLORARRAY		= SHADERPASS_MARK_BEGIN << 3,
+	SHADERPASS_DLIGHT			= SHADERPASS_MARK_BEGIN << 4,
+	SHADERPASS_DELUXEMAP		= SHADERPASS_MARK_BEGIN << 5,
+
+	SHADERPASS_BLEND_REPLACE	= SHADERPASS_MARK_BEGIN << 6,
+	SHADERPASS_BLEND_MODULATE	= SHADERPASS_MARK_BEGIN << 7,
+	SHADERPASS_BLEND_ADD		= SHADERPASS_MARK_BEGIN << 8,
+	SHADERPASS_BLEND_DECAL		= SHADERPASS_MARK_BEGIN << 9
+};
+
+#define SHADERPASS_BLENDMODE (SHADERPASS_BLEND_REPLACE|SHADERPASS_BLEND_MODULATE|SHADERPASS_BLEND_ADD|SHADERPASS_BLEND_DECAL)
 
 // transform functions
 enum
@@ -83,20 +106,6 @@ enum
 	SHADER_FUNC_NOISE			= 6,
 	SHADER_FUNC_CONSTANT		= 7
 };
-
-// sorting
-enum 
-{
-	SHADER_SORT_NONE			= 0,
-	SHADER_SORT_PORTAL			= 1,
-	SHADER_SORT_SKY				= 2,
-	SHADER_SORT_OPAQUE			= 3,
-	SHADER_SORT_BANNER			= 6,
-	SHADER_SORT_UNDERWATER		= 8,
-	SHADER_SORT_ADDITIVE		= 9,
-	SHADER_SORT_NEAREST			= 16
-};
-
 
 // RGB colors generation
 enum 
@@ -114,7 +123,8 @@ enum
 	RGB_GEN_EXACT_VERTEX,
 	RGB_GEN_LIGHTING_DIFFUSE_ONLY,
 	RGB_GEN_LIGHTING_AMBIENT_ONLY,
-	RGB_GEN_FOG
+	RGB_GEN_FOG,
+	RGB_GEN_CUSTOM
 };
 
 // alpha channel generation
@@ -130,16 +140,7 @@ enum
 	ALPHA_GEN_SPECULAR,
 	ALPHA_GEN_WAVE,
 	ALPHA_GEN_DOT,
-	ALPHA_GEN_ONE_MINUS_DOT,
-	ALPHA_GEN_FOG
-};
-
-// alphaFunc
-enum
-{
-	ALPHA_FUNC_GT0,
-	ALPHA_FUNC_LT128,
-	ALPHA_FUNC_GE128
+	ALPHA_GEN_ONE_MINUS_DOT
 };
 
 // texture coordinates generation
@@ -150,7 +151,9 @@ enum
 	TC_GEN_ENVIRONMENT,
 	TC_GEN_VECTOR,
 	TC_GEN_REFLECTION,
-	TC_GEN_FOG
+	TC_GEN_FOG,
+	TC_GEN_REFLECTION_CELLSHADE,
+	TC_GEN_SVECTORS
 };
 
 // tcmod functions
@@ -181,33 +184,33 @@ enum
 
 typedef struct
 {
-    int				type;				// SHADER_FUNC enum
+    unsigned short	type;				// SHADER_FUNC enum
     float			args[4];			// offset, amplitude, phase_offset, rate
 } shaderfunc_t;
 
 typedef struct 
 {
-	int				type;
+	unsigned short	type;
 	float			args[6];
 } tcmod_t;
 
 typedef struct 
 {
-	int				type;
+	unsigned short	type;
 	float			args[3];
     shaderfunc_t	func;
 } rgbgen_t;
 
 typedef struct 
 {
-	int				type;
+	unsigned short	type;
 	float			args[2];
     shaderfunc_t	func;
 } alphagen_t;
 
 typedef struct
 {
-	int				type;
+	unsigned short	type;
     float			args[4];
     shaderfunc_t	func;
 } deformv_t;
@@ -215,28 +218,24 @@ typedef struct
 // Per-pass rendering state information
 typedef struct
 {
-    unsigned int	flags;
+	unsigned int	flags;
 
-    unsigned int	blendsrc, blenddst; // glBlendFunc args
-	unsigned int	blendmode;
-
-    unsigned int	depthfunc;			// glDepthFunc arg
-    unsigned int	alphafunc;
-
-    rgbgen_t		rgbgen;
+	rgbgen_t		rgbgen;
 	alphagen_t		alphagen;
 
-	int				tcgen;
-	vec4_t			tcgenVec[2];
+	unsigned short	tcgen;
+	vec_t			*tcgenVec;
 
-    int				numtcmods;
+	unsigned short	numtcmods;
 	tcmod_t			*tcmods;
 
 	cinematics_t	*cin;
 
-    float			anim_fps;			// animation frames per sec
-    int				anim_numframes;
-    image_t			*anim_frames[MAX_SHADER_ANIM_FRAMES];  // texture refs
+	char			*program;
+
+	float			anim_fps;			// animation frames per sec
+	unsigned short	anim_numframes;
+	image_t			*anim_frames[MAX_SHADER_ANIM_FRAMES];  // texture refs
 } shaderpass_t;
 
 // Shader information
@@ -244,21 +243,21 @@ typedef struct shader_s
 {	
 	char			name[MAX_QPATH];
 
-    int				flags;
-	int				features;
+    unsigned short	flags;
+	unsigned short	features;
 	unsigned int	sort;
 	unsigned int	sortkey;
 
-    int				numpasses;
+	int				type;
+
+    unsigned short	numpasses;
     shaderpass_t	*passes;
 
-	int				numdeforms;
+	unsigned short	numdeforms;
 	deformv_t		*deforms;
 
-	skydome_t		*skydome;
-
 	qbyte			fog_color[4];
-	double			fog_dist;
+	float			fog_dist;
 
 	struct shader_s *hash_next;
 } shader_t;
@@ -266,8 +265,13 @@ typedef struct shader_s
 // memory management
 extern mempool_t *r_shadersmempool;
 
+extern	shader_t	r_shaders[MAX_SHADERS];
+extern	int			r_numShaders;
+extern	skydome_t	*r_skydomes[MAX_SHADERS];
+
 #define Shader_Malloc(size) Mem_Alloc(r_shadersmempool,size)
 #define Shader_Free(data) Mem_Free(data)
+#define Shader_Sortkey(shader,sort) (((sort)<<26)|(shader-r_shaders))
 
 void R_InitShaders( qboolean silent );
 void R_ShutdownShaders( void );
@@ -275,11 +279,11 @@ void R_ShutdownShaders( void );
 void R_RunCinematicShaders( void );
 void R_UploadCinematicShader( shader_t *shader );
 
-shader_t *R_LoadShader( char *name, int type, qboolean forceDefault, int addFlags );
+shader_t *R_LoadShader( char *name, int type, qboolean forceDefault, int addFlags, int ignoreType );
 
-shader_t *R_RegisterPic (char *name);
-shader_t *R_RegisterShader (char *name);
-shader_t *R_RegisterSkin (char *name);
+shader_t *R_RegisterPic( char *name );
+shader_t *R_RegisterShader( char *name );
+shader_t *R_RegisterSkin( char *name );
 
 void R_ShaderList_f( void );
 

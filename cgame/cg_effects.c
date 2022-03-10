@@ -37,7 +37,6 @@ typedef struct
 } cg_lightStyle_t;
 
 cg_lightStyle_t	cg_lightStyle[MAX_LIGHTSTYLES];
-static	int		lastofs;
 
 /*
 ================
@@ -47,7 +46,6 @@ CG_ClearLightStyles
 void CG_ClearLightStyles( void )
 {
 	memset( cg_lightStyle, 0, sizeof( cg_lightStyle ) );
-	lastofs = -1;
 }
 
 /*
@@ -58,23 +56,24 @@ CG_RunLightStyles
 void CG_RunLightStyles( void )
 {
 	int		i;
+	float	f;
 	int		ofs;
 	cg_lightStyle_t	*ls;
 
-	ofs = cg.time / 100;
-	if( ofs == lastofs )
-		return;
-	lastofs = ofs;
+	f = cg.time / 100.0f;
+	ofs = (int)floor( f );
+	f = f - ofs;
 
 	for( i = 0, ls = cg_lightStyle; i < MAX_LIGHTSTYLES; i++, ls++ ) {
 		if( !ls->length ) {
 			ls->value[0] = ls->value[1] = ls->value[2] = 1.0;
 			continue;
 		}
+
 		if( ls->length == 1 )
 			ls->value[0] = ls->value[1] = ls->value[2] = ls->map[0];
 		else
-			ls->value[0] = ls->value[1] = ls->value[2] = ls->map[ofs % ls->length];
+			ls->value[0] = ls->value[1] = ls->value[2] = (ls->map[ofs % ls->length] * f + (1 - f) * ls->map[(ofs-1) % ls->length]);
 	}
 }
 
@@ -236,6 +235,7 @@ typedef struct particle_s
 	float		alpha;
 	float		alphavel;
 	float		scale;
+	qboolean	fog;
 
 	poly_t		poly;
 	vec3_t		pVerts[4];
@@ -249,7 +249,7 @@ typedef struct particle_s
 
 static vec3_t avelocities [NUMVERTEXNORMALS];
 
-cparticle_t	particles[MAX_PARTICLES], *free_particles[MAX_PARTICLES];
+cparticle_t	particles[MAX_PARTICLES];
 int			cg_numparticles;
 
 /*
@@ -264,7 +264,6 @@ void CG_ClearParticles( void )
 
 	cg_numparticles = 0;
 	memset( particles, 0, sizeof(cparticle_t) * MAX_PARTICLES );
-	memset( free_particles, 0, sizeof(cparticle_t *) * MAX_PARTICLES );
 
 	for( i = 0, p = particles; i < MAX_PARTICLES; i++, p++ ) {
 		p->pStcoords[0][0] = 0; p->pStcoords[0][1] = 1;
@@ -274,21 +273,16 @@ void CG_ClearParticles( void )
 	}
 }
 
-inline cparticle_t *new_particle( void )
-{
-	cparticle_t	*p;
-
-	if( cg_numparticles >= MAX_PARTICLES )
-		return NULL;
-
-	p = &particles[cg_numparticles++];
-	p->time = cg.time;
-	p->scale = 1.0f;
-	p->alpha = 1.0f;
-	VectorSet( p->color, 0, 0, 0 );
-
-	return p;
-}
+#define CG_InitParticle(p,s,a,r,g,b) \
+	( \
+	(p)->time = cg.time, \
+	(p)->scale = (s), \
+	(p)->alpha = (a), \
+	(p)->color[0] = (r), \
+	(p)->color[1] = (g), \
+	(p)->color[2] = (b), \
+	(p)->fog = qtrue \
+	)
 
 /*
 ===============
@@ -299,17 +293,14 @@ Wall impact puffs
 */
 void CG_ParticleEffect( vec3_t org, vec3_t dir, float r, float g, float b, int count )
 {
-	int			i, j;
+	int			j;
 	cparticle_t	*p;
 	float		d;
 
-	for( i = 0; i < count; i++ ) {
-		if( !(p = new_particle ()) )
-			return;
-
-		p->color[0] = r + random()*0.1;
-		p->color[1] = g + random()*0.1;
-		p->color[2] = b + random()*0.1;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, r + random()*0.1, g + random()*0.1, b + random()*0.1 );
 
 		d = rand () & 31;
 		for( j = 0; j < 3; j++ ) {
@@ -331,17 +322,14 @@ CG_ParticleEffect2
 */
 void CG_ParticleEffect2( vec3_t org, vec3_t dir, float r, float g, float b, int count )
 {
-	int			i, j;
-	cparticle_t	*p;
+	int			j;
 	float		d;
+	cparticle_t	*p;
 
-	for( i = 0; i < count; i++ ) {
-		if( !(p = new_particle ()) )
-			return;
-
-		p->color[0] = r;
-		p->color[1] = g;
-		p->color[2] = b;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, r, g, b );
 
 		d = rand()&7;
 		for( j = 0; j < 3; j++ ) {
@@ -362,16 +350,15 @@ CG_BigTeleportParticles
 */
 void CG_BigTeleportParticles( vec3_t org )
 {
-	int			i;
-	cparticle_t	*p;
+	int			count = 4096;
 	float		angle, dist;
 	static float colortable[4] = {0.0625, 0.40625, 0.65625, 0.5625};
+	cparticle_t	*p;
 
-	for( i = 0; i < 4096; i++ ) {
-		if( !(p = new_particle ()) )
-			return;
-
-		p->color[0] = colortable[rand()&3];
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, colortable[rand()&3], 0, 0 );
 
 		angle = M_TWOPI * (rand()&1023)/1023.0;
 		dist = rand() & 31;
@@ -402,18 +389,14 @@ Wall impact puffs
 */
 void CG_BlasterParticles( vec3_t org, vec3_t dir )
 {
-	int			i, j;
-	cparticle_t	*p;
+	int			j, count = 40;
 	float		d;
-	int			count;
+	cparticle_t	*p;
 
-	count = 40;
-	for( i = 0; i < count; i++ ) {
-		if( !(p = new_particle ()) )
-			return;
-
-		p->color[0] = 1.0f;
-		p->color[1] = 0.8f;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, 0.8f, 0.8f, 1.0f );
 
 		d = rand() & 15;
 		for( j = 0; j < 3; j++ ) {
@@ -434,38 +417,30 @@ CG_BlasterTrail
 */
 void CG_BlasterTrail( vec3_t start, vec3_t end )
 {
-	vec3_t		move;
-	vec3_t		vec;
+	int			j, count;
+	vec3_t		move, vec;
 	float		len;
-	int			j;
+	const float	dec = 5;
 	cparticle_t	*p;
-	int			dec;
 
 	VectorCopy( start, move );
 	VectorSubtract( end, start, vec );
 	len = VectorNormalize( vec );
-
-	dec = 5;
 	VectorScale( vec, dec, vec );
 
-	while( len > 0 ) {
-		len -= dec;
+	count = (int)(len / dec) + 1;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, 0.7f, 0.7f, 1.0 );
 
-		if( !(p = new_particle ()) )
-			return;
-
-		VectorClear( p->accel );
-		
 		p->alphavel = -1.0 / (0.3 + random() * 0.2);
-		p->color[0] = 1.0f;
-		p->color[1] = 0.7f;
-
 		for( j = 0; j < 3; j++ ) {
 			p->org[j] = move[j] + crandom();
 			p->vel[j] = crandom() * 5;
-			p->accel[j] = 0;
 		}
 
+		VectorClear( p->accel );
 		VectorAdd( move, vec, move );
 	}
 }
@@ -477,20 +452,12 @@ CG_FlagTrail
 */
 void CG_FlagTrail( vec3_t start, vec3_t end, int effect )
 {
-	vec3_t		move;
-	vec3_t		vec;
+	int			j, count;
+	vec3_t		move, vec;
 	float		len;
-	int			j;
-	cparticle_t	*p;
-	int			dec;
+	const float	dec = 5;
 	vec3_t		color;
-
-	VectorCopy( start, move );
-	VectorSubtract( end, start, vec );
-	len = VectorNormalize( vec );
-
-	dec = 5;
-	VectorScale( vec, dec, vec );
+	cparticle_t	*p;
 
 	if( effect == EF_FLAG1 )
 		VectorSet( color, 0.8f, 0.1f, 0.1f );
@@ -499,21 +466,24 @@ void CG_FlagTrail( vec3_t start, vec3_t end, int effect )
 	else
 		VectorSet( color, 1.0f, 1.0f, 1.0f );
 
-	while( len > 0 ) {
-		len -= dec;
+	VectorCopy( start, move );
+	VectorSubtract( end, start, vec );
+	len = VectorNormalize( vec );
+	VectorScale( vec, dec, vec );
 
-		if( !(p = new_particle ()) )
-			return;
+	count = (int)(len / dec) + 1;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, color[0], color[1], color[2] );
 
-		VectorCopy( color, p->color );
-		
+		p->alphavel = -1.0 / (0.8 + random() * 0.2);
 		for( j = 0; j < 3; j++ ) {
 			p->org[j] = move[j] + crandom() * 16;
 			p->vel[j] = crandom() * 5;
-			p->accel[j] = 0;
 		}
 
-		p->alphavel = -1.0 / (0.8 + random() * 0.2);
+		VectorClear( p->accel );
 		VectorAdd( move, vec, move );
 	}
 }
@@ -525,35 +495,30 @@ CG_BloodTrail
 */
 void CG_BloodTrail( vec3_t start, vec3_t end )
 {
-	vec3_t		move;
-	vec3_t		vec;
+	int			j, count;
+	vec3_t		move, vec;
 	float		len;
-	int			j;
+	const float	dec = 4;
 	cparticle_t	*p;
-	float		dec;
 
-	dec = 4;
 	VectorCopy( start, move );
 	VectorSubtract( end, start, vec );
 	len = VectorNormalize( vec );
 
-	while( len > 0 ) {
-		len -= dec;
-
-		if( !(p = new_particle ()) )
-			return;
-
-		p->scale = 1.5f;
-		p->color[0] = 0.9 + crandom() * 0.5;
+	count = (int)(len / dec) + 1;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1.5f, 1, 0.9 + crandom() * 0.5, 0, 0 );
 
 		for( j = 0; j < 3; j++ ) {
 			p->org[j] = move[j] + crandom();
 			p->vel[j] = crandom() * 5;
-			p->accel[j] = 0;
 		}
 
-		p->alphavel = -1.0 / (1 + random() * 0.4);
 		p->vel[2] -= PARTICLE_GRAVITY;
+		p->alphavel = -1.0 / (1 + random() * 0.4);
+		VectorClear( p->accel );
 		VectorAdd( move, vec, move );
 	}
 }
@@ -565,34 +530,24 @@ CG_RailTrail
 */
 void CG_RailTrail( vec3_t start, vec3_t end )
 {
-	vec3_t		move;
-	vec3_t		vec;
-	float		len;
-	int			j;
+	int			i, j, count;
+	vec3_t		move, vec;
+	float		d, c, s, len;
+	vec3_t		right, up, dir;
+	const float	dec1 = 3.2f, dec2 = 2.6f;
 	cparticle_t	*p;
-	float		dec;
-	vec3_t		right, up;
-	int			i;
-	float		d, c, s;
-	vec3_t		dir;
 
 	VectorSubtract( end, start, vec );
 	len = VectorNormalize( vec );
 	MakeNormalVectors( vec, right, up );
-
-	i = 0;
-	dec = 3.2f;
-	VectorScale( vec, dec, vec );
+	VectorScale( vec, dec1, vec );
 	VectorCopy( start, move );
 
-	while( len > 0 ) {
-		len -= dec;
-
-		if( !(p = new_particle ()) )
-			return;
-		
-		VectorClear( p->accel );
-
+	i = 0;
+	count = (int)(len / dec1) + 1;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
 		d = i++ * 0.1;
 		c = cos( d );
 		s = sin( d );
@@ -600,52 +555,40 @@ void CG_RailTrail( vec3_t start, vec3_t end )
 		VectorScale( right, c, dir );
 		VectorMA( dir, s, up, dir );
 
-		if( random() > 0.9 ) {
-			p->color[0] = 0.7 + crandom()*0.1;
-			p->color[1] = 0.3;
-			p->color[2] = 0.4 + crandom()*0.1;
-		} else {
-			p->color[0] = 0.3 + crandom()*0.1;
-			p->color[1] = 0.3;
-			p->color[2] = 0.8 + crandom()*0.1;
-		}
+		if( random() > 0.9 )
+			CG_InitParticle( p, 2.0f, 1, 0.7 + crandom()*0.1, 0.3, 0.4 + crandom()*0.1 );
+		else
+			CG_InitParticle( p, 2.0f, 1, 0.3 + crandom()*0.1, 0.3, 0.8 + crandom()*0.1 );
 
-		p->scale = 2.0f;
-		p->alphavel = -1.0 / (1 + random()*0.2);
 		for( j = 0; j < 3; j++ ) {
 			p->org[j] = move[j] + dir[j]*3;
 			p->vel[j] = dir[j]*6;
 		}
+
+		p->alphavel = -1.0 / (1 + random()*0.2);
+		VectorClear( p->accel );
 		VectorAdd ( move, vec, move );
 	}
 
 	VectorSubtract( end, start, vec );
 	len = VectorNormalize( vec );
-
-	dec = 2.6f;
-	VectorScale( vec, dec, vec );
+	VectorScale( vec, dec2, vec );
 	VectorCopy( start, move );
 
-	while( len > 0 ) {
-		len -= dec;
-
-		if( !(p = new_particle ()) )
-			return;
-
-		VectorClear( p->accel );
-
-		p->scale = 1.2f;
-
-		p->alphavel = -1.0 / (0.6 + random()*0.2);
-		p->color[0] = 0.7f + crandom()*0.1;
-		p->color[1] = 0.7f + crandom()*0.1;
-		p->color[2] = 0.7f + crandom()*0.1;
+	count = (int)(len / dec2) + 1;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1.2f, 1, 0.7f + crandom()*0.1, 0.7f + crandom()*0.1, 0.7f + crandom()*0.1 );
 
 		for( j = 0; j < 3; j++ ) {
 			p->org[j] = move[j];
 			p->vel[j] = crandom()*3;
-			p->accel[j] = 0;
 		}
+
+		p->fog = qfalse;
+		p->alphavel = -1.0 / (0.6 + random()*0.2);
+		VectorClear( p->accel );
 		VectorAdd( move, vec, move );
 	}
 }
@@ -661,14 +604,12 @@ CG_FlyParticles
 void CG_FlyParticles( vec3_t origin, int count )
 {
 	int			i;
-	cparticle_t	*p;
-	float		angle;
-	float		sr, sp, sy, cr, cp, cy;
+	float		angle, sr, sp, sy, cr, cp, cy;
 	vec3_t		forward, dir;
-	float		dist;
-	float		ltime;
+	float		dist, ltime;
+	cparticle_t	*p;
 
-	if (count > NUMVERTEXNORMALS)
+	if( count > NUMVERTEXNORMALS )
 		count = NUMVERTEXNORMALS;
 
 	if( !avelocities[0][0] ) {
@@ -676,10 +617,14 @@ void CG_FlyParticles( vec3_t origin, int count )
 			avelocities[0][i] = (rand()&255) * 0.01;
 	}
 
+	i = 0;
 	ltime = (float)cg.time / 1000.0;
-	for( i = 0; i < count; i += 2 ) {
-		if( !(p = new_particle ()) )
-			return;
+
+	count /= 2;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1, 1, 0, 0, 0 );
 
 		angle = ltime * avelocities[i][0];
 		sy = sin( angle );
@@ -704,6 +649,8 @@ void CG_FlyParticles( vec3_t origin, int count )
 		VectorClear( p->vel );
 		VectorClear( p->accel );
 		p->alphavel = -100;
+
+		i += 2;
 	}
 }
 
@@ -747,25 +694,24 @@ CG_BfgParticles
 */
 void CG_BfgParticles( vec3_t origin )
 {
-	int			i;
+	int			i, count;
+	float		angle, sr, sp, sy, cr, cp, cy;
+	vec3_t		v, forward, dir;
+	float		dist, ltime;
 	cparticle_t	*p;
-	float		angle;
-	float		sr, sp, sy, cr, cp, cy;
-	vec3_t		forward, dir;
-	float		dist;
-	vec3_t		v;
-	float		ltime;
-	
+
 	if( !avelocities[0][0] ) {
 		for( i = 0; i < NUMVERTEXNORMALS*3; i++ )
 			avelocities[0][i] = (rand()&255) * 0.01;
 	}
 
+	i = 0;
 	ltime = (float)cg.time / 1000.0;
-	for( i = 0; i < NUMVERTEXNORMALS; i++ ) {
-		if( !(p = new_particle ()) )
-			return;
 
+	count = NUMVERTEXNORMALS;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
 		angle = ltime * avelocities[i][0];
 		sy = sin( angle );
 		cy = cos( angle );
@@ -792,12 +738,13 @@ void CG_BfgParticles( vec3_t origin )
 		VectorSubtract( p->org, origin, v );
 		dist = VectorLength( v ) / 90.0;
 
-		p->color[1] = 1.5f * dist;
-		clamp( p->color[1], 0.0f, 1.0f );
+		CG_InitParticle( p, 1.5f, 1.0f - dist, 0, 1.5f * dist, 0 );
+		if( p->color[1] > 1 )
+			p->color[1] = 1;
 
-		p->scale = 1.5f;
-		p->alpha = 1.0f - dist;
 		p->alphavel = -100;
+
+		i++;
 	}
 }
 
@@ -808,15 +755,13 @@ CG_BFGExplosionParticles
 */
 void CG_BFGExplosionParticles( vec3_t org )
 {
-	int			i, j;
+	int			j, count = 256;
 	cparticle_t	*p;
 
-	for( i = 0; i < 256; i++ ) {
-		if( !(p = new_particle ()) )
-			return;
-
-		p->scale = 1.5f;
-		p->color[1] = 0.8f;
+	if( cg_numparticles + count > MAX_PARTICLES )
+		count = MAX_PARTICLES - cg_numparticles;
+	for( p = &particles[cg_numparticles], cg_numparticles += count; count > 0; count--, p++ ) {
+		CG_InitParticle( p, 1.5f, 1.0f, 0, 0.8f, 0 );
 
 		for( j = 0; j < 3; j++ ) {
 			p->org[j] = org[j] + ((rand() & 31) - 16);
@@ -837,27 +782,30 @@ CG_AddParticles
 void CG_AddParticles( void )
 {
 	int				i, j;
-	cparticle_t		*p;
-	float			alpha;
+	float			fpsFrac, alpha;
 	float			time, time2;
 	vec3_t			org;
 	vec3_t			corner;
 	byte_vec4_t		color;
 	struct shader_s *shader;
 	int				maxparticle, activeparticles;
+	float			alphaValues[MAX_PARTICLES];
+	cparticle_t		*p, *free_particles[MAX_PARTICLES];
 
 	if( !cg_numparticles )
 		return;
 
+	j = 0;
 	maxparticle = -1;
 	activeparticles = 0;
 	shader = CG_MediaShader( cgs.media.shaderParticle );
 
-	for( i = 0, j = 0, p = particles; i < cg_numparticles; i++, p++ ) {
-		time = (cg.time - p->time) * 0.001f;
-		alpha = p->alpha + time * p->alphavel;
+	fpsFrac = 1.0f / 100.0f * 0.1;
+	for( i = 0, p = particles; i < cg_numparticles; i++, p++ ) {
+		time = (cg.time - p->time) * fpsFrac;
+		alpha = alphaValues[i] = p->alpha + time * p->alphavel;
 
-		if( alpha <= 0 || p->scale <= 0 ) {		// faded out
+		if( alpha <= 0 ) {		// faded out
 			free_particles[j++] = p;
 			continue;
 		}
@@ -895,6 +843,7 @@ void CG_AddParticles( void )
 		p->poly.stcoords = p->pStcoords;
 		p->poly.colors = p->pColor;
 		p->poly.shader = shader;
+		p->poly.fognum = p->fog ? 0 : -1;
 
 		trap_R_AddPolyToScene( &p->poly );
 	}
@@ -904,11 +853,7 @@ void CG_AddParticles( void )
 		*free_particles[i++] = particles[maxparticle--];
 
 		while( maxparticle >= activeparticles )	{
-			p = &particles[maxparticle];
-			time = (cg.time - p->time) * 0.001f;
-			alpha = p->alpha + time * p->alphavel;
-
-			if( alpha <= 0 )
+			if( alphaValues[maxparticle] <= 0 )
 				maxparticle--;
 			else
 				break;

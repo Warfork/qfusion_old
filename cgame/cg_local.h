@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "cg_public.h"
 #include "cg_syscalls.h"
+#include "cg_pmodels.h"
 
 #define ITEM_RESPAWN_TIME	1000
 
@@ -89,7 +90,7 @@ typedef struct
 	cgs_media_handle_t		*sfxBlasterSplash;
 	cgs_media_handle_t		*sfxHyperblasterSplash;
 
-	cgs_media_handle_t		*sfxShotgunSplashes[2];
+	cgs_media_handle_t		*sfxShotgunSplash;
 	cgs_media_handle_t		*sfxSuperShotgunSplash;
 
 	cgs_media_handle_t		*sfxRocketLauncherSplash;
@@ -98,6 +99,9 @@ typedef struct
 	cgs_media_handle_t		*sfxBFGSplash;
 
 	cgs_media_handle_t		*sfxGibSound;
+
+	cgs_media_handle_t		*sfxWeaponUp;
+	cgs_media_handle_t		*sfxWeaponUpNoAmmo;
 
 	// models
 	cgs_media_handle_t		*modBulletExplode;
@@ -111,6 +115,8 @@ typedef struct
 	cgs_media_handle_t		*modLightning;
 	cgs_media_handle_t		*modMeatyGib;
 	cgs_media_handle_t		*modTeleportEffect;
+	cgs_media_handle_t		*modEjectBrassMachinegun;
+	cgs_media_handle_t		*modEjectBrassShotgun;
 
 	cgs_media_handle_t		*shaderParticle;
 	cgs_media_handle_t		*shaderGrenadeExplosion;
@@ -130,11 +136,35 @@ typedef struct
 	cgs_media_handle_t		*shaderNet;
 	cgs_media_handle_t		*shaderBackTile;
 	cgs_media_handle_t		*shaderSelect;
+	cgs_media_handle_t		*shaderPlasmaBall;
 
 	cgs_media_handle_t		*sbNums[11];
 
 	cgs_media_handle_t		*shaderCrosshair[11];
 } cgs_media_t;
+
+
+typedef struct
+{
+	char					name[MAX_QPATH];
+	int						flags;
+	int						parent;
+} cgs_bone_t;
+
+typedef struct cgs_skeleton_s
+{
+	struct model_s			*model;
+
+	int						numBones;
+	cgs_bone_t				*bones;
+
+	int						numFrames;
+	bonepose_t				**bonePoses;
+
+	struct cgs_skeleton_s	*next;
+} cgs_skeleton_t;
+
+#include "cg_boneposes.h"
 
 typedef struct cg_sexedSfx_s
 {
@@ -145,21 +175,14 @@ typedef struct cg_sexedSfx_s
 
 typedef struct
 {
-	char				name[MAX_QPATH];
-	char				cinfo[MAX_QPATH];
-	int					hand;
-	int					gender;
+	char	name[MAX_QPATH];
+	char	cinfo[MAX_QPATH];
+	int		gender;
+	int		hand;
+
+	struct	shader_s	*icon;
 
 	cg_sexedSfx_t		*sexedSfx;
-
-	struct skinfile_s	*skin;
-	struct shader_s		*shader;
-
-	struct shader_s		*icon;
-	char				iconname[MAX_QPATH];
-
-	struct model_s		*model;
-	struct model_s		*weaponmodel[WEAP_TOTAL];
 } cg_clientInfo_t;
 
 // this is not exactly "static" but still...
@@ -167,7 +190,8 @@ typedef struct
 {
 	int					playerNum;
 	qboolean			attractLoop;		// running cinematics and demos for the local system only
-	
+	unsigned int		serverFrameTime;	// msecs between server frames
+
 	// shaders
 	struct shader_s		*shaderWhite;
 	struct shader_s		*shaderCharset;
@@ -179,6 +203,8 @@ typedef struct
 
 	int					vidWidth, vidHeight;
 
+	int					gametype;
+
 	//
 	// locally derived information from server state
 	//
@@ -188,10 +214,15 @@ typedef struct
 	int					numWeaponModels;
 
 	cg_clientInfo_t		clientInfo[MAX_CLIENTS];
-	cg_clientInfo_t		baseClientInfo;
 
 	struct model_s		*modelDraw[MAX_MODELS];
 	struct model_s		*inlineModelDraw[MAX_MODELS];
+
+	struct pmodelinfo_s	*pModelsIndex[MAX_MODELS];
+	struct pskin_s		*pSkinsIndex[MAX_IMAGES];
+
+	struct pmodelinfo_s	*basePModelInfo;
+	struct pskin_s		*basePSkin;
 
 	struct sfx_s		*soundPrecache[MAX_SOUNDS];
 	struct shader_s		*imagePrecache[MAX_IMAGES];
@@ -206,6 +237,8 @@ typedef struct
 
 	frame_t				frame, oldFrame;
 	qboolean			frameSequenceRunning;
+	qboolean			oldAreabits;
+	qboolean			portalInView;
 
  	int					predictedOrigins[CMD_BACKUP][3];	// for debug comparing against server
 
@@ -225,9 +258,13 @@ typedef struct
 	refdef_t			refdef;
 
 	vec3_t				v_forward, v_right, v_up;	// set when refdef.angles is set
+	vec3_t				lightingOrigin;		// store resulting lightingOrigin for player's entity here
+											// (we reuse it for weapon model later)
 
 	int					effects;
 	qboolean			thirdPerson;
+
+	int					chasedNum;
 
 	//
 	// all cyclic walking effects
@@ -271,6 +308,8 @@ void CG_NewPacketEntityState( int entnum, entity_state_t state );
 void CG_AddEntities( void );
 void CG_GlobalSound( vec3_t origin, int entNum, int entChannel, int soundNum, float fvol, float attenuation );
 void CG_GetEntitySoundOrigin( int entNum, vec3_t org );
+void CG_CalcGunOffset( player_state_t *ps, player_state_t *ops, vec3_t angles );
+void CG_AddViewWeapon( void );
 
 //
 // cg_draw.c
@@ -366,7 +405,7 @@ void SCR_Draw2D( void );
 void SCR_CalcVrect( void );
 void SCR_TileClear( void );
 void SCR_DrawLoading( void );
-void SCR_CenterPrint( char *str );
+void SCR_CenterPrint( const char *str );
 
 void CG_LoadLayout( char *s );
 void CG_LoadStatusBar( char *s );
@@ -391,11 +430,11 @@ extern struct mempool_s *cgamepool;
 #define CG_Free(data) CG_MemFree(data)
 
 int CG_API( void );
-void CG_Init( int playerNum, qboolean attractLoop, int vidWidth, int vidHeight );
+void CG_Init( int playerNum, qboolean attractLoop, unsigned int serverFrameTime, int vidWidth, int vidHeight );
 void CG_Shutdown( void );
 void CG_Printf( char *fmt, ... );
 void CG_Error( char *fmt, ... );
-char *CG_CopyString( char *in );
+char *CG_CopyString( const char *in );
 void CG_FixUpGender( void );
 
 //
@@ -439,6 +478,8 @@ void CG_TeleportEffect( vec3_t org );
 void CG_BFGLaser( vec3_t start, vec3_t end );
 void CG_BFGExplosion( vec3_t pos );
 void CG_BFGBigExplosion( vec3_t pos );
+void CG_SmallPileOfGibs( vec3_t origin, int	count, vec3_t velocity );
+void CG_EjectBrass( vec3_t origin, int	count, struct model_s *model );
 
 //
 // cg_decals.c

@@ -21,13 +21,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "g_local.h"
 #include "m_player.h"
+#include "gs_pmodels.h"
 
 
 static qboolean	is_quad;
 static qbyte	is_silenced;
-
-
-void weapon_grenade_fire (edict_t *ent, qboolean held);
 
 
 void P_ProjectSource (gclient_t *client, vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result)
@@ -175,14 +173,6 @@ void ChangeWeapon (edict_t *ent)
 {
 	gclient_t *client = ent->r.client;
 
-	if (client->grenade_time)
-	{
-		client->grenade_time = level.time;
-		client->weapon_sound = 0;
-		weapon_grenade_fire (ent, qfalse);
-		client->grenade_time = 0;
-	}
-
 	client->pers.lastweapon = client->pers.weapon;
 	client->pers.weapon = client->newweapon;
 	client->newweapon = NULL;
@@ -196,39 +186,29 @@ void ChangeWeapon (edict_t *ent)
 	else
 		client->ammo_index = 0;
 
-	if (!client->pers.weapon)
-	{	// dead
-		client->ps.gunindex = 0;
+	if (!client->pers.weapon)	// dead
 		return;
-	}
 
-	if ( level.time >= ent->pain_debounce_time ) {
-		if ( !client->noammo ) {
-			G_Sound ( ent, CHAN_VOICE, trap_SoundIndex( "sound/weapons/change.wav" ), 1, ATTN_NORM );
-		} else {
-			G_Sound ( ent, CHAN_VOICE, trap_SoundIndex( "sound/weapons/noammo.wav" ), 1, ATTN_NORM );
-		}
+	// remove the hold priority from weaponOUT and
+	// set a standard animation for BASIC
+	ent->pmAnim.anim_priority[UPPER] = ANIM_BASIC;
+	ent->pmAnim.anim[UPPER] = TORSO_STAND;
+
+	//Send the weaponIN animation and sound style through EVENTs
+	if( level.time >= ent->pain_debounce_time ) {
+		if( !ent->r.client->noammo )
+			G_AddEvent (ent, EV_WEAPONUP, 1, qtrue);
+		else
+			G_AddEvent (ent, EV_WEAPONUP, 2, qtrue);
 
 		ent->pain_debounce_time = level.time + 1;
-	}
+	} else 
+		G_AddEvent (ent, EV_WEAPONUP, 0, qtrue);
 
 	client->noammo = qfalse;
 	client->weaponstate = WEAPON_ACTIVATING;
-	client->ps.gunframe = 0;
-	client->ps.gunindex = trap_ModelIndex (client->pers.weapon->view_model);
-
-	client->anim_priority = ANIM_PAIN;
-
-	if (client->ps.pmove.pm_flags & PMF_DUCKED)
-	{
-		ent->s.frame = FRAME_crpain1;
-		client->anim_end = FRAME_crpain4;
-	}
-	else
-	{
-		ent->s.frame = FRAME_pain301;
-		client->anim_end = FRAME_pain304;
-	}
+	client->weapontime = 0;
+	client->machinegun_shots = 0;
 }
 
 /*
@@ -299,7 +279,7 @@ void Think_Weapon (edict_t *ent)
 	// call active weapon think routine
 	if (ent->r.client->pers.weapon && ent->r.client->pers.weapon->weaponthink)
 	{
-		is_quad = (ent->r.client->quad_framenum > level.framenum);
+		is_quad = (ent->r.client->quad_timeout > level.time);
 		if (ent->r.client->silencer_shots)
 			is_silenced = MZ_SILENCED;
 		else
@@ -381,13 +361,8 @@ Weapon_Generic
 A generic function to handle the basics of weapon thinking
 ================
 */
-#define FRAME_FIRE_FIRST		(FRAME_ACTIVATE_LAST + 1)
-#define FRAME_IDLE_FIRST		(FRAME_FIRE_LAST + 1)
-#define FRAME_DEACTIVATE_FIRST	(FRAME_IDLE_LAST + 1)
-
-static void Weapon_Generic2 (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST, int FRAME_IDLE_LAST, int FRAME_DEACTIVATE_LAST, int *pause_frames, int *fire_frames, void (*fire)(edict_t *ent))
+static void Weapon_Generic2 (edict_t *ent, int ACTIVATION_TIME, int POWERUP_TIME, int FIRE_DELAY, int COOLDOWN_TIME, int DEACTIVATION_TIME, void (*fire)(edict_t *ent))
 {
-	int		n;
 	gclient_t *client = ent->r.client;
 
 	client->weapon_missed = qtrue;
@@ -396,160 +371,167 @@ static void Weapon_Generic2 (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FI
 
 	if (client->weaponstate == WEAPON_DROPPING)
 	{
-		if (client->ps.gunframe == FRAME_DEACTIVATE_LAST)
+		if (client->weapontime >= DEACTIVATION_TIME)
 		{
 			ChangeWeapon (ent);
 			return;
-		}
-		else if ((FRAME_DEACTIVATE_LAST - client->ps.gunframe) == 4)
-		{
-			client->anim_priority = ANIM_REVERSE;
-			if (client->ps.pmove.pm_flags & PMF_DUCKED)
-			{
-				ent->s.frame = FRAME_crpain4+1;
-				client->anim_end = FRAME_crpain1;
-			}
-			else
-			{
-				ent->s.frame = FRAME_pain304+1;
-				client->anim_end = FRAME_pain301;
-				
-			}
+		} 
+		else if ((DEACTIVATION_TIME - client->weapontime) <= (TORSO_FLIPOUT_TIME - 100))
+		{	// weaponOUT
+			ent->pmAnim.anim_priority[UPPER] = ANIM_HOLD; // hold this animation until weaponIN removes it
+			ent->pmAnim.anim[UPPER] = TORSO_FLIPOUT;
 		}
 
-		client->ps.gunframe++;
+		client->weapontime += game.frametimeMsec;
 		return;
 	}
 
 	if (client->weaponstate == WEAPON_ACTIVATING)
 	{
-		if (client->ps.gunframe == FRAME_ACTIVATE_LAST || instantweap->integer)
+		if (client->weapontime < ACTIVATION_TIME && !instantweap->integer)
+		{
+			client->weapontime += game.frametimeMsec;
+			return;
+		}
+		else
 		{
 			client->weaponstate = WEAPON_READY;
-			client->ps.gunframe = FRAME_IDLE_FIRST;
-			return;
+			client->weapontime = 0;
 		}
-
-		client->ps.gunframe++;
-		return;
 	}
 
-	if ((client->newweapon) && (client->weaponstate != WEAPON_FIRING))
+	if (client->weaponstate == WEAPON_COOLINGDOWN)
+	{
+		if (client->weapontime < COOLDOWN_TIME)
+		{
+			client->weapontime += game.frametimeMsec;
+		}
+		else
+		{
+			client->weapontime = 0;
+			client->weaponstate = WEAPON_READY;
+		}
+	}
+
+	if (client->newweapon && (client->weaponstate != WEAPON_FIRING))
 	{
 		client->weaponstate = WEAPON_DROPPING;
-		if (instantweap->integer) {
+		if (instantweap->integer)
+		{
 			ChangeWeapon(ent);
 			return;
-		} else
-			client->ps.gunframe = FRAME_DEACTIVATE_FIRST;
-
-		if ((FRAME_DEACTIVATE_LAST - FRAME_DEACTIVATE_FIRST) < 4)
+		} 
+		else
 		{
-			client->anim_priority = ANIM_REVERSE;
-			if (client->ps.pmove.pm_flags & PMF_DUCKED)
-			{
-				ent->s.frame = FRAME_crpain4+1;
-				client->anim_end = FRAME_crpain1;
-			}
-			else
-			{
-				ent->s.frame = FRAME_pain304+1;
-				client->anim_end = FRAME_pain301;
-				
-			}
+			client->weapontime = game.frametimeMsec;
+		}
+
+		if( DEACTIVATION_TIME < ( TORSO_FLIPOUT_TIME - 100 ) )
+		{	// weaponOUT
+			ent->pmAnim.anim_priority[UPPER] = ANIM_HOLD;
+			ent->pmAnim.anim[UPPER] = TORSO_FLIPOUT;
 		}
 		return;
 	}
 
-	if (client->weaponstate == WEAPON_READY)
+	if (client->weaponstate == WEAPON_COOLINGDOWN)
+		return;
+
+	if (client->weaponstate == WEAPON_READY || client->weaponstate == WEAPON_POWERINGUP || client->weaponstate == WEAPON_FIRING)
 	{
 		if ( ((client->latched_buttons|client->buttons) & BUTTON_ATTACK) )
 		{
 			client->latched_buttons &= ~BUTTON_ATTACK;
-			if ((!client->ammo_index) || 
+			if( !client->ammo_index || 
 				( client->pers.inventory[client->ammo_index] >= client->pers.weapon->quantity))
 			{
-				client->ps.gunframe = FRAME_FIRE_FIRST;
-				client->weaponstate = WEAPON_FIRING;
+				if (client->weaponstate == WEAPON_READY)
+				{
+					client->weapontime = 0;
+					client->weaponstate = WEAPON_POWERINGUP;
 
-				// start the animation
-				client->anim_priority = ANIM_ATTACK;
-				if (client->ps.pmove.pm_flags & PMF_DUCKED)
-				{
-					ent->s.frame = FRAME_crattak1-1;
-					client->anim_end = FRAME_crattak9;
+					// HACK HACK HACK
+					if (ent->s.weapon == WEAP_BFG)
+					{	// send muzzle flash
+						G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
+						PlayerNoise (ent, ent->s.origin, PNOISE_WEAPON);
+					}
 				}
-				else
+
+				if (client->weaponstate == WEAPON_POWERINGUP)
 				{
-					ent->s.frame = FRAME_attack1-1;
-					client->anim_end = FRAME_attack8;
+					if (client->weapontime < POWERUP_TIME)
+					{
+						client->weapontime += game.frametimeMsec;
+						return;
+					}
+					else
+					{
+						client->weapontime = -1;
+						client->weaponstate = WEAPON_FIRING;
+					}
 				}
-			} else {
-				NoAmmoWeaponChange ( client );
+			}
+			else
+			{
+				client->weapontime = 0;
+				client->weaponstate = WEAPON_COOLINGDOWN;
+				NoAmmoWeaponChange( client );
+				return;
 			}
 		}
 		else
 		{
-			if (client->ps.gunframe == FRAME_IDLE_LAST)
+			if (client->weaponstate == WEAPON_POWERINGUP)
 			{
-				client->ps.gunframe = FRAME_IDLE_FIRST;
+				client->weaponstate = WEAPON_COOLINGDOWN;
+				client->weapontime = -(FIRE_DELAY - client->weapontime);
 				return;
 			}
-
-			if (pause_frames)
-			{
-				for (n = 0; pause_frames[n]; n++)
-				{
-					if (client->ps.gunframe == pause_frames[n])
-					{
-						if (rand()&15)
-							return;
-					}
-				}
-			}
-
-			client->ps.gunframe++;
-			return;
 		}
 	}
 
 	if (client->weaponstate == WEAPON_FIRING)
 	{
-		for (n = 0; fire_frames[n]; n++)
-		{
-			if (client->ps.gunframe == fire_frames[n])
-			{
-//ZOID
-				if (!CTFApplyStrengthSound(ent))
-//ZOID
-				if (client->quad_framenum > level.framenum)
-					G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/items/damage3.wav"), 1, ATTN_NORM);
-//ZOID
-				CTFApplyHasteSound(ent);
-//ZOID
+		if (client->weapontime > 0 && !(client->buttons & BUTTON_ATTACK))
+		{	// stopped firing
+			client->weapon_sound = 0;		// FIXME?
+			client->machinegun_shots = 0;
 
-				fire (ent);
-				client->weapon_missed = qfalse;
-				break;
-			}
+			client->weapontime = -(FIRE_DELAY - client->weapontime);
+			client->weaponstate = WEAPON_COOLINGDOWN;
+			return;
 		}
 
-		if (!fire_frames[n])
-			client->ps.gunframe++;
+		if (client->weapontime < 0 || client->weapontime >= FIRE_DELAY)
+		{
+			client->weapontime = 0;
+//ZOID
+			if (!CTFApplyStrengthSound(ent))
+//ZOID
+			if (client->quad_timeout > level.time)
+				G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/items/damage3.wav"), 1, ATTN_NORM);
+//ZOID
+			CTFApplyHasteSound(ent);
+//ZOID
 
-		if (client->ps.gunframe == FRAME_IDLE_FIRST+1)
-			client->weaponstate = WEAPON_READY;
+			fire (ent);
+
+			client->weapon_missed = qfalse;
+		}
+
+		client->weapontime += game.frametimeMsec;
 	}
 }
 
 //ZOID
-void Weapon_Generic (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST, int FRAME_IDLE_LAST, int FRAME_DEACTIVATE_LAST, int *pause_frames, int *fire_frames, void (*fire)(edict_t *ent))
+void Weapon_Generic (edict_t *ent, int ACTIVATION_TIME, int POWERUP_TIME, int FIRE_DELAY, int COOLDOWN_TIME, int DEACTIVATION_TIME, void (*fire)(edict_t *ent))
 {
 	int oldstate = ent->r.client->weaponstate;
 
-	Weapon_Generic2 (ent, FRAME_ACTIVATE_LAST, FRAME_FIRE_LAST, 
-		FRAME_IDLE_LAST, FRAME_DEACTIVATE_LAST, pause_frames, 
-		fire_frames, fire);
+	Weapon_Generic2 (ent, ACTIVATION_TIME, POWERUP_TIME, 
+		FIRE_DELAY, COOLDOWN_TIME,
+		DEACTIVATION_TIME, fire);
 
 	// run the weapon frame again if hasted
 	if (Q_stricmp(ent->r.client->pers.weapon->pickup_name, "Grapple") == 0 &&
@@ -560,170 +542,12 @@ void Weapon_Generic (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST,
 		(Q_stricmp(ent->r.client->pers.weapon->pickup_name, "Grapple") == 0 &&
 		ent->r.client->weaponstate != WEAPON_FIRING))
 		&& oldstate == ent->r.client->weaponstate) {
-		Weapon_Generic2 (ent, FRAME_ACTIVATE_LAST, FRAME_FIRE_LAST, 
-			FRAME_IDLE_LAST, FRAME_DEACTIVATE_LAST, pause_frames, 
-			fire_frames, fire);
+		Weapon_Generic2 (ent, ACTIVATION_TIME, POWERUP_TIME, 
+			FIRE_DELAY, COOLDOWN_TIME,
+			DEACTIVATION_TIME, fire);
 	}
 }
 //ZOID
-
-/*
-======================================================================
-
-GRENADE
-
-======================================================================
-*/
-
-#define GRENADE_TIMER		3.0
-#define GRENADE_MINSPEED	400
-#define GRENADE_MAXSPEED	800
-
-void weapon_grenade_fire (edict_t *ent, qboolean held)
-{
-	vec3_t	offset;
-	vec3_t	forward, right;
-	vec3_t	start;
-	int		damage = 125;
-	float	timer;
-	int		speed;
-	float	radius;
-	gclient_t *client = ent->r.client;
-
-	radius = damage+40;
-	if (is_quad)
-		damage *= 4;
-
-	VectorSet(offset, 8, 8, ent->viewheight-8);
-	AngleVectors (client->v_angle, forward, right, NULL);
-	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
-
-	timer = client->grenade_time - level.time;
-	speed = GRENADE_MINSPEED + (GRENADE_TIMER - timer) * ((GRENADE_MAXSPEED - GRENADE_MINSPEED) / GRENADE_TIMER);
-	fire_grenade2 (ent, start, forward, damage, speed, timer, radius, held);
-
-	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
-		client->pers.inventory[client->ammo_index]--;
-
-	client->grenade_time = level.time + 1.0;
-
-	if (ent->deadflag || ent->s.modelindex != 255) // VWep animations screw up corpses
-		return;
-
-	if (client->ps.pmove.pm_flags & PMF_DUCKED)
-	{
-		client->anim_priority = ANIM_ATTACK;
-		ent->s.frame = FRAME_crattak1-1;
-		client->anim_end = FRAME_crattak3;
-	}
-	else
-	{
-		client->anim_priority = ANIM_REVERSE;
-		ent->s.frame = FRAME_wave08;
-		client->anim_end = FRAME_wave01;
-	}
-}
-
-void Weapon_Grenade (edict_t *ent)
-{
-	gclient_t *client = ent->r.client;
-
-	if (client->newweapon && (client->weaponstate == WEAPON_READY))
-	{
-		ChangeWeapon (ent);
-		return;
-	}
-
-	if (client->weaponstate == WEAPON_ACTIVATING)
-	{
-		client->weaponstate = WEAPON_READY;
-		client->ps.gunframe = 16;
-		return;
-	}
-
-	if (client->weaponstate == WEAPON_READY)
-	{
-		if ( ((client->latched_buttons|client->buttons) & BUTTON_ATTACK) )
-		{
-			client->latched_buttons &= ~BUTTON_ATTACK;
-			if (client->pers.inventory[client->ammo_index])
-			{
-				client->ps.gunframe = 1;
-				client->weaponstate = WEAPON_FIRING;
-				client->grenade_time = 0;
-			} else {
-				NoAmmoWeaponChange ( client );
-			}
-			return;
-		}
-
-		if ((client->ps.gunframe == 29) || (client->ps.gunframe == 34) || (client->ps.gunframe == 39) || (client->ps.gunframe == 48))
-		{
-			if (rand()&15)
-				return;
-		}
-
-		if (++client->ps.gunframe > 48)
-			client->ps.gunframe = 16;
-		return;
-	}
-
-	if (client->weaponstate == WEAPON_FIRING)
-	{
-		if (client->ps.gunframe == 5)
-			G_Sound (ent, CHAN_WEAPON, trap_SoundIndex("sound/weapons/hgrena1b.wav"), 1, ATTN_NORM);
-
-		if (client->ps.gunframe == 11)
-		{
-			if (!client->grenade_time)
-			{
-				client->grenade_time = level.time + GRENADE_TIMER + 0.2;
-				client->weapon_sound = trap_SoundIndex("sound/weapons/hgrenc1b.wav");
-			}
-
-			// they waited too long, detonate it in their hand
-			if (!client->grenade_blew_up && level.time >= client->grenade_time)
-			{
-				client->weapon_sound = 0;
-				weapon_grenade_fire (ent, qtrue);
-				client->grenade_blew_up = qtrue;
-			}
-
-			if (client->buttons & BUTTON_ATTACK)
-				return;
-
-			if (client->grenade_blew_up)
-			{
-				if (level.time >= client->grenade_time)
-				{
-					client->ps.gunframe = 15;
-					client->grenade_blew_up = qfalse;
-				}
-				else
-				{
-					return;
-				}
-			}
-		}
-
-		if (client->ps.gunframe == 12)
-		{
-			client->weapon_sound = 0;
-			weapon_grenade_fire (ent, qfalse);
-		}
-
-		if ((client->ps.gunframe == 15) && (level.time < client->grenade_time))
-			return;
-
-		client->ps.gunframe++;
-
-		if (client->ps.gunframe == 16)
-		{
-			client->grenade_time = 0;
-			client->weaponstate = WEAPON_READY;
-		}
-	}
-}
 
 /*
 ======================================================================
@@ -750,13 +574,10 @@ void weapon_grenadelauncher_fire (edict_t *ent)
 	AngleVectors (client->v_angle, forward, right, NULL);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
 
-	VectorScale (forward, -2, client->kick_origin);
-	client->kick_angles[0] = -1;
+	P_AddWeaponKick (client, tv(-2, 0, 0), tv(-1.5, 0, 0), 0.2);
 
 	fire_grenade (ent, start, forward, damage, 650, 2.5, radius);
 	G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
-
-	client->ps.gunframe++;
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
@@ -766,10 +587,8 @@ void weapon_grenadelauncher_fire (edict_t *ent)
 
 void Weapon_GrenadeLauncher (edict_t *ent)
 {
-	static int	pause_frames[]	= {34, 51, 59, 0};
-	static int	fire_frames[]	= {6, 0};
-
-	Weapon_Generic (ent, 5, 16, 59, 64, pause_frames, fire_frames, weapon_grenadelauncher_fire);
+	// FRAME_ACTIVATE_LAST = 5, FRAME_FIRE_LAST = 16, FRAME_IDLE_LAST = 59, FRAME_DEACTIVATE_LAST = 64
+	Weapon_Generic (ent, 500, 0, 800, 0, 100, weapon_grenadelauncher_fire);
 }
 
 /*
@@ -801,8 +620,7 @@ void Weapon_RocketLauncher_Fire (edict_t *ent)
 
 	AngleVectors (client->v_angle, forward, right, NULL);
 
-	VectorScale (forward, -2, client->kick_origin);
-	client->kick_angles[0] = -1;
+	P_AddWeaponKick (client, tv(-2, 0, 0), tv(-2.5, 0, 0), 0.25);
 
 	VectorSet(offset, 8, 8, ent->viewheight-8);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
@@ -814,8 +632,6 @@ void Weapon_RocketLauncher_Fire (edict_t *ent)
 	// send muzzle flash
 	G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
 
-	client->ps.gunframe++;
-
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
 	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
@@ -824,10 +640,8 @@ void Weapon_RocketLauncher_Fire (edict_t *ent)
 
 void Weapon_RocketLauncher (edict_t *ent)
 {
-	static int	pause_frames[]	= {25, 33, 42, 50, 0};
-	static int	fire_frames[]	= {5, 0};
-
-	Weapon_Generic (ent, 4, 12, 50, 54, pause_frames, fire_frames, Weapon_RocketLauncher_Fire);
+	// FRAME_ACTIVATE_LAST = 4, FRAME_FIRE_LAST = 12, FRAME_IDLE_LAST = 50, FRAME_DEACTIVATE_LAST = 54
+	Weapon_Generic (ent, 400, 0, 800, 0, 100, Weapon_RocketLauncher_Fire);
 }
 
 
@@ -853,8 +667,7 @@ void Blaster_Fire (edict_t *ent, vec3_t g_offset, int damage, qboolean hyper, in
 	VectorAdd (offset, g_offset, offset);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
 
-	VectorScale (forward, -2, client->kick_origin);
-	client->kick_angles[0] = -1;
+	P_AddWeaponKick (client, tv(-2, 0, 0), tv(-1, 0, 0), 0.15);
 
 	fire_blaster (ent, start, forward, damage, 1000, type, hyper ? MOD_HYPERBLASTER : MOD_BLASTER);
 
@@ -867,22 +680,14 @@ void Blaster_Fire (edict_t *ent, vec3_t g_offset, int damage, qboolean hyper, in
 
 void Weapon_Blaster_Fire (edict_t *ent)
 {
-	int		damage;
-
-	if (deathmatch->integer)
-		damage = 15;
-	else
-		damage = 10;
+	int		damage = deathmatch->integer ? 15 : 10;
 	Blaster_Fire (ent, vec3_origin, damage, qfalse, ET_BLASTER);
-	ent->r.client->ps.gunframe++;
 }
 
 void Weapon_Blaster (edict_t *ent)
 {
-	static int	pause_frames[]	= {19, 32, 0};
-	static int	fire_frames[]	= {5, 0};
-
-	Weapon_Generic (ent, 4, 8, 52, 55, pause_frames, fire_frames, Weapon_Blaster_Fire);
+	// FRAME_ACTIVATE_LAST = 4, FRAME_FIRE_LAST = 8, FRAME_IDLE_LAST = 52, FRAME_DEACTIVATE_LAST = 55
+	Weapon_Generic (ent, 400, 0, 400, 0, 100, Weapon_Blaster_Fire);
 }
 
 
@@ -891,68 +696,36 @@ void Weapon_HyperBlaster_Fire (edict_t *ent)
 	float	rotation;
 	vec3_t	offset;
 	int		type;
-	int		damage;
+	int		damage = deathmatch->integer ? 15 : 20;
 	gclient_t *client = ent->r.client;
 
-	client->weapon_sound = trap_SoundIndex("sound/weapons/hyprbl1a.wav");
+	if (!client->machinegun_shots)
+		client->machinegun_shots = 6;
 
-	if (!(client->buttons & BUTTON_ATTACK))
-	{
-		client->ps.gunframe++;
-	}
+	rotation = (client->machinegun_shots - 5) * M_TWOPI/6;
+	offset[0] = -4 * sin(rotation);
+	offset[1] = 0;
+	offset[2] = 4 * cos(rotation);
+
+	if (client->machinegun_shots == 6 || client->machinegun_shots == 9)
+		type = ET_HYPERBLASTER;
 	else
-	{
-		if (! client->pers.inventory[client->ammo_index] ) {
-			NoAmmoWeaponChange ( client );
-		} else {
-			rotation = (client->ps.gunframe - 5) * M_TWOPI/6;
-			offset[0] = -4 * sin(rotation);
-			offset[1] = 0;
-			offset[2] = 4 * cos(rotation);
+		type = ET_BLASTER2;
 
-			if ((client->ps.gunframe == 6) || (client->ps.gunframe == 9))
-				type = ET_HYPERBLASTER;
-			else
-				type = ET_GENERIC;
-			if (deathmatch->integer)
-				damage = 15;
-			else
-				damage = 20;
-			Blaster_Fire (ent, offset, damage, qtrue, type);
-			if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
-				client->pers.inventory[client->ammo_index]--;
+	Blaster_Fire (ent, offset, damage, qtrue, type);
 
-			client->anim_priority = ANIM_ATTACK;
-			if (client->ps.pmove.pm_flags & PMF_DUCKED)
-			{
-				ent->s.frame = FRAME_crattak1 - 1;
-				client->anim_end = FRAME_crattak9;
-			}
-			else
-			{
-				ent->s.frame = FRAME_attack1 - 1;
-				client->anim_end = FRAME_attack8;
-			}
-		}
+	client->machinegun_shots++;
+	if (client->machinegun_shots == 12)
+		client->machinegun_shots = 6;
 
-		client->ps.gunframe++;
-		if (client->ps.gunframe == 12 && client->pers.inventory[client->ammo_index])
-			client->ps.gunframe = 6;
-	}
-
-	if (client->ps.gunframe == 12)
-	{
-		G_Sound (ent, CHAN_AUTO, trap_SoundIndex("sound/weapons/hyprbd1a.wav"), 1, ATTN_NORM);
-		client->weapon_sound = 0;
-	}
+	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
+		client->pers.inventory[client->ammo_index]--;
 }
 
 void Weapon_HyperBlaster (edict_t *ent)
 {
-	static int	pause_frames[]	= {0};
-	static int	fire_frames[]	= {6, 7, 8, 9, 10, 11, 0};
-
-	Weapon_Generic (ent, 5, 20, 49, 53, pause_frames, fire_frames, Weapon_HyperBlaster_Fire);
+	// FRAME_ACTIVATE_LAST = 5, FRAME_FIRE_LAST = 20, FRAME_IDLE_LAST = 49, FRAME_DEACTIVATE_LAST = 53
+	Weapon_Generic (ent, 500, 0, 100, 100, 100, Weapon_HyperBlaster_Fire);
 }
 
 /*
@@ -965,7 +738,6 @@ MACHINEGUN / CHAINGUN
 
 void Machinegun_Fire (edict_t *ent)
 {
-	int	i;
 	vec3_t		start;
 	vec3_t		forward, right;
 	vec3_t		angles;
@@ -974,38 +746,16 @@ void Machinegun_Fire (edict_t *ent)
 	vec3_t		offset;
 	gclient_t	*client = ent->r.client;
 
-	if (!(client->buttons & BUTTON_ATTACK))
-	{
-		client->machinegun_shots = 0;
-		client->ps.gunframe++;
-		return;
-	}
-
-	if (client->ps.gunframe == 5)
-		client->ps.gunframe = 4;
-	else
-		client->ps.gunframe = 5;
-
-	if (client->pers.inventory[client->ammo_index] < 1)
-	{
-		client->ps.gunframe = 6;
-		NoAmmoWeaponChange ( client );
-		return;
-	}
-
 	if (is_quad)
 	{
 		damage *= 4;
 		kick *= 4;
 	}
 
-	for (i=1 ; i<3 ; i++)
-	{
-		client->kick_origin[i] = crandom() * 0.35;
-		client->kick_angles[i] = crandom() * 0.7;
-	}
-	client->kick_origin[0] = crandom() * 0.35;
-	client->kick_angles[0] = client->machinegun_shots * -1.5;
+	P_AddWeaponKick (client, 
+		tv (-1.0f + crandom() * 0.35f, crandom() * 0.35f, crandom() * 0.15f), 
+		tv (-1.5f + crandom() * 0.35f, crandom() * 0.35f, crandom() * 0.2f), 
+		0.2);
 
 	// raise the gun as it is firing
 	if (!deathmatch->integer)
@@ -1016,7 +766,7 @@ void Machinegun_Fire (edict_t *ent)
 	}
 
 	// get start / end positions
-	VectorAdd (client->v_angle, client->kick_angles, angles);
+	VectorAdd (client->v_angle, client->ps.kick_angles, angles);
 	AngleVectors (angles, forward, right, NULL);
 	VectorSet(offset, 0, 8, ent->viewheight-8);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
@@ -1027,26 +777,12 @@ void Machinegun_Fire (edict_t *ent)
 
 	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
 		client->pers.inventory[client->ammo_index]--;
-
-	client->anim_priority = ANIM_ATTACK;
-	if (client->ps.pmove.pm_flags & PMF_DUCKED)
-	{
-		ent->s.frame = FRAME_crattak1 - (int) (random()+0.25);
-		client->anim_end = FRAME_crattak9;
-	}
-	else
-	{
-		ent->s.frame = FRAME_attack1 - (int) (random()+0.25);
-		client->anim_end = FRAME_attack8;
-	}
 }
 
 void Weapon_Machinegun (edict_t *ent)
 {
-	static int	pause_frames[]	= {23, 45, 0};
-	static int	fire_frames[]	= {4, 5, 0};
-
-	Weapon_Generic (ent, 3, 5, 45, 49, pause_frames, fire_frames, Machinegun_Fire);
+	// FRAME_ACTIVATE_LAST = 3, FRAME_FIRE_LAST = 5, FRAME_IDLE_LAST = 45, FRAME_DEACTIVATE_LAST = 49
+	Weapon_Generic (ent, 300, 0, 100, 0, 100, Machinegun_Fire);
 }
 
 void Chaingun_Fire (edict_t *ent)
@@ -1066,50 +802,13 @@ void Chaingun_Fire (edict_t *ent)
 	else
 		damage = 8;
 
-	if (client->ps.gunframe == 5)
+	if (!client->weapontime)
 		G_Sound (ent, CHAN_AUTO, trap_SoundIndex("sound/weapons/chngnu1a.wav"), 1, ATTN_IDLE);
+	client->weapon_sound = trap_SoundIndex("sound/weapons/chngnl1a.wav");
 
-	if ((client->ps.gunframe == 14) && !(client->buttons & BUTTON_ATTACK))
-	{
-		client->ps.gunframe = 32;
-		client->weapon_sound = 0;
-		return;
-	}
-	else if ((client->ps.gunframe == 21) && (client->buttons & BUTTON_ATTACK)
-		&& client->pers.inventory[client->ammo_index])
-	{
-		client->ps.gunframe = 15;
-	}
-	else
-	{
-		client->ps.gunframe++;
-	}
-
-	if (client->ps.gunframe == 22)
-	{
-		client->weapon_sound = 0;
-		G_Sound (ent, CHAN_AUTO, trap_SoundIndex("sound/weapons/chngnd1a.wav"), 1, ATTN_IDLE);
-	}
-	else
-	{
-		client->weapon_sound = trap_SoundIndex("sound/weapons/chngnl1a.wav");
-	}
-
-	client->anim_priority = ANIM_ATTACK;
-	if (client->ps.pmove.pm_flags & PMF_DUCKED)
-	{
-		ent->s.frame = FRAME_crattak1 - (client->ps.gunframe & 1);
-		client->anim_end = FRAME_crattak9;
-	}
-	else
-	{
-		ent->s.frame = FRAME_attack1 - (client->ps.gunframe & 1);
-		client->anim_end = FRAME_attack8;
-	}
-
-	if (client->ps.gunframe <= 9)
+	if (client->machinegun_shots <= 9)
 		shots = 1;
-	else if (client->ps.gunframe <= 14)
+	else if (client->machinegun_shots <= 14)
 	{
 		if (client->buttons & BUTTON_ATTACK)
 			shots = 2;
@@ -1119,14 +818,12 @@ void Chaingun_Fire (edict_t *ent)
 	else
 		shots = 3;
 
+	client->machinegun_shots++;
+	if (client->machinegun_shots == 22)
+		client->machinegun_shots = 15;
+
 	if (client->pers.inventory[client->ammo_index] < shots)
 		shots = client->pers.inventory[client->ammo_index];
-
-	if (!shots)
-	{
-		NoAmmoWeaponChange ( client );
-		return;
-	}
 
 	if (is_quad)
 	{
@@ -1134,11 +831,10 @@ void Chaingun_Fire (edict_t *ent)
 		kick *= 4;
 	}
 
-	for (i=0 ; i<3 ; i++)
-	{
-		client->kick_origin[i] = crandom() * 0.35;
-		client->kick_angles[i] = crandom() * 0.7;
-	}
+	P_AddWeaponKick (client, 
+		tv (-1.0f + crandom() * 0.7f, crandom() * 0.7f, crandom() * 0.7f), 
+		tv (-1.5f + crandom() * 0.45f, crandom() * 0.45f, crandom() * 0.45f), 
+		0.25);
 
 	AngleVectors (client->v_angle, forward, right, up);
 
@@ -1165,10 +861,8 @@ void Chaingun_Fire (edict_t *ent)
 
 void Weapon_Chaingun (edict_t *ent)
 {
-	static int	pause_frames[]	= {38, 43, 51, 61, 0};
-	static int	fire_frames[]	= {5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 0};
-
-	Weapon_Generic (ent, 4, 31, 61, 64, pause_frames, fire_frames, Chaingun_Fire);
+	// FRAME_ACTIVATE_LAST = 4, FRAME_FIRE_LAST = 31, FRAME_IDLE_LAST = 61, FRAME_DEACTIVATE_LAST = 64
+	Weapon_Generic (ent, 400, 400, 100, 200, 100, Chaingun_Fire);
 }
 
 
@@ -1189,16 +883,9 @@ void weapon_shotgun_fire (edict_t *ent)
 	int			kick = 8;
 	gclient_t	*client = ent->r.client;
 
-	if (client->ps.gunframe == 9)
-	{
-		client->ps.gunframe++;
-		return;
-	}
-
 	AngleVectors (client->v_angle, forward, right, NULL);
 
-	VectorScale (forward, -2, client->kick_origin);
-	client->kick_angles[0] = -2;
+	P_AddWeaponKick (client, tv(-2, 0, 0), tv(-2, 0, 0), 0.2);
 
 	VectorSet(offset, 0, 8,  ent->viewheight-8);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
@@ -1214,7 +901,6 @@ void weapon_shotgun_fire (edict_t *ent)
 	// send muzzle flash
 	G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
 
-	client->ps.gunframe++;
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
 	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
@@ -1223,10 +909,8 @@ void weapon_shotgun_fire (edict_t *ent)
 
 void Weapon_Shotgun (edict_t *ent)
 {
-	static int	pause_frames[]	= {22, 28, 34, 0};
-	static int	fire_frames[]	= {8, 9, 0};
-
-	Weapon_Generic (ent, 7, 18, 36, 39, pause_frames, fire_frames, weapon_shotgun_fire);
+	// FRAME_ACTIVATE_LAST = 7, FRAME_FIRE_LAST = 18, FRAME_IDLE_LAST = 36, FRAME_DEACTIVATE_LAST = 39
+	Weapon_Generic (ent, 700, 0, 1000, 0, 100, weapon_shotgun_fire);
 }
 
 
@@ -1242,8 +926,7 @@ void weapon_supershotgun_fire (edict_t *ent)
 
 	AngleVectors (client->v_angle, forward, right, NULL);
 
-	VectorScale (forward, -2, client->kick_origin);
-	client->kick_angles[0] = -2;
+	P_AddWeaponKick (client, tv(-2, 0, 0), tv(-2, 0, 0), 0.25);
 
 	VectorSet(offset, 0, 8,  ent->viewheight-8);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
@@ -1266,7 +949,6 @@ void weapon_supershotgun_fire (edict_t *ent)
 	// send muzzle flash
 	G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
 
-	client->ps.gunframe++;
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
 	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
@@ -1275,10 +957,8 @@ void weapon_supershotgun_fire (edict_t *ent)
 
 void Weapon_SuperShotgun (edict_t *ent)
 {
-	static int	pause_frames[]	= {29, 42, 57, 0};
-	static int	fire_frames[]	= {7, 0};
-
-	Weapon_Generic (ent, 6, 17, 57, 61, pause_frames, fire_frames, weapon_supershotgun_fire);
+	// FRAME_ACTIVATE_LAST = 6, FRAME_FIRE_LAST = 17, FRAME_IDLE_LAST = 57, FRAME_DEACTIVATE_LAST = 61
+	Weapon_Generic (ent, 600, 0, 1100, 0, 100, weapon_supershotgun_fire);
 }
 
 
@@ -1319,8 +999,7 @@ void weapon_railgun_fire (edict_t *ent)
 
 	AngleVectors (client->v_angle, forward, right, NULL);
 
-	VectorScale (forward, -3, client->kick_origin);
-	client->kick_angles[0] = -3;
+	P_AddWeaponKick (client, tv(-3, 0, 0), tv(-3, 0, 0), 0.3);
 
 	VectorSet(offset, 0, 7,  ent->viewheight-8);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
@@ -1329,7 +1008,6 @@ void weapon_railgun_fire (edict_t *ent)
 	// send muzzle flash
 	G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
 
-	client->ps.gunframe++;
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
 	if (! ( dmflags->integer & DF_INFINITE_AMMO ) )
@@ -1339,10 +1017,8 @@ void weapon_railgun_fire (edict_t *ent)
 
 void Weapon_Railgun (edict_t *ent)
 {
-	static int	pause_frames[]	= {56, 0};
-	static int	fire_frames[]	= {4, 0};
-
-	Weapon_Generic (ent, 3, 18, 56, 61, pause_frames, fire_frames, weapon_railgun_fire);
+	// FRAME_ACTIVATE_LAST = 3, FRAME_FIRE_LAST = 18, FRAME_IDLE_LAST = 56, FRAME_DEACTIVATE_LAST = 61
+	Weapon_Generic (ent, 300, 0, 1400, 0, 100, weapon_railgun_fire);
 }
 
 
@@ -1367,22 +1043,11 @@ void weapon_bfg_fire (edict_t *ent)
 	else
 		damage = 500;
 
-	if (client->ps.gunframe == 9)
-	{
-		// send muzzle flash
-		G_AddEvent (ent, EV_MUZZLEFLASH, is_silenced, qtrue);
-
-		client->ps.gunframe++;
-
-		PlayerNoise(ent, start, PNOISE_WEAPON);
-		return;
-	}
-
 	// cells can go down during windup (from power armor hits), so
 	// check again and abort firing if we don't have enough now
 	if (client->pers.inventory[client->ammo_index] < 50)
 	{
-		client->ps.gunframe++;
+		NoAmmoWeaponChange (ent->r.client);
 		return;
 	}
 
@@ -1391,18 +1056,11 @@ void weapon_bfg_fire (edict_t *ent)
 
 	AngleVectors (client->v_angle, forward, right, NULL);
 
-	VectorScale (forward, -2, client->kick_origin);
-
-	// make a big pitch kick with an inverse fall
-	client->v_dmg_pitch = -40;
-	client->v_dmg_roll = crandom()*8;
-	client->v_dmg_time = level.time + DAMAGE_TIME;
+	P_AddWeaponKick (client, tv (-2, 0, 0), tv(-40, 0, crandom()*8), 0.35);
 
 	VectorSet(offset, 8, 8, ent->viewheight-8);
 	P_ProjectSource (client, ent->s.origin, offset, forward, right, start);
 	fire_bfg (ent, start, forward, damage, 400, damage_radius);
-
-	client->ps.gunframe++;
 
 	PlayerNoise(ent, start, PNOISE_WEAPON);
 
@@ -1412,10 +1070,8 @@ void weapon_bfg_fire (edict_t *ent)
 
 void Weapon_BFG (edict_t *ent)
 {
-	static int	pause_frames[]	= {39, 45, 50, 55, 0};
-	static int	fire_frames[]	= {9, 17, 0};
-
-	Weapon_Generic (ent, 8, 32, 55, 58, pause_frames, fire_frames, weapon_bfg_fire);
+	// FRAME_ACTIVATE_LAST = 8, FRAME_FIRE_LAST = 32, FRAME_IDLE_LAST = 55, FRAME_DEACTIVATE_LAST = 58
+	Weapon_Generic (ent, 800, 800, 2400, 0, 100, weapon_bfg_fire);
 }
 
 

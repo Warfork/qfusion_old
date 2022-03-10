@@ -136,6 +136,10 @@ SOURCE=.\g_phys.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\g_pmodels.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\g_save.c
 # End Source File
 # Begin Source File
@@ -224,11 +228,19 @@ SOURCE=.\g_local.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\g_pmodels.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\g_public.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\g_syscalls.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\gs_pmodels.h
 # End Source File
 # Begin Source File
 

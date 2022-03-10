@@ -206,7 +206,7 @@ A 0 length will still generate a packet and deal with the reliable messages.
 void Netchan_Transmit (netchan_t *chan, int length, qbyte *data)
 {
 	sizebuf_t	send;
-	qbyte		send_buf[MAX_PACKETLEN];
+	qbyte		send_buf[MAX_PACKETLEN], send_uncompressed;
 	qbyte		bigbuf[MAX_MSGLEN], compressed[MAX_PACKETLEN-PACKET_HEADER];
 	qboolean	send_reliable, send_unreliable;
 	unsigned	w1, w2;
@@ -234,49 +234,62 @@ void Netchan_Transmit (netchan_t *chan, int length, qbyte *data)
 	// initialize our packet buffer
 	SZ_Init (&send, send_buf, sizeof(send_buf));
 
-	// zero-fill our buffer for huffman compression
-	bigbuflen = 0;
-	memset (bigbuf, 0, sizeof(bigbuf));
-
-	// copy the reliable message to the packet first
-	if (send_reliable)
-	{
-		memcpy (bigbuf, chan->reliable_buf, chan->reliable_length);
-		bigbuflen += chan->reliable_length;
-		chan->last_reliable_sequence = chan->outgoing_sequence;
-	}
-
-	// add the unreliable part if space is available
-	if (sizeof(bigbuf) - bigbuflen >= length)
+	// do not bother compressing anything less than MAX_PACKETLEN/3
+	if ((send_reliable ? chan->reliable_length : 0) + length < MAX_PACKETLEN/3)
 	{
 		send_unreliable = qtrue;
-		memcpy (bigbuf+bigbuflen, data, length);
-		bigbuflen += length;
+		send_uncompressed = 255;
 	}
 	else
 	{
-		send_unreliable = qfalse;
-		Com_Printf ("Netchan_Transmit: dumped unreliable\n");
-	}
+		// zero-fill our buffer for huffman compression
+		bigbuflen = 0;
+		memset (bigbuf, 0, sizeof(bigbuf));
 
-	// compress leaving space for header
-	len = Huff_EncodeStatic (bigbuf, bigbuflen, compressed, sizeof(compressed));
-	if (len > sizeof(compressed))
-	{	// try sending reliable data only
-		if (send_unreliable)
+		send_uncompressed = 0;
+
+		// copy the reliable message to the packet first
+		if (send_reliable)
 		{
-			send_unreliable = qfalse;
-			Com_Printf ("Netchan_Transmit: dumped unreliable\n");
+			memcpy (bigbuf, chan->reliable_buf, chan->reliable_length);
+			bigbuflen += chan->reliable_length;
+		}
 
-			len = Huff_EncodeStatic (bigbuf, bigbuflen -= length, compressed, sizeof(compressed));
-			if (len > sizeof(compressed))
-				Com_Error (ERR_FATAL, "Netchan_Transmit: buffer overflow");
+		// add the unreliable part if space is available
+		if (sizeof(bigbuf) - bigbuflen >= length)
+		{
+			send_unreliable = qtrue;
+			memcpy (bigbuf+bigbuflen, data, length);
+			bigbuflen += length;
 		}
 		else
 		{
-			Com_Error (ERR_FATAL, "Netchan_Transmit: buffer overflow");
+			send_unreliable = qfalse;
+			Com_Printf ("Netchan_Transmit: dumped unreliable\n");
+		}
+
+		// compress leaving space for header
+		len = Huff_EncodeStatic (bigbuf, bigbuflen, compressed, sizeof(compressed));
+		if (len > sizeof(compressed))
+		{	// try sending reliable data only
+			if (send_unreliable)
+			{
+				send_unreliable = qfalse;
+				Com_Printf ("Netchan_Transmit: dumped unreliable\n");
+
+				len = Huff_EncodeStatic (bigbuf, bigbuflen -= length, compressed, sizeof(compressed));
+				if (len > sizeof(compressed))
+					Com_Error (ERR_FATAL, "Netchan_Transmit: buffer overflow");
+			}
+			else
+			{
+				Com_Error (ERR_FATAL, "Netchan_Transmit: buffer overflow");
+			}
 		}
 	}
+
+	if (send_reliable)
+		chan->last_reliable_sequence = chan->outgoing_sequence;
 
 	// write the packet header
 	w1 = ( chan->outgoing_sequence & ~(1<<31) ) | (send_reliable<<31);
@@ -292,7 +305,18 @@ void Netchan_Transmit (netchan_t *chan, int length, qbyte *data)
 	if (chan->sock == NS_CLIENT)
 		MSG_WriteShort (&send, qport->integer);
 
-	SZ_Write (&send, compressed, len);
+	if (send_uncompressed)
+	{
+		SZ_Write (&send, &send_uncompressed, 1);
+		if (send_reliable)
+			SZ_Write (&send, chan->reliable_buf, chan->reliable_length);
+		if (send_unreliable)
+			SZ_Write (&send, data, length);
+	}
+	else
+	{
+		SZ_Write (&send, compressed, len);
+	}
 
 	// send the datagram
 	NET_SendPacket (chan->sock, send.cursize, send.data, chan->remote_address);

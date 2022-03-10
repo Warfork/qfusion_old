@@ -702,9 +702,6 @@
 				RelativePath="qcommon\mdfour.h">
 			</File>
 			<File
-				RelativePath="win32\net_wins.h">
-			</File>
-			<File
 				RelativePath="game\q_shared.h">
 			</File>
 			<File

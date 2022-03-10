@@ -163,8 +163,10 @@ static void Huff_BuildTree( huffTree_t *tree, unsigned *counts )
 	unsigned best[2], bestval[2];
 	huffNode_t *nodes[256], *headNode;
 
+	headNode = ( huffNode_t * )Mem_ZoneMalloc( sizeof( huffNode_t ) * (256 + 255) );
+
 	for( i = 0; i < 256; i++ ) {
-		nodes[i] = ( huffNode_t * )Mem_ZoneMalloc( sizeof( huffNode_t ) );
+		nodes[i] = headNode++;
 		nodes[i]->count = counts[i];
 		nodes[i]->pos = ( unsigned )i;
 	}
@@ -173,11 +175,11 @@ static void Huff_BuildTree( huffTree_t *tree, unsigned *counts )
 		best[0] = best[1] = 0;
 		bestval[0] = bestval[1] = 99999999;
 
-		for ( j = 0; j < 256; j++ ) {
+		for( j = 0; j < 256; j++ ) {
 			if( !nodes[j] )
 				continue;
 
-			if ( nodes[j]->count < bestval[0] ) {
+			if( nodes[j]->count < bestval[0] ) {
 				best[1] = best[0];
 				bestval[1] = bestval[0];
 				best[0] = j + 1;
@@ -193,17 +195,16 @@ static void Huff_BuildTree( huffTree_t *tree, unsigned *counts )
 		if( !best[1] )
 			Com_Error( ERR_FATAL, "Huff_BuildTree: no node 1: %i", bestval[1] );
 
-		headNode = ( huffNode_t * )Mem_ZoneMallocExt( sizeof(huffNode_t), 0 );
 		headNode->children[0] = nodes[best[1]-1];
 		headNode->children[1] = nodes[best[0]-1];
 		headNode->count = headNode->children[0]->count + headNode->children[1]->count;
 		headNode->pos = 0xff;
 
-		nodes[best[0]-1] = headNode;
+		nodes[best[0]-1] = headNode++;
 		nodes[best[1]-1] = NULL;
 	}
 
-	tree->headNode = headNode;
+	tree->headNode = --headNode;
 	memset( tree->lookupTable, 0, sizeof( tree->lookupTable ) );
 
 	Huff_BuildTable( tree->headNode, tree->lookupTable, 0, 0 );

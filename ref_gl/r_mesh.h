@@ -18,9 +18,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#define MAX_RENDER_MESHES			16384
-#define MAX_RENDER_ADDITIVE_MESHES	MAX_RENDER_MESHES >> 1
-
 enum
 {
 	MF_NONE				= 0,
@@ -38,8 +35,9 @@ enum
 	MF_TRNORMALS		= 1 << 11,
 	MF_NOCULL			= 1 << 12,
 	MF_DEFORMVS			= 1 << 13,
-	MF_STVECTORS		= 1 << 14,
-	MF_TRIFAN			= 1 << 15
+	MF_SVECTORS			= 1 << 14,
+	MF_TRIFAN			= 1 << 15,
+	MF_KEEPLOCK			= 1 << 16
 };
 
 enum
@@ -56,8 +54,7 @@ typedef struct mesh_s
     int					numVertexes;
 	vec3_t				*xyzArray;
 	vec3_t				*normalsArray;
-	vec3_t				*sVectorsArray;
-	vec3_t				*tVectorsArray;
+	vec4_t				*sVectorsArray;
 	vec2_t				*stArray;
 	vec2_t				*lmstArray[MAX_LIGHTMAPS];
 	byte_vec4_t			*colorsArray[MAX_LIGHTMAPS];
@@ -71,28 +68,37 @@ typedef struct mesh_s
 #endif
 } mesh_t;
 
+#define MB_FOG2NUM(fog)				(fog ? ((((int)((fog) - r_worldmodel->fogs))+1) << 2) : 0)
+#define MB_NUM2FOG(num,fog)			((fog)=r_worldmodel->fogs+((num>>2) & 0xFF),fog = (fog == r_worldmodel->fogs ? NULL : fog-1))
+
+#define MB_ENTITY2NUM(ent)			((int)((ent)-r_entities)<<20)
+#define MB_NUM2ENTITY(num,ent)		(ent=r_entities+((num>>20)&1023))
+
+#define MB_SHADER2NUM(s)			((s)->sort << 26) | ((s) - r_shaders)
+#define MB_NUM2SHADER(num,s)		((s) = r_shaders + ((num) & 0xFFF))
+#define MB_NUM2SHADERSORT(num)		(((num) >> 26) & 0x1F)
+
+#define MIN_RENDER_MESHES			2048
+
 typedef struct
 {
+	int					shaderkey;
 	unsigned int		sortkey;
 	int					infokey;		// surface number or mesh number
-	unsigned int		dlightbits;
-	entity_t			*entity;
-	struct shader_s		*shader;
-	struct mfog_s		*fog;
+	union
+	{
+		int				lastPoly;
+		unsigned int	dlightbits;
+	};
 } meshbuffer_t;
 
 typedef struct
 {
-	int					num_meshes;
-	meshbuffer_t		meshbuffer[MAX_RENDER_MESHES];
+	int					num_meshes, max_meshes;
+	meshbuffer_t		*meshbuffer;
 
-	int					num_additive_meshes;
-	meshbuffer_t		meshbuffer_additives[MAX_RENDER_ADDITIVE_MESHES];
-
-	qboolean			skyDrawn;
-
-	float				skymins[2][6];
-	float				skymaxs[2][6];
+	int					num_translucent_meshes, max_translucent_meshes;
+	meshbuffer_t		*meshbuffer_translucent;
 } meshlist_t;
 
 enum
@@ -114,17 +120,3 @@ typedef struct
 	struct shader_s	*farboxShaders[6];
 	struct shader_s *nearboxShaders[6];
 } skydome_t;
-
-meshbuffer_t *R_AddMeshToList( int type, struct mfog_s *fog, struct shader_s *shader, int infokey );
-
-void R_SortMeshes( void );
-void R_DrawMeshes( qboolean triangleOutlines );
-void R_DrawTriangleOutlines( void );
-
-void R_DrawPortalSurface( meshbuffer_t *mb );
-void R_DrawCubemapView( vec3_t origin, vec3_t angles, int size );
-
-void R_BuildTangentVectors( int numVerts, vec3_t *xyzArray, vec2_t *stArray, int numTris, index_t *indexes, vec3_t *sVectorsArray, vec3_t *tVectorsArray );
-
-extern	meshlist_t	r_worldlist;
-extern	meshlist_t	*r_currentlist;

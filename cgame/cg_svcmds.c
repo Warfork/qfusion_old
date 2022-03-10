@@ -104,8 +104,20 @@ void CG_CS_ConfigString (void)
 		CG_RegisterLevelShot ();
 	} else if ( i == CS_STATUSBAR ) { 
 		CG_LoadStatusBar ( cgs.configStrings[i] );
+	} else if ( i == CS_GAMETYPE ) {
+		if( !Q_stricmp( cgs.configStrings[i], "ctf" ) )
+			cgs.gametype = GAMETYPE_CTF;
+		else if( !Q_stricmp( cgs.configStrings[i], "deathmatch" ) )
+			cgs.gametype = GAMETYPE_DM;
+		else if( !Q_stricmp( cgs.configStrings[i], "cooperative" ) )
+			cgs.gametype = GAMETYPE_COOP;
+		else
+			cgs.gametype = GAMETYPE_SP;
 	} else if ( i >= CS_MODELS && i < CS_MODELS+MAX_MODELS ) {
-		cgs.modelDraw[i-CS_MODELS] = trap_R_RegisterModel ( cgs.configStrings[i] );
+		if( cgs.configStrings[i][0] == '$') {	// indexed pmodel
+			cgs.pModelsIndex[i-CS_MODELS] = CG_RegisterPModel( cgs.configStrings[i]+1 );
+		} else
+			cgs.modelDraw[i-CS_MODELS] = CG_RegisterModel( cgs.configStrings[i] );
 	} else if ( i >= CS_SOUNDS && i < CS_SOUNDS+MAX_SOUNDS ) {
 		if ( cgs.configStrings[i][0] != '*' ) {
 			cgs.soundPrecache[i-CS_SOUNDS] = trap_S_RegisterSound ( cgs.configStrings[i] );
@@ -113,7 +125,10 @@ void CG_CS_ConfigString (void)
 	} else if( i >= CS_LIGHTS && i < CS_LIGHTS+MAX_LIGHTSTYLES ) {
 		CG_SetLightStyle( i - CS_LIGHTS );
 	} else if ( i >= CS_IMAGES && i < CS_IMAGES+MAX_IMAGES ) {
-		cgs.imagePrecache[i-CS_IMAGES] = trap_R_RegisterPic ( cgs.configStrings[i] );
+		if( cgs.configStrings[i][0] == '$' ) {	// indexed pSkin
+			cgs.pSkinsIndex[i-CS_IMAGES] = CG_RegisterPSkin(cgs.configStrings[i]+1);
+		} else
+			cgs.imagePrecache[i-CS_IMAGES] = trap_R_RegisterPic ( cgs.configStrings[i] );
 	} else if ( i >= CS_PLAYERSKINS && i < CS_PLAYERSKINS+MAX_CLIENTS ) {
 		if ( strcmp (olds, s) ) {
 			CG_LoadClientInfo ( &cgs.clientInfo[i-CS_PLAYERSKINS], cgs.configStrings[i], i-CS_PLAYERSKINS );

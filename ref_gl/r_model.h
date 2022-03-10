@@ -51,42 +51,44 @@ typedef struct
 {
 	char			name[MAX_QPATH];
 	int				flags;
-	int				contents;
 	shader_t		*shader;
 } mshaderref_t;
 
-typedef struct mfog_s
+typedef struct
 {
 	shader_t		*shader;
-
 	cplane_t		*visibleplane;
 
 	int				numplanes;
 	cplane_t		*planes;
 } mfog_t;
 
-typedef struct msurface_s
+typedef struct
 {
 	int				visframe;		// should be drawn when node is crossed
 	int				facetype;
+	int				flags;
 
-	mshaderref_t	*shaderref;
-
+	shader_t		*shader;
 	mesh_t			*mesh;
 	mfog_t			*fog;
+	cplane_t		*plane;
 
-    float			origin[3];
-	float			mins[3], maxs[3];
-
-	unsigned int	patchWidth;
-	unsigned int	patchHeight;
-
+	union
+	{
+		float		origin[3];
+		float		mins[3];
+	};
+	union
+	{
+		float		maxs[3];
+		float		color[3];
+	};
 	int				fragmentframe;		// for R_GetClippedFragments
 
 	int				superLightStyle;
 
-	unsigned int	dlightbits;
-	int				dlightframe;
+	meshbuffer_t	*meshBuffer;		// needed to OR dlightbits
 } msurface_t;
 
 typedef struct mnode_s
@@ -122,7 +124,6 @@ typedef struct mleaf_s
 	int				area;
 
 	msurface_t		**firstVisSurface;
-	msurface_t		**firstLitSurface;
 	msurface_t		**firstFragmentSurface;
 } mleaf_t;
 
@@ -158,7 +159,7 @@ ALIAS MODELS
 //
 // in memory representation
 //
-typedef struct maliasvertex_s
+typedef struct
 {
 	short			point[3];
 	qbyte			latlong[2];		// use bytes to keep 8-byte alignment
@@ -190,7 +191,11 @@ typedef struct
 
     int				numverts;
 	maliasvertex_t	*vertexes;
-	vec2_t			*stcoords;
+	vec2_t			*stArray;
+
+	vec3_t			*xyzArray;
+	vec3_t			*normalsArray;
+	vec4_t			*sVectorsArray;
 
     int				numtris;
     index_t			*indexes;
@@ -203,7 +208,7 @@ typedef struct
 	maliasskin_t	*skins;
 } maliasmesh_t;
 
-typedef struct maliasmodel_s
+typedef struct
 {
     int				numframes;
 	maliasframe_t	*frames;
@@ -229,20 +234,11 @@ SKELETAL MODELS
 //
 // in memory representation
 //
-typedef struct
-{
-	vec3_t			origin;
-	float			influence;
-	vec3_t			normal;
-	unsigned int	bonenum;
-} mskbonevert_t;
+#define SKM_MAX_WEIGHTS	4
 
-typedef struct
-{
-	unsigned int	numbones;
-	mskbonevert_t	*verts;
-} mskvertex_t;
-
+//
+// in memory representation
+//
 typedef struct
 {
 	shader_t		*shader;
@@ -252,9 +248,13 @@ typedef struct
 {
 	char			name[SKM_MAX_NAME];
 
+	float			*influences;
+	unsigned int	*bones;
+
 	unsigned int	numverts;
-	mskvertex_t		*vertexes;
-	vec2_t			*stcoords;
+	vec3_t			*xyzArray, *normalsArray;
+	vec2_t			*stArray;
+	vec4_t			*sVectorsArray;
 
 	unsigned int	numtris;
 	index_t			*indexes;
@@ -278,10 +278,7 @@ typedef struct
 
 typedef struct
 {
-	bonepose_t	*	boneposes;
-
-	float			mins[3], maxs[3];
-	float			radius;					// for clipping uses
+	bonepose_t		*boneposes;
 } mskframe_t;
 
 typedef struct
@@ -294,6 +291,7 @@ typedef struct
 
 	unsigned int	numframes;
 	mskframe_t		*frames;
+	bonepose_t		*invbaseposes;
 } mskmodel_t;
 
 /*
@@ -390,6 +388,7 @@ typedef struct model_s
 
 	int				numfogs;
 	mfog_t			*fogs;
+	mfog_t			*globalfog;
 
 	int				numworldlights;
 	mlight_t		*worldlights;

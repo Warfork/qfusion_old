@@ -197,12 +197,6 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 	if (ps->fov != ops->fov)
 		pflags |= PS_FOV;
 
-	if (ps->gunframe != ops->gunframe)
-		pflags |= PS_WEAPONFRAME;
-
-	if (ps->gunindex != ops->gunindex)
-		pflags |= PS_WEAPONINDEX;
-
 	//
 	// write it
 	//
@@ -292,12 +286,6 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 		MSG_WriteChar (msg, ps->kick_angles[1]*4);
 		MSG_WriteChar (msg, ps->kick_angles[2]*4);
 	}
-
-	if (pflags & PS_WEAPONINDEX)
-		MSG_WriteByte (msg, ps->gunindex);
-
-	if (pflags & PS_WEAPONFRAME)
-		MSG_WriteShort (msg, ps->gunframe);
 
 	if (pflags & PS_BLEND)
 	{
@@ -401,16 +389,16 @@ void SV_FatPVS (vec3_t org)
 		maxs[i] = org[i] + 8;
 	}
 
-	count = CM_BoxLeafnums (mins, maxs, leafs, 128, NULL);
+	count = CM_BoxLeafnums (mins, maxs, leafs, sizeof(leafs)/sizeof(int), NULL);
 	if (count < 1)
 		Com_Error (ERR_FATAL, "SV_FatPVS: count < 1");
-	longs = CM_ClusterSize()>>2;
+	longs = CM_ClusterSize() / sizeof(int);
 
 	// convert leafs to clusters
 	for (i=0 ; i<count ; i++)
 		leafs[i] = CM_LeafCluster(leafs[i]);
 
-	memcpy (fatpvs, CM_ClusterPVS(leafs[0]), longs<<2);
+	memcpy (fatpvs, CM_ClusterPVS(leafs[0]), CM_ClusterSize());
 
 	// or in all the other leaf bits
 	for (i=1 ; i<count ; i++)
@@ -422,7 +410,7 @@ void SV_FatPVS (vec3_t org)
 			continue;		// already have the cluster we want
 		src = CM_ClusterPVS(leafs[i]);
 		for (j=0 ; j<longs ; j++)
-			((long *)fatpvs)[j] |= ((long *)src)[j];
+			((int *)fatpvs)[j] |= ((int *)src)[j];
 	}
 }
 
@@ -457,10 +445,10 @@ void SV_MergePVS (vec3_t org)
 		maxs[i] = org[i] + 1;
 	}
 
-	count = CM_BoxLeafnums (mins, maxs, leafs, 128, NULL);
+	count = CM_BoxLeafnums (mins, maxs, leafs, sizeof(leafs)/sizeof(int), NULL);
 	if (count < 1)
 		Com_Error (ERR_FATAL, "SV_FatPVS: count < 1");
-	longs = CM_ClusterSize()>>2;
+	longs = CM_ClusterSize() / sizeof(int);
 
 	// convert leafs to clusters
 	for (i=0 ; i<count ; i++)
@@ -476,7 +464,7 @@ void SV_MergePVS (vec3_t org)
 			continue;		// already have the cluster we want
 		src = CM_ClusterPVS(leafs[i]);
 		for (j=0 ; j<longs ; j++)
-			((long *)fatpvs)[j] |= ((long *)src)[j];
+			((int *)fatpvs)[j] |= ((int *)src)[j];
 	}
 }
 
@@ -490,12 +478,12 @@ void SV_MergePHS (int cluster)
 	int		i, longs;
 	qbyte	*src;
 
-	longs = CM_ClusterSize()>>2;
+	longs = CM_ClusterSize() / sizeof (int);
 
 	// or in all the other leaf bits
 	src = CM_ClusterPHS (cluster);
 	for (i=0 ; i<longs ; i++)
-		((long *)fatphs)[i] |= ((long *)src)[i];
+		((int *)fatphs)[i] |= ((int *)src)[i];
 }
 
 /*
@@ -507,22 +495,24 @@ qboolean SV_CullEntity (edict_t *ent)
 {
 	int i, l;
 
-	if (ent->r.num_clusters == -1)
-	{	// too many leafs for individual check, go by headnode
-		if (!CM_HeadnodeVisible (ent->r.headnode, fatpvs))
-			return qtrue;
-		return qfalse;
-	}
-
-	// check individual leafs
+	// check individual clusters
 	for (i=0 ; i < ent->r.num_clusters ; i++)
 	{
 		l = ent->r.clusternums[i];
-		if (fatpvs[l >> 3] & (1 << (l&7) )) {
+		if (fatpvs[l >> 3] & (1 << (l&7) ))
 			return qfalse;
+	}
+
+	// check remaining clusters that didn't fit into clusternums
+	if (ent->r.lastcluster != -1)
+	{
+		for (; l <= ent->r.lastcluster; l++)
+		{
+			if (fatpvs[l >> 3] & (1 << (l&7) ))
+				return qfalse;
 		}
 	}
-		
+
 	return qtrue;		// not visible
 }
 
@@ -545,7 +535,6 @@ void SV_BuildClientFrame (client_t *client)
 	int				clientarea, portalarea;
 	int				leafnum, clusternum;
 	int				numedicts;
-	qboolean		portalview;
 
 	clent = client->edict;
 	if( !clent->r.client )
@@ -572,43 +561,26 @@ void SV_BuildClientFrame (client_t *client)
 	frame->num_entities = 0;
 	frame->first_entity = svs.next_client_entities;
 
-	if( clusternum == -1 ) {
-		for( e = 1; e < sv.num_edicts; e++ ) {
-			ent = EDICT_NUM( e );
-
-			// ignore ents without visible models
-			if( ent->r.svflags & SVF_NOCLIENT )
-				continue;
-			if( ent->r.visclent && (ent->r.visclent != clent) )
-				continue;
-
-			// ignore ents without visible models unless they have an effect
-			if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] && !ent->s.light )
-				continue;
-			if( !(ent->r.svflags & SVF_BROADCAST) || ent != clent )
-				continue;
-
-			// fix number if broken
-			if( ent->s.number != e ) {
-				Com_DPrintf( "FIXING ENT->S.NUMBER!!!\n" );
-				ent->s.number = e;
-			}
-
-			// add it to the circular client_entities array
-			state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
-			*state = ent->s;
-
-			svs.next_client_entities++;
-			frame->num_entities++;
-		}
-		return;
-	}
-
 	// save client's PVS so it can be later compared with fatpvs
 	SV_FatPVS( org );
 	SV_FatPHS( clusternum );
 
-	portalview = qfalse;
+	if (sv.configstrings[CS_SKYBOXORG][0] != '\0')
+	{
+		float fov;
+		vec3_t origin;
+
+		if (sscanf( sv.configstrings[CS_SKYBOXORG], "%f %f %f %f", &origin[0], &origin[1], &origin[2], &fov ) == 4)
+		{
+			SV_MergePVS( origin );
+
+			portalarea = CM_PointLeafnum( origin );
+			SV_MergePHS( CM_LeafCluster( portalarea ) );
+
+			portalarea = CM_LeafArea( portalarea );
+			CM_MergeAreaBits( frame->areabits, portalarea );
+		}
+	}
 
 	// portal entities are the first to be checked so we can merge PV sets
 	for( e = 1, numedicts = 0; e < sv.num_edicts; e++ ) {
@@ -618,6 +590,8 @@ void SV_BuildClientFrame (client_t *client)
 		if( ent->r.svflags & SVF_NOCLIENT )
 			continue;
 		if( ent->r.visclent && (ent->r.visclent != clent) )
+			continue;
+		if (!ent->r.inuse)
 			continue;
 
 		// ignore ents without visible models unless they have an effect
@@ -631,8 +605,28 @@ void SV_BuildClientFrame (client_t *client)
 		}
 
 		// ignore if not touching a PV leaf
-		if( ent != clent || !(ent->r.svflags & SVF_BROADCAST) ) {
-			if( !(ent->r.svflags & SVF_PORTAL) ) {
+		if( !(ent->r.svflags & SVF_BROADCAST) || ent != clent ) {
+			if( clusternum == -1 )
+				continue;
+
+			if( ent->r.svflags & SVF_PORTAL ) {
+				// check area
+				if( !CM_AreasConnected( clientarea, ent->r.areanum ) )
+					continue;
+				if( SV_CullEntity( ent ) )
+					continue;
+
+				// merge PV sets if it's a portal entity (and not mirror)
+				if( !VectorCompare( ent->s.origin, ent->s.origin2 ) ) {
+					SV_MergePVS( ent->s.old_origin );
+
+					portalarea = CM_PointLeafnum( ent->s.origin2 );
+					SV_MergePHS( CM_LeafCluster( portalarea ) );
+
+					portalarea = CM_LeafArea( portalarea );
+					CM_MergeAreaBits( frame->areabits, portalarea );
+				}
+			} else {
 				if( !ent->s.modelindex && !ent->s.events[0] && !ent->s.light && !ent->s.effects ) {
 					// don't send sounds if they will be attenuated away
 					vec3_t	delta;
@@ -643,67 +637,33 @@ void SV_BuildClientFrame (client_t *client)
 					if( len > 400 )
 						continue;
 				}
-
-				pedicts[numedicts++] = ent;
-				continue;
-			}
-
-			// check area
-			if( !CM_AreasConnected( clientarea, ent->r.areanum ) )
-				continue;
-			if( SV_CullEntity( ent ) )
-				continue;
-
-			// merge PV sets if portal 
-			if( !VectorCompare( ent->s.origin, ent->s.origin2 ) ) {
-				SV_MergePVS( ent->s.old_origin );
-
-				portalarea = CM_PointLeafnum( ent->s.origin2 );
-				SV_MergePHS( CM_LeafCluster( portalarea ) );
-
-				portalarea = CM_LeafArea( portalarea );
-				CM_MergeAreaBits( frame->areabits, portalarea );
-
-				portalview = qtrue;
 			}
 		}
 
-		// add it to the circular client_entities array
-		state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
-		*state = ent->s;
-
-		// don't mark players missiles as solid
-		if( ent->r.owner == client->edict )
-			state->solid = 0;
-
-		svs.next_client_entities++;
-		frame->num_entities++;
+		pedicts[numedicts++] = ent;
 	}
 
 	for( e = 0; e < numedicts; e++ ) {
 		ent = pedicts[e];
 
+		if( !(ent->r.svflags & SVF_PORTAL) && clusternum != -1 ) {
 		// check area
-		if( ! (frame->areabits[ent->r.areanum>>3] & (1<<(ent->r.areanum&7)) ) ) {
-			// doors can legally straddle two areas, so
-			// we may need to check another one
-			if( !ent->r.areanum2
-				|| !(frame->areabits[ent->r.areanum2>>3] & (1<<(ent->r.areanum2&7)) ) )
-				continue;		// blocked by a door
-		}
+			if( ! (frame->areabits[ent->r.areanum>>3] & (1<<(ent->r.areanum&7)) ) ) {
+				// doors can legally straddle two areas, so
+				// we may need to check another one
+				if( !ent->r.areanum2
+					|| !(frame->areabits[ent->r.areanum2>>3] & (1<<(ent->r.areanum2&7)) ) )
+					continue;		// blocked by a door
+			}
 
-		// just check one point for PHS
-		if( ent->r.svflags & SVF_FORCEOLDORIGIN ) {
-			if( ent->r.num_clusters == -1 ) {
-				if( !CM_HeadnodeVisible( ent->r.headnode, fatphs ) )
-					continue;
-			} else {
+			// just check one point for PHS
+			if( ent->r.svflags & SVF_FORCEOLDORIGIN ) {
 				l = ent->r.clusternums[0];
 				if( !(fatphs[l >> 3] & (1 << (l&7) )) )
 					continue;
+			} else if( SV_CullEntity( ent ) ) {
+				continue;
 			}
-		} else if( SV_CullEntity( ent ) ) {
-			continue;
 		}
 
 		// add it to the circular client_entities array

@@ -25,6 +25,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "ui_syscalls.h"
 #include "ui_atoms.h"
 #include "ui_keycodes.h"
+#ifdef SKELMOD
+	#include "ui_boneposes.h"
+#else
+	#include "ui_pmodels.h"
+#endif
 
 #define SMALL_CHAR_WIDTH	8
 #define SMALL_CHAR_HEIGHT	16

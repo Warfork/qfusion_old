@@ -26,9 +26,10 @@ struct mesh_s;
 
 void R_ShadowBlend( void );
 void R_BuildTriangleNeighbors (int *neighbors, index_t *indexes, int numtris);
-int R_BuildShadowVolumeTriangles (void);
-void R_DrawShadowVolumes( struct mesh_s *mesh, vec3_t lightingOrigin, vec3_t mins, vec3_t maxs, float radius );
+void R_DrawShadowVolumes( mesh_t *mesh, vec3_t mins, vec3_t maxs, float radius );
 
 #endif
 
+void R_BeginShadowPass( void );
+void R_EndShadowPass( void );
 void R_Draw_SimpleShadow (entity_t *ent);

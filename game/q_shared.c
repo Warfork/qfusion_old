@@ -26,17 +26,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 COM_SkipPath
 ============
 */
-char *COM_SkipPath (char *pathname)
+const char *COM_SkipPath( const char *pathname )
 {
-	char	*last;
-	
+	const char *last;
+
 	last = pathname;
-	while (*pathname)
-	{
-		if (*pathname=='/')
-			last = pathname+1;
+	while( *pathname ) {
+		if( *pathname == '/' )
+			last = pathname + 1;
 		pathname++;
 	}
+
 	return last;
 }
 
@@ -45,11 +45,21 @@ char *COM_SkipPath (char *pathname)
 COM_StripExtension
 ============
 */
-void COM_StripExtension (char *in, char *out)
+char *COM_StripExtension( const char *in, char *out )
 {
-	while (*in && *in != '.')
-		*out++ = *in++;
-	*out = 0;
+	const char *last = NULL;
+
+	if( in && *in ) {
+		last = strrchr( in, '.' );
+		if( !last || strrchr( in, '/' ) > last )
+			last = in + strlen( in );
+
+		if( out != in )
+			memcpy( out, in, last - in );
+		out[last-in] = 0;
+	}
+
+	return out;
 }
 
 /*
@@ -57,21 +67,21 @@ void COM_StripExtension (char *in, char *out)
 COM_FileExtension
 ============
 */
-char *COM_FileExtension (char *in)
+const char *COM_FileExtension( const char *in )
 {
-	static char exten[8];
-	int		i;
+	const char *src, *last = NULL;
 
-	while (*in && *in != '.')
-		in++;
-	if (!*in)
-		return "";
-	in++;
-	for (i=0 ; i<7 && *in ; i++,in++)
-		exten[i] = *in;
-	exten[i] = 0;
+	if ( !in || !*in )
+		return in;
 
-	return exten;
+	src = in + strlen( in ) - 1;
+	while( *src != '/' && src != in ) {
+		if( *src == '.' )
+			last = src;
+		src--;
+	}
+
+	return last;
 }
 
 /*
@@ -79,35 +89,30 @@ char *COM_FileExtension (char *in)
 COM_FileBase
 ============
 */
-void COM_FileBase (char *in, char *out)
+char *COM_FileBase( const char *in, char *out )
 {
-	char *p, *start, *end;
-	int length; 
+	const char *p, *start, *end;
 	
-	end = in + strlen(in);
+	end = in + strlen( in );
 	start = in;
 	
-	for (p = end-1 ; p > in ; p--)
-	{
-		if (*p == '.')
+	for( p = end - 1; p > in ; p-- ) {
+		if( *p == '.' ) {
 			end = p;
-		else if (*p == '/')
-		{
+		} else if( *p == '/' ) {
 			start = p + 1;
 			break;
 		}
 	}
 	
-	length = end - start;
-	if (length <= 0)
-		strcpy (out, "?empty filename?");
-	else
-	{
-		if (length > 31)
-			length = 31;
-		memcpy (out, start, length);
-		out[length] = 0;
+	if( end <= start ) {
+		*out = 0;
+		return out;
 	}
+
+	memmove( out, start, end - start );
+	out[end - start] = 0;
+	return out;
 }
 
 /*
@@ -117,17 +122,20 @@ COM_FilePath
 Returns the path up to, but not including the last /
 ============
 */
-void COM_FilePath (char *in, char *out)
+char *COM_FilePath( const char *in, char *out )
 {
-	char *s;
-	
-	s = in + strlen(in) - 1;
-	
-	while (s != in && *s != '/')
-		s--;
+	const char *s;
 
-	strncpy (out,in, s-in);
-	out[s-in] = 0;
+	if( in && *in ) {
+		s = in + strlen( in ) - 1;
+		while( s != in && *s != '/' )
+			s--;
+
+		memmove( out, in, s - in );
+		out[s - in] = 0;
+	}
+
+	return out;
 }
 
 
@@ -136,23 +144,26 @@ void COM_FilePath (char *in, char *out)
 COM_DefaultExtension
 ==================
 */
-void COM_DefaultExtension (char *path, char *extension)
+char *COM_DefaultExtension( char *path, const char *extension )
 {
 	char    *src;
 //
 // if path doesn't have a .EXT, append extension
 // (extension should include the .)
 //
-	src = path + strlen(path) - 1;
+	if( path && *path ) {
+		src = path + strlen( path ) - 1;
 
-	while (*src != '/' && src != path)
-	{
-		if (*src == '.')
-			return;                 // it has an extension
-		src--;
+		while( *src != '/' && src != path ) {
+			if( *src == '.' )
+				return path;		// it has an extension
+			src--;
+		}
+
+		strcat( path, extension );
 	}
 
-	strcat (path, extension);
+	return path;
 }
 
 /*
@@ -546,6 +557,21 @@ char *Q_strlwr( char *s )
 }
 
 /*
+==============
+Q_isdigit
+==============
+*/
+qboolean Q_isdigit( char *str )
+{
+	if( str && *str ) {
+		while( isdigit( *str ) ) str++;
+		if( !*str )
+			return qtrue;
+	}
+	return qfalse;
+}
+
+/*
 ============================================================================
 
 					WILDCARD COMPARES FUNCTIONS
@@ -731,6 +757,12 @@ qboolean Info_Validate (char *s)
 		return qfalse;
 	if (strstr (s, ";"))
 		return qfalse;
+
+	// wsw: r1q2: check for end-of-message-in-string exploit
+	if( strchr (s, '\xFF') )
+		return qfalse;
+	// wsw : r1q2[end]
+
 	return qtrue;
 }
 

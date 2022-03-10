@@ -9,8 +9,8 @@ CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WI
 Includes=qcommon;.\win32/include
 Linker=-lwinmm -lwsock32 -lkernel32 -luser32 -lgdi32 -lzstat_@@_
 Libs=.\win32/lib/mingw
-UnitCount=36
-Folders="Source Files","Header Files","Resource Files"
+UnitCount=35
+Folders="Header Files","Resource Files","Source Files"
 ObjFiles=
 PrivateResource=
 ResourceIncludes=
@@ -329,27 +329,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit31]
-FileName=win32\net_wins.h
-Folder="Header Files"
-Compile=1
-CompileCpp=1
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
 [Unit32]
-FileName=game\q_shared.h
-Folder="Header Files"
-Compile=1
-CompileCpp=1
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
-[Unit33]
 FileName=qcommon\qcommon.h
 Folder="Header Files"
 Compile=1
@@ -359,7 +339,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit34]
+[Unit33]
 FileName=qcommon\qfiles.h
 Folder="Header Files"
 Compile=1
@@ -369,8 +349,18 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit35]
+[Unit34]
 FileName=server\server.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit35]
+FileName=win32\winquake.h
 Folder="Header Files"
 Compile=1
 CompileCpp=1
@@ -406,4 +396,14 @@ OriginalFilename=qfds.exe
 ProductName=qfds
 ProductVersion=0.1
 AutoIncBuildNr=0
+
+[Unit31]
+FileName=game\q_shared.h
+CompileCpp=1
+Folder="Header Files"
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
 

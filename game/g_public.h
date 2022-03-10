@@ -71,9 +71,9 @@ typedef struct
 	// FIXME: move these fields to a server private sv_entity_t
 	link_t		area;				// linked to a division node or leaf
 	
-	int			num_clusters;		// if -1, use headnode instead
+	int			num_clusters;
 	int			clusternums[MAX_ENT_CLUSTERS];
-	int			headnode;			// unused if num_clusters != -1
+	int			lastcluster;		// unused if equals -1
 	int			areanum, areanum2;
 
 	//================================
@@ -174,7 +174,7 @@ typedef struct
 	int			(*FS_Eof)( int file );
 	int			(*FS_Flush)( int file );
 	void		(*FS_FCloseFile)( int file );
-	int			(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize );
+	int			(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end );
 	char		*(*FS_Gamedir)( void );
 
 	// add commands to the server console as if they were typed in
@@ -202,7 +202,7 @@ typedef struct
 	// the init function will only be called when a game starts,
 	// not each time a level is loaded.  Persistant data for clients
 	// and the server can be allocated in init
-	void		(*Init)( unsigned int seed );
+	void		(*Init)( unsigned int seed, unsigned int frametime );
 	void		(*Shutdown)( void );
 
 	// each new level entered will cause a call to SpawnEntities

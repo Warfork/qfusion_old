@@ -92,7 +92,7 @@ static inline struct skinfile_s *trap_R_RegisterSkinFile( char *name ) {
 	return UI_IMPORT.R_RegisterSkinFile( name );
 }
 
-static inline qboolean trap_R_LerpTag( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name ) {
+static inline qboolean trap_R_LerpTag( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, const char *name ) {
 	return UI_IMPORT.R_LerpTag( orient, mod, oldframe, frame, lerpfrac, name );
 }
 
@@ -104,16 +104,24 @@ static inline void trap_R_TransformVectorToScreen( refdef_t *rd, vec3_t in, vec2
 	UI_IMPORT.R_TransformVectorToScreen( rd, in, out );
 }
 
-static int trap_R_SkeletalGetNumBones( struct model_s *mod, int *numFrames ) {
+static inline int trap_R_SkeletalGetNumBones( struct model_s *mod, int *numFrames ) {
 	return UI_IMPORT.R_SkeletalGetNumBones( mod, numFrames );
 }
 
-static int trap_R_SkeletalGetBoneInfo( struct model_s *mod, int bone, char *name, int size, int *flags ) {
+static inline int trap_R_SkeletalGetBoneInfo( struct model_s *mod, int bone, char *name, int size, int *flags ) {
 	return UI_IMPORT.R_SkeletalGetBoneInfo( mod, bone, name, size, flags );
 }
 
-static void trap_R_SkeletalGetBonePose( struct model_s *mod, int bone, int frame, bonepose_t *bonepose ) {
+static inline void trap_R_SkeletalGetBonePose( struct model_s *mod, int bone, int frame, bonepose_t *bonepose ) {
 	UI_IMPORT.R_SkeletalGetBonePose( mod, bone, frame, bonepose );
+}
+
+static inline void trap_R_SetCustomColor( int num, int r, int g, int b ) {
+	UI_IMPORT.R_SetCustomColor( num, r, g, b );
+}
+
+static inline char *trap_CM_LoadMapMessage( char *name, char *message, int size ) {
+	return UI_IMPORT.CM_LoadMapMessage( name, message, size );
 }
 
 static inline void trap_S_StartLocalSound( char *s ) {
@@ -172,6 +180,10 @@ static inline int trap_Milliseconds( void ) {
 	return UI_IMPORT.Milliseconds ();
 }
 
+static inline qboolean trap_VID_GetModeInfo( int *width, int *height, qboolean *wideScreen, int mode ) {
+	return UI_IMPORT.VID_GetModeInfo( width, height, wideScreen, mode );
+}
+
 static inline int trap_FS_FOpenFile( const char *filename, int *filenum, int mode ) {
 	return UI_IMPORT.FS_FOpenFile( filename, filenum, mode );
 }
@@ -204,8 +216,8 @@ static inline void trap_FS_FCloseFile( int file ) {
 	UI_IMPORT.FS_FCloseFile( file );
 }
 
-static inline int	trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize ) {
-	return UI_IMPORT.FS_GetFileList( dir, extension, buf, bufsize );
+static inline int trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end ) {
+	return UI_IMPORT.FS_GetFileList( dir, extension, buf, bufsize, start, end );
 }
 
 static inline char *trap_FS_Gamedir( void ) {

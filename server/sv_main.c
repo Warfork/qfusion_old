@@ -29,9 +29,11 @@ client_t	*sv_client;			// current client
 cvar_t	*sv_paused;
 cvar_t	*sv_timedemo;
 
+cvar_t	*sv_fps;
+
 cvar_t	*sv_enforcetime;
 
-cvar_t	*sv_timeout;				// seconds without any message
+cvar_t	*sv_timeout;			// seconds without any message
 cvar_t	*sv_zombietime;			// seconds to sink messages after disconnect
 
 cvar_t	*rcon_password;			// password for remote server commands
@@ -344,7 +346,11 @@ void SVC_DirectConnect (void)
 			if (NET_CompareBaseAdr (&net_from, &svs.challenges[i].adr))
 			{
 				if (challenge == svs.challenges[i].challenge)
+				{
+					svs.challenges[i].challenge = 0; // r1q2 : reset challenge
+					svs.challenges[i].time = 0;
 					break;		// good
+				}
 				Netchan_OutOfBandPrint (NS_SERVER, adr, "print\nBad challenge.\n");
 				return;
 			}
@@ -810,7 +816,7 @@ void SV_RunGameFrame (void)
 	// compression can get confused when a client
 	// has the "current" frame
 	sv.framenum++;
-	sv.time = sv.framenum*100;
+	sv.time = sv.framenum*sv.frametime;
 
 	// don't run if paused
 	if (!sv_paused->integer || sv_maxclients->integer > 1)
@@ -859,11 +865,11 @@ void SV_Frame (int msec)
 	if (!sv_timedemo->integer && svs.realtime < sv.time)
 	{
 		// never let the time get too far off
-		if (sv.time - svs.realtime > 100)
+		if (sv.time - svs.realtime > sv.frametime)
 		{
 			if (sv_showclamp->integer)
 				Com_Printf ("sv lowclamp\n");
-			svs.realtime = sv.time - 100;
+			svs.realtime = sv.time - sv.frametime;
 		}
 		NET_Sleep(sv.time - svs.realtime);
 		return;
@@ -928,7 +934,7 @@ void SV_MasterHeartbeat (void)
 		if (master_adr[i].port)
 		{
 			Com_Printf ("Sending heartbeat to %s\n", NET_AdrToString (&master_adr[i]));
-			Netchan_OutOfBandPrint (NS_SERVER, master_adr[i], "heartbeat %s\n", APPLICATION);
+			Netchan_OutOfBandPrint (NS_SERVER, master_adr[i], "heartbeat DarkPlaces\n");
 		}
 }
 
@@ -1046,6 +1052,8 @@ void SV_Init (void)
 	sv_noreload = Cvar_Get ("sv_noreload", "0", 0);
 
 	sv_public = Cvar_Get ("sv_public", "0", 0);
+
+	sv_fps = Cvar_Get ("sv_fps", "10", CVAR_SERVERINFO | CVAR_LATCH);
 
 	sv_reconnectlimit = Cvar_Get ("sv_reconnectlimit", "3", CVAR_ARCHIVE);
 

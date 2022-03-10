@@ -87,6 +87,7 @@ void SV_New_f (void)
 	MSG_WriteLong (&sv_client->netchan.message, PROTOCOL_VERSION);
 	MSG_WriteLong (&sv_client->netchan.message, svs.spawncount);
 	MSG_WriteByte (&sv_client->netchan.message, sv.attractloop);
+	MSG_WriteByte (&sv_client->netchan.message, sv.frametime);
 	MSG_WriteString (&sv_client->netchan.message, gamedir);
 
 	if (sv.state == ss_cinematic)
@@ -346,7 +347,7 @@ void SV_BeginDownload_f(void)
 	if (sv_client->download)
 		FS_FreeFile (sv_client->download);
 
-	sv_client->downloadsize = FS_LoadFile (name, (void **)&sv_client->download);
+	sv_client->downloadsize = FS_LoadFile (name, (void **)&sv_client->download, NULL, 0);
 	sv_client->downloadcount = offset;
 
 	if (offset > sv_client->downloadsize)
@@ -477,9 +478,22 @@ ucmd_t ucmds[] =
 SV_ExecuteUserCommand
 ==================
 */
-void SV_ExecuteUserCommand (char *s)
+static void SV_ExecuteUserCommand (client_t *client, char *s)
 {
 	ucmd_t	*u;
+
+	// wsw : r1q2[start] : catch end-of-message exploit
+	if( strchr (s, '\xFF') )
+	{
+		const char *remote = NET_AdrToString( &client->netchan.remote_address );
+
+		if( dedicated->integer )
+			Com_Printf( "%s [%s] Dropped. Found end-of-message inside command string\n", client->name, remote );
+		SV_BroadcastPrintf( PRINT_HIGH,"%s [%s] Dropped. Found end-of-message inside command string\n", client->name, remote );
+		SV_DropClient( client );
+		return;
+	}
+	// wsw : r1q2[end]
 
 	Cmd_TokenizeString ( s, qfalse );
 
@@ -647,7 +661,7 @@ void SV_ExecuteClientMessage (client_t *cl)
 
 			// malicious users may try using too many string commands
 			if (++stringCmdCount < MAX_STRINGCMDS)
-				SV_ExecuteUserCommand (s);
+				SV_ExecuteUserCommand (cl, s);
 
 			if (cl->state == cs_zombie)
 				return;	// disconnect command

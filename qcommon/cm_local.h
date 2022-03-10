@@ -52,20 +52,13 @@ typedef struct
 
 typedef struct
 {
-	vec3_t			mins, maxs;
-
-	cbrush_t		brush;
-} cfacet_t;
-
-typedef struct
-{
 	int				contents;
 	int				checkcount;		// to avoid repeated testings
 
 	vec3_t			mins, maxs;
 
 	int				numfacets;
-	cfacet_t		*facets;
+	cbrush_t		*facets;
 } cface_t;
 
 typedef struct

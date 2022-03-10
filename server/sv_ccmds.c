@@ -428,7 +428,7 @@ void SV_Cinematic_f (void)
 
 	Q_snprintfz (expanded, sizeof(expanded), "video/%s", filename);
 	if ( FS_FOpenFile (expanded, NULL, FS_READ) == -1 ) {
-		Com_Printf ("Can't find %s\n", expanded);
+		Com_Error( ERR_DROP, "Can't find %s\n", expanded);
 		return;
 	}
 
@@ -456,7 +456,7 @@ void SV_Demo_f (void)
 
 	Q_snprintfz (expanded, sizeof(expanded), "demos/%s", filename);
 	if ( FS_FOpenFile (expanded, NULL, FS_READ) == -1 ) {
-		Com_Printf ("Can't find %s\n", expanded);
+		Com_Error( ERR_DROP, "Can't find %s\n", expanded);
 		return;
 	}
 
@@ -932,7 +932,8 @@ void SV_ServerRecord_f (void)
 	MSG_WriteLong (&buf, PROTOCOL_VERSION);
 	MSG_WriteLong (&buf, svs.spawncount);
 	// 2 means server demo
-	MSG_WriteByte (&buf, 2);	// demos are always attract loops
+	MSG_WriteByte (&buf, 2);	// demos are always attractloops
+	MSG_WriteByte (&buf, sv.frametime);
 	MSG_WriteString (&buf, Cvar_VariableString ("fs_gamedir"));
 	MSG_WriteShort (&buf, -1);
 	// send full levelname

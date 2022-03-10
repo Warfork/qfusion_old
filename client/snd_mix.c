@@ -244,7 +244,7 @@ __declspec( naked ) void S_WriteSwappedLinearBlastStereo16 (void)
 }
 #endif
 
-void S_TransferStereo16 (unsigned long *pbuf, int endtime)
+void S_TransferStereo16 (unsigned int *pbuf, int endtime)
 {
 	int		lpos;
 	int		lpaintedtime;
@@ -289,9 +289,9 @@ void S_TransferPaintBuffer(int endtime)
 	int 	*p;
 	int 	step;
 	int		val;
-	unsigned long *pbuf;
+	unsigned int *pbuf;
 
-	pbuf = (unsigned long *)dma.buffer;
+	pbuf = (unsigned int *)dma.buffer;
 
 	if (s_testsound->integer)
 	{
@@ -484,7 +484,7 @@ void S_InitScaletable (void)
 	{
 		scale = i * 8 * 256 * s_volume->value;
 		for (j=0 ; j<256 ; j++)
-			snd_scaletable[i][j] = ((signed char)j) * scale;
+			snd_scaletable[i][j] = ((signed char)(j - 128)) * scale;
 	}
 }
 

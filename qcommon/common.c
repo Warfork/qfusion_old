@@ -1367,7 +1367,7 @@ void Qcommon_Init (int argc, char **argv)
 	Cbuf_AddEarlyCommands (qfalse);
 	Cbuf_Execute ();
 
-	FS_InitFilesystem ();
+	FS_Init ();
 
 	Cbuf_AddText ("exec default.cfg\n");
 	Cbuf_AddText ("exec qfconfig.cfg\n");
@@ -1412,8 +1412,6 @@ void Qcommon_Init (int argc, char **argv)
 
 	SV_Init ();
 	CL_Init ();
-
-	SCR_EndLoadingPlaque ();
 
 	// add + commands from command line
 	if (!Cbuf_AddLateCommands ())
@@ -1489,6 +1487,8 @@ void Qcommon_Frame (int msec)
 		c_pointcontents = 0;
 	}
 
+	FS_Frame ();
+
 	if ( dedicated->integer ) {
 		do
 		{
@@ -1536,6 +1536,16 @@ Qcommon_Shutdown
 */
 void Qcommon_Shutdown (void)
 {
+	static qboolean isdown = qfalse;
+
+	if (isdown)
+	{
+		printf ("Recursive shutdown\n");
+		return;
+	}
+	isdown = qtrue;
+
 	NET_Shutdown ();
+	FS_Shutdown ();
 	Memory_Shutdown ();
 }

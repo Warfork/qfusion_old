@@ -196,6 +196,7 @@ void CG_SpawnDecal( vec3_t origin, vec3_t dir, float orient, float radius,
 		poly = dl->poly;
 		poly->shader = shader;
 		poly->numverts = fr->numverts;
+		poly->fognum = fr->fognum;
 
 		for( j = 0; j < fr->numverts; j++ ) {
 			vec3_t v;

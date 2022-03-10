@@ -218,10 +218,6 @@ SOURCE=.\qcommon\mdfour.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\win32\net_wins.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\game\q_shared.h
 # End Source File
 # Begin Source File

@@ -40,7 +40,6 @@ static qboolean	wav_init;
 static qboolean	snd_firsttime = qtrue, snd_isdirect, snd_iswave;
 
 // starts at 0 for disabled
-static int	snd_buffer_count = 0;
 static int	sample16;
 static int	snd_sent, snd_completed;
 
@@ -307,13 +306,7 @@ sndinitstat SNDDMA_InitDirect (void)
 
 	dma.channels = 2;
 	dma.samplebits = 16;
-
-	if (s_khz->integer == 44)
-		dma.speed = 44100;
-	else if (s_khz->integer == 22)
-		dma.speed = 22050;
-	else
-		dma.speed = 11025;
+	dma.speed = KHZ2RATE (s_khz->integer);
 
 	Com_Printf( "Initializing DirectSound\n");
 
@@ -404,13 +397,7 @@ qboolean SNDDMA_InitWav (void)
 
 	dma.channels = 2;
 	dma.samplebits = 16;
-
-	if (s_khz->integer == 44)
-		dma.speed = 44100;
-	else if (s_khz->integer == 22)
-		dma.speed = 22050;
-	else
-		dma.speed = 11025;
+	dma.speed = KHZ2RATE (s_khz->integer);
 
 	memset (&format, 0, sizeof(format));
 	format.wFormatTag = WAVE_FORMAT_PCM;
@@ -598,7 +585,6 @@ qboolean SNDDMA_Init(void)
 	}
 
 	snd_firsttime = qfalse;
-	snd_buffer_count = 1;
 
 	if (!dsound_init && !wav_init)
 	{
@@ -775,6 +761,8 @@ Reset the sound device for exiting
 void SNDDMA_Shutdown(void)
 {
 	FreeSound ();
+
+	snd_firsttime = qtrue;
 }
 
 

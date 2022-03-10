@@ -436,6 +436,7 @@ Init the game subsystem for a new map
 void SV_InitGameProgs (void)
 {
 	int	apiversion;
+	int frametime;
 	game_import_t import;
 
 	// unload anything we have now
@@ -513,6 +514,14 @@ void SV_InitGameProgs (void)
 	if (apiversion != GAME_API_VERSION)
 		Com_Error (ERR_DROP, "game is version %i, not %i", apiversion, GAME_API_VERSION);
 
-	ge->Init ( time(NULL) );
+	// sv will get zeroed out later so calculate frametime here too
+	if( sv_fps->value < 5 )
+		frametime = 200;
+	else if( sv_fps->value > 100 )
+		frametime = 10;
+	else
+		frametime = (int)( 1000 / sv_fps->value );
+
+	ge->Init ( time(NULL), frametime );
 }
 

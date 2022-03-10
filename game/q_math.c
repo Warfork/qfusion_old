@@ -190,14 +190,28 @@ void AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
 	// static to help MS compiler fp bugs
 
 	angle = DEG2RAD ( angles[YAW] );
+#ifdef HAVE_SINCOSF
+	sincosf (angle, &sy, &cy);
+#else
 	sy = sin(angle);
 	cy = cos(angle);
+#endif
+
 	angle = DEG2RAD ( angles[PITCH] );
+#ifdef HAVE_SINCOSF
+	sincosf (angle, &sp, &cp);
+#else
 	sp = sin(angle);
 	cp = cos(angle);
+#endif
+
 	angle = DEG2RAD ( angles[ROLL] );
+#ifdef HAVE_SINCOSF
+	sincosf (angle, &sr, &cr);
+#else
 	sr = sin(angle);
 	cr = cos(angle);
+#endif
 
 	if (forward)
 	{
@@ -972,7 +986,7 @@ void Quat_Multiply( const quat_t q1, const quat_t q2, quat_t out )
 void Quat_Lerp( const quat_t q1, const quat_t q2, vec_t t, quat_t out )
 {
 	quat_t p1;
-	vec_t omega, cosom, sinom, scale0, scale1;
+	vec_t omega, cosom, sinom, scale0, scale1, sinsqr;
 
 	if( Quat_Compare( q1, q2 ) ) {
 		Quat_Copy( q1, out );
@@ -989,9 +1003,10 @@ void Quat_Lerp( const quat_t q1, const quat_t q2, vec_t t, quat_t out )
 		p1[2] = q1[2]; p1[3] = q1[3];
 	}
 
-	if( cosom < 1.0 - 0.001 ) {
-		omega = acos( cosom );
-		sinom = 1.0 / sin( omega );
+	if( cosom < 1.0 - 0.0001 ) {
+		sinsqr = 1.0 - cosom * cosom;
+		sinom = Q_RSqrt( sinsqr );
+		omega = atan2( sinsqr * sinom, cosom );
 		scale0 = sin( (1.0 - t) * omega ) * sinom;
 		scale1 = sin( t * omega ) * sinom;
 	} else { 
@@ -1010,19 +1025,18 @@ void Quat_Vectors( const quat_t q, vec3_t f, vec3_t r, vec3_t u )
 	vec_t wx, wy, wz, xx, yy, yz, xy, xz, zz, x2, y2, z2;
 
 	x2 = q[0] + q[0]; y2 = q[1] + q[1]; z2 = q[2] + q[2];
-	xx = q[0] * x2; xy = q[0] * y2; xz = q[0] * z2;
-	yy = q[1] * y2; yz = q[1] * z2; zz = q[2] * z2;
-	wx = q[3] * x2; wy = q[3] * y2; wz = q[3] * z2;
 
-	if( f ) {
-		f[0] = 1.0f - yy - zz; f[1] = xy - wz; f[2] = xz + wy;
-	}
-	if( r ) {
-		r[0] = xy + wz; r[1] = 1.0f - xx - zz; r[2] = yz - wx;
-	}
-	if( u ) {
-		u[0] = xz - wy; u[1] = yz + wx; u[2] = 1.0f - xx - yy;
-	}
+	xx = q[0] * x2; yy = q[1] * y2; zz = q[2] * z2;
+	f[0] = 1.0f - yy - zz; r[1] = 1.0f - xx - zz; u[2] = 1.0f - xx - yy;
+
+	yz = q[1] * z2; wx = q[3] * x2;
+	r[2] = yz - wx; u[1] = yz + wx; 
+
+	xy = q[0] * y2; wz = q[3] * z2;
+	f[1] = xy - wz; r[0] = xy + wz;
+
+	xz = q[0] * z2; wy = q[3] * y2; 
+	f[2] = xz + wy; u[0] = xz - wy;
 }
 
 void Quat_Matrix( const quat_t q, vec3_t m[3] ) {

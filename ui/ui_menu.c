@@ -188,9 +188,10 @@ void M_PopMenu (void)
 {
 	if ( m_menudepth == 1 ) {
 		// start the demo loop again
-		if( uis.clientState < ca_connecting )
+		if( uis.clientState < ca_connecting ) {
 //			trap_Cmd_ExecuteText (EXEC_APPEND, "d1\n");
 			return;
+		}
 		M_ForceMenuOff ();
 		return;
 	}
@@ -518,6 +519,9 @@ void UI_Init ( int vidWidth, int vidHeight )
 	trap_Cmd_AddCommand ("menu_quit", M_Menu_Quit_f);
 
 	M_Cache ();
+#ifdef SKELMOD
+	UI_InitTemporaryBoneposesCache();
+#endif
 }
 
 /*

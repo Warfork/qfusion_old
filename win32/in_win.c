@@ -58,7 +58,6 @@ DWORD	dwAxisMap[JOY_MAX_AXES];
 DWORD	dwControlMap[JOY_MAX_AXES];
 PDWORD	pdwRawValue[JOY_MAX_AXES];
 
-cvar_t	*in_mouse;
 cvar_t	*in_joystick;
 
 
@@ -97,6 +96,8 @@ static JOYINFOEX	ji;
 
 qboolean	in_appactive;
 
+static qboolean in_initialized = qfalse;
+
 // forward-referenced functions
 void IN_StartupJoystick (void);
 void Joy_AdvancedUpdate_f (void);
@@ -111,11 +112,6 @@ void IN_Restart_f (void);
 ============================================================
 */
 
-// mouse variables
-cvar_t	*m_filter;
-
-qboolean	mlooking;
-
 void IN_MLookDown (void) { mlooking = qtrue; }
 void IN_MLookUp (void) { mlooking = qfalse; if (!cl_freelook->integer && lookspring->integer) IN_CenterView (); }
 
@@ -123,7 +119,7 @@ int			mouse_buttons;
 int			mouse_oldbuttonstate;
 int			mouse_wheel_type;
 POINT		current_pos;
-int			mx, my, mouse_x, mouse_y, old_mouse_x, old_mouse_y, mx_accum, my_accum;
+int			mx, my, mx_accum, my_accum;
 
 qboolean	mouseactive;	// qfalse when not focus app
 
@@ -453,6 +449,8 @@ void IN_MouseEvent (int mstate)
 
 	if (!mouseinitialized || dinput_initialized)
 		return;
+	if( (cls.key_dest == key_console) && !in_grabinconsole->integer )
+        return;
 
 // perform button actions
 	for (i=0 ; i<mouse_buttons ; i++)
@@ -574,43 +572,7 @@ void IN_MouseMove (usercmd_t *cmd)
 			SetCursorPos (window_center_x, window_center_y);
 	}
 
-	if ( cls.key_dest == key_menu ) {
-		CL_UIModule_MouseMove ( mx, my );
-		return;
-	}
-
-#if 0
-	if (!mx && !my)
-		return;
-#endif
-
-	if (m_filter->integer)
-	{
-		mouse_x = (mx + old_mouse_x) * 0.5;
-		mouse_y = (my + old_mouse_y) * 0.5;
-	}
-	else
-	{
-		mouse_x = mx;
-		mouse_y = my;
-	}
-
-	old_mouse_x = mx;
-	old_mouse_y = my;
-
-	mouse_x *= sensitivity->value;
-	mouse_y *= sensitivity->value;
-
-// add mouse X/Y movement to cmd
-	if ( (in_strafe.state & 1) || (lookstrafe->integer && mlooking ))
-		cmd->sidemove += m_side->value * mouse_x;
-	else
-		cl.viewangles[YAW] -= m_yaw->value * mouse_x;
-
-	if ( (mlooking || cl_freelook->integer) && !(in_strafe.state & 1))
-		cl.viewangles[PITCH] += m_pitch->value * mouse_y;
-	else
-		cmd->forwardmove -= m_forward->value * mouse_y;
+	CL_MouseMove (cmd, mx, my);
 }
 
 
@@ -633,11 +595,10 @@ IN_Init
 */
 void IN_Init (void)
 {
-	Com_Printf ("\n------- input initialization -------\n");
+	if (in_initialized)
+		return;
 
-	// mouse variables
-	m_filter				= Cvar_Get ("m_filter",					"0",		0);
-    in_mouse				= Cvar_Get ("in_mouse",					"1",		CVAR_ARCHIVE);
+	Com_Printf ("\n------- input initialization -------\n");
 
 	// joystick variables
 	in_joystick				= Cvar_Get ("in_joystick",				"0",		CVAR_ARCHIVE);
@@ -674,6 +635,8 @@ void IN_Init (void)
 	IN_StartupMouse ();
 	IN_StartupJoystick ();
 
+	in_initialized = qtrue;
+
 	Com_Printf ("------------------------------------\n");
 }
 
@@ -684,6 +647,9 @@ IN_Shutdown
 */
 void IN_Shutdown (void)
 {
+	if (!in_initialized)
+		return;
+
 	IN_DeactivateMouse ();
 	if (dinput_initialized)
 		IN_ShutdownDInput ();
@@ -692,6 +658,8 @@ void IN_Shutdown (void)
 	Cmd_RemoveCommand ("-mlook");
 	Cmd_RemoveCommand ("joy_advancedupdate");
 	Cmd_RemoveCommand ("in_restart");
+
+	in_initialized = qfalse;
 }
 
 /*

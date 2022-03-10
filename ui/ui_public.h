@@ -1,7 +1,7 @@
 
 #include "../cgame/ref.h"
 
-#define	UI_API_VERSION		3
+#define	UI_API_VERSION		4
 
 //
 // these are the functions exported by the refresh module
@@ -38,12 +38,15 @@ typedef struct
 	struct shader_s *(*R_RegisterSkin)( char *name );
 	struct shader_s *(*R_RegisterPic)( char *name );
 	struct skinfile_s *(*R_RegisterSkinFile)( char *name );
-	qboolean 	(*R_LerpTag)( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name );
+	qboolean 	(*R_LerpTag)( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, const char *name );
 	void		(*R_DrawStretchPic)( int x, int y, int w, int h, float s1, float t1, float s2, float t2, vec4_t color, struct shader_s *shader );
 	void		(*R_TransformVectorToScreen)( refdef_t *rd, vec3_t in, vec2_t out );
 	int			(*R_SkeletalGetNumBones)( struct model_s *mod, int *numFrames );
 	int			(*R_SkeletalGetBoneInfo)( struct model_s *mod, int bone, char *name, int size, int *flags );
 	void		(*R_SkeletalGetBonePose)( struct model_s *mod, int bone, int frame, bonepose_t *bonepose );
+	void		(*R_SetCustomColor)( int num, int r, int g, int b );
+
+	char		*(*CM_LoadMapMessage)( char *name, char *message, int size );
 
 	void		(*S_StartLocalSound)( char *s );
 	void		(*S_StartBackgroundTrack)( char *intro, char *loop );
@@ -63,6 +66,8 @@ typedef struct
 	void		(*GetConfigString)( int i, char *str, int size );
 	int			(*Milliseconds)( void );
 
+	qboolean	(*VID_GetModeInfo)( int *width, int *height, qboolean *wideScreen, int mode );
+
 	// files will be memory mapped read only
 	// the returned buffer may be part of a larger pak file,
 	// or a discrete file from anywhere in the quake search path
@@ -76,7 +81,7 @@ typedef struct
 	int			(*FS_Eof)( int file );
 	int			(*FS_Flush)( int file );
 	void		(*FS_FCloseFile)( int file );
-	int			(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize );
+	int			(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end );
 	char		*(*FS_Gamedir)( void );
 
 	struct mempool_s *(*Mem_AllocPool)( const char *name, const char *filename, int fileline );

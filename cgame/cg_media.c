@@ -80,8 +80,8 @@ void CG_RegisterMediaSounds (void)
 	cgs.media.sfxRailg = CG_RegisterMediaSfx( "sound/weapons/railgun/railgf1a.wav" );
 
 	cgs.media.sfxRockexp = CG_RegisterMediaSfx( "sound/weapons/rocket/rocklx1a.wav" );
-	cgs.media.sfxGrenexp = CG_RegisterMediaSfx( "sound/weapons/grenlx1a.wav" );
-	cgs.media.sfxWatrexp = CG_RegisterMediaSfx( "sound/weapons/xpld_wat.wav" );
+	cgs.media.sfxGrenexp = CG_RegisterMediaSfx( "sound/weapons/rocket/rocklx1a.wav" );
+	cgs.media.sfxWatrexp = CG_RegisterMediaSfx( "sound/weapons/rocket/rocklx1a.wav" );
 
 	cgs.media.sfxItemRespawn = CG_RegisterMediaSfx( "sound/items/respawn1.wav" );
 	cgs.media.sfxTeleportIn = CG_RegisterMediaSfx( "sound/world/telein.wav" );
@@ -116,12 +116,11 @@ void CG_RegisterMediaSounds (void)
 	for ( i = 0; i < 4; i++ )
 		cgs.media.sfxMachinegunSplashes[i] = CG_RegisterMediaSfx( va ( "sound/weapons/machinegun/machgf%ib.wav", i+1 ) );
 
-	cgs.media.sfxBlasterSplash = CG_RegisterMediaSfx( "sound/weapons/blastf1a.wav" );
-	cgs.media.sfxHyperblasterSplash = CG_RegisterMediaSfx( "sound/weapons/hyprbf1a.wav" );
+	cgs.media.sfxBlasterSplash = CG_RegisterMediaSfx( "sound/weapons/plasma/hyprbf1a.wav" );
+	cgs.media.sfxHyperblasterSplash = CG_RegisterMediaSfx( "sound/weapons/plasma/hyprbf1a.wav" );
 
-	cgs.media.sfxShotgunSplashes[0] = CG_RegisterMediaSfx( "sound/weapons/shotgf1b.wav" );
-	cgs.media.sfxShotgunSplashes[1] = CG_RegisterMediaSfx( "sound/weapons/shotgr1b.wav" );
-	cgs.media.sfxSuperShotgunSplash = CG_RegisterMediaSfx( "sound/weapons/sshotf1b.wav" );
+	cgs.media.sfxShotgunSplash = CG_RegisterMediaSfx( "sound/weapons/shotgun/sshotf1b.wav" );
+	cgs.media.sfxSuperShotgunSplash = CG_RegisterMediaSfx( "sound/weapons/shotgun/sshotf1b.wav" );
 
 	cgs.media.sfxRocketLauncherSplash = CG_RegisterMediaSfx( "sound/weapons/rocket/rocklf1a.wav" );
 	cgs.media.sfxGrenadeLauncherSplash = CG_RegisterMediaSfx( "sound/weapons/grenade/grenlf1a.wav" );
@@ -133,6 +132,9 @@ void CG_RegisterMediaSounds (void)
 
 	cgs.media.sfxGrenBounce1 = CG_RegisterMediaSfx( "sound/weapons/grenade/hgrenb1a.wav" );
 	cgs.media.sfxGrenBounce2 = CG_RegisterMediaSfx( "sound/weapons/grenade/hgrenb2a.wav" );
+
+	cgs.media.sfxWeaponUp = CG_RegisterMediaSfx( "sound/weapons/change.wav" );
+	cgs.media.sfxWeaponUpNoAmmo = CG_RegisterMediaSfx( "sound/weapons/noammo.wav" );
 }
 
 //======================================================================
@@ -169,7 +171,8 @@ CG_MediaModel
 struct model_s *CG_MediaModel( cgs_media_handle_t *mediamodel )
 {
 	if( !mediamodel->data )
-		mediamodel->data = ( void * )trap_R_RegisterModel( mediamodel->name );
+		mediamodel->data = ( void * )CG_RegisterModel( mediamodel->name );
+
 	return ( struct model_s * )mediamodel->data;
 }
 
@@ -193,6 +196,8 @@ void CG_RegisterMediaModels (void)
 	cgs.media.modLightning = CG_RegisterMediaModel( "models/proj/lightning/tris.md2" );
 	cgs.media.modMeatyGib = CG_RegisterMediaModel( "models/objects/gibs/sm_meat/tris.md2" );
 	cgs.media.modTeleportEffect = CG_RegisterMediaModel( "models/misc/telep.md3" );
+	cgs.media.modEjectBrassMachinegun = CG_RegisterMediaModel( "models/weapons2/shells/m_shell.md3" );
+	cgs.media.modEjectBrassShotgun = CG_RegisterMediaModel( "models/weapons2/shells/s_shell.md3" );
 }
 
 //======================================================================
@@ -270,6 +275,8 @@ void CG_RegisterMediaShaders (void)
 	cgs.media.shaderExplosionMark = CG_RegisterMediaShader( "gfx/damage/burn_med_mrk" );
 	cgs.media.shaderEnergyMark = CG_RegisterMediaShader( "gfx/damage/plasma_mrk" );
 	cgs.media.shaderLaser = CG_RegisterMediaShader( "laser" );
+
+	cgs.media.shaderPlasmaBall = CG_RegisterMediaShader( "sprites/plasma1" );
 
 	cgs.media.shaderPowerupQuad = CG_RegisterMediaShader( "powerups/quad" );
 	cgs.media.shaderQuadWeapon = CG_RegisterMediaShader( "powerups/quadWeapon" );

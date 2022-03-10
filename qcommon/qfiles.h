@@ -281,7 +281,7 @@ typedef struct
 // variable size, parsed sequentially
 typedef struct
 {
-	unsigned int numbones;
+	unsigned int numweights;
 	// immediately followed by 1 or more ddpmbonevert_t structures
 	dskmbonevert_t verts[1];
 } dskmvertex_t;

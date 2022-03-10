@@ -54,6 +54,7 @@ BSC32=bscmake.exe
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /machine:I386
 # ADD LINK32 kernel32.lib user32.lib winmm.lib /nologo /dll /pdb:".\release/cgame_x86.pdb" /machine:I386 /out:"..\release\cgame_x86.dll"
+# SUBTRACT LINK32 /pdb:none
 
 !ELSEIF  "$(CFG)" == "cgame - Win32 Debug"
 
@@ -80,6 +81,7 @@ BSC32=bscmake.exe
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /dll /debug /machine:I386 /pdbtype:sept
 # ADD LINK32 kernel32.lib user32.lib winmm.lib /nologo /dll /incremental:no /pdb:".\debug/cgame_x86.pdb" /map /debug /machine:I386 /out:"..\debug\cgame_x86.dll" /pdbtype:sept
+# SUBTRACT LINK32 /pdb:none
 
 !ENDIF 
 
@@ -90,6 +92,10 @@ LINK32=link.exe
 # Begin Group "Source Files"
 
 # PROP Default_Filter "cpp;c;cxx;rc;def;r;odl;idl;hpj;bat"
+# Begin Source File
+
+SOURCE=.\cg_boneposes.c
+# End Source File
 # Begin Source File
 
 SOURCE=.\cg_decals.c
@@ -128,6 +134,10 @@ SOURCE=.\cg_players.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\cg_pmodels.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\cg_predict.c
 # End Source File
 # Begin Source File
@@ -145,6 +155,14 @@ SOURCE=.\cg_syscalls.c
 # Begin Source File
 
 SOURCE=.\cg_view.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\cg_vweap.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\cg_wmodels.c
 # End Source File
 # Begin Source File
 
@@ -168,7 +186,15 @@ SOURCE=..\game\q_shared.c
 # PROP Default_Filter "h;hpp;hxx;hm;inl"
 # Begin Source File
 
+SOURCE=.\cg_boneposes.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\cg_local.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\cg_pmodels.h
 # End Source File
 # Begin Source File
 
@@ -177,6 +203,10 @@ SOURCE=.\cg_public.h
 # Begin Source File
 
 SOURCE=.\cg_syscalls.h
+# End Source File
+# Begin Source File
+
+SOURCE=..\game\gs_pmodels.h
 # End Source File
 # Begin Source File
 

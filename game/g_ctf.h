@@ -57,8 +57,8 @@ typedef struct ghost_s {
 
 extern cvar_t *ctf;
 
-#define CTF_TEAM1_SKIN "ctf_r"
-#define CTF_TEAM2_SKIN "ctf_b"
+#define CTF_TEAM1_SKIN "red"
+#define CTF_TEAM2_SKIN "blue"
 
 #define DF_CTF_FORCEJOIN	131072	
 #define DF_ARMOR_PROTECT	262144
@@ -164,9 +164,11 @@ qboolean CTFCheckRules(void);
 
 extern char *ctf_statusbar;
 
-void UpdateChaseCam(edict_t *ent);
-void ChaseNext(edict_t *ent);
-void ChasePrev(edict_t *ent);
+void UpdateChaseCam( edict_t *ent );
+void ChaseNext( edict_t *ent );
+void ChasePrev( edict_t *ent );
+void Cmd_ChaseCam_f( edict_t *ent );
+void G_EndServerFrames_UpdateChaseCam( void );
 
 void CTFObserver(edict_t *ent);
 

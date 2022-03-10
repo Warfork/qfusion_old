@@ -350,6 +350,11 @@ SCR_BeginLoadingPlaque
 */
 void SCR_BeginLoadingPlaque (void)
 {
+	if (cls.disable_screen)
+		return;
+	if (developer->integer)
+		return;
+
 	S_StopAllSounds ();
 	cl.soundPrepped = qfalse;	// don't play ambients
 
@@ -358,27 +363,13 @@ void SCR_BeginLoadingPlaque (void)
 
 	scr_conlines = 0;			// none visible
 	scr_draw_loading = 2;		// clear to black first
+
 	SCR_UpdateScreen ();
 
-	CL_ShutdownMedia ();
-
-#if 0
-	if (cls.disable_screen)
-		return;
-	if (developer->integer)
-		return;
-	if (cls.state == ca_disconnected)
-		return;	// if at console, don't bring up the plaque
-	if (cls.key_dest == key_console)
-		return;
-	if (cl.cin.time > 0)
-		scr_draw_loading = 2;	// clear to black first
-	else
-		scr_draw_loading = 1;
-	SCR_UpdateScreen ();
 	cls.disable_screen = Sys_Milliseconds ();
 	cls.disable_servercount = cl.servercount;
-#endif
+
+	CL_ShutdownMedia ();
 }
 
 /*
@@ -389,6 +380,7 @@ SCR_EndLoadingPlaque
 void SCR_EndLoadingPlaque (void)
 {
 	cls.disable_screen = 0;
+
 	Con_ClearNotify ();
 	CL_InitMedia ();
 }
@@ -420,7 +412,7 @@ void SCR_TimeRefresh_f (void)
 
 	if (Cmd_Argc() == 2)
 	{	// run without page flipping
-		R_BeginFrame( 0 );
+		R_BeginFrame( 0, qfalse );
 		for (i=0 ; i<128 ; i++)
 		{
 			refdef.viewangles[1] = i/128.0*360.0;
@@ -434,7 +426,7 @@ void SCR_TimeRefresh_f (void)
 		{
 			refdef.viewangles[1] = i/128.0*360.0;
 
-			R_BeginFrame( 0 );
+			R_BeginFrame( 0, qfalse );
 			R_RenderScene (&refdef);
 			R_EndFrame();
 		}
@@ -537,12 +529,11 @@ void SCR_UpdateScreen (void)
 
 	for ( i = 0; i < numframes; i++ )
 	{
-		R_BeginFrame( separation[i] );
+		R_BeginFrame( separation[i], qfalse );
 
 		if (scr_draw_loading == 2)
 		{	// loading plaque over black screen
 			scr_draw_loading = 0;
-			CL_UIModule_DrawConnectScreen( qtrue );
 		}
 		// if a cinematic is supposed to be running, handle menus
 		// and console specially

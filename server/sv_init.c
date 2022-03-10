@@ -148,7 +148,7 @@ void SV_CheckForSavegame (void)
 
 		previousState = sv.state;
 		sv.state = ss_loading;
-		for (i=0 ; i<100 ; i++)
+		for (i=0 ; i<10000 ; i+=sv.frametime)
 			ge->RunFrame ();
 
 		sv.state = previousState;
@@ -192,6 +192,12 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	svs.realtime = 0;
 	sv.loadgame = loadgame;
 	sv.attractloop = attractloop;
+
+	if( sv_fps->value < 5 )			// too slow, also, netcode uses a byte
+		Cvar_ForceSet( "sv_fps", "5" );
+	else if( sv_fps->value > 100 )	// abusive
+		Cvar_ForceSet( "sv_fps", "100" );
+	sv.frametime = (int)( 1000 / sv_fps->value );
 
 	SZ_Init (&sv.multicast, sv.multicast_buf, sizeof(sv.multicast_buf));
 
@@ -252,7 +258,7 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	SV_CheckForSavegame ();
 
 	// set serverinfo variable
-	Cvar_FullSet ("mapname", sv.name, CVAR_SERVERINFO | CVAR_NOSET);
+	Cvar_FullSet ("mapname", sv.name, CVAR_SERVERINFO | CVAR_NOSET, qtrue);
 
 	Com_Printf ("-------------------------------------\n");
 }
@@ -291,7 +297,7 @@ void SV_InitGame (void)
 	if (Cvar_VariableValue ("coop") && Cvar_VariableValue ("deathmatch"))
 	{
 		Com_Printf("Deathmatch and Coop both set, disabling Coop\n");
-		Cvar_FullSet ("coop", "0",  CVAR_SERVERINFO | CVAR_LATCH);
+		Cvar_FullSet ("coop", "0",  CVAR_SERVERINFO | CVAR_LATCH, qtrue);
 	}
 
 	// dedicated servers can't be single player and are usually DM
@@ -299,25 +305,25 @@ void SV_InitGame (void)
 	if (dedicated->integer)
 	{
 		if (!Cvar_VariableValue ("coop"))
-			Cvar_FullSet ("deathmatch", "1",  CVAR_SERVERINFO | CVAR_LATCH);
+			Cvar_FullSet ("deathmatch", "1",  CVAR_SERVERINFO | CVAR_LATCH, qtrue);
 	}
 
 	// init clients
 	if (Cvar_VariableValue ("deathmatch"))
 	{
 		if (sv_maxclients->integer <= 1)
-			Cvar_FullSet ("sv_maxclients", "8", CVAR_SERVERINFO | CVAR_LATCH);
+			Cvar_FullSet ("sv_maxclients", "8", CVAR_SERVERINFO | CVAR_LATCH, qtrue);
 		else if (sv_maxclients->integer > MAX_CLIENTS)
-			Cvar_FullSet ("sv_maxclients", va("%i", MAX_CLIENTS), CVAR_SERVERINFO | CVAR_LATCH);
+			Cvar_FullSet ("sv_maxclients", va("%i", MAX_CLIENTS), CVAR_SERVERINFO | CVAR_LATCH, qtrue);
 	}
 	else if (Cvar_VariableValue ("coop"))
 	{
 		if (sv_maxclients->integer <= 1 || sv_maxclients->integer > 4)
-			Cvar_FullSet ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
+			Cvar_FullSet ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH, qtrue);
 	}
 	else	// non-deathmatch, non-coop is one player
 	{
-		Cvar_FullSet ("sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
+		Cvar_FullSet ("sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH, qtrue);
 	}
 
 	svs.spawncount = rand ();

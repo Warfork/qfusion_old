@@ -42,16 +42,14 @@ void MoveClientToIntermission (edict_t *ent)
 	client->ps.pmove.origin[2] = level.intermission_origin[2]*16;
 	VectorCopy (level.intermission_angle, client->ps.viewangles);
 	client->ps.pmove.pm_type = PM_FREEZE;
-	client->ps.gunindex = 0;
+	client->ps.stats[STAT_CHASE] = 0;
 	client->ps.blend[3] = 0;
 
 	// clean up powerup info
-	client->quad_framenum = 0;
-	client->invincible_framenum = 0;
-	client->breather_framenum = 0;
-	client->enviro_framenum = 0;
-	client->grenade_blew_up = qfalse;
-	client->grenade_time = 0;
+	client->quad_timeout = 0;
+	client->invincible_timeout = 0;
+	client->breather_timeout = 0;
+	client->enviro_timeout = 0;
 
 	ent->viewheight = 0;
 	ent->s.modelindex = 0;
@@ -432,25 +430,25 @@ void G_SetStats (edict_t *ent)
 	//
 	// timers
 	//
-	if (client->quad_framenum > level.framenum)
+	if (client->quad_timeout > level.time)
 	{
 		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("icons/quad");
-		client->ps.stats[STAT_TIMER] = (client->quad_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER] = (int)(client->quad_timeout - level.time);
 	}
-	else if (client->invincible_framenum > level.framenum)
+	else if (client->invincible_timeout > level.time)
 	{
 		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("pics/p_invulnerability");
-		client->ps.stats[STAT_TIMER] = (client->invincible_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER] = (int)(client->invincible_timeout - level.time);
 	}
-	else if (client->enviro_framenum > level.framenum)
+	else if (client->enviro_timeout > level.time)
 	{
 		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("icons/envirosuit");
-		client->ps.stats[STAT_TIMER] = (client->enviro_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER] = (int)(client->enviro_timeout - level.time);
 	}
-	else if (client->breather_framenum > level.framenum)
+	else if (client->breather_timeout > level.time)
 	{
 		client->ps.stats[STAT_TIMER_ICON] = trap_ImageIndex ("pics/p_rebreather");
-		client->ps.stats[STAT_TIMER] = (client->breather_framenum - level.framenum)/10;
+		client->ps.stats[STAT_TIMER] = (int)(client->breather_timeout - level.time);
 	}
 	else
 	{

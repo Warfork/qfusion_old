@@ -53,6 +53,44 @@ typedef enum
 void Pmove (pmove_t *pmove);
 
 //===============================================================
+//
+// player
+//
+
+#define PMODEL_MAX_ANIMS	64
+#ifdef SKELMOD
+#define DEFAULT_PLAYERMODEL	"male"		//vicskmblend splitskel
+#define DEFAULT_PLAYERSKIN	"grunt"
+#else
+#define DEFAULT_PLAYERMODEL	"grunt"
+#define DEFAULT_PLAYERSKIN	"default"
+#endif
+enum {
+	GAMETYPE_SP,
+	GAMETYPE_DM,
+	GAMETYPE_COOP,
+	GAMETYPE_CTF,
+
+	GAMETYPE_TOTAL
+};
+
+// the parts are listed in draw order
+enum {
+	LOWER = 0,	
+	UPPER,
+	HEAD,
+
+	PMODEL_PARTS
+};
+
+enum {
+	WEAPON,	
+	BARREL,
+	FLASH,
+	HAND,
+
+	WEAPMODEL_PARTS
+};
 
 // gender stuff
 enum
@@ -77,38 +115,42 @@ void GS_Obituary ( void *victim, int gender, void *attacker, int mod, char *mess
 //===============================================================
 
 // player_state->stats[] indexes
-#define	STAT_HEALTH				0
-#define	STAT_AMMO_ICON			1
-#define	STAT_AMMO				2
-#define	STAT_ARMOR_ICON			3
-#define	STAT_ARMOR				4
-#define	STAT_SELECTED_ICON		5
-#define	STAT_PICKUP_ICON		6
-#define	STAT_PICKUP_STRING		7
-#define	STAT_TIMER_ICON			8
-#define	STAT_TIMER				9
-#define	STAT_HELPICON			10
-#define	STAT_SELECTED_ITEM		11
-#define	STAT_LAYOUTS			12
-#define	STAT_FRAGS				13
-#define	STAT_FLASHES			14		// cleared each frame, 1 = health, 2 = armor
-#define STAT_CHASE				15
-#define STAT_SPECTATOR			16
+enum
+{
+	STAT_HEALTH,
+	STAT_AMMO_ICON,
+	STAT_AMMO,
+	STAT_ARMOR_ICON,
+	STAT_ARMOR,
+	STAT_SELECTED_ICON,
+	STAT_PICKUP_ICON,
+	STAT_PICKUP_STRING,
+	STAT_TIMER_ICON,
+	STAT_TIMER,
+	STAT_HELPICON,
+	STAT_SELECTED_ITEM,
+	STAT_LAYOUTS,
+	STAT_FRAGS,
+	STAT_FLASHES,		// cleared each frame, 1 = health, 2 = armor
+	STAT_CHASE,
 
-#define STAT_CTF_TEAM1_PIC			17
-#define STAT_CTF_TEAM1_CAPS			18
-#define STAT_CTF_TEAM2_PIC			19
-#define STAT_CTF_TEAM2_CAPS			20
-#define STAT_CTF_FLAG_PIC			21
-#define STAT_CTF_JOINED_TEAM1_PIC	22
-#define STAT_CTF_JOINED_TEAM2_PIC	23
-#define STAT_CTF_TEAM1_HEADER		24
-#define STAT_CTF_TEAM2_HEADER		25
-#define STAT_CTF_TECH				26
-#define STAT_CTF_ID_VIEW			27
-#define STAT_CTF_MATCH				28
-#define STAT_CTF_ID_VIEW_COLOR		29
-#define STAT_CTF_TEAMINFO			30
+	STAT_CTF_TEAM1_PIC,
+	STAT_CTF_TEAM1_CAPS,
+	STAT_CTF_TEAM2_PIC,
+	STAT_CTF_TEAM2_CAPS,
+	STAT_CTF_FLAG_PIC,
+	STAT_CTF_JOINED_TEAM1_PIC,
+	STAT_CTF_JOINED_TEAM2_PIC,
+	STAT_CTF_TEAM1_HEADER,
+	STAT_CTF_TEAM2_HEADER,
+	STAT_CTF_TECH,
+	STAT_CTF_ID_VIEW,
+	STAT_CTF_MATCH,
+	STAT_CTF_ID_VIEW_COLOR,
+	STAT_CTF_TEAMINFO,
+
+//	MAX_STATS = 32
+};
 
 //===============================================================
 
@@ -286,7 +328,7 @@ void GS_Obituary ( void *victim, int gender, void *attacker, int mod, char *mess
 #define MZ2_BOSS2_MACHINEGUN_R4			136
 #define MZ2_BOSS2_MACHINEGUN_R5			137
 
-extern	vec3_t monster_flash_offset [];
+extern	const vec3_t monster_flash_offset [];
 
 //===============================================================
 
@@ -294,43 +336,45 @@ extern	vec3_t monster_flash_offset [];
 #define MZ_SILENCED				128
 
 // means of death
-#define MOD_UNKNOWN			0
-#define MOD_BLASTER			1
-#define MOD_SHOTGUN			2
-#define MOD_SSHOTGUN		3
-#define MOD_MACHINEGUN		4
-#define MOD_CHAINGUN		5
-#define MOD_GRENADE			6
-#define MOD_G_SPLASH		7
-#define MOD_ROCKET			8
-#define MOD_R_SPLASH		9
-#define MOD_HYPERBLASTER	10
-#define MOD_RAILGUN			11
-#define MOD_BFG_LASER		12
-#define MOD_BFG_BLAST		13
-#define MOD_BFG_EFFECT		14
-#define MOD_HANDGRENADE		15
-#define MOD_HG_SPLASH		16
-#define MOD_WATER			17
-#define MOD_SLIME			18
-#define MOD_LAVA			19
-#define MOD_CRUSH			20
-#define MOD_TELEFRAG		21
-#define MOD_FALLING			22
-#define MOD_SUICIDE			23
-#define MOD_HELD_GRENADE	24
-#define MOD_EXPLOSIVE		25
-#define MOD_BARREL			26
-#define MOD_BOMB			27
-#define MOD_EXIT			28
-#define MOD_SPLASH			29
-#define MOD_TARGET_LASER	30
-#define MOD_TRIGGER_HURT	31
-#define MOD_HIT				32
-#define MOD_TARGET_BLASTER	33
-#define MOD_GRAPPLE			34
-#define MOD_LASER_TRAP		35
-#define MOD_FRIENDLY_FIRE	0x8000000
+enum
+{
+	MOD_UNKNOWN,
+	MOD_BLASTER,
+	MOD_SHOTGUN,
+	MOD_SSHOTGUN,
+	MOD_MACHINEGUN,
+	MOD_CHAINGUN,
+	MOD_GRENADE,
+	MOD_G_SPLASH,
+	MOD_ROCKET,
+	MOD_R_SPLASH,
+	MOD_HYPERBLASTER,
+	MOD_RAILGUN,
+	MOD_BFG_LASER,
+	MOD_BFG_BLAST,
+	MOD_BFG_EFFECT,
+	MOD_HANDGRENADE,
+	MOD_HG_SPLASH,
+	MOD_WATER,
+	MOD_SLIME,
+	MOD_LAVA,
+	MOD_CRUSH,
+	MOD_TELEFRAG,
+	MOD_FALLING,
+	MOD_SUICIDE,
+	MOD_EXPLOSIVE,
+	MOD_BARREL,
+	MOD_BOMB,
+	MOD_EXIT,
+	MOD_SPLASH,
+	MOD_TARGET_LASER,
+	MOD_TRIGGER_HURT,
+	MOD_HIT,
+	MOD_TARGET_BLASTER,
+	MOD_GRAPPLE,
+
+	MOD_FRIENDLY_FIRE = 0x8000000
+};
 
 //===============================================================
 
@@ -343,7 +387,6 @@ enum
 	WEAP_SUPERSHOTGUN,
 	WEAP_MACHINEGUN,
 	WEAP_CHAINGUN,
-	WEAP_GRENADES,
 	WEAP_GRENADELAUNCHER,
 	WEAP_ROCKETLAUNCHER,
 	WEAP_HYPERBLASTER,
@@ -390,6 +433,13 @@ enum
 	FALL_FAR,
 
 	FALL_TOTAL
+};
+
+enum
+{
+	DROP_ITEM,
+
+	DROP_TOTAL
 };
 
 // entity_state_t->event values
@@ -443,6 +493,11 @@ typedef enum
 
 	EV_TELEPORT,
 
+	EV_GESTURE,
+	EV_DROP,
+	EV_WEAPONUP,
+	EV_SPOG,
+
 	MAX_EVENTS = 128
 } entity_event_t;
 
@@ -460,6 +515,7 @@ enum
 
 	ET_GIB,				// leave a trail
 	ET_BLASTER,			// redlight + trail
+	ET_BLASTER2,
 	ET_HYPERBLASTER,
 	ET_ROCKET,			// redlight + trail
 	ET_GRENADE,

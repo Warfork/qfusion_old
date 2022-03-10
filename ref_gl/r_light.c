@@ -38,14 +38,14 @@ qboolean R_SurfPotentiallyLit( msurface_t *surf )
 {
 	shader_t *shader;
 
-	if( surf->shaderref->flags & (SURF_SKY|SURF_NODLIGHT|SURF_NODRAW) )
+	if( surf->flags & (SURF_SKY|SURF_NODLIGHT|SURF_NODRAW) )
 		return qtrue;
 
-	shader = surf->shaderref->shader;
+	shader = surf->shader;
 	if( (shader->flags & (SHADER_SKY|SHADER_FLARE)) || !shader->numpasses )
 		return qfalse;
 
-	return ( surf->mesh && (surf->facetype != FACETYPE_FLARE) );
+	return ( surf->mesh && (surf->facetype != FACETYPE_FLARE)/* && (surf->facetype != FACETYPE_TRISURF)*/ );
 }
 
 /*
@@ -59,132 +59,32 @@ void R_LightBounds( const vec3_t origin, float intensity, vec3_t mins, vec3_t ma
 }
 
 /*
-=================
-R_MarkLightsWorldNode
-
-Mark faces touched by dynamic lights using BSP tree.
-Note that invisible lights are culled away by frustum and
-visible lights are clipped by leafs' boundaries, leaving
-almost a perfect bounding box.
-=================
+=============
+R_AddSurfDlighbits
+=============
 */
-void R_MarkLightsWorldNode( void )
+unsigned int R_AddSurfDlighbits( msurface_t *surf, unsigned int dlightbits )
 {
-	int			c, k, bit;
-	int			stackdepth;
-	float		dist;
-	dlight_t	*lt;
-	vec3_t		mins, maxs;
-	mleaf_t		*pleaf;
-	msurface_t	*surf, **mark;
-	mnode_t		*node, *localstack[2048];
-
-	if( !r_dynamiclight->integer || !r_numDlights || r_fullbright->value )
-		return;
+	int k;
+	unsigned int bit;
+	dlight_t *lt;
+	float dist;
 
 	for( k = 0, bit = 1, lt = r_dlights; k < r_numDlights; k++, bit <<= 1, lt++ ) {
-		if( R_CullBox( lt->mins, lt->maxs, 15 ) )
-			continue;
-
-		VectorCopy( lt->origin, mins );
-		VectorCopy( lt->origin, maxs );
-
-		for( node = r_worldmodel->nodes, stackdepth = 0; ; ) {
-			if( node->visframe != r_visframecount )
-				goto nextNodeOnStack;
-			if( node->plane == NULL ) {
-				pleaf = ( mleaf_t * )node;
-
-				if( r_refdef.areabits ) {
-					if(! (r_refdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) )
-						goto nextNodeOnStack;
-				}
-				if( !BoundsIntersect( pleaf->mins, pleaf->maxs, lt->mins, lt->maxs ) || !pleaf->firstVisSurface )
-					goto nextNodeOnStack;
-
-				// mark the polygons
-				if( pleaf->firstLitSurface ) {
-					mark = pleaf->firstLitSurface;
-					do {
-						surf = *mark++;
-						if( BoundsIntersect( surf->mins, surf->maxs, lt->mins, lt->maxs ) )	{
-							if( surf->facetype == FACETYPE_PLANAR ) {
-								dist = 
-									(lt->origin[0] - surf->mesh->xyzArray[0][0]) * surf->origin[0] +
-									(lt->origin[1] - surf->mesh->xyzArray[0][1]) * surf->origin[1] + 
-									(lt->origin[2] - surf->mesh->xyzArray[0][2]) * surf->origin[2];
-								if( /*dist <= 0 || */dist >= lt->intensity )
-									continue;	// how lucky...
-							}
-							if( surf->dlightframe != r_framecount ) {
-								surf->dlightbits = 0;
-								surf->dlightframe = r_framecount;
-							}
-							surf->dlightbits |= bit;
-						}
-					} while( *mark );
-				}
-
-				for( c = 0; c < 3; c++ ) {
-					mins[c] = min( mins[c], pleaf->mins[c] );
-					maxs[c] = max( maxs[c], pleaf->maxs[c] );
-				}
-nextNodeOnStack:
-				if( !stackdepth )
-					break;
-				node = localstack[--stackdepth];
-				continue;
-			}
-
-			// FIXME: use BOX_ON_PLANE_SIDE ?
-			dist = PlaneDiff( lt->origin, node->plane );
-			if( dist > lt->intensity ) {
-				node = node->children[0];
-				continue;
-			}
-
-			// go down both sides if needed
-			if( (dist >= -lt->intensity) && (stackdepth < sizeof(localstack)/sizeof(mnode_t *)) )
-				localstack[stackdepth++] = node->children[0];
-			node = node->children[1];
-		}
-
-		for( c = 0; c < 3; c++ ) {
-			if( mins[c] > lt->mins[c] ) lt->mins[c] = mins[c];
-			if( maxs[c] < lt->maxs[c] ) lt->maxs[c] = maxs[c];
-		}
-	}
-}
-
-/*
-=================
-R_MarkLightsBmodel
-=================
-*/
-void R_MarkLightsBmodel( const entity_t *e, const vec3_t mins, const vec3_t maxs )
-{
-	int			k, c, bit;
-	dlight_t	*lt;
-	model_t		*model = e->model;
-	msurface_t	*psurf;
-
-	if( !r_dynamiclight->integer || !r_numDlights || r_fullbright->integer )
-		return;
-
-	for( k = 0, bit = 1, lt = r_dlights; k < r_numDlights; k++, bit <<= 1, lt++ ) {
-		if( !BoundsIntersect( mins, maxs, lt->mins, lt->maxs ) )
-			continue;
-
-		for( c = 0, psurf = model->firstmodelsurface; c < model->nummodelsurfaces; c++, psurf++ ) {
-			if( R_SurfPotentiallyLit( psurf ) ) {
-				if( psurf->dlightframe != r_framecount ) {
-					psurf->dlightbits = 0;
-					psurf->dlightframe = r_framecount;
-				}
-				psurf->dlightbits |= bit;
+		if( dlightbits & bit ) {
+			if( surf->facetype == FACETYPE_PLANAR ) {
+				dist = PlaneDiff( lt->origin, surf->plane );
+				if( dist <= -lt->intensity || dist >= lt->intensity )
+					dlightbits &= ~bit;	// how lucky...
+			} else if( surf->facetype == FACETYPE_PATCH || surf->facetype == FACETYPE_TRISURF ) {
+				if( !BoundsIntersect( surf->mins, surf->maxs, lt->mins, lt->maxs ) )
+					dlightbits &= ~bit;
 			}
 		}
 	}
+
+	return dlightbits;
+
 }
 
 /*
@@ -192,50 +92,50 @@ void R_MarkLightsBmodel( const entity_t *e, const vec3_t mins, const vec3_t maxs
 R_AddDynamicLights
 =================
 */
-void R_AddDynamicLights( unsigned int dlightbits, GLenum func, GLenum sfactor, GLenum dfactor )
+void R_AddDynamicLights( unsigned int dlightbits, int state )
 {
 	int i, j, numTempIndexes;
 	qboolean cullAway;
 	dlight_t *light;
-	image_t *image;
 	shader_t *shader;
 	vec3_t tvec, dlorigin, normal;
 	index_t tempIndexesArray[MAX_ARRAY_INDEXES];
 	float inverseIntensity, *v1, *v2, *v3, dist;
-	mat4x4_t m = { 0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 1, 0, 0.5, 0.5, 0, 1 }, m1, m2;
-	GLfloat xyFallof[2][4] = { { 1, 0, 0, 0 }, { 0, 1, 0, 0 } };
-	GLfloat zFallof[2][4] = { { 0, 0, 1, 0 }, { 0, 0, 0, 0 } };
+	mat4x4_t m = { 0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 0.5, 0.5, 0.5, 1 };
+	GLfloat xyzFallof[4][4] = { { 1, 0, 0, 0 }, { 0, 1, 0, 0 }, { 0, 0, 1, 0 }, { 0, 0, 0, 0 } };
 
-	for( i = 0; i < min( glConfig.maxTextureUnits, 2 ); i++ ) {
+	numColors = 0;
+
+	// we multitexture or texture3D support for dynamic lights
+	if( !glConfig.texture3D && !glConfig.multiTexture )
+		return;
+
+	for( i = 0; i < (glConfig.texture3D ? 1 : 2); i++ ) {
 		GL_SelectTexture( i );
 		GL_TexEnv( GL_MODULATE );
-		qglEnable( GL_BLEND );
-		qglDisable( GL_ALPHA_TEST );
-		qglDepthMask( GL_FALSE );
-		qglDepthFunc( func );
-		qglBlendFunc( sfactor, dfactor );
-
-		qglTexGeni( GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR );
-		qglTexGeni( GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR );
-		qglEnable( GL_TEXTURE_GEN_S );
-		qglEnable( GL_TEXTURE_GEN_T );
+		GL_SetState( state | (i ? 0 : GLSTATE_BLEND_MTEX) );
+		GL_SetTexCoordArrayMode( 0 );
+		GL_EnableTexGen( GL_S, GL_OBJECT_LINEAR );
+		GL_EnableTexGen( GL_T, GL_OBJECT_LINEAR );
 	}
-	if( glConfig.maxTextureUnits > 1 ) {
-		qglEnable( GL_TEXTURE_2D );
-		numColors = 0;
+
+	if( glConfig.texture3D ) {
+		GL_EnableTexGen( GL_R, GL_OBJECT_LINEAR );
+		qglDisable( GL_TEXTURE_2D );
+		qglEnable( GL_TEXTURE_3D );
 	} else {
-		qglEnableClientState( GL_COLOR_ARRAY );
-		numColors = numVerts;
+		GL_EnableTexGen( GL_R, 0 );
+		qglEnable( GL_TEXTURE_2D );
 	}
 
 	for( i = 0, light = r_dlights; i < r_numDlights; i++, light++ ) {
 		if( !(dlightbits & (1<<i) ) )
 			continue;		// not lit by this light
 
-		VectorSubtract( light->origin, currententity->origin, dlorigin );
-		if( !Matrix_Compare( currententity->axis, axis_identity ) ) {
+		VectorSubtract( light->origin, ri.currententity->origin, dlorigin );
+		if( !Matrix_Compare( ri.currententity->axis, axis_identity ) ) {
 			VectorCopy( dlorigin, tvec );
-			Matrix_TransformVector( currententity->axis, tvec, dlorigin );
+			Matrix_TransformVector( ri.currententity->axis, tvec, dlorigin );
 		}
 
 		shader = light->shader;
@@ -269,72 +169,29 @@ void R_AddDynamicLights( unsigned int dlightbits, GLenum func, GLenum sfactor, G
 
 		inverseIntensity = 1 / light->intensity;
 
-		image = r_dlighttexture;
-		Matrix4_Copy( m, m1 );
-		if( shader && shader->numpasses ) {
-			if( shader->flags & SHADER_VIDEOMAP )
-				R_UploadCinematicShader( shader );
+		GL_Bind( 0, r_dlighttexture );
+		GL_LoadTexMatrix( m );
+		qglColor4f( light->color[0], light->color[1], light->color[2], 255 );
 
-			image = R_ShaderpassTex( shader->passes, 0 );
-			if( image == r_notexture )
-				image = r_dlighttexture;
-			R_ApplyTCMods( shader->passes, m1 );
-		}
-		GL_Bind( 0, image );
-		GL_LoadTexMatrix( m1 );
+		xyzFallof[0][0] = inverseIntensity;
+		xyzFallof[0][3] = -dlorigin[0] * inverseIntensity;
+		qglTexGenfv( GL_S, GL_OBJECT_PLANE, xyzFallof[0] );
 
-		xyFallof[0][0] = inverseIntensity;
-		xyFallof[0][3] = -dlorigin[0] * inverseIntensity;
-		xyFallof[1][1] = inverseIntensity;
-		xyFallof[1][3] = -dlorigin[1] * inverseIntensity;
-		qglTexGenfv( GL_S, GL_OBJECT_PLANE, xyFallof[0] );
-		qglTexGenfv( GL_T, GL_OBJECT_PLANE, xyFallof[1] );
+		xyzFallof[1][1] = inverseIntensity;
+		xyzFallof[1][3] = -dlorigin[1] * inverseIntensity;
+		qglTexGenfv( GL_T, GL_OBJECT_PLANE, xyzFallof[1] );
 
-		if( glConfig.maxTextureUnits > 1 ) {
-			qglColor3fv( light->color );
+		xyzFallof[2][2] = inverseIntensity;
+		xyzFallof[2][3] = -dlorigin[2] * inverseIntensity;
 
-			image = r_dlighttexture;
-			Matrix4_Copy( m, m2 );
-			if( shader && shader->numpasses > 1 ) {
-				image = R_ShaderpassTex( shader->passes + 1, 1 );
-				if( image == r_notexture )
-					image = r_dlighttexture;
-				R_ApplyTCMods( shader->passes + 1, m2 );
-			}
-			GL_Bind( 1, image );
-			GL_LoadTexMatrix( m2 );
-
-			zFallof[0][2] = inverseIntensity;
-			zFallof[0][3] = -dlorigin[2] * inverseIntensity;
-			qglTexGenfv( GL_S, GL_OBJECT_PLANE, zFallof[0] );
-			qglTexGenfv( GL_T, GL_OBJECT_PLANE, zFallof[1] );
+		if( glConfig.texture3D ) {
+			qglTexGenfv( GL_R, GL_OBJECT_PLANE, xyzFallof[2] );
 		} else {
-			qbyte *bColor;
+			GL_Bind( 1, r_dlighttexture );
+			GL_LoadTexMatrix( m );
 
-			for( j = 0, bColor = colorArray[0]; j < numColors; j++, bColor += 4 ) {
-				dist = vertsArray[j][2] - dlorigin[2];
-				if( dist < 0 )
-					dist = -dist;
-
-				if( dist < light->intensity ) {
-					bColor[0] = R_FloatToByte( light->color[0] );
-					bColor[1] = R_FloatToByte( light->color[1] );
-					bColor[2] = R_FloatToByte( light->color[2] );
-				} else {
-					dist = Q_RSqrt( dist * dist - light->intensity * light->intensity );
-					clamp( dist, 0, 1 );
-					bColor[0] = R_FloatToByte( dist * light->color[0] );
-					bColor[1] = R_FloatToByte( dist * light->color[1] );
-					bColor[2] = R_FloatToByte( dist * light->color[2] );
-				}
-				bColor[3] = 255;
-			}
-
-			if( glConfig.vertexBufferObject ) {
-				qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_COLORS] );
-				qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( byte_vec4_t ), colorArray, GL_STREAM_DRAW_ARB );
-				qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-			}
+			qglTexGenfv( GL_S, GL_OBJECT_PLANE, xyzFallof[2] );
+			qglTexGenfv( GL_T, GL_OBJECT_PLANE, xyzFallof[3] );
 		}
 
 		if( numTempIndexes ) {
@@ -350,17 +207,15 @@ void R_AddDynamicLights( unsigned int dlightbits, GLenum func, GLenum sfactor, G
 		}
 	}
 
-	if( glConfig.maxTextureUnits > 1 ) {
-		qglDisable( GL_TEXTURE_2D );
-		qglDisable( GL_TEXTURE_GEN_S );
-		qglDisable( GL_TEXTURE_GEN_T );
-		GL_SelectTexture( 0 );
+	if( glConfig.texture3D ) {
+		GL_EnableTexGen( GL_R, 0 );
+		qglDisable( GL_TEXTURE_3D );
+		qglEnable( GL_TEXTURE_2D );
 	} else {
-		qglDisableClientState( GL_COLOR_ARRAY );
+		qglDisable( GL_BLEND );
+		qglDisable( GL_TEXTURE_2D );
+		GL_SelectTexture( 0 );
 	}
-
-	qglDisable( GL_TEXTURE_GEN_S );
-	qglDisable( GL_TEXTURE_GEN_T );
 }
 
 
@@ -385,7 +240,7 @@ void R_LightForOrigin( vec3_t origin, vec3_t dir, vec4_t ambient, vec4_t diffuse
 	VectorSet( ambientLocal, 0, 0, 0 );
 	VectorSet( diffuseLocal, 0, 0, 0 );
 
-	if( !r_worldmodel || (r_refdef.rdflags & RDF_NOWORLDMODEL) ||
+	if( !r_worldmodel/* || (ri.refdef.rdflags & RDF_NOWORLDMODEL)*/ ||
 		 !r_worldmodel->lightgrid || !r_worldmodel->numlightgridelems ) {
 		VectorSet( dir, 0.5, 0.2, -1 );
 		VectorNormalizeFast( dir );
@@ -475,7 +330,7 @@ dynamic:
 	if( radius && r_dynamiclight->integer && r_numDlights ) {
 		int lnum;
 		dlight_t *dl;
-		float dist, add;
+		float dist, dist2, add;
 		vec3_t direction;
 
 		for( i = 0; i < 3; i++ )
@@ -492,12 +347,13 @@ dynamic:
 				continue;
 
 			dist = 1.0 / dist;
-			add = (dl->intensity + radius) * 2 * (dist * dist);
+			dist2 = dist * dist * 0.25;
+			add = (dl->intensity + radius) * 8 * dist;
 			for( i = 0; i < 3; i++ ) {
 				dot = dl->color[i] * add;
 				diffuseLocal[i] += dot;
 				ambientLocal[i] += dot * 0.05;
-				dir[i] += dot * direction[i] * dist;
+				dir[i] += dot * direction[i] * dist2;
 			}
 		}
 
@@ -505,7 +361,7 @@ dynamic:
 	}
 
 	if( ambient ) {
-		dot = bound( 0.0f, r_ambientscale->value, 1.0f ) * glState.pow2MapOvrbr;
+		dot = bound( 0.0f, r_lighting_ambientscale->value, 1.0f ) * (1 << mapConfig.pow2MapOvrbr) * (1.0 / 255.0);
 		for( i = 0; i < 3; i++ ) {
 			ambient[i] = ambientLocal[i] * dot;
 			clamp( ambient[i], 0, 1 );
@@ -514,7 +370,7 @@ dynamic:
 	}
 
 	if( diffuse ) {
-		dot = bound( 0.0f, r_directedscale->value, 1.0f ) * glState.pow2MapOvrbr;
+		dot = bound( 0.0f, r_lighting_directedscale->value, 1.0f ) * (1 << mapConfig.pow2MapOvrbr) * (1.0 / 255.0);
 		for( i = 0; i < 3; i++ ) {
 			diffuse[i] = diffuseLocal[i] * dot;
 			clamp( diffuse[i], 0, 1 );
@@ -530,11 +386,12 @@ R_LightForEntity
 */
 void R_LightForEntity( entity_t *e, qbyte *bArray )
 {
-	int i;
-	float dot, *cArray;
+	int i, lnum;
+	dlight_t *dl;
+	unsigned int dlightbits;
+	float dot, dist;
+	vec3_t lightDirs[MAX_DLIGHTS], direction, temp;
 	vec4_t ambient, diffuse;
-	vec3_t dlorigin, dir, direction;
-	vec3_t tempColorsArray[MAX_ARRAY_VERTS];
 
 	if( (e->flags & RF_FULLBRIGHT) || r_fullbright->value )
 		return;
@@ -543,48 +400,69 @@ void R_LightForEntity( entity_t *e, qbyte *bArray )
 	if( !e->model || (e->model->type == mod_brush) )
 		return;
 
-	R_LightForOrigin( e->lightingOrigin, dir, ambient, diffuse, 0 );
+	R_LightForOrigin( e->lightingOrigin, temp, ambient, diffuse, 0 );
 
 	if( e->flags & RF_MINLIGHT ) {
 		for( i = 0; i < 3; i++ )
 			if( ambient[i] > 0.1 )
 				break;
-		if( i == 3 ) {
-			ambient[0] = 0.1f;
-			ambient[1] = 0.1f;
-			ambient[2] = 0.1f;
-		}
+		if( i == 3 )
+			VectorSet( ambient, 0.1f, 0.1f, 0.1f );
 	}
 
 	// rotate direction
-	Matrix_TransformVector( e->axis, dir, direction );
+	Matrix_TransformVector( e->axis, temp, direction );
 
-	cArray = tempColorsArray[0];
-	for( i = 0; i < numColors; i++, cArray += 3 ) {
-		dot = DotProduct( normalsArray[i], direction );
-		if( dot <= 0 )
-			VectorCopy( ambient, cArray );
-		else
-			VectorMA( ambient, dot, diffuse, cArray );
-	}
-
-	// add dynamic lights
+	// see if we are affected by dynamic lights
+	dlightbits = 0;
 	if( r_dynamiclight->integer && r_numDlights ) {
-		int lnum;
-		dlight_t *dl;
-		float dist, add, intensity8;
-
 		for( lnum = 0, dl = r_dlights; lnum < r_numDlights; lnum++, dl++ ) {
 			// translate
-			VectorSubtract( dl->origin, e->origin, dir );
-			dist = VectorLength( dir );
+			VectorSubtract( dl->origin, e->origin, lightDirs[lnum] );
+			dist = VectorLength( lightDirs[lnum] );
 
 			if( !dist || dist > dl->intensity + e->model->radius * e->scale )
 				continue;
+			dlightbits |= (1<<lnum);
+		}
+	}
+
+	if( !dlightbits ) {
+		vec3_t color;
+
+		for( i = 0; i < numColors; i++, bArray += 4 ) {
+			dot = DotProduct( normalsArray[i], direction );
+			if( dot <= 0 )
+				VectorCopy( ambient, color );
+			else
+				VectorMA( ambient, dot, diffuse, color );
+
+			bArray[0] = R_FloatToByte( color[0] );
+			bArray[1] = R_FloatToByte( color[1] );
+			bArray[2] = R_FloatToByte( color[2] );
+		}
+	} else {
+		float add, intensity8, dot, *cArray, *dir;
+		vec3_t dlorigin, tempColorsArray[MAX_ARRAY_VERTS];
+
+		cArray = tempColorsArray[0];
+		for( i = 0; i < numColors; i++, cArray += 3 ) {
+			dot = DotProduct( normalsArray[i], direction );
+			if( dot <= 0 )
+				VectorCopy( ambient, cArray );
+			else
+				VectorMA( ambient, dot, diffuse, cArray );
+		}
+
+		for( lnum = 0, dl = r_dlights; lnum < r_numDlights; lnum++, dl++ ) {
+			if( !(dlightbits & (1<<lnum)) )
+				continue;
+
+			// translate
+			dir = lightDirs[lnum];
 
 			// rotate
 			Matrix_TransformVector( e->axis, dir, dlorigin );
-
 			intensity8 = dl->intensity * 8;
 
 			cArray = tempColorsArray[0];
@@ -599,68 +477,13 @@ void R_LightForEntity( entity_t *e, qbyte *bArray )
 				}
 			}
 		}
-	}
 
-	cArray = tempColorsArray[0];
-	for( i = 0; i < numColors; i++, bArray += 4, cArray += 3 ) {
-		bArray[0] = R_FloatToByte( bound( 0.0f, cArray[0], 1.0f ) );
-		bArray[1] = R_FloatToByte( bound( 0.0f, cArray[1], 1.0f ) );
-		bArray[2] = R_FloatToByte( bound( 0.0f, cArray[2], 1.0f ) );
-	}
-}
-
-/*
-===============
-R_LightForEntityDot3
-===============
-*/
-void R_LightForEntityDot3( entity_t *e, qbyte *bArray, vec3_t ambient, vec3_t diffuse )
-{
-	int i;
-	vec3_t tvec;
-	vec3_t dir, direction;
-
-	if( (e->flags & RF_FULLBRIGHT) || r_fullbright->value ) {
-		ambient[0] = ambient[1] = ambient[2] = ambient[3] = 1;
-		diffuse[0] = diffuse[1] = diffuse[2] = diffuse[3] = 1;
-		memset( bArray, 255, sizeof( byte_vec4_t ) * numColors );
-		return;
-	}
-
-	// probably weird shader, see mpteam4 for example
-	if( !e->model || (e->model->type == mod_brush) ) {
-		ambient[0] = ambient[1] = ambient[2] = ambient[3] = 1;
-		diffuse[0] = diffuse[1] = diffuse[2] = diffuse[3] = 1;
-		memset( bArray, 255, sizeof( byte_vec4_t ) * numColors );
-		return;
-	}
-
-	R_LightForOrigin( e->lightingOrigin, dir, ambient, diffuse, e->model->radius * e->scale );
-
-	if( e->flags & RF_MINLIGHT ) {
-		for( i = 0; i < 3; i++ )
-			if( ambient[i] > 0.1 )
-				break;
-		if( i == 3 ) {
-			ambient[0] = 0.1f;
-			ambient[1] = 0.1f;
-			ambient[2] = 0.1f;
+		cArray = tempColorsArray[0];
+		for( i = 0; i < numColors; i++, bArray += 4, cArray += 3 ) {
+			bArray[0] = R_FloatToByte( cArray[0] );
+			bArray[1] = R_FloatToByte( cArray[1] );
+			bArray[2] = R_FloatToByte( cArray[2] );
 		}
-	}
-
-	// rotate direction
-	Matrix_TransformVector( e->axis, dir, direction );
-
-	// [-1, 1] -> [0, 1] -> [0, 255]
-	VectorScale( direction, 0.5f, direction );
-	for( i = 0; i < numColors; i++, bArray += 4 ) {
-		tvec[0] = direction[0] * sVectorsArray[i][0] + direction[1] * sVectorsArray[i][1] + direction[2] * sVectorsArray[i][2] + 0.5f;
-		tvec[1] = direction[0] * tVectorsArray[i][0] + direction[1] * tVectorsArray[i][1] + direction[2] * tVectorsArray[i][2] + 0.5f;
-		tvec[2] = direction[0] * normalsArray[i][0] + direction[1] * normalsArray[i][1] + direction[2] * normalsArray[i][2] + 0.5f;
-
-		bArray[0] = R_FloatToByte( bound( 0.0f, tvec[0], 1.0f ) );
-		bArray[1] = R_FloatToByte( bound( 0.0f, tvec[1], 1.0f ) );
-		bArray[2] = R_FloatToByte( bound( 0.0f, tvec[2], 1.0f ) );
 	}
 }
 
@@ -672,7 +495,6 @@ void R_LightForEntityDot3( entity_t *e, qbyte *bArray, vec3_t ambient, vec3_t di
 =============================================================================
 */
 
-qboolean r_ligtmapsPacking;
 static qbyte *r_lightmapBuffer;
 static int r_lightmapBufferSize;
 static int r_numUploadedLightmaps;
@@ -683,33 +505,59 @@ static int r_maxLightmapBlockSize;
 R_BuildLightmap
 =======================
 */
-static void R_BuildLightmap( int w, int h, const qbyte *data, qbyte *dest, int blockWidth )
+static void R_BuildLightmap( int w, int h, qboolean deluxe, const qbyte *data, qbyte *dest, int blockWidth )
 {
-	int x, y;
-	float scale;
+	int x, y, bits;
 	qbyte *rgba;
-	float rgb[3], scaled[3];
+	float scaled[3], maxScaled;
+	qboolean normalize;
 
 	if ( !data || r_fullbright->integer ) {
-		for( y = 0; y < h; y++, dest  )
-			memset( dest + y * blockWidth, 255, w * 4 );
+		if( deluxe ) {
+			for( y = 0; y < h; y++, dest  )
+				memset( dest + y * blockWidth, 128, w * 4 );
+		} else {
+			for( y = 0; y < h; y++, dest  )
+				memset( dest + y * blockWidth, 255, w * 4 );
+		}
 		return;
 	}
 
-	scale = glState.pow2MapOvrbr;
-	for( y = 0; y < h; y++ ) {
-		for( x = 0, rgba = dest + y * blockWidth; x < w; x++, rgba += 4 ) {
-			scaled[0] = data[(y*w + x) * LIGHTMAP_BYTES + 0] * scale;
-			scaled[1] = data[(y*w + x) * LIGHTMAP_BYTES + 1] * scale;
-			scaled[2] = data[(y*w + x) * LIGHTMAP_BYTES + 2] * scale;
-
-			ColorNormalize( scaled, rgb );
-
-			rgba[0] = ( qbyte )( rgb[0]*255 );
-			rgba[1] = ( qbyte )( rgb[1]*255 );
-			rgba[2] = ( qbyte )( rgb[2]*255 );
-		}
+	if( deluxe ) {
+		bits = 0;
+		normalize = qfalse;
+	} else {
+		bits = mapConfig.pow2MapOvrbr;
+		normalize = qtrue;
 	}
+
+	if( normalize ) {
+		for( y = 0; y < h; y++ ) {
+			for( x = 0, rgba = dest + y * blockWidth; x < w; x++, data += LIGHTMAP_BYTES, rgba += 4 ) {
+				scaled[0] = (float)((int)data[0] << bits);
+				scaled[1] = (float)((int)data[1] << bits);
+				scaled[2] = (float)((int)data[2] << bits);
+
+				maxScaled = max( max( scaled[0], scaled[1] ), scaled[2] );
+				if( maxScaled > 255 ) {
+					maxScaled = 255.0f / maxScaled;
+					VectorScale( scaled, maxScaled, scaled );
+				}
+
+				rgba[0] = ( qbyte )( scaled[0] );
+				rgba[1] = ( qbyte )( scaled[1] );
+				rgba[2] = ( qbyte )( scaled[2] );
+			}
+		}
+	} else {
+		for( y = 0; y < h; y++ ) {
+			for( x = 0, rgba = dest + y * blockWidth; x < w; x++, data += LIGHTMAP_BYTES, rgba += 4 ) {
+				rgba[0] = data[0] << bits;
+				rgba[1] = data[1] << bits;
+				rgba[2] = data[2] << bits;
+			}
+		}
+	} 
 }
 
 /*
@@ -717,7 +565,7 @@ static void R_BuildLightmap( int w, int h, const qbyte *data, qbyte *dest, int b
 R_PackLightmaps
 =======================
 */
-static int R_PackLightmaps( int num, int w, int h, int size, const qbyte *data, mlightmapRect_t *rects )
+static int R_PackLightmaps( int num, int w, int h, int size, int stride, qboolean deluxe, char *name, const qbyte *data, mlightmapRect_t *rects )
 {
 	int i, x, y, root;
 	qbyte *block;
@@ -725,29 +573,30 @@ static int R_PackLightmaps( int num, int w, int h, int size, const qbyte *data, 
 	int	rectX, rectY, rectSize;
 	int maxX, maxY, max, xStride;
 	double tw, th, tx, ty;
+	mlightmapRect_t *rect;
 
 	maxX = r_maxLightmapBlockSize / w;
 	maxY = r_maxLightmapBlockSize / h;
-	max = maxY;
-	if( maxY > maxX )
-		max = maxX;
+	max = min( maxX, maxY );
 
 	Com_DPrintf( "Packing %i lightmap(s) -> ", num );
 
-	if( !max || num == 1 || !r_ligtmapsPacking/* || !r_packlightmaps->integer*/ ) {
+	if( !max || num == 1 || !mapConfig.lightmapsPacking /* || !r_packlightmaps->integer*/ ) {
 		// process as it is
-		R_BuildLightmap( w, h, data, r_lightmapBuffer, w * 4 );
+		R_BuildLightmap( w, h, deluxe, data, r_lightmapBuffer, w * 4 );
 
-		image = R_LoadPic( va( "*lm%i", r_numUploadedLightmaps ), (qbyte **)(&r_lightmapBuffer), w, h, IT_CLAMP|IT_NOPICMIP|IT_NOMIPMAP, LIGHTMAP_BYTES );
+		image = R_LoadPic( va( "%s%i", name, r_numUploadedLightmaps ), (qbyte **)(&r_lightmapBuffer), w, h, IT_CLAMP|IT_NOPICMIP|IT_NOMIPMAP, LIGHTMAP_BYTES );
 
 		r_lightmapTextures[r_numUploadedLightmaps] = image;
-		rects[0].texNum = r_numUploadedLightmaps;
+		if( rects ) {
+			rects[0].texNum = r_numUploadedLightmaps;
 
-		// this is not a real texture matrix, but who cares?
-		rects[0].texMatrix[0][0] = 1; rects[0].texMatrix[0][1] = 0;
-		rects[0].texMatrix[1][0] = 1; rects[0].texMatrix[1][1] = 0;
+			// this is not a real texture matrix, but who cares?
+			rects[0].texMatrix[0][0] = 1; rects[0].texMatrix[0][1] = 0;
+			rects[0].texMatrix[1][0] = 1; rects[0].texMatrix[1][1] = 0;
+		}
 
-		Com_DPrintf( "%ix%i\n", 1, 1 );
+		Com_DPrintf( "\n" );
 
 		r_numUploadedLightmaps++;
 		return 1;
@@ -798,24 +647,30 @@ static int R_PackLightmaps( int num, int w, int h, int size, const qbyte *data, 
 		r_lightmapBufferSize = rectSize;
 	}
 
+	Com_DPrintf( "%ix%i : %ix%i\n", rectX, rectY, rectX * w, rectY * h );
+
 	block = r_lightmapBuffer;
-	for( y = 0, ty = 0.0, num = 0; y < rectY; y++, ty += th, block += rectX * xStride * h  ) {
-		for( x = 0, tx = 0.0; x < rectX; x++, tx += tw, num++ ) {
-			R_BuildLightmap( w, h, data + num * size, block + x * xStride, rectX * xStride );
+	for( y = 0, ty = 0.0, num = 0, rect = rects; y < rectY; y++, ty += th, block += rectX * xStride * h  ) {
+		for( x = 0, tx = 0.0; x < rectX; x++, tx += tw, num++, data += size * stride ) {
+			R_BuildLightmap( w, h, mapConfig.deluxeMappingEnabled && (num & 1) ? qtrue : qfalse, data, block + x * xStride, rectX * xStride );
 
 			// this is not a real texture matrix, but who cares?
-			rects[num].texMatrix[0][0] = tw; rects[num].texMatrix[0][1] = tx;
-			rects[num].texMatrix[1][0] = th; rects[num].texMatrix[1][1] = ty;
+			if( rects ) {
+				rect->texMatrix[0][0] = tw; rect->texMatrix[0][1] = tx;
+				rect->texMatrix[1][0] = th; rect->texMatrix[1][1] = ty;
+				rect += stride;
+
+			}
 		}
 	}
 
-	image = R_LoadPic( va( "*lm%i", r_numUploadedLightmaps ), (qbyte **)(&r_lightmapBuffer), rectX * w, rectY * h, IT_CLAMP|IT_NOPICMIP|IT_NOMIPMAP, LIGHTMAP_BYTES );
+	image = R_LoadPic( va( "%s%i", name, r_numUploadedLightmaps ), (qbyte **)(&r_lightmapBuffer), rectX * w, rectY * h, IT_CLAMP|IT_NOPICMIP|IT_NOMIPMAP, LIGHTMAP_BYTES );
 
 	r_lightmapTextures[r_numUploadedLightmaps] = image;
-	for( i = 0; i < num; i++ )
-		rects[i].texNum = r_numUploadedLightmaps;
-
-	Com_DPrintf( "%ix%i\n", rectX, rectY );
+	if( rects ) {
+		for( i = 0, rect = rects; i < num; i++, rect += stride )
+			rect->texNum = r_numUploadedLightmaps;
+	}
 
 	r_numUploadedLightmaps++;
 	return num;
@@ -828,10 +683,19 @@ R_BuildLightmaps
 */
 void R_BuildLightmaps( int numLightmaps, int w, int h, const qbyte *data, mlightmapRect_t *rects )
 {
-	int i;
-	int size;
+	int i, j, p, m;
+	int numBlocks, size, stride;
+	const qbyte *lmData;
 
-	for (size = 1; (size < r_maxlmblocksize->integer) && (size < glConfig.maxTextureSize); size <<= 1);
+	if( !mapConfig.lightmapsPacking )
+		size = max( w, h );
+	else
+		for (size = 1; (size < r_maxlmblocksize->integer) && (size < glConfig.maxTextureSize); size <<= 1);
+
+	if( mapConfig.deluxeMappingEnabled && ((size == w) || (size == h)) ) {
+		Com_Printf( S_COLOR_YELLOW "Lightmap blocks larger than %ix%i aren't supported, deluxemaps will be disabled\n", size, size );
+		mapConfig.deluxeMappingEnabled = qfalse;
+	}
 
 	r_maxLightmapBlockSize = size;
 	size = w * h * LIGHTMAP_BYTES;
@@ -839,13 +703,24 @@ void R_BuildLightmaps( int numLightmaps, int w, int h, const qbyte *data, mlight
 	r_lightmapBuffer = Mem_TempMalloc( r_lightmapBufferSize );
 	r_numUploadedLightmaps = 0;
 
-	for( i = 0; i < numLightmaps; )
-		i += R_PackLightmaps( numLightmaps - i, w, h, size, data + i * size, &rects[i] );
+	m = 1;
+	lmData = data;
+	stride = 1;
+	numBlocks = numLightmaps;
+
+	if( mapConfig.deluxeMaps && !mapConfig.deluxeMappingEnabled ) {
+		m = 2;
+		stride = 2;
+		numLightmaps /= 2;
+	}
+
+	for( i = 0, j = 0; i < numBlocks; i += p * m, j += p )
+		p = R_PackLightmaps( numLightmaps - j, w, h, size, stride, qfalse, "*lm", lmData + j * size * stride, &rects[i] );
 
 	if( r_lightmapBuffer )
 		Mem_TempFree( r_lightmapBuffer );
 
-	Com_DPrintf( "Packed %i lightmaps into %i texture(s)\n", numLightmaps, r_numUploadedLightmaps );
+	Com_DPrintf( "Packed %i lightmap blocks into %i texture(s)\n", numBlocks, r_numUploadedLightmaps );
 }
 
 /*
@@ -881,7 +756,7 @@ void R_InitLightStyles( void )
 R_AddSuperLightStyle
 =======================
 */
-int R_AddSuperLightStyle( const int *lightmaps, const qbyte *lightmapStyles, const qbyte *vertexStyles )
+int R_AddSuperLightStyle( const int *lightmaps, const qbyte *lightmapStyles, const qbyte *vertexStyles, mlightmapRect_t **lmRects )
 {
 	int i, j;
 	superLightStyle_t *sls;
@@ -904,6 +779,14 @@ int R_AddSuperLightStyle( const int *lightmaps, const qbyte *lightmapStyles, con
 		sls->lightmapNum[j] = lightmaps[j];
 		sls->lightmapStyles[j] = lightmapStyles[j];
 		sls->vertexStyles[j] = vertexStyles[j];
+
+		if( lmRects && lmRects[j] && (lightmaps[j] != -1) ) {
+			sls->stOffset[j][0] = lmRects[j]->texMatrix[0][0];
+			sls->stOffset[j][1] = lmRects[j]->texMatrix[1][0];
+		} else {
+			sls->stOffset[j][0] = 0;
+			sls->stOffset[j][0] = 0;
+		}
 
 		if( j ) {
 			if( lightmapStyles[j] != 255 )

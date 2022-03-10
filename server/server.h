@@ -43,10 +43,11 @@ typedef struct
 	qboolean	attractloop;		// running cinematics and demos for the local system only
 	qboolean	loadgame;			// client begins should reuse existing entity
 
-	unsigned	time;				// always sv.framenum * 100 msec
+	int			frametime;			// msecs between server frames
+	unsigned	time;				// always sv.framenum * sv.frametime
 	int			framenum;
 
-	char		name[MAX_QPATH];			// map name, or cinematic name
+	char		name[MAX_QPATH];	// map name, or cinematic name
 
 	char		configstrings[MAX_CONFIGSTRINGS][MAX_QPATH];
 	entity_state_t	baselines[MAX_EDICTS];
@@ -59,20 +60,20 @@ typedef struct
 	// demo server information
 	int			demofile;
 	int			demolen;
-	qboolean	timedemo;		// don't time sync
+	qboolean	timedemo;			// don't time sync
 
 	//
 	// global variables shared between game and server
 	//
 	struct edict_s	*edicts;
 	int			edict_size;
-	int			num_edicts;		// current number, <= max_edicts
+	int			num_edicts;			// current number, <= max_edicts
 	int			max_edicts;
 } server_t;
 
 struct gclient_s
 {
-	player_state_t	ps;		// communicated by server to clients
+	player_state_t	ps;				// communicated by server to clients
 	client_shared_t	r;
 };
 
@@ -214,6 +215,8 @@ extern	cvar_t		*sv_noreload;			// don't reload level state when reentering
 
 extern	cvar_t		*sv_enforcetime;
 
+extern	cvar_t		*sv_fps;
+
 extern	client_t	*sv_client;
 extern	edict_t		*sv_player;
 
@@ -231,7 +234,6 @@ int SV_ImageIndex (char *name);
 
 void SV_WriteClientdataToMessage (client_t *client, sizebuf_t *msg);
 
-void SV_ExecuteUserCommand (char *s);
 void SV_InitOperatorCommands (void);
 
 void SV_SendServerinfo (client_t *client);

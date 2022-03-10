@@ -27,8 +27,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_POLYS			2048
 
 // refdef flags
-#define	RDF_UNDERWATER		1		// warp the screen as apropriate
-#define RDF_NOWORLDMODEL	2		// used for player configuration screen
+#define	RDF_UNDERWATER			1		// warp the screen as apropriate
+#define RDF_NOWORLDMODEL		2		// used for player configuration screen
+#define RDF_BLOOM				4		// FIXME?
+#define RDF_OLDAREABITS			8		// forces R_MarkLeaves if not set
+#define RDF_PORTALINVIEW		16		// cull entities using vis too because pvs\areabits are merged serverside
+#define RDF_SKYPORTALINVIEW		32		// draw skyportal instead of regular sky
 
 // skm flags
 #define SKM_ATTACHMENT_BONE	1
@@ -49,6 +53,9 @@ typedef struct
 {
 	int					firstvert;
 	int					numverts;		// can't exceed MAX_POLY_VERTS
+	int					fognum;			// -1 - do not bother adding fog later at rendering stage
+										//  0 - determine fog later
+										// >0 - valid fog volume number returned by R_GetClippedFragments
 } fragment_t;
 
 typedef struct
@@ -58,12 +65,19 @@ typedef struct
 	vec2_t				*stcoords;
 	byte_vec4_t			*colors;
 	struct shader_s		*shader;
+	int					fognum;
 } poly_t;
 
 typedef struct
 {
 	float				rgb[3];			// 0.0 - 2.0
 } lightstyle_t;
+
+typedef struct
+{
+	float				fov;
+	vec3_t				origin;
+} skyportal_t;
 
 typedef enum
 {
@@ -76,41 +90,51 @@ typedef enum
 
 typedef struct entity_s
 {
-	int					rtype;
+	entity_rtype_t		rtype;
+	union
+	{
+		int				flags;
+		int				renderfx;
+	};
+
 	struct model_s		*model;			// opaque type outside refresh
-
-	struct skinfile_s	*customSkin;	// registered .skin file
-	struct shader_s		*customShader;	// NULL for inline skin
-
-	float				shaderTime;
-	byte_vec4_t			color;
-
-	int					flags;
-	float				backlerp;		// 0.0 = current, 1.0 = old
 
 	/*
 	** most recent data
 	*/
 	vec3_t				axis[3];
-	vec3_t				origin;
+	vec3_t				origin, origin2;
+	vec3_t				lightingOrigin;
 	int					frame;
 	bonepose_t			*boneposes;		// pretransformed boneposes for current frame
 
 	/*
 	** previous data for lerping
 	*/
-	vec3_t				oldorigin;
 	int					oldframe;
 	bonepose_t			*oldboneposes;	// pretransformed boneposes for old frame
+	float				backlerp;		// 0.0 = current, 1.0 = old
+
+	/*
+	** texturing
+	*/
+	int					skinNum;
+	struct skinfile_s	*customSkin;	// registered .skin file
+	struct shader_s		*customShader;	// NULL for inline skin
 
 	/*
 	** misc
 	*/
-	int					skinnum;
+	float				shaderTime;
+	union
+	{
+		byte_vec4_t		color;
+		qbyte			shaderRGBA[4];
+	};
+
 	float				scale;
 	float				radius;			// used as RT_SPRITE's radius
 	float				rotation;
-	vec3_t				lightingOrigin;
 } entity_t;
 
 typedef struct
@@ -122,7 +146,7 @@ typedef struct
 	float				blend[4];				// rgba 0-1 full screen blend
 	float				time;					// time is used for timing offsets
 	int					rdflags;				// RDF_UNDERWATER, etc
-
+	skyportal_t			skyportal;
 	qbyte				*areabits;				// if not NULL, only areas with set bits will be drawn
 } refdef_t;
 

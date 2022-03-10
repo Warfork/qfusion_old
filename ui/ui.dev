@@ -9,8 +9,8 @@ CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -fexceptions -DWIN32 -DND
 Includes=
 Linker=-lkernel32 -luser32 -lwinmm --def ui.def_@@_
 Libs=
-UnitCount=28
-Folders="Source Files","Header Files","Resource Files"
+UnitCount=33
+Folders="Header Files","Resource Files","Source Files"
 ObjFiles=
 PrivateResource=
 ResourceIncludes=
@@ -31,7 +31,7 @@ CustomMakefile=
 
 [Unit1]
 FileName=..\game\q_math.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -41,7 +41,7 @@ BuildCmd=
 
 [Unit2]
 FileName=..\game\q_shared.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -51,7 +51,7 @@ BuildCmd=
 
 [Unit3]
 FileName=ui_atoms.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -61,7 +61,7 @@ BuildCmd=
 
 [Unit4]
 FileName=ui_connect.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -71,7 +71,7 @@ BuildCmd=
 
 [Unit5]
 FileName=ui_credits.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -81,7 +81,7 @@ BuildCmd=
 
 [Unit6]
 FileName=ui_dloptions.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -91,7 +91,7 @@ BuildCmd=
 
 [Unit7]
 FileName=ui_dmoptions.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -101,7 +101,7 @@ BuildCmd=
 
 [Unit8]
 FileName=ui_gfx.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -111,7 +111,7 @@ BuildCmd=
 
 [Unit9]
 FileName=ui_glext.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -121,7 +121,7 @@ BuildCmd=
 
 [Unit10]
 FileName=ui_keys.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -131,7 +131,7 @@ BuildCmd=
 
 [Unit11]
 FileName=ui_main.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -141,7 +141,7 @@ BuildCmd=
 
 [Unit12]
 FileName=ui_menu.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -151,7 +151,7 @@ BuildCmd=
 
 [Unit13]
 FileName=ui_mplayer.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -161,7 +161,7 @@ BuildCmd=
 
 [Unit14]
 FileName=ui_options.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -171,7 +171,7 @@ BuildCmd=
 
 [Unit15]
 FileName=ui_playerconfig.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -181,7 +181,7 @@ BuildCmd=
 
 [Unit16]
 FileName=ui_quit.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -191,7 +191,7 @@ BuildCmd=
 
 [Unit17]
 FileName=ui_sound.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -201,7 +201,7 @@ BuildCmd=
 
 [Unit18]
 FileName=ui_splayer.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -211,7 +211,7 @@ BuildCmd=
 
 [Unit19]
 FileName=ui_startserver.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -221,7 +221,7 @@ BuildCmd=
 
 [Unit20]
 FileName=ui_syscalls.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -231,7 +231,7 @@ BuildCmd=
 
 [Unit21]
 FileName=ui_video.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -241,7 +241,7 @@ BuildCmd=
 
 [Unit22]
 FileName=..\game\q_shared.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -251,7 +251,7 @@ BuildCmd=
 
 [Unit23]
 FileName=ui_atoms.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -261,7 +261,7 @@ BuildCmd=
 
 [Unit24]
 FileName=ui_keycodes.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -271,7 +271,7 @@ BuildCmd=
 
 [Unit25]
 FileName=ui_local.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -281,7 +281,7 @@ BuildCmd=
 
 [Unit26]
 FileName=ui_public.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -291,7 +291,7 @@ BuildCmd=
 
 [Unit27]
 FileName=ui_syscalls.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -301,7 +301,7 @@ BuildCmd=
 
 [Unit28]
 FileName=ui.def
-Folder="Resource Files"
+Folder=Resource Files
 Compile=0
 CompileCpp=0
 Link=0
@@ -326,4 +326,54 @@ OriginalFilename=ui.exe
 ProductName=ui
 ProductVersion=0.1
 AutoIncBuildNr=0
+
+[Unit29]
+FileName=..\game\gs_pmodels.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit30]
+FileName=ui_pmodels.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit31]
+FileName=ui_pmodels.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit32]
+FileName=ui_boneposes.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit33]
+FileName=ui_boneposes.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
 

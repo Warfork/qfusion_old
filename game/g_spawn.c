@@ -118,6 +118,8 @@ void SP_misc_model (edict_t *ent);
 void SP_misc_portal_surface (edict_t *ent);
 void SP_misc_portal_camera (edict_t *ent);
 
+void SP_skyportal(edict_t *ent);
+
 void SP_monster_berserk (edict_t *self);
 void SP_monster_gladiator (edict_t *self);
 void SP_monster_gunner (edict_t *self);
@@ -256,7 +258,9 @@ spawn_t	spawns[] = {
 	{"misc_model", SP_misc_model},
 	{"misc_portal_surface", SP_misc_portal_surface},
 	{"misc_portal_camera", SP_misc_portal_camera},
-
+	{"misc_skyportal", SP_skyportal},
+	{"props_skyportal", SP_skyportal},
+	
 #if 0 // remove monster code
 	{"monster_berserk", SP_monster_berserk},
 	{"monster_gladiator", SP_monster_gladiator},
@@ -706,6 +710,7 @@ void SP_worldspawn (edict_t *ent)
 	trap_ConfigString (CS_MAPNAME, level.mapname);
 	trap_ConfigString (CS_MAXCLIENTS, va("%i", sv_maxclients->integer ) );
 	trap_ConfigString (CS_AIRACCEL, va("%g", sv_airaccelerate->integer) );
+	trap_ConfigString (CS_SKYBOXORG, "");
 
 	// status bar program
 	if (deathmatch->integer)
@@ -719,7 +724,14 @@ void SP_worldspawn (edict_t *ent)
 	else
 		trap_ConfigString (CS_STATUSBAR, single_statusbar);
 
-	//---------------
+	if( ctf->integer )
+		trap_ConfigString( CS_GAMETYPE, "ctf" );
+	else if( deathmatch->integer )
+		trap_ConfigString( CS_GAMETYPE, "deathmatch" );
+	else if( coop->integer )
+		trap_ConfigString( CS_GAMETYPE, "cooperative" );
+	else
+		trap_ConfigString( CS_GAMETYPE, "single player" );
 
 
 	// help icon for statusbar
@@ -747,20 +759,18 @@ void SP_worldspawn (edict_t *ent)
 	// viewable weapon models
 	// THIS ORDER MUST MATCH THE DEFINES IN gs_public.h
 	// you can add more, max 255
-	trap_ModelIndex ("#w_blaster.md2");			// WEAP_BLASTER
-	trap_ModelIndex ("#w_shotgun.md2");			// WEAP_SHOTGUN
-	trap_ModelIndex ("#w_sshotgun.md2");		// WEAP_SUPERSHOTGUN
-	trap_ModelIndex ("#w_machinegun.md2");		// WEAP_MACHINEGUN
-	trap_ModelIndex ("#w_chaingun.md2");		// WEAP_CHAINGUN
-	trap_ModelIndex ("#a_grenades.md2");		// WEAP_GRENADES
-	trap_ModelIndex ("#w_glauncher.md2");		// WEAP_GRENADELAUNCHER
-	trap_ModelIndex ("#w_rlauncher.md2");		// WEAP_ROCKETLAUNCHER
-	trap_ModelIndex ("#w_hyperblaster.md2");	// WEAP_HYPERBLASTER
-	trap_ModelIndex ("#w_railgun.md2");			// WEAP_RAILGUN
-	trap_ModelIndex ("#w_bfg.md2");				// WEAP_BFG
-	trap_ModelIndex ("#w_grapple.md2");			// WEAP_GRAPPLE
+	trap_ModelIndex ("#gauntlet/gauntlet.md3");		// WEAP_BLASTER
+	trap_ModelIndex ("#shotgunq2/shotgunq2.md3");	// WEAP_SHOTGUN
+	trap_ModelIndex ("#shotgun/shotgun.md3");		// WEAP_SUPERSHOTGUN
+	trap_ModelIndex ("#machinegun/machinegun.md3");	// WEAP_MACHINEGUN
+	trap_ModelIndex ("#chaingun/chaingun.md3");		// WEAP_CHAINGUN
+	trap_ModelIndex ("#grenadel/grenadel.md3");		// WEAP_GRENADELAUNCHER
+	trap_ModelIndex ("#rocketl/rocketl.md3");		// WEAP_ROCKETLAUNCHER
+	trap_ModelIndex ("#plasma/plasma.md3");			// WEAP_HYPERBLASTER
+	trap_ModelIndex ("#railgun/railgun.md3");		// WEAP_RAILGUN
+	trap_ModelIndex ("#bfg/bfg.md3");				// WEAP_BFG
+	trap_ModelIndex ("#grapple/grapple.md3");		// WEAP_GRAPPLE
 
-	//-------------------
 
 	trap_SoundIndex ("sound/player/gasp1.wav");		// gasping for air
 	trap_SoundIndex ("sound/player/gasp2.wav");		// head breaking surface, not gasping

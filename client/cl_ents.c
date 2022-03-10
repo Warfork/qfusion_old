@@ -440,16 +440,6 @@ void CL_ParsePlayerstate (frame_t *oldframe, frame_t *newframe)
 		state->kick_angles[2] = MSG_ReadChar (&net_message) * 0.25;
 	}
 
-	if (flags & PS_WEAPONINDEX)
-	{
-		state->gunindex = MSG_ReadByte (&net_message);
-	}
-
-	if (flags & PS_WEAPONFRAME)
-	{
-		state->gunframe = MSG_ReadShort (&net_message);
-	}
-
 	if (flags & PS_BLEND)
 	{
 		state->blend[0] = MSG_ReadByte (&net_message)/255.0;
@@ -483,7 +473,7 @@ void CL_ParseFrame (void)
 
 	cl.frame.serverFrame = MSG_ReadLong (&net_message);
 	cl.frame.deltaFrame = MSG_ReadLong (&net_message);
-	cl.frame.serverTime = cl.frame.serverFrame*100;
+	cl.frame.serverTime = cl.frame.serverFrame*cl.serverframetime;
 	cl.suppressCount = MSG_ReadByte (&net_message);
 
 	if (cl_shownet->integer == 3)
@@ -522,6 +512,7 @@ void CL_ParseFrame (void)
 
 	// read areabits
 	len = MSG_ReadByte (&net_message);
+	memset(cl.frame.areabits, 0, sizeof(cl.frame.areabits));
 	MSG_ReadData (&net_message, &cl.frame.areabits, len);
 
 	// read playerinfo

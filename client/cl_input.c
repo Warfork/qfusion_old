@@ -197,9 +197,6 @@ float CL_KeyState (kbutton_t *key)
 	return bound ( 0, val, 1 );
 }
 
-
-
-
 //==========================================================================
 
 cvar_t	*cl_upspeed;
@@ -208,11 +205,25 @@ cvar_t	*cl_sidespeed;
 
 cvar_t	*cl_yawspeed;
 cvar_t	*cl_pitchspeed;
-
-cvar_t	*cl_run;
-
 cvar_t	*cl_anglespeedkey;
 
+cvar_t	*cl_freelook;
+cvar_t	*cl_run;
+
+// mouse variables
+cvar_t	*in_mouse;
+cvar_t	*m_filter;
+cvar_t  *in_grabinconsole;
+qboolean mlooking;
+
+cvar_t	*m_pitch;
+cvar_t	*m_yaw;
+cvar_t	*m_forward;
+cvar_t	*m_side;
+
+cvar_t	*lookspring;
+cvar_t	*lookstrafe;
+cvar_t	*sensitivity;
 
 /*
 ================
@@ -309,6 +320,59 @@ void CL_ClampPitch (void)
 		cl.viewangles[PITCH] = 89 - pitch;
 	if (cl.viewangles[PITCH] + pitch < -89)
 		cl.viewangles[PITCH] = -89 - pitch;
+}
+
+/*
+===========
+CL_MouseMove
+===========
+*/
+void CL_MouseMove (usercmd_t *cmd, int mx, int my)
+{
+	int mouse_x, mouse_y;
+	static int old_mouse_x, old_mouse_y;
+
+	if (cls.key_dest == key_menu) 
+	{
+		CL_UIModule_MouseMove (mx, my);
+		return;
+	}
+
+	if( (cls.key_dest == key_console) && !in_grabinconsole->integer )
+        return;
+ 
+#if 0
+	if (!mx && !my)
+		return;
+#endif
+
+	if (m_filter->integer)
+	{
+		mouse_x = (mx + old_mouse_x) * 0.5;
+		mouse_y = (my + old_mouse_y) * 0.5;
+	}
+	else
+	{
+		mouse_x = mx;
+		mouse_y = my;
+	}
+
+	old_mouse_x = mx;
+	old_mouse_y = my;
+
+	mouse_x *= sensitivity->value;
+	mouse_y *= sensitivity->value;
+
+// add mouse X/Y movement to cmd
+	if ( (in_strafe.state & 1) || (lookstrafe->integer && mlooking))
+		cmd->sidemove += m_side->value * mouse_x;
+	else
+		cl.viewangles[YAW] -= m_yaw->value * mouse_x;
+
+	if ( (mlooking || cl_freelook->integer) && !(in_strafe.state & 1))
+		cl.viewangles[PITCH] += m_pitch->value * mouse_y;
+	else
+		cmd->forwardmove -= m_forward->value * mouse_y;
 }
 
 /*
@@ -422,9 +486,28 @@ void CL_InitInput (void)
 	Cmd_AddCommand ("-klook", IN_KLookUp);
 
 	cl_nodelta = Cvar_Get ("cl_nodelta", "0", 0);
+
+	cl_yawspeed = Cvar_Get ("cl_yawspeed", "140", 0);
+	cl_pitchspeed = Cvar_Get ("cl_pitchspeed", "150", 0);
+	cl_anglespeedkey = Cvar_Get ("cl_anglespeedkey", "1.5", 0);
+
+	cl_freelook = Cvar_Get( "cl_freelook", "1", CVAR_ARCHIVE );
+	cl_run = Cvar_Get ("cl_run", "1", CVAR_ARCHIVE);
+
+	// mouse variables
+	m_filter = Cvar_Get ("m_filter", "0", 0);
+    in_mouse = Cvar_Get ("in_mouse", "1", CVAR_ARCHIVE);
+    in_grabinconsole = Cvar_Get ("in_grabinconsole", "0", CVAR_ARCHIVE);
+
+	m_pitch = Cvar_Get ("m_pitch", "0.022", CVAR_ARCHIVE);
+	m_yaw = Cvar_Get ("m_yaw", "0.022", 0);
+	m_forward = Cvar_Get ("m_forward", "1", 0);
+	m_side = Cvar_Get ("m_side", "1", 0);
+
+	lookspring = Cvar_Get ("lookspring", "0", CVAR_ARCHIVE);
+	lookstrafe = Cvar_Get ("lookstrafe", "0", CVAR_ARCHIVE);
+	sensitivity = Cvar_Get ("sensitivity", "3", CVAR_ARCHIVE);
 }
-
-
 
 /*
 =================

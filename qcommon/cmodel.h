@@ -26,7 +26,8 @@ extern cvar_t	*cm_noCurves;
 
 struct cmodel_s	*CM_LoadMap (char *name, qboolean clientload, unsigned *checksum);
 struct cmodel_s	*CM_InlineModel (int num);	// 1, 2, etc
-qboolean CM_ClientLoad (void);
+qboolean		CM_ClientLoad (void);
+char			*CM_LoadMapMessage( char *name, char *message, int size );
 
 int			CM_NumClusters (void);
 int			CM_NumInlineModels (void);
@@ -49,6 +50,7 @@ void		CM_TransformedBoxTrace (trace_t *tr, vec3_t start, vec3_t end,
 		   			  struct cmodel_s *cmodel, int brushmask,
 		    		  vec3_t origin, vec3_t angles);
 
+dvis_t		*CM_VisData( void );
 qbyte		*CM_ClusterPVS (int cluster);
 qbyte		*CM_ClusterPHS (int cluster);
 int			CM_ClusterSize (void);
@@ -57,8 +59,7 @@ int			CM_PointLeafnum (vec3_t p);
 
 // call with topnode set to the headnode, returns with topnode
 // set to the first node that splits the box
-int			CM_BoxLeafnums (vec3_t mins, vec3_t maxs, int *list,
-						int listsize, int *topnode);
+int			CM_BoxLeafnums (vec3_t mins, vec3_t maxs, int *list, int listsize, int *leaf_last);
 
 int			CM_LeafCluster (int leafnum);
 int			CM_LeafArea (int leafnum);
@@ -68,7 +69,6 @@ qboolean	CM_AreasConnected (int area1, int area2);
 
 int			CM_WriteAreaBits (qbyte *buffer, int area);
 void		CM_MergeAreaBits (qbyte *buffer, int area);
-qboolean	CM_HeadnodeVisible (int headnode, qbyte *visbits);
 
 void		CM_WritePortalState (FILE *f);
 void		CM_ReadPortalState (FILE *f);

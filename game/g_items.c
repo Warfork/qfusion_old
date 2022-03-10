@@ -31,7 +31,6 @@ void Weapon_Machinegun (edict_t *ent);
 void Weapon_Chaingun (edict_t *ent);
 void Weapon_HyperBlaster (edict_t *ent);
 void Weapon_RocketLauncher (edict_t *ent);
-void Weapon_Grenade (edict_t *ent);
 void Weapon_GrenadeLauncher (edict_t *ent);
 void Weapon_Railgun (edict_t *ent);
 void Weapon_BFG (edict_t *ent);
@@ -50,7 +49,7 @@ static int	power_shield_index;
 #define HEALTH_TIMED		2
 
 void Use_Quad (edict_t *ent, gitem_t *item);
-static int	quad_drop_timeout_hack;
+static float quad_drop_timeout_hack;
 
 //======================================================================
 
@@ -187,7 +186,7 @@ qboolean Pickup_Powerup (edict_t *ent, edict_t *other)
 		if ((dmflags->integer & DF_INSTANT_ITEMS) || ((ent->item->use == Use_Quad) && (ent->spawnflags & DROPPED_PLAYER_ITEM)))
 		{
 			if ((ent->item->use == Use_Quad) && (ent->spawnflags & DROPPED_PLAYER_ITEM))
-				quad_drop_timeout_hack = (ent->nextthink - level.time) / FRAMETIME;
+				quad_drop_timeout_hack = ent->nextthink - level.time;
 			ent->item->use (other, ent->item);
 		}
 	}
@@ -353,7 +352,7 @@ qboolean Pickup_Pack (edict_t *ent, edict_t *other)
 
 void Use_Quad (edict_t *ent, gitem_t *item)
 {
-	int		timeout;
+	float	timeout;
 
 	ent->r.client->pers.inventory[ITEM_INDEX(item)]--;
 	ValidateSelectedItem (ent);
@@ -365,13 +364,13 @@ void Use_Quad (edict_t *ent, gitem_t *item)
 	}
 	else
 	{
-		timeout = 300;
+		timeout = 30;
 	}
 
-	if (ent->r.client->quad_framenum > level.framenum)
-		ent->r.client->quad_framenum += timeout;
+	if (ent->r.client->quad_timeout > level.time)
+		ent->r.client->quad_timeout += timeout;
 	else
-		ent->r.client->quad_framenum = level.framenum + timeout;
+		ent->r.client->quad_timeout = level.time + timeout;
 
 	G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/items/damage.wav"), 1, ATTN_NORM);
 }
@@ -383,12 +382,10 @@ void Use_Breather (edict_t *ent, gitem_t *item)
 	ent->r.client->pers.inventory[ITEM_INDEX(item)]--;
 	ValidateSelectedItem (ent);
 
-	if (ent->r.client->breather_framenum > level.framenum)
-		ent->r.client->breather_framenum += 300;
+	if (ent->r.client->breather_timeout > level.time)
+		ent->r.client->breather_timeout += 30;
 	else
-		ent->r.client->breather_framenum = level.framenum + 300;
-
-//	G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/items/damage.wav"), 1, ATTN_NORM, 0);
+		ent->r.client->breather_timeout = level.time + 30;
 }
 
 //======================================================================
@@ -398,12 +395,10 @@ void Use_Envirosuit (edict_t *ent, gitem_t *item)
 	ent->r.client->pers.inventory[ITEM_INDEX(item)]--;
 	ValidateSelectedItem (ent);
 
-	if (ent->r.client->enviro_framenum > level.framenum)
-		ent->r.client->enviro_framenum += 300;
+	if (ent->r.client->enviro_timeout > level.time)
+		ent->r.client->enviro_timeout += 30;
 	else
-		ent->r.client->enviro_framenum = level.framenum + 300;
-
-//	G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/items/damage.wav"), 1, ATTN_NORM, 0);
+		ent->r.client->enviro_timeout = level.time + 30;
 }
 
 //======================================================================
@@ -413,10 +408,10 @@ void	Use_Invulnerability (edict_t *ent, gitem_t *item)
 	ent->r.client->pers.inventory[ITEM_INDEX(item)]--;
 	ValidateSelectedItem (ent);
 
-	if (ent->r.client->invincible_framenum > level.framenum)
-		ent->r.client->invincible_framenum += 300;
+	if (ent->r.client->invincible_timeout > level.time)
+		ent->r.client->invincible_timeout += 30;
 	else
-		ent->r.client->invincible_framenum = level.framenum + 300;
+		ent->r.client->invincible_timeout = level.time + 30;
 
 	G_Sound (ent, CHAN_ITEM, trap_SoundIndex("sound/items/protect.wav"), 1, ATTN_NORM);
 }
@@ -770,7 +765,7 @@ void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags)
 	if (taken)
 	{
 		// flash the screen
-		other->r.client->bonus_alpha = 0.25;	
+		P_AddViewBlend (other->r.client, 0.95, 0.85, 0.75, 0.15, 0.2);
 
 		// show icon and name on status bar
 		other->r.client->ps.stats[STAT_PICKUP_ICON] = trap_ImageIndex (ent->item->icon);
@@ -1155,7 +1150,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 gitem_t	itemlist[] = 
 {
 	{
-		NULL
+		NULL,NULL,NULL,NULL,NULL,NULL,{NULL,NULL,NULL},0,NULL,NULL,NULL,0,NULL,0,0,NULL,0,NULL
 	},	// leave index 0 alone
 
 	//
@@ -1217,7 +1212,7 @@ gitem_t	itemlist[] =
 		NULL,
 		NULL,
 		"sound/misc/ar1_pkup.wav",
-		{ "models/items/armor/jacket/tris.md2", 0, 0 }, 
+		{ "models/powerups/armor/shard.md3", 0, 0 }, 
 		EF_ROTATE_AND_BOB,
 		NULL,
 /* icon */		"pics/i_jacketarmor",
@@ -1350,7 +1345,7 @@ always owned, never in the world
 		WEAP_BLASTER,
 		NULL,
 		0,
-/* precache */ "sound/weapons/blastf1a.wav sound/misc/lasfly.wav"
+/* precache */ "sound/weapons/plasma/hyprbf1a.wav sound/weapons/plasma/lasfly.wav"
 	},
 
 /*QUAKED weapon_shotgun_q2 (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1387,7 +1382,7 @@ always owned, never in the world
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/shotgun/shotgun.md3", 0, 0 }, 
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_shotg2/tris.md2",
+		0,
 /* icon */		"icons/iconw_shotgun",
 /* pickup */	"Super Shotgun",
 		2,
@@ -1431,9 +1426,10 @@ always owned, never in the world
 		Drop_Weapon,
 		Weapon_Machinegun,
 		"sound/misc/w_pkup.wav",
-		{ "models/weapons/g_machn/tris.md2", 0, 0 }, 
+		{ "models/weapons2/machinegun/machinegun.md3",
+		"models/weapons2/machinegun/machinegun_barrel.md3", 0 },
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_machn/tris.md2",
+		0,
 /* icon */		"icons/iconw_machinegun",
 /* pickup */	"Machinegun",
 		1,
@@ -1454,9 +1450,10 @@ always owned, never in the world
 		Drop_Weapon,
 		Weapon_Chaingun,
 		"sound/misc/w_pkup.wav",
-		{ "models/weapons/vulcan/vulcan.md3", 0, 0 }, 
+		{ "models/weapons2/chaingun/chaingun.md3", 
+		"models/weapons2/chaingun/chaingun_barrel.md3", 0 },
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_chain/tris.md2",
+		0,
 /* icon */		"icons/iconw_chaingun",
 /* pickup */	"Chaingun",
 		1,
@@ -1466,29 +1463,6 @@ always owned, never in the world
 		NULL,
 		0,
 /* precache */ "sound/weapons/chngnu1a.wav sound/weapons/chngnl1a.wav sound/weapons/chngnd1a.wav sound/weapons/machinegun/machgf1b.wav sound/weapons/machinegun/machgf2b.wav sound/weapons/machinegun/machgf3b.wav sound/weapons/machinegun/machgf4b.wav"
-	},
-
-/*QUAKED ammo_grenades (.3 .3 1) (-16 -16 -16) (16 16 16)
-*/
-	{
-		"ammo_grenades",
-		Pickup_Ammo,
-		Use_Weapon,
-		Drop_Ammo,
-		Weapon_Grenade,
-		"sound/misc/am_pkup.wav",
-		{ "models/powerups/ammo/grenadeam.md3", 0, 0 },
-		EF_ROTATE_AND_BOB,
-		"models/weapons/v_handgr/tris.md2",
-/* icon */		"icons/icona_grenade",
-/* pickup */	"Grenades",
-		5,
-		"grenades",
-		IT_AMMO|IT_WEAPON,
-		WEAP_GRENADES,
-		NULL,
-		AMMO_GRENADES,
-/* precache */ "sound/weapons/hgrent1a.wav sound/weapons/hgrena1b.wav sound/weapons/hgrenc1b.wav sound/weapons/hgrenb1a.wav sound/weapons/hgrenb2a.wav "
 	},
 
 /*QUAKED weapon_grenadelauncher (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1502,7 +1476,7 @@ always owned, never in the world
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/grenadel/grenadel.md3", 0, 0 },
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_launch/tris.md2",
+		0,
 /* icon */		"icons/iconw_grenade",
 /* pickup */	"Grenade Launcher",
 		1,
@@ -1525,7 +1499,7 @@ always owned, never in the world
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/rocketl/rocketl.md3", 0, 0 }, 
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_rocket/tris.md2",
+		0,
 /* icon */		"icons/iconw_rocket",
 /* pickup */	"Rocket Launcher",
 		1,
@@ -1548,7 +1522,7 @@ always owned, never in the world
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/plasma/plasma.md3", 0, 0 }, 
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_hyperb/tris.md2",
+		0,
 /* icon */		"icons/iconw_plasma",
 /* pickup */	"Plasma Gun",
 		1,
@@ -1557,7 +1531,7 @@ always owned, never in the world
 		WEAP_HYPERBLASTER,
 		NULL,
 		0,
-/* precache */ "sound/weapons/hyprbu1a.wav sound/weapons/hyprbl1a.wav sound/weapons/hyprbf1a.wav sound/weapons/hyprbd1a.wav sound/misc/lasfly.wav"
+/* precache */ "sound/weapons/plasma/hyprbf1a.wav sound/weapons/plasma/lasfly.wav"
 	},
 
 /*QUAKED weapon_railgun (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1571,7 +1545,7 @@ always owned, never in the world
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/railgun/railgun.md3", 0, 0 }, 
 		EF_ROTATE_AND_BOB,
-		"models/weapons/v_rail/tris.md2",
+		0,
 /* icon */		"icons/iconw_railgun",
 /* pickup */	"Railgun",
 		1,
@@ -1677,6 +1651,29 @@ always owned, never in the world
 		NULL,
 		AMMO_CELLS,
 /* precache */ ""
+	},
+
+/*QUAKED ammo_grenades (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"ammo_grenades",
+		Pickup_Ammo,
+		NULL,
+		Drop_Ammo,
+		NULL,
+		"sound/misc/am_pkup.wav",
+		{ "models/powerups/ammo/grenadeam.md3", 0, 0 },
+		EF_ROTATE_AND_BOB,
+		NULL,
+/* icon */		"icons/icona_grenade",
+/* pickup */	"Grenades",
+		5,
+		NULL,
+		IT_AMMO,
+		0,
+		NULL,
+		AMMO_GRENADES,
+/* precache */ "sound/weapons/hgrent1a.wav sound/weapons/hgrenc1b.wav sound/weapons/hgrenb1a.wav sound/weapons/hgrenb2a.wav "
 	},
 
 /*QUAKED ammo_rockets (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1909,29 +1906,6 @@ gives +1 to maximum health
 /* icon */		"pics/p_bandolier",
 /* pickup */	"Bandolier",
 		60,
-		NULL,
-		0,
-		0,
-		NULL,
-		0,
-/* precache */ ""
-	},
-
-/*QUAKED item_pack (.3 .3 1) (-16 -16 -16) (16 16 16)
-*/
-	{
-		"item_pack",
-		Pickup_Pack,
-		NULL,
-		NULL,
-		NULL,
-		"sound/items/pkup.wav",
-		{ "models/items/pack/tris.md2", 0, 0 },
-		EF_ROTATE_AND_BOB,
-		NULL,
-/* icon */		"pics/i_pack",
-/* pickup */	"Ammo Pack",
-		180,
 		NULL,
 		0,
 		0,
@@ -2199,7 +2173,9 @@ gives +1 to maximum health
 //ZOID
 
 	// end of list marker
-	{NULL}
+	{
+		NULL,NULL,NULL,NULL,NULL,NULL,{NULL,NULL,NULL},0,NULL,NULL,NULL,0,NULL,0,0,NULL,0,NULL
+	}
 };
 
 void InitItems (void)

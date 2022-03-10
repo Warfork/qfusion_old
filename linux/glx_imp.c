@@ -59,40 +59,13 @@ x11display_t x11display;
 
 glwstate_t glw_state;
 
-qboolean mouse_avail;
-int mouse_buttonstate;
-int mouse_oldbuttonstate;
-int mx, my;
-int p_mouse_x, p_mouse_y;
-int old_mouse_x, old_mouse_y;
-
-qboolean	mlooking;
-
-qboolean mouse_active = qfalse;
-static qboolean dgamouse = qfalse;
 static qboolean vidmode_ext = qfalse;
-
-cvar_t	*m_filter;
-cvar_t	*in_mouse;
-cvar_t	*in_dgamouse;
-
-static cvar_t *sensitivity;
-static cvar_t *lookstrafe;
-static cvar_t *m_side;
-static cvar_t *m_yaw;
-static cvar_t *m_pitch;
-static cvar_t *m_forward;
-cvar_t *freelook;
-
-static Time myxtime;
-
-#ifdef XF86
 
 static int _xf86_vidmodes_suported = 0;
 static XF86VidModeModeInfo **_xf86_vidmodes;
 static int _xf86_vidmodes_num;
 static int _xf86_vidmodes_active = 0;
-
+static qboolean _xf86_xinerama_supported = qfalse;
 
 static void _xf86_VidmodesInit(void){
 	int MajorVersion, MinorVersion;
@@ -121,6 +94,81 @@ static void _xf86_VidmodesFree (void)
 	}
 
 	_xf86_vidmodes_suported = 0;
+}
+
+static void _xf86_XineramaInit(void)
+{
+	extern cvar_t *vid_xinerama;
+	
+	_xf86_xinerama_supported = qfalse;
+	if (vid_xinerama->integer)
+	{
+		int MajorVersion = 0, MinorVersion = 0;
+		if ((XineramaQueryVersion (x11display.dpy, &MajorVersion, &MinorVersion)) && (XineramaIsActive (x11display.dpy)))
+		{
+			Com_Printf ("..XFree86-Xinerama Extension Version %d.%d\n", MajorVersion, MinorVersion);
+			_xf86_xinerama_supported = qtrue;
+		}
+	}
+
+	if (_xf86_xinerama_supported)
+	{
+		Com_Printf ("..XFree86-Xinerama Extension not available\n");
+	}
+}
+
+static void _xf86_XineramaFree(void)
+{
+	_xf86_xinerama_supported = qfalse;
+}
+
+static void _xf86_XineramaFindBest (int *x, int *y, int *width, int *height)
+{
+	int i, screens;
+	int best_fit, best_dist, dist, w, h;
+	XineramaScreenInfo *xinerama;
+	extern cvar_t *vid_multiscreen_head;
+
+	if (_xf86_xinerama_supported == qfalse)
+		return;
+
+	best_fit = -1;
+	best_dist = 999999999;
+
+	xinerama = XineramaQueryScreens (x11display.dpy, &screens);
+	for( i = 0; i < screens; i++ )
+	{
+		if (((*width <= xinerama[i].width) && (*height <= xinerama[i].height)) || i == vid_multiscreen_head->integer)
+		{
+			w = xinerama[i].width - *width;
+			h = xinerama[i].height - *height;
+
+			if (w > h) dist = h;
+			else dist = w;
+
+			if (dist < 0) dist = -dist; // Only positive number please
+		
+			if( dist < best_dist || i == vid_multiscreen_head->integer) {
+				best_dist = dist;
+				best_fit = i;
+			}
+		}
+		if (i == vid_multiscreen_head->integer)
+			break;
+	}
+
+	if (best_fit == -1)
+	{
+		_xf86_xinerama_supported = qfalse;
+		return;
+	}
+	
+	*x = xinerama[best_fit].x_org;
+	*y = xinerama[best_fit].y_org;
+	*width = xinerama[best_fit].width;
+	*height = xinerama[best_fit].height;
+
+	Com_Printf ("Xinerama: using screen %d: %dx%d+%d+%d\n", xinerama[best_fit].screen_number, xinerama[best_fit].width, xinerama[best_fit].height, xinerama[best_fit].x_org, xinerama[best_fit].y_org);
 }
 
 static void _xf86_VidmodesSwitch (int mode)
@@ -187,20 +235,19 @@ static void _xf86_VidmodesFindBest(int *mode, int *pwidth, int *pheight){
 	*mode = best_fit;
 
 }
-#endif
 
 static void _x11_WaitForMaped (Window w)
 {
 	XEvent event;
 
-	if (x11display.dpy) {
+	if (x11display.dpy)
+	{
 		do 
 		{
 			XMaskEvent(x11display.dpy, StructureNotifyMask, &event);
 		} while((event.type != MapNotify) || (event.xmap.event != w));
 	}
 }
-
 
 static void _x11_WaitForUnmaped (Window w)
 {
@@ -236,358 +283,6 @@ static void _x11_SetNoResize (Window w, int width, int height)
 	}
 }
 
-
-static Cursor CreateNullCursor (Display *display, Window root)
-{
-    Pixmap cursormask; 
-    XGCValues xgc;
-    GC gc;
-    XColor dummycolour;
-    Cursor cursor;
-
-    cursormask = XCreatePixmap (display, root, 1, 1, 1/*depth*/);
-    xgc.function = GXclear;
-    gc = XCreateGC (display, cursormask, GCFunction, &xgc);
-    XFillRectangle (display, cursormask, gc, 0, 0, 1, 1);
-
-    dummycolour.pixel = 0;
-    dummycolour.red = 0;
-    dummycolour.flags = 04;
-
-    cursor = XCreatePixmapCursor (display, cursormask, cursormask, &dummycolour, &dummycolour, 0, 0);
-    XFreePixmap (display, cursormask);
-    XFreeGC (display, gc);
-
-    return cursor;
-}
-
-void install_grabs (void)
-{
-	XDefineCursor (x11display.dpy, x11display.win, CreateNullCursor(x11display.dpy, x11display.win));
-	XGrabPointer (x11display.dpy, x11display.win, True, 0, GrabModeAsync, GrabModeAsync, x11display.win, None, CurrentTime);
-
-	if (in_dgamouse->integer)
-	{
-		#ifdef XF86
-		int MajorVersion, MinorVersion;
-
-		if (XF86DGAQueryVersion (x11display.dpy, &MajorVersion, &MinorVersion)) 
-		{ 
-			XF86DGADirectVideo (x11display.dpy, x11display.scr, XF86DGADirectMouse);
-			XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, 0, 0);
-			dgamouse = qtrue;
-
-		} else
-		#endif
-		{
-			// unable to query, probalby not supported
-			Com_Printf( PRINT_ALL, "Failed to detect XF86DGA Mouse\n" );
-			Cvar_Set( "in_dgamouse", "0" );
-			dgamouse = qfalse;
-		}
-	} else {
-		p_mouse_x = x11display.win_width / 2;
-		p_mouse_y = x11display.win_height / 2;
-		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, p_mouse_x, p_mouse_y);
-	}
-
-	XGrabKeyboard (x11display.dpy, x11display.win, False, GrabModeAsync, GrabModeAsync, CurrentTime);
-
-	mx = 0;
-	my = 0;
-	old_mouse_x = 0;
-	old_mouse_y = 0;
-	mouse_active = qtrue;
-}
-
-void uninstall_grabs (void)
-{
-	if (!x11display.dpy || !x11display.win)
-		return;
-
-	if (dgamouse)
-	{
-		dgamouse = qfalse;
-		#ifdef XF86
-		XF86DGADirectVideo (x11display.dpy, x11display.scr, 0);
-		#endif
-	}
-
-	XUngrabPointer (x11display.dpy, CurrentTime);
-	XUngrabKeyboard (x11display.dpy, CurrentTime);
-
-	// inviso cursor
-	XUndefineCursor (x11display.dpy, x11display.win);
-
-	mouse_active = qfalse;
-}
-
-/*****************************************************************************/
-/* KEYBOARD                                                                  */
-/*****************************************************************************/
-
-static int XLateKey(XKeyEvent *ev)
-{
-	int key;
-	char buf[64];
-	KeySym keysym;
-
-	key = 0;
-
-	XLookupString (ev, buf, sizeof buf, &keysym, 0);
-
-	switch (keysym)
-	{
-		case XK_KP_Page_Up:	 key = K_KP_PGUP; break;
-		case XK_Page_Up:	 key = K_PGUP; break;
-
-		case XK_KP_Page_Down: key = K_KP_PGDN; break;
-		case XK_Page_Down:	 key = K_PGDN; break;
-
-		case XK_KP_Home: key = K_KP_HOME; break;
-		case XK_Home:	 key = K_HOME; break;
-
-		case XK_KP_End:  key = K_KP_END; break;
-		case XK_End:	 key = K_END; break;
-
-		case XK_KP_Left: key = K_KP_LEFTARROW; break;
-		case XK_Left:	 key = K_LEFTARROW; break;
-
-		case XK_KP_Right: key = K_KP_RIGHTARROW; break;
-		case XK_Right:	key = K_RIGHTARROW;		break;
-
-		case XK_KP_Down: key = K_KP_DOWNARROW; break;
-		case XK_Down:	 key = K_DOWNARROW; break;
-
-		case XK_KP_Up:   key = K_KP_UPARROW; break;
-		case XK_Up:		 key = K_UPARROW;	 break;
-
-		case XK_Escape: key = K_ESCAPE;		break;
-
-		case XK_KP_Enter: key = K_KP_ENTER;	break;
-		case XK_Return: key = K_ENTER;		 break;
-
-		case XK_Tab:		key = K_TAB;			 break;
-
-		case XK_F1:		 key = K_F1;				break;
-
-		case XK_F2:		 key = K_F2;				break;
-
-		case XK_F3:		 key = K_F3;				break;
-
-		case XK_F4:		 key = K_F4;				break;
-
-		case XK_F5:		 key = K_F5;				break;
-
-		case XK_F6:		 key = K_F6;				break;
-
-		case XK_F7:		 key = K_F7;				break;
-
-		case XK_F8:		 key = K_F8;				break;
-
-		case XK_F9:		 key = K_F9;				break;
-
-		case XK_F10:		key = K_F10;			 break;
-
-		case XK_F11:		key = K_F11;			 break;
-
-		case XK_F12:		key = K_F12;			 break;
-
-		case XK_BackSpace: key = K_BACKSPACE; break;
-
-		case XK_KP_Delete: key = K_KP_DEL; break;
-		case XK_Delete: key = K_DEL; break;
-
-		case XK_Pause:	key = K_PAUSE;		 break;
-
-		case XK_Shift_L:
-		case XK_Shift_R:	key = K_SHIFT;		break;
-
-		case XK_Execute: 
-		case XK_Control_L: 
-		case XK_Control_R:	key = K_CTRL;		 break;
-
-		case XK_Alt_L:	
-		case XK_Meta_L: 
-		case XK_Alt_R:	
-		case XK_Meta_R: key = K_ALT;			break;
-
-		case XK_KP_Begin: key = K_KP_5;	break;
-
-		case XK_Insert:key = K_INS; break;
-		case XK_KP_Insert: key = K_KP_INS; break;
-
-		case XK_KP_Multiply: key = '*'; break;
-		case XK_KP_Add:  key = K_KP_PLUS; break;
-		case XK_KP_Subtract: key = K_KP_MINUS; break;
-		case XK_KP_Divide: key = K_KP_SLASH; break;
-
-#if 0
-		case 0x021: key = '1';break;/* [!] */
-		case 0x040: key = '2';break;/* [@] */
-		case 0x023: key = '3';break;/* [#] */
-		case 0x024: key = '4';break;/* [$] */
-		case 0x025: key = '5';break;/* [%] */
-		case 0x05e: key = '6';break;/* [^] */
-		case 0x026: key = '7';break;/* [&] */
-		case 0x02a: key = '8';break;/* [*] */
-		case 0x028: key = '9';;break;/* [(] */
-		case 0x029: key = '0';break;/* [)] */
-		case 0x05f: key = '-';break;/* [_] */
-		case 0x02b: key = '=';break;/* [+] */
-		case 0x07c: key = '\'';break;/* [|] */
-		case 0x07d: key = '[';break;/* [}] */
-		case 0x07b: key = ']';break;/* [{] */
-		case 0x022: key = '\'';break;/* ["] */
-		case 0x03a: key = ';';break;/* [:] */
-		case 0x03f: key = '/';break;/* [?] */
-		case 0x03e: key = '.';break;/* [>] */
-		case 0x03c: key = ',';break;/* [<] */
-#endif
-
-		default:
-			key = *(unsigned char*)buf;
-			if (key >= 'A' && key <= 'Z')
-				key = key - 'A' + 'a';
-			if (key >= 1 && key <= 26) /* ctrl+alpha */
-				key = key + 'a' - 1;
-			break;
-	} 
-
-	return key;
-}
-
-
-void HandleEvents(void)
-{
-	XEvent event;
-	qboolean dowarp = qfalse;
-	int mwx = x11display.win_width / 2;
-	int mwy = x11display.win_height / 2;
-
-	if (!x11display.dpy || !x11display.win) 
-		return;
-
-	while (XPending(x11display.dpy))
-	{
-		XNextEvent (x11display.dpy, &event);
-
-		switch (event.type) 
-		{
-			case KeyPress:
-				myxtime = event.xkey.time;
-			case KeyRelease:
-				Key_Event (XLateKey(&event.xkey), event.type == KeyPress, Sys_Milliseconds());
-				break;
-
-			case MotionNotify:
-				if (mouse_active)
-				{
-					if (dgamouse)
-					{
-						mx += event.xmotion.x_root * 2;
-						my += event.xmotion.y_root * 2;
-					}
-					else
-					{
-						if( !event.xmotion.send_event ) {
-    						    mx += event.xmotion.x - p_mouse_x;
-						    my += event.xmotion.y - p_mouse_y;
-
-						    if( abs( mwx - event.xmotion.x ) > mwx / 2 || abs( mwy - event.xmotion.y ) > mwy / 2 )
-							dowarp = qtrue;
-						}
-						p_mouse_x = event.xmotion.x;
-						p_mouse_y = event.xmotion.y;
-					}
-				}
-				break;
-
-			case ButtonPress:
-				myxtime = event.xbutton.time;
-				if (event.xbutton.button == 1) Key_Event(K_MOUSE1, 1, Sys_Milliseconds());
-				else if (event.xbutton.button == 2) Key_Event(K_MOUSE3, 1, Sys_Milliseconds());
-				else if (event.xbutton.button == 3) Key_Event(K_MOUSE2, 1, Sys_Milliseconds());
-				else if (event.xbutton.button == 4) Key_Event(K_MWHEELUP, 1, Sys_Milliseconds());
-				else if (event.xbutton.button == 5) Key_Event(K_MWHEELDOWN, 1, Sys_Milliseconds());
-				else if (event.xbutton.button >= 6 && event.xbutton.button <= 10) Key_Event(K_MOUSE4+event.xbutton.button-6, 1, Sys_Milliseconds());
-				break;
-
-			case ButtonRelease:
-				if (event.xbutton.button == 1) Key_Event(K_MOUSE1, 0, Sys_Milliseconds());
-				else if (event.xbutton.button == 2) Key_Event(K_MOUSE3, 0, Sys_Milliseconds());
-				else if (event.xbutton.button == 3) Key_Event(K_MOUSE2, 0, Sys_Milliseconds());
-				else if (event.xbutton.button == 4) Key_Event(K_MWHEELUP, 0, Sys_Milliseconds());
-				else if (event.xbutton.button == 5) Key_Event(K_MWHEELDOWN, 0, Sys_Milliseconds());
-				else if (event.xbutton.button >= 6 && event.xbutton.button <= 10) Key_Event(K_MOUSE4+event.xbutton.button-6, 0, Sys_Milliseconds());
-				break;
-
-			case ClientMessage:
-				if (event.xclient.data.l[0] == x11display.wmDeleteWindow) 
-					Cbuf_ExecuteText(EXEC_NOW, "quit");
-				break;
-		}
-	}
-
-	if (dowarp) 
-	{
-		/* move the mouse to the window center again */
-		p_mouse_x = mwx;
-		p_mouse_y = mwy;
-		XWarpPointer (x11display.dpy, None, x11display.win, 0, 0, 0, 0, mwx, mwy);
-	}
-}
-
-
-void KBD_Update (void)
-{
-}
-
-void KBD_Close (void)
-{
-}
-
-/*****************************************************************************/
-
-char *Sys_GetClipboardData(void)
-{
-	Window sowner;
-	Atom type, property;
-	unsigned long len, bytes_left, tmp;
-	unsigned char *data;
-	int format, result;
-	char *ret = NULL;
-		
-	if (!x11display.dpy && x11display.win) 
-		return NULL;
-	
-	sowner = XGetSelectionOwner (x11display.dpy, XA_PRIMARY);
-			
-	if (sowner != None)
-	{
-		property = XInternAtom(x11display.dpy, "GETCLIPBOARDDATA_PROP", False);
-				
-		XConvertSelection (x11display.dpy, XA_PRIMARY, XA_STRING, property, x11display.win, myxtime); /* myxtime == time of last X event */
-		XFlush (x11display.dpy);
-
-		XGetWindowProperty (x11display.dpy, x11display.win, property,  0, 0, False, AnyPropertyType, &type, &format, &len, &bytes_left, &data);
-
-		if (bytes_left > 0) 
-		{
-			result = XGetWindowProperty(x11display.dpy, x11display.win, property,
-				0, bytes_left, True, AnyPropertyType,  &type, &format, &len, &tmp, &data);
-
-			if (result == Success){
-				ret = strdup(data);
-			}
-
-			XFree(data);
-		}
-	}
-
-	return ret;
-}
-
 /*****************************************************************************/
 
 int GLimp_InitGL (void);
@@ -617,28 +312,38 @@ static void InitSig (void)
 */
 int GLimp_SetMode( int mode, qboolean fullscreen )
 {
-	int width, height, screen_width, screen_height, screen_mode;
+	int width, height, screen_x, screen_y, screen_width, screen_height, screen_mode;
 	float ratio;
 	XSetWindowAttributes wa;
 	unsigned long mask;
+	qboolean wideScreen;
 
-	if (!VID_GetModeInfo( &width, &height, mode))
+	if (!VID_GetModeInfo( &width, &height, &wideScreen, mode))
 	{
 		Com_Printf( PRINT_ALL, " invalid mode\n" );
 		return rserr_invalid_mode;
 	}
 
+	screen_x = screen_y = 0;
 	screen_width = width;
 	screen_height = height;
 
 	if (fullscreen)
 	{
-	#ifdef XF86
-
 		_xf86_VidmodesFindBest (&screen_mode, &screen_width, &screen_height);
 
-		if (screen_mode <0) 
+		if (screen_mode < 0) 
 			return rserr_invalid_mode;
+
+		if (_xf86_xinerama_supported)
+		{
+			screen_width = width;
+			screen_height = height;
+			_xf86_VidmodesSwitch (screen_mode);
+			_xf86_XineramaFindBest (&screen_x, &screen_y, &screen_width, &screen_height);
+			if (!_xf86_xinerama_supported)
+				_xf86_VidmodesSwitchBack ();
+		}
 
 		if (screen_width < width || screen_height < height)
 		{
@@ -653,7 +358,6 @@ int GLimp_SetMode( int mode, qboolean fullscreen )
 				ratio = height / width;
 				width = width *ratio;
 				height = screen_height;
-
 			}
 		}
 
@@ -666,9 +370,11 @@ int GLimp_SetMode( int mode, qboolean fullscreen )
 		wa.border_pixel = 0;
 		wa.event_mask = INIT_MASK;
 		wa.override_redirect = True;
-		mask = CWBackPixel | CWBorderPixel | CWEventMask | CWOverrideRedirect;
+		wa.backing_store = NotUseful;
+		wa.save_under = False;
+		mask = CWBackPixel | CWBorderPixel | CWEventMask | CWSaveUnder | CWBackingStore | CWOverrideRedirect;
 
-		x11display.win = XCreateWindow(x11display.dpy, x11display.root, 0, 0, screen_width, screen_height,
+		x11display.win = XCreateWindow(x11display.dpy, x11display.root, screen_x, screen_y, screen_width, screen_height,
 			0, CopyFromParent, InputOutput, CopyFromParent, mask, &wa);
 
 		XResizeWindow (x11display.dpy, x11display.gl_win, width, height);
@@ -679,12 +385,8 @@ int GLimp_SetMode( int mode, qboolean fullscreen )
 	
 		_x11_SetNoResize (x11display.win, screen_width, screen_height);
 
-		_xf86_VidmodesSwitch (screen_mode);
-
-	#else
-		Com_Printf ("Fullscreen require XFree86. Sorry.\n");
-		return rserr_invalid_mode;
-	#endif 
+		if (!_xf86_xinerama_supported)
+			_xf86_VidmodesSwitch (screen_mode);
 	}
 	else
 	{
@@ -740,17 +442,13 @@ int GLimp_SetMode( int mode, qboolean fullscreen )
 */
 void GLimp_Shutdown (void)
 {
-	uninstall_grabs ();
-	mouse_active = qfalse;
-	dgamouse = qfalse;
-
 	if (x11display.dpy)
 	{
 //		IN_Activate (qfalse);
-#ifdef XF86
 		_xf86_VidmodesSwitchBack();
 		_xf86_VidmodesFree();
-#endif
+		_xf86_XineramaFree();
+		
 		if (x11display.ctx) 
 			qglXDestroyContext (x11display.dpy, x11display.ctx);
 
@@ -817,8 +515,7 @@ int GLimp_Init( void *hinstance, void *wndproc)
 	Sys_Printf ("Display initialization\n");
 
 	x11display.dpy = XOpenDisplay (NULL);
-
-	if (!x11display.dpy )
+	if (!x11display.dpy)
 	{
 		Sys_Printf ("..Error couldn't open the X display\n");
 		return 0;
@@ -827,9 +524,8 @@ int GLimp_Init( void *hinstance, void *wndproc)
 	x11display.scr = DefaultScreen (x11display.dpy);
 	x11display.root = RootWindow (x11display.dpy, x11display.scr);
 
-#ifdef XF86
 	_xf86_VidmodesInit ();
-#endif
+	_xf86_XineramaInit ();
 
 	for (i =0; attributes_list[i].name; i++){
 		x11display.visinfo = qglXChooseVisual (x11display.dpy, x11display.scr, attributes_list[i].attributes);

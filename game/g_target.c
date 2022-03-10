@@ -403,7 +403,7 @@ void use_target_blaster (edict_t *self, edict_t *other, edict_t *activator)
 	int type;
 
 	if (self->spawnflags & 2)
-		type = ET_GENERIC;
+		type = ET_BLASTER2;
 	else if (self->spawnflags & 1)
 		type = ET_HYPERBLASTER;
 	else

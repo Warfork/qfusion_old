@@ -89,6 +89,15 @@ static int CL_GameModule_NET_GetCurrentUserCmdNum( void ) {
 
 /*
 ===============
+CL_GameModule_R_RegisterWorldModel
+===============
+*/
+static void CL_GameModule_R_RegisterWorldModel( char *model ) {
+	R_RegisterWorldModel( model, CM_VisData () );
+} 
+
+/*
+===============
 CL_GameModule_MemAlloc
 ===============
 */
@@ -197,7 +206,7 @@ void CL_GameModule_Init (void)
 	import.R_AddPolyToScene = R_AddPolyToScene;
 	import.R_AddLightStyleToScene = R_AddLightStyleToScene;
 	import.R_RenderScene = R_RenderScene;
-	import.R_RegisterWorldModel = R_RegisterWorldModel;
+	import.R_RegisterWorldModel = CL_GameModule_R_RegisterWorldModel;
 	import.R_ModelBounds = R_ModelBounds;
 	import.R_RegisterModel = R_RegisterModel;
 	import.R_RegisterPic = R_RegisterPic;
@@ -209,6 +218,8 @@ void CL_GameModule_Init (void)
 	import.R_SkeletalGetNumBones = R_SkeletalGetNumBones;
 	import.R_SkeletalGetBoneInfo = R_SkeletalGetBoneInfo;
 	import.R_SkeletalGetBonePose = R_SkeletalGetBonePose;
+	import.R_SetCustomColor = R_SetCustomColor;
+	import.R_LightForOrigin = R_LightForOrigin;
 
 	import.CM_NumInlineModels = CM_NumInlineModels;
 	import.CM_InlineModel = CM_InlineModel;
@@ -218,6 +229,7 @@ void CL_GameModule_Init (void)
 	import.CM_TransformedPointContents = CM_TransformedPointContents;
 	import.CM_ModelForBBox = CM_ModelForBBox;
 	import.CM_InlineModelBounds = CM_InlineModelBounds;
+	import.CM_LoadMapMessage = CM_LoadMapMessage;
 
 	import.S_RegisterSound = S_RegisterSound;
 	import.S_StartSound = S_StartSound;
@@ -248,7 +260,7 @@ void CL_GameModule_Init (void)
 	cls.state = ca_loading;
 
 	start = Sys_Milliseconds ();
-	cge->Init( cl.playernum, cl.attractloop, viddef.width, viddef.height );
+	cge->Init( cl.playernum, cl.attractloop, cl.serverframetime, viddef.width, viddef.height );
 	Com_DPrintf( "CL_GameModule_Init: %.2f seconds\n", (float)(Sys_Milliseconds () - start) * 0.001f );
 
 	cls.state = oldState;

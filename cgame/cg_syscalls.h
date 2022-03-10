@@ -116,8 +116,8 @@ static inline void trap_FS_FCloseFile( int file ) {
 	CGAME_IMPORT.FS_FCloseFile( file );
 }
 
-static inline int trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize ) {
-	return CGAME_IMPORT.FS_GetFileList( dir, extension, buf, bufsize );
+static inline int trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end ) {
+	return CGAME_IMPORT.FS_GetFileList( dir, extension, buf, bufsize, start, end );
 }
 
 static inline char *trap_FS_Gamedir( void ) {
@@ -208,7 +208,7 @@ static inline struct skinfile_s *trap_R_RegisterSkinFile( char *name ) {
 	return CGAME_IMPORT.R_RegisterSkinFile( name );
 }
 
-static inline qboolean trap_R_LerpTag( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name ) {
+static inline qboolean trap_R_LerpTag( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, const char *name ) {
 	return CGAME_IMPORT.R_LerpTag( orient, mod, oldframe, frame, lerpfrac, name );
 }
 
@@ -220,16 +220,24 @@ static inline void trap_R_TransformVectorToScreen( refdef_t *rd, vec3_t in, vec2
 	CGAME_IMPORT.R_TransformVectorToScreen( rd, in, out );
 }
 
-static int trap_R_SkeletalGetNumBones( struct model_s *mod, int *numFrames ) {
+static inline int trap_R_SkeletalGetNumBones( struct model_s *mod, int *numFrames ) {
 	return CGAME_IMPORT.R_SkeletalGetNumBones( mod, numFrames );
 }
 
-static int trap_R_SkeletalGetBoneInfo( struct model_s *mod, int bone, char *name, int size, int *flags ) {
+static inline int trap_R_SkeletalGetBoneInfo( struct model_s *mod, int bone, char *name, int size, int *flags ) {
 	return CGAME_IMPORT.R_SkeletalGetBoneInfo( mod, bone, name, size, flags );
 }
 
-static void trap_R_SkeletalGetBonePose( struct model_s *mod, int bone, int frame, bonepose_t *bonepose ) {
+static inline void trap_R_SkeletalGetBonePose( struct model_s *mod, int bone, int frame, bonepose_t *bonepose ) {
 	CGAME_IMPORT.R_SkeletalGetBonePose( mod, bone, frame, bonepose );
+}
+
+static inline void trap_R_SetCustomColor( int num, int r, int g, int b ) {
+	CGAME_IMPORT.R_SetCustomColor( num, r, g, b );
+}
+
+static inline void trap_R_LightForOrigin( vec3_t origin, vec3_t dir, vec4_t ambient, vec4_t diffuse, float radius ) {
+	CGAME_IMPORT.R_LightForOrigin( origin, dir, ambient, diffuse, radius );
 }
 
 static inline struct cmodel_s *trap_CM_InlineModel( int num ) {
@@ -264,20 +272,24 @@ static inline void trap_CM_InlineModelBounds( struct cmodel_s *cmodel, vec3_t mi
 	CGAME_IMPORT.CM_InlineModelBounds( cmodel, mins, maxs );
 }
 
+static inline char *trap_CM_LoadMapMessage( char *name, char *message, int size ) {
+	return CGAME_IMPORT.CM_LoadMapMessage( name, message, size );
+}
+
 static inline struct sfx_s *trap_S_RegisterSound( char *name ) {
 	return CGAME_IMPORT.S_RegisterSound( name );
 }
 
-static inline void trap_S_Update( vec3_t origin, vec3_t v_forward, vec3_t v_right, vec3_t v_up ) {
-	CGAME_IMPORT.S_Update( origin, v_forward, v_right, v_up );
+static inline void trap_S_Update( vec3_t origin, vec3_t velocity, vec3_t v_forward, vec3_t v_right, vec3_t v_up ) {
+	CGAME_IMPORT.S_Update( origin, velocity, v_forward, v_right, v_up );
 }
 
 static inline void trap_S_StartSound( vec3_t origin, int entnum, int entchannel, struct sfx_s *sfx, float fvol, float attenuation, float timeofs ) {
 	CGAME_IMPORT.S_StartSound( origin, entnum, entchannel, sfx, fvol, attenuation, timeofs );
 }
 
-static inline void trap_S_AddLoopSound( struct sfx_s *sfx, vec3_t origin ) {
-	CGAME_IMPORT.S_AddLoopSound( sfx, origin );
+static inline void trap_S_AddLoopSound( struct sfx_s *sfx, int entnum, vec3_t origin, vec3_t velocity ) {
+	CGAME_IMPORT.S_AddLoopSound( sfx, entnum, origin, velocity );
 }
 
 static inline void trap_S_StartBackgroundTrack( char *intro, char *loop ) {

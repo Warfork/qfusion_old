@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //define	PARANOID			// speed sapping error checking
 
 #ifndef VERSION
-# define VERSION		3.07
+# define VERSION		3.09
 #endif
 
 #ifndef APPLICATION
@@ -162,7 +162,7 @@ PROTOCOL
 
 // protocol.h -- communications protocols
 
-#define	PROTOCOL_VERSION	42
+#define	PROTOCOL_VERSION	43
 
 //=========================================
 
@@ -172,7 +172,7 @@ PROTOCOL
 
 //=========================================
 
-#define	UPDATE_BACKUP	16	// copies of entity_state_t to keep buffered
+#define	UPDATE_BACKUP	64	// copies of entity_state_t to keep buffered
 							// must be power of two
 #define	UPDATE_MASK		(UPDATE_BACKUP-1)
 
@@ -238,16 +238,14 @@ enum clc_ops_e
 #define	PS_M_DELTA_ANGLES0	(1<<10)
 #define	PS_M_DELTA_ANGLES1	(1<<11)
 #define	PS_M_DELTA_ANGLES2	(1<<12)
-#define	PS_WEAPONFRAME		(1<<13)
+#define	PS_KICKANGLES		(1<<13)
 #define	PS_VIEWANGLES		(1<<14)
 #define PS_MOREBITS2		(1<<15)
 
 #define	PS_M_GRAVITY		(1<<16)
-#define	PS_KICKANGLES		(1<<17)
-#define	PS_BLEND			(1<<18)
-#define	PS_FOV				(1<<19)
-#define	PS_WEAPONINDEX		(1<<20)
-#define	PS_VIEWOFFSET		(1<<21)
+#define	PS_BLEND			(1<<17)
+#define	PS_FOV				(1<<18)
+#define	PS_VIEWOFFSET		(1<<19)
 #define PS_MOREBITS3		(1<<23)
 
 //==============================================
@@ -467,7 +465,7 @@ cvar_t 	*Cvar_Set (char *var_name, char *value);
 cvar_t *Cvar_ForceSet (char *var_name, char *value);
 // will set the variable even if NOSET or LATCH
 
-cvar_t 	*Cvar_FullSet (char *var_name, char *value, int flags);
+cvar_t 	*Cvar_FullSet (char *var_name, char *value, int flags, qboolean overwrite_flags);
 
 void	Cvar_SetValue (char *var_name, float value);
 // expands value to a string and calls Cvar_Set
@@ -533,7 +531,7 @@ NET
 #define	MAX_MSGLEN		2000		// max length of a message
 #define MAX_DEMO_MSGLEN	32768		// max length of a faked demo message
 
-typedef enum {NA_LOOPBACK, NA_BROADCAST, NA_IP, NA_IPX, NA_BROADCAST_IPX} netadrtype_t;
+typedef enum {NA_LOOPBACK, NA_BROADCAST, NA_IP} netadrtype_t;
 
 typedef enum {NS_CLIENT, NS_SERVER} netsrc_t;
 
@@ -542,7 +540,6 @@ typedef struct netadr_s
 	netadrtype_t	type;
 
 	qbyte	ip[4];
-	qbyte	ipx[10];
 
 	unsigned short	port;
 } netadr_t;
@@ -624,7 +621,9 @@ FILESYSTEM
 ==============================================================
 */
 
-void	FS_InitFilesystem( void );
+void	FS_Init( void );
+void	FS_Frame( void );
+void	FS_Shutdown( void );
 void	FS_SetGamedir( char *dir );
 void	FS_CreatePath( const char *path );
 char	*FS_NextPath( char *prevpath );
@@ -642,16 +641,17 @@ void	FS_FCloseFile( int file );
 void	FS_CopyFile( const char *src, const char *dst );
 void	FS_RemoveFile( const char *name );
 int		FS_RenameFile( const char *src, const char *dst );
-int		FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize );
+int		FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end );
+int		FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t *bufsize, int start, int end );
 char	*FS_Gamedir( void );
 
 // private engine functions
-int		FS_LoadFile( const char *path, void **buffer );	// a null buffer will just return the file length without loading
-														// a -1 length is not present
-														// note: this can't be called from another DLL, due to MS libc issues
+int		FS_LoadFile( const char *path, void **buffer, void *stack, size_t stackSize );
+								// a null buffer will just return the file length without loading
+								// a -1 length is not present
+								// note: this can't be called from another DLL, due to MS libc issues
 void	FS_FreeFile( void *buffer );
 
-int		FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t *bufsize, char *buf2, size_t *buf2size );
 char	**FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned canthave );
 
 
@@ -930,6 +930,9 @@ char	*Sys_GetHomeDirectory (void);
 char	*Sys_FindFirst (char *path, unsigned musthave, unsigned canthave );
 char	*Sys_FindNext ( unsigned musthave, unsigned canthave );
 void	Sys_FindClose (void);
+
+void	*Sys_LockFile (const char *path);
+void	Sys_UnlockFile (void *handle);
 
 /*
 ==============================================================

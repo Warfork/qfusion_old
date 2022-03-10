@@ -52,8 +52,7 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 			for (i = 0; i < srclength; i++)
 				((short *)sc->data)[i] = LittleShort (((short *)data)[i]);
 		else // 8bit
-			for (i = 0; i < srclength; i++)
-				((signed char *)sc->data)[i] = ((unsigned char *)data)[i] - 128;
+			memcpy( sc->data, data, srclength );
 	}
 	else
 	{
@@ -89,15 +88,14 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 		}
 		else
 		{
-			signed char *out = (void *)sc->data;
-			unsigned char *in = (void *)data;
+			unsigned char *out = (void *)sc->data, *in = (void *)data;
 
 			for (i = 0, j = 0; i < outcount; i++, j = i & chancount)
 			{
-				a = (int)in[srcsample + j] - 128;
-				b = ((srcnextsample < srclength) ? (int)in[srcnextsample + j] - 128 : 0);
+				a = (int)in[srcsample + j];
+				b = ((srcnextsample < srclength) ? (int)in[srcnextsample + j] : 128);
 				RESAMPLE_AND_ADVANCE;
-				*out++ = (signed char)sample;
+				*out++ = (unsigned char)sample;
 			}
 		}
 	}
@@ -108,33 +106,23 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 
 /*
 ==============
-S_LoadSound
+S_LoadWav
 ==============
 */
-sfxcache_t *S_LoadSound (sfx_t *s)
+static sfxcache_t *S_LoadWav (sfx_t *s)
 {
-    char	namebuffer[MAX_QPATH];
 	qbyte	*data;
 	wavinfo_t	info;
 	int		len;
 	sfxcache_t	*sc;
 	int		size;
 
-	if (!s->name[0])
-		return NULL;
-
-// see if still in memory
-	sc = s->cache;
-	if (sc)
-		return sc;
-
 // load it in
-	Q_strncpyz (namebuffer, s->name, sizeof(namebuffer));
-	size = FS_LoadFile (namebuffer, (void **)&data);
+	size = FS_LoadFile (s->name, (void **)&data, NULL, 0);
 
 	if (!data)
 	{
-		Com_DPrintf ("Couldn't load %s\n", namebuffer);
+		Com_DPrintf ("Couldn't load %s\n", s->name);
 		return NULL;
 	}
 
@@ -150,7 +138,7 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 	len = (int) ((double) info.samples * (double) dma.speed / (double) info.rate);
 	len = len * info.width * info.channels;
 
-	sc = s->cache = S_Malloc (len + sizeof(sfxcache_t));
+	sc = s->cache = S_Malloc (sizeof(sfxcache_t) + len);
 	if (!sc)
 	{
 		FS_FreeFile (data);
@@ -170,7 +158,33 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 	return sc;
 }
 
+/*
+==============
+S_LoadSound
+==============
+*/
+sfxcache_t *S_LoadSound (sfx_t *s)
+{
+	const char	*extension;
+	sfxcache_t	*sc;
 
+	if (!s->name[0])
+		return NULL;
+
+// see if still in memory
+	sc = s->cache;
+	if (sc)
+		return sc;
+
+// load it in
+	extension = COM_FileExtension( s->name );
+	if( !Q_stricmp( extension, ".wav" ) )
+		return S_LoadWav( s );
+	if( !Q_stricmp( extension, ".ogg" ) )
+		return SNDOGG_LoadSfx( s );
+
+	return NULL;
+}
 
 /*
 ===============================================================================

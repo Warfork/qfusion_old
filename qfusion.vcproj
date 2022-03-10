@@ -360,6 +360,26 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath="client\cl_vid.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath="qcommon\cm_main.c">
 				<FileConfiguration
 					Name="Debug|Win32">
@@ -800,6 +820,26 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath="ref_gl\r_bloom.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath="ref_gl\r_cin.c">
 				<FileConfiguration
 					Name="Debug|Win32">
@@ -941,6 +981,26 @@
 			</File>
 			<File
 				RelativePath="ref_gl\r_poly.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="ref_gl\r_program.c">
 				<FileConfiguration
 					Name="Debug|Win32">
 					<Tool
@@ -1141,6 +1201,26 @@
 			</File>
 			<File
 				RelativePath="client\snd_ogg.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						AdditionalIncludeDirectories=""
+						PreprocessorDefinitions=""/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="client\snd_oal.c">
 				<FileConfiguration
 					Name="Debug|Win32">
 					<Tool
@@ -1409,9 +1489,6 @@
 			</File>
 			<File
 				RelativePath="qcommon\mdfour.h">
-			</File>
-			<File
-				RelativePath="win32\net_wins.h">
 			</File>
 			<File
 				RelativePath="game\q_shared.h">

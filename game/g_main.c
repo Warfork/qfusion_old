@@ -131,7 +131,7 @@ This will be called when the dll is first loaded, which
 only happens when a new game is started or a save game is loaded.
 ============
 */
-void G_Init (unsigned int seed)
+void G_Init (unsigned int seed, unsigned int frametime)
 {
 	G_Printf ("==== G_Init ====\n");
 
@@ -221,6 +221,9 @@ void G_Init (unsigned int seed)
 
 	game.numentities = game.maxclients+1;
 
+	game.frametimeMsec = frametime;
+	game.frametime = frametime * 0.001;
+
 	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
 
 //ZOID
@@ -283,6 +286,8 @@ void ClientEndServerFrames (void)
 
 		G_SetEntityBits (ent);
 	}
+
+	G_EndServerFrames_UpdateChaseCam ();
 }
 
 /*
@@ -458,7 +463,7 @@ void G_ExitLevel (void)
 ================
 G_RunFrame
 
-Advances the world by 0.1 seconds
+Advances the world by frametime
 ================
 */
 void G_RunFrame (void)
@@ -467,7 +472,7 @@ void G_RunFrame (void)
 	edict_t	*ent;
 
 	level.framenum++;
-	level.time = level.framenum*FRAMETIME;
+	level.time = level.framenum * game.frametime;
 
 	//
 	// clear all events to free entity spots

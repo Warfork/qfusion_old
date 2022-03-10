@@ -85,7 +85,10 @@ static void ApplyChanges( void *unused )
 	trap_Cvar_SetValue( "r_picmip", 3 - s_tq_slider.curvalue );
 	trap_Cvar_SetValue( "r_skymip", 3 - s_sq_slider.curvalue );
 	trap_Cvar_SetValue( "vid_fullscreen", s_fs_box.curvalue );
-	trap_Cvar_SetValue( "r_mode", s_mode_list.curvalue );
+	if( !s_mode_list.curvalue )
+		trap_Cvar_SetValue( "r_mode", -1 );
+	else
+		trap_Cvar_SetValue( "r_mode", s_mode_list.curvalue - 1 );
 	trap_Cvar_SetValue( "r_colorbits", 16 * (int)s_colordepth_box.curvalue );
 	trap_Cvar_SetValue( "r_texturebits", 16 * (int)s_texturebits_box.curvalue );
 	trap_Cvar_SetValue( "r_detailtextures", s_detailtextures_list.curvalue );
@@ -110,64 +113,41 @@ static void CancelChanges( void *unused )
 */
 static void Video_MenuInit( void )
 {
-	static char *resolutions[] = 
-	{
-		"[320 240  ]",
-		"[400 300  ]",
-		"[512 384  ]",
-		"[640 480  ]",
-		"[800 600  ]",
-		"[960 720  ]",
-		"[1024 768 ]",
-		"[1152 864 ]",
-		"[1280 960 ]",
-		"[1600 1200]",
-		"[2048 1536]",
-		0
-	};
-	static char *refs[] =
-	{
-		"[default OpenGL]",
-		"[3Dfx OpenGL   ]",
-		"[PowerVR OpenGL]",
-//		"[Rendition OpenGL]",
-		0
-	};
-	static char *noyes_names[] =
-	{
-		"no", "yes", 0
-	};
-
-	static char *detailtextures_items[] =
-	{
-		"off", "on", 0
-	};
-
-	static char *lighting_names[] =
-	{
-		"lightmap", "vertex", 0
-	};
-
-	static char *filter_names[] =
-	{
-		"bilinear", "trilinear", 0
-	};
-
-	static char *colordepth_names[] =
-	{
-		"desktop", "16 bits", "32 bits", 0
-	};
-
-	static char *texturebits_names[] =
-	{
-		"default", "16", "32", 0
-	};
+	static char custom_resolution[64];
+	static char **resolutions;
+	static char *refs[] = { "[default OpenGL]", "[3Dfx OpenGL   ]", "[PowerVR OpenGL]", 0 };
+	static char *noyes_names[] = { "no", "yes", 0 };
+	static char *detailtextures_items[] = { "off", "on", 0 };
+	static char *lighting_names[] = { "lightmap", "vertex", 0 };
+	static char *filter_names[] = { "bilinear", "trilinear", 0 };
+	static char *colordepth_names[] = { "desktop", "16 bits", "32 bits", 0 };
+	static char *texturebits_names[] = { "default", "16", "32", 0 };
 
 	char *gl_driver = trap_Cvar_VariableString( "gl_driver" );
+	int vid_width = trap_Cvar_VariableValue( "vid_width" );
+	int vid_height = trap_Cvar_VariableValue( "vid_height" );
 	int y = 0;
 	int y_offset = UI_StringHeightOffset ( 0 );
 
-	s_mode_list.curvalue = trap_Cvar_VariableValue( "r_mode" );
+	qboolean wideScreen;
+
+	if( !resolutions ) { // count video modes
+		int i, width, height;
+
+		for( i = 0; trap_VID_GetModeInfo( &width, &height, &wideScreen, i ); i++ );
+
+		resolutions = UI_Malloc( sizeof( char * ) * (i + 2) );
+		resolutions[0] = custom_resolution;
+
+		for( i = 1; trap_VID_GetModeInfo( &width, &height, &wideScreen, i-1 ); i++ )
+		{
+			Q_snprintfz( custom_resolution, sizeof( custom_resolution ), "%s%i x %i", (wideScreen ? "W " : ""), width, height );
+			resolutions[i] = UI_Malloc( strlen( custom_resolution ) + 1 );
+			strcpy( resolutions[i], custom_resolution );
+		}
+		resolutions[i] = NULL;
+	}
+
 	s_screensize_slider.curvalue = trap_Cvar_VariableValue( "cg_viewSize" )/10;
 
 	if ( strcmp( gl_driver, "3dfxgl" ) == 0 )
@@ -196,13 +176,19 @@ static void Video_MenuInit( void )
 	s_ref_list.generic.x			= 0;
 	s_ref_list.generic.y			= y+=y_offset;
 	s_ref_list.itemnames			= refs;
-	
+
 	s_mode_list.generic.type		= MTYPE_SPINCONTROL;
 	s_mode_list.generic.name		= "video mode";
 	s_mode_list.generic.x			= 0;
 	s_mode_list.generic.y			= y+=y_offset;
+	s_mode_list.curvalue			= trap_Cvar_VariableValue( "r_mode" );
 	s_mode_list.itemnames			= resolutions;
-	
+	Q_snprintfz( custom_resolution, sizeof( custom_resolution ), "%i x %i", vid_width, vid_height );
+	if( s_mode_list.curvalue == -1 )	// custom resolution
+		s_mode_list.curvalue		= 0;
+	else
+		s_mode_list.curvalue		+= 1;
+
 	s_screensize_slider.generic.type	= MTYPE_SLIDER;
 	s_screensize_slider.generic.x		= 0;
 	s_screensize_slider.generic.y		= y+=y_offset;

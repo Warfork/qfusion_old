@@ -35,19 +35,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define BOX_SIZE	1.0f
 #define BOX_STEP	BOX_SIZE / (SIDE_SIZE-1) * 2.0f
 
-index_t			r_skydome_indexes[6][ELEM_LEN];
-meshbuffer_t	r_skydome_mbuffer;
+index_t				r_skydome_indexes[6][ELEM_LEN];
+meshbuffer_t		r_skydome_mbuffer;
 
-mfog_t			*r_skyfog;
-msurface_t		*r_warpface;
-
-float			sky_min = 1.0 / 512.0, sky_max = 511.0 / 512.0;
+static mfog_t		*r_skyfog;
+static msurface_t	*r_warpface;
 
 static void Gen_BoxSide( skydome_t *skydome, int side, vec3_t orig, vec3_t drow, vec3_t dcol, float skyheight );
 static void Gen_Box( skydome_t *skydome, float skyheight );
 
 void R_DrawSkyBox( skydome_t *skydome, shader_t **shaders );
-void R_DrawFastSkyBox( void );
 void MakeSkyVec( float x, float y, float z, int axis, vec3_t v );
 
 /*
@@ -168,7 +165,6 @@ static void Gen_BoxSide( skydome_t *skydome, int side, vec3_t orig, vec3_t drow,
 
 	for( r = 0; r < SIDE_SIZE; r++ ) {
 		VectorCopy( row, pos );
-
 		for( c = 0; c < SIDE_SIZE; c++ ) {
 			// pos points from eye to vertex on box
 			VectorScale( pos, skyheight, v );
@@ -225,15 +221,14 @@ void R_DrawSkyBox( skydome_t *skydome, shader_t **shaders )
 		features |= MF_NORMALS;
 
 	for( i = 0; i < 6; i++ ) {
-		if( r_currentlist->skymins[0][i] >= r_currentlist->skymaxs[0][i] || 
-			r_currentlist->skymins[1][i] >= r_currentlist->skymaxs[1][i] ) {
+		if( ri.skyMins[0][i] >= ri.skyMaxs[0][i] || 
+			ri.skyMins[1][i] >= ri.skyMaxs[1][i] ) {
 			continue;
 		}
 
-		mbuffer->fog = r_skyfog;
-		mbuffer->shader = shaders[skytexorder[i]];
+		mbuffer->shaderkey = shaders[skytexorder[i]]->sortkey;
 		mbuffer->dlightbits = 0;
-		mbuffer->entity = &r_worldent;
+		mbuffer->sortkey = MB_FOG2NUM( r_skyfog );
 		
 		skydome->meshes[i].stArray = skydome->linearStCoords[i];
 		R_PushMesh( &skydome->meshes[i], features );
@@ -249,18 +244,63 @@ R_DrawSky
 void R_DrawSky( shader_t *shader )
 {
     int i;
+	vec3_t mins, maxs;
 	mat4x4_t m;
     index_t *index;
-	skydome_t *skydome = shader ? shader->skydome : NULL;
+	skydome_t *skydome = r_skydomes[shader-r_shaders] ? r_skydomes[shader-r_shaders] : NULL;
 	meshbuffer_t *mbuffer = &r_skydome_mbuffer;
     int u, v, umin, umax, vmin, vmax;
 
-	if( !skydome && !r_fastsky->integer )
+	if( !skydome )
 		return;
 
-    // center skydome on camera to give the illusion of a larger space
-	Matrix4_Copy( r_worldview_matrix, r_modelview_matrix );
-	Matrix4_Copy( r_worldview_matrix, m );
+	ClearBounds( mins, maxs );
+	for( i = 0; i < 6; i++ ) {
+		if( ri.skyMins[0][i] >= ri.skyMaxs[0][i] || 
+			ri.skyMins[1][i] >= ri.skyMaxs[1][i] ) {
+			continue;
+		}
+
+		umin = (int)((ri.skyMins[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
+		umax = (int)((ri.skyMaxs[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
+		vmin = (int)((ri.skyMins[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
+		vmax = (int)((ri.skyMaxs[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
+
+		clamp( umin, 0, SIDE_SIZE-1 );
+		clamp( umax, 0, SIDE_SIZE-1 );
+		clamp( vmin, 0, SIDE_SIZE-1 );
+		clamp( vmax, 0, SIDE_SIZE-1 );
+
+		// Box indexes in tristrip order
+		index = skydome->meshes[i].indexes;
+		for( v = vmin; v < vmax; v++ ) {
+			for( u = umin; u < umax; u++ ) {
+				index[0] = v * SIDE_SIZE + u;
+				index[1] = index[4] = index[0] + SIDE_SIZE;
+				index[2] = index[3] = index[0] + 1;
+				index[5] = index[1] + 1;
+				index += 6;
+			}
+		}
+
+		AddPointToBounds( skydome->meshes[i].xyzArray[vmin*SIDE_SIZE+umin], mins, maxs );
+		AddPointToBounds( skydome->meshes[i].xyzArray[vmax*SIDE_SIZE+umax], mins, maxs );
+
+		skydome->meshes[i].numIndexes = (vmax-vmin)*(umax-umin)*6;
+	}
+
+	VectorAdd( mins, ri.viewOrigin, mins );
+	VectorAdd( maxs, ri.viewOrigin, maxs );
+
+	if (ri.refdef.rdflags & RDF_SKYPORTALINVIEW)
+	{
+		R_DrawSkyPortal( &ri.refdef.skyportal, mins, maxs );
+		return;
+	}
+
+	// center skydome on camera to give the illusion of a larger space
+	Matrix4_Copy( ri.worldviewMatrix, ri.modelviewMatrix );
+	Matrix4_Copy( ri.worldviewMatrix, m );
 	m[12] = 0;
 	m[13] = 0;
 	m[14] = 0;
@@ -272,84 +312,50 @@ void R_DrawSky( shader_t *shader )
 	gldepthmax = 1;
 	qglDepthRange( gldepthmin, gldepthmax );
 
-	qglDepthMask( GL_FALSE );
-	qglDisable( GL_ALPHA_TEST );
-	qglDisable( GL_BLEND );
+	if( ri.params & (RP_MIRRORVIEW|RP_PORTALVIEW) )
+		qglDisable( GL_CLIP_PLANE0 );
 
-	if ( r_fastsky->integer ) {
-		R_DrawFastSkyBox ();
-	} else {
-		if( r_portalview || r_mirrorview )
-			qglDisable( GL_CLIP_PLANE0 );
+	// it can happen that sky surfaces have no fog hull specified
+	// yet there's a global fog hull (see wvwq3dm7)
+	if( !r_skyfog )
+		r_skyfog = r_worldmodel->globalfog;
 
-		for( i = 0; i < 6; i++ ) {
-			if( r_currentlist->skymins[0][i] >= r_currentlist->skymaxs[0][i] || 
-				r_currentlist->skymins[1][i] >= r_currentlist->skymaxs[1][i] ) {
+	if( skydome->farboxShaders[0] )
+		R_DrawSkyBox( skydome, skydome->farboxShaders );
+
+	if( shader->numpasses ) {
+		qboolean flush = qfalse;
+		int features = shader->features;
+
+		if( r_shownormals->integer )
+			features |= MF_NORMALS;
+
+		for( i = 0; i < 5; i++ ) {
+			if( ri.skyMins[0][i] >= ri.skyMaxs[0][i] || 
+				ri.skyMins[1][i] >= ri.skyMaxs[1][i] ) {
 				continue;
 			}
 
-			umin = (int)((r_currentlist->skymins[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
-			umax = (int)((r_currentlist->skymaxs[0][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
-			vmin = (int)((r_currentlist->skymins[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1));
-			vmax = (int)((r_currentlist->skymaxs[1][i]+1.0f)*0.5f*(float)(SIDE_SIZE-1)) + 1;
+			flush = qtrue;
+			mbuffer->shaderkey = shader->sortkey;
+			mbuffer->dlightbits = 0;
+			mbuffer->sortkey = MB_FOG2NUM( r_skyfog );
 
-			clamp( umin, 0, SIDE_SIZE-1 );
-			clamp( umax, 0, SIDE_SIZE-1 );
-			clamp( vmin, 0, SIDE_SIZE-1 );
-			clamp( vmax, 0, SIDE_SIZE-1 );
-
-			// Box indexes in tristrip order
-			index = skydome->meshes[i].indexes;
-			for( v = vmin; v < vmax; v++ ) {
-				for( u = umin; u < umax; u++ ) {
-					index[0] = v * SIDE_SIZE + u;
-					index[1] = index[4] = index[0] + SIDE_SIZE;
-					index[2] = index[3] = index[0] + 1;
-					index[5] = index[1] + 1;
-					index += 6;
-				}
-			}
-			skydome->meshes[i].numIndexes = (vmax-vmin)*(umax-umin)*6;
+			skydome->meshes[i].stArray = skydome->sphereStCoords[i];
+			R_PushMesh( &skydome->meshes[i], features );
 		}
 
-		if( skydome->farboxShaders[0] )
-			R_DrawSkyBox( skydome, skydome->farboxShaders );
-
-		if( shader->numpasses ) {
-			qboolean flush = qfalse;
-			int features = shader->features;
-
-			if( r_shownormals->integer )
-				features |= MF_NORMALS;
-
-			for( i = 0; i < 5; i++ ) {
-				if( r_currentlist->skymins[0][i] >= r_currentlist->skymaxs[0][i] || 
-					r_currentlist->skymins[1][i] >= r_currentlist->skymaxs[1][i] ) {
-					continue;
-				}
-
-				flush = qtrue;
-				mbuffer->fog = r_skyfog;
-				mbuffer->shader = shader;
-				mbuffer->dlightbits = 0;
-				mbuffer->entity = &r_worldent;
-
-				skydome->meshes[i].stArray = skydome->sphereStCoords[i];
-				R_PushMesh( &skydome->meshes[i], features );
-			}
-
-			if( flush )
-				R_RenderMeshBuffer( mbuffer, qfalse );
-		}
-
-		if( skydome->nearboxShaders[0] )
-			R_DrawSkyBox( skydome, skydome->nearboxShaders );
-
-		if( r_portalview || r_mirrorview )
-			qglEnable( GL_CLIP_PLANE0 );
+		if( flush )
+			R_RenderMeshBuffer( mbuffer, qfalse );
 	}
 
-	qglLoadMatrixf( r_worldview_matrix );
+	if( skydome->nearboxShaders[0] )
+		R_DrawSkyBox( skydome, skydome->nearboxShaders );
+
+	if( ri.params & (RP_MIRRORVIEW|RP_PORTALVIEW) )
+		qglEnable( GL_CLIP_PLANE0 );
+
+	qglLoadMatrixf( ri.worldviewMatrix );
 
 	gldepthmin = 0;
 	gldepthmax = 1;
@@ -444,14 +450,14 @@ void DrawSkyPolygon( int nump, vec3_t vecs )
 		j = vec_to_st[axis][1];
 		t = (j < 0) ? -vecs[-j -1] * dv : vecs[j-1] * dv;
 
-		if( s < r_currentlist->skymins[0][axis] )
-			r_currentlist->skymins[0][axis] = s;
-		if( t < r_currentlist->skymins[1][axis] )
-			r_currentlist->skymins[1][axis] = t;
-		if( s > r_currentlist->skymaxs[0][axis] )
-			r_currentlist->skymaxs[0][axis] = s;
-		if( t > r_currentlist->skymaxs[1][axis] )
-			r_currentlist->skymaxs[1][axis] = t;
+		if( s < ri.skyMins[0][axis] )
+			ri.skyMins[0][axis] = s;
+		if( t < ri.skyMins[1][axis] )
+			ri.skyMins[1][axis] = t;
+		if( s > ri.skyMaxs[0][axis] )
+			ri.skyMaxs[0][axis] = s;
+		if( t > ri.skyMaxs[1][axis] )
+			ri.skyMaxs[1][axis] = t;
 	}
 }
 
@@ -565,9 +571,9 @@ void R_AddSkySurface( msurface_t *fa )
 	index = mesh->indexes;
 	vert = mesh->xyzArray;
 	for( i = 0; i < mesh->numIndexes; i += 3, index += 3 ) {
-		VectorSubtract( vert[index[0]], r_origin, verts[0] );
-		VectorSubtract( vert[index[1]], r_origin, verts[1] );
-		VectorSubtract( vert[index[2]], r_origin, verts[2] );
+		VectorSubtract( vert[index[0]], ri.viewOrigin, verts[0] );
+		VectorSubtract( vert[index[1]], ri.viewOrigin, verts[1] );
+		VectorSubtract( vert[index[2]], ri.viewOrigin, verts[2] );
 		ClipSkyPolygon( 3, verts[0], 0 );
 	}
 }
@@ -582,8 +588,8 @@ void R_ClearSkyBox (void)
 	int		i;
 
 	for( i = 0; i < 6 ; i++ ) {
-		r_currentlist->skymins[0][i] = r_currentlist->skymins[1][i] = 9999999;
-		r_currentlist->skymaxs[0][i] = r_currentlist->skymaxs[1][i] = -9999999;
+		ri.skyMins[0][i] = ri.skyMins[1][i] = 9999999;
+		ri.skyMaxs[0][i] = ri.skyMaxs[1][i] = -9999999;
 	}
 }
 
@@ -603,49 +609,4 @@ void MakeSkyVec( float x, float y, float z, int axis, vec3_t v )
 		else
 			v[j] = b[k - 1];
 	}
-}
-
-void MakeSkyVec2( float s, float t, int axis )
-{
-	vec3_t	v;
-
-	MakeSkyVec( s * 4600, t * 4600, 4600, axis, v );
-
-	// avoid bilerp seam
-	s = (s + 1) * 0.5;
-	t = (t + 1) * 0.5;
-
-	clamp( s, sky_min, sky_max );
-	clamp( t, sky_min, sky_max );
-
-	qglTexCoord2f( s, 1.0 - t );
-	qglVertex3fv( v );
-}
-
-/*
-==============
-R_DrawFastSkyBox
-==============
-*/
-void R_DrawFastSkyBox( void )
-{
-	int		i;
-
-	qglDisable( GL_TEXTURE_2D );
-	qglEnable( GL_BLEND );
-	qglBlendFunc( GL_ONE, GL_ZERO );
-	qglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
-	qglColor3f( 0, 0, 0 );
-	qglBegin( GL_QUADS );
-
-	for( i = 0; i < 6; i++ ) {
-		MakeSkyVec2( -1, -1, i );
-		MakeSkyVec2( -1, 1, i );
-		MakeSkyVec2( 1, 1, i );
-		MakeSkyVec2( 1, -1, i );
-	}
-
-	qglEnd ();
-	qglDisable( GL_BLEND );
-	qglEnable( GL_TEXTURE_2D );
 }

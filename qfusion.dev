@@ -9,8 +9,8 @@ CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WI
 Includes=qcommon;.\win32/include
 Linker=-lwinmm -lwsock32 -lkernel32 -luser32 -lgdi32 -ldxguid -lzstat -ljpegstat_@@_
 Libs=.\win32/lib/mingw
-UnitCount=89
-Folders="Source Files","Header Files","Resource Files"
+UnitCount=92
+Folders="Header Files","Resource Files","Source Files"
 ObjFiles=
 PrivateResource=qfusion_private.rc
 ResourceIncludes=
@@ -450,16 +450,6 @@ OverrideBuildCmd=0
 BuildCmd=
 
 [Unit44]
-FileName=ref_gl\r_sky.c
-Folder="Source Files"
-Compile=1
-CompileCpp=0
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
-[Unit45]
 FileName=ref_gl\r_surf.c
 Folder="Source Files"
 Compile=1
@@ -469,7 +459,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit46]
+[Unit45]
 FileName=client\snd_dma.c
 Folder="Source Files"
 Compile=1
@@ -479,7 +469,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit47]
+[Unit46]
 FileName=client\snd_mem.c
 Folder="Source Files"
 Compile=1
@@ -489,7 +479,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit48]
+[Unit47]
 FileName=client\snd_mix.c
 Folder="Source Files"
 Compile=1
@@ -499,7 +489,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit49]
+[Unit48]
 FileName=client\snd_ogg.c
 Folder="Source Files"
 Compile=1
@@ -509,7 +499,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit50]
+[Unit49]
 FileName=win32\snd_win.c
 Folder="Source Files"
 Compile=1
@@ -519,7 +509,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit51]
+[Unit50]
 FileName=server\sv_ccmds.c
 Folder="Source Files"
 Compile=1
@@ -529,7 +519,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit52]
+[Unit51]
 FileName=server\sv_ents.c
 Folder="Source Files"
 Compile=1
@@ -539,7 +529,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit53]
+[Unit52]
 FileName=server\sv_game.c
 Folder="Source Files"
 Compile=1
@@ -549,7 +539,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit54]
+[Unit53]
 FileName=server\sv_init.c
 Folder="Source Files"
 Compile=1
@@ -559,7 +549,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit55]
+[Unit54]
 FileName=server\sv_main.c
 Folder="Source Files"
 Compile=1
@@ -569,7 +559,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit56]
+[Unit55]
 FileName=server\sv_send.c
 Folder="Source Files"
 Compile=1
@@ -579,7 +569,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit57]
+[Unit56]
 FileName=server\sv_user.c
 Folder="Source Files"
 Compile=1
@@ -589,7 +579,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit58]
+[Unit57]
 FileName=server\sv_world.c
 Folder="Source Files"
 Compile=1
@@ -599,7 +589,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit59]
+[Unit58]
 FileName=win32\sys_win.c
 Folder="Source Files"
 Compile=1
@@ -609,7 +599,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit60]
+[Unit59]
 FileName=win32\vid_win.c
 Folder="Source Files"
 Compile=1
@@ -619,7 +609,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit61]
+[Unit60]
 FileName=client\cin.h
 Folder="Header Files"
 Compile=1
@@ -629,7 +619,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit62]
+[Unit61]
 FileName=client\client.h
 Folder="Header Files"
 Compile=1
@@ -639,7 +629,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit63]
+[Unit62]
 FileName=qcommon\cm_local.h
 Folder="Header Files"
 Compile=1
@@ -649,7 +639,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit64]
+[Unit63]
 FileName=qcommon\cmodel.h
 Folder="Header Files"
 Compile=1
@@ -659,7 +649,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit65]
+[Unit64]
 FileName=win32\conproc.h
 Folder="Header Files"
 Compile=1
@@ -669,7 +659,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit66]
+[Unit65]
 FileName=client\console.h
 Folder="Header Files"
 Compile=1
@@ -679,7 +669,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit67]
+[Unit66]
 FileName=client\input.h
 Folder="Header Files"
 Compile=1
@@ -689,7 +679,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit68]
+[Unit67]
 FileName=client\keys.h
 Folder="Header Files"
 Compile=1
@@ -699,7 +689,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit69]
+[Unit68]
 FileName=qcommon\mdfour.h
 Folder="Header Files"
 Compile=1
@@ -709,17 +699,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit70]
-FileName=win32\net_wins.h
-Folder="Header Files"
-Compile=1
-CompileCpp=1
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
-[Unit71]
+[Unit69]
 FileName=game\q_shared.h
 Folder="Header Files"
 Compile=1
@@ -729,17 +709,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit72]
-FileName=qcommon\qcommon.h
-Folder="Header Files"
-Compile=1
-CompileCpp=1
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
-[Unit73]
+[Unit71]
 FileName=qcommon\qfiles.h
 Folder="Header Files"
 Compile=1
@@ -749,7 +719,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit74]
+[Unit72]
 FileName=ref_gl\qgl.h
 Folder="Header Files"
 Compile=1
@@ -759,7 +729,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit75]
+[Unit73]
 FileName=ref_gl\r_backend.h
 Folder="Header Files"
 Compile=1
@@ -769,7 +739,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit76]
+[Unit74]
 FileName=ref_gl\r_local.h
 Folder="Header Files"
 Compile=1
@@ -779,7 +749,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit77]
+[Unit75]
 FileName=ref_gl\r_math.h
 Folder="Header Files"
 Compile=1
@@ -789,7 +759,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit78]
+[Unit76]
 FileName=ref_gl\r_mesh.h
 Folder="Header Files"
 Compile=1
@@ -799,7 +769,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit79]
+[Unit77]
 FileName=ref_gl\r_model.h
 Folder="Header Files"
 Compile=1
@@ -809,7 +779,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit80]
+[Unit78]
 FileName=ref_gl\r_shader.h
 Folder="Header Files"
 Compile=1
@@ -819,7 +789,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit81]
+[Unit79]
 FileName=ref_gl\r_shadow.h
 Folder="Header Files"
 Compile=1
@@ -829,7 +799,17 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit83]
+[Unit80]
+FileName=ref_gl\render.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit81]
 FileName=server\server.h
 Folder="Header Files"
 Compile=1
@@ -839,17 +819,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit84]
-FileName=client\snd_loc.h
-Folder="Header Files"
-Compile=1
-CompileCpp=1
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
-[Unit85]
+[Unit83]
 FileName=client\sound.h
 Folder="Header Files"
 Compile=1
@@ -859,7 +829,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit86]
+[Unit84]
 FileName=client\vid.h
 Folder="Header Files"
 Compile=1
@@ -869,7 +839,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit87]
+[Unit85]
 FileName=win32\winquake.h
 Folder="Header Files"
 Compile=1
@@ -879,7 +849,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit88]
+[Unit86]
 FileName=win32\qfusion.ico
 Folder="Resource Files"
 Compile=0
@@ -889,7 +859,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit89]
+[Unit87]
 FileName=ref_gl\r_skin.c
 Folder=Source Files
 Compile=1
@@ -899,15 +869,35 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=$(CC) -c r_skin.c -o ./release/r_skin.o $(CFLAGS)
 
-[Unit90]
-FileName=ref_gl\r_skin.c
+[Unit88]
+FileName=client\cl_vid.c
 Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
 Priority=1000
 OverrideBuildCmd=0
-BuildCmd=$(CC) -c r_skin.c -o ./release/r_skin.o $(CFLAGS)
+BuildCmd=
+
+[Unit89]
+FileName=client\snd_oal.c
+Folder=Source Files
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit90]
+FileName=ref_gl\r_bloom.c
+Folder=Source Files
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
 
 [VersionInfo]
 Major=0
@@ -927,8 +917,38 @@ ProductName=qfusion
 ProductVersion=0.1
 AutoIncBuildNr=0
 
-[Unit43]
+[Unit82]
+FileName=client\snd_loc.h
+CompileCpp=1
+Folder="Header Files"
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit91]
+FileName=ref_gl\r_program.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit92]
 FileName=ref_gl\r_skm.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit43]
+FileName=ref_gl\r_sky.c
 CompileCpp=0
 Folder="Source Files"
 Compile=1
@@ -937,8 +957,8 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit82]
-FileName=ref_gl\render.h
+[Unit70]
+FileName=qcommon\qcommon.h
 CompileCpp=1
 Folder="Header Files"
 Compile=1

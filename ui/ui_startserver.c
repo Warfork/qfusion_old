@@ -45,6 +45,9 @@ static menufield_s	s_hostname_field;
 static menulist_s	s_startmap_list;
 static menulist_s	s_rules_box;
 
+static menuseparator_s s_map_message;
+static char			s_map_message_string[32];
+
 static void			*s_levelshot;
 
 void DMOptionsFunc( void *self )
@@ -57,16 +60,35 @@ void DMOptionsFunc( void *self )
 void MapChangeFunc ( void *self )
 {
 	char path[MAX_QPATH];
+	char *s = mapnames[s_startmap_list.curvalue];
 
-	Q_snprintfz ( path, sizeof(path), "levelshots/%s.jpg", mapnames[s_startmap_list.curvalue] );
+	Q_snprintfz ( path, sizeof(path), "levelshots/%s.jpg", s );
 	
 	if ( trap_FS_FOpenFile( path, NULL, FS_READ ) == -1 ) 
-		Q_snprintfz ( path, sizeof(path), "levelshots/%s.tga", mapnames[s_startmap_list.curvalue] );
+		Q_snprintfz ( path, sizeof(path), "levelshots/%s.tga", s );
 
 	if ( trap_FS_FOpenFile( path, NULL, FS_READ ) == -1 ) 
-		Q_snprintfz ( path, sizeof(path), "menu/art/unknownmap", mapnames[s_startmap_list.curvalue] );
+		Q_snprintfz ( path, sizeof(path), "menu/art/unknownmap", s );
 	
 	s_levelshot = trap_R_RegisterPic ( path );
+
+	Q_snprintfz ( path, sizeof(path), "maps/%s.bsp", s );
+	s_map_message.generic.name = trap_CM_LoadMapMessage( path, s_map_message_string, sizeof( s_map_message_string ) );
+
+	if( !*s_map_message_string ) {
+		int j, length;
+
+		length = strlen( s );
+		if( length > sizeof(s_map_message_string) - 1 )
+			length = sizeof(s_map_message_string) - 1;
+		for( j = 0 ; j < length; j++ )
+			s_map_message_string[j] = tolower( s[j] );
+
+		s_map_message_string[0] = toupper( s_map_message_string[0] );
+		s_map_message_string[j] = 0;
+	}
+
+	s_map_message.generic.name = s_map_message_string;
 }
 
 void RulesChangeFunc ( void *self )
@@ -124,6 +146,7 @@ void StartServerActionFunc( void *self )
 	trap_Cvar_SetValue ("deathmatch", !s_rules_box.curvalue || s_rules_box.curvalue == 2 );
 	trap_Cvar_SetValue ("coop", s_rules_box.curvalue == 1 );
 	trap_Cvar_SetValue ("ctf", s_rules_box.curvalue == 2 );
+	trap_Cvar_ForceSet ("ui_lastmap", startmap );
 
 	spot = NULL;
 
@@ -155,8 +178,9 @@ qboolean StartServer_MenuInit( void )
 	};
 
 	char *s;
+	cvar_t *lastmap;
 	char buffer[2048];
-	int nummaps;
+	int nummaps, startmap;
 	int length;
 	int i;
 	int y = 40;
@@ -165,7 +189,7 @@ qboolean StartServer_MenuInit( void )
 	/*
 	** load the list of maps
 	*/
-	if ( (nummaps = trap_FS_GetFileList( "maps", ".bsp", buffer, sizeof(buffer) )) == 0 ) {
+	if ( (nummaps = trap_FS_GetFileList( "maps", ".bsp", buffer, sizeof(buffer), 0, 0 )) == 0 ) {
 		M_SetMultiplayerStatusBar( "No maps found" );
 		return qfalse;
 	}
@@ -174,6 +198,9 @@ qboolean StartServer_MenuInit( void )
 
 	s = buffer;
 	length = 0;
+
+	startmap = 0;
+	lastmap = trap_Cvar_Get( "ui_lastmap", "", CVAR_NOSET );
 
 	for ( i = 0; i < nummaps; i++, s += length+1 )
 	{
@@ -188,6 +215,9 @@ qboolean StartServer_MenuInit( void )
 
 		Q_snprintfz( scratch, sizeof( scratch ), shortname );
 
+		if( !strcmp( lastmap->string, scratch ) )
+			startmap = i;
+
 		mapnames[i] = UI_CopyString( scratch );
 	}
 
@@ -200,13 +230,21 @@ qboolean StartServer_MenuInit( void )
 	s_startserver_menu.y = y;
 	s_startserver_menu.nitems = 0;
 
+	s_map_message.generic.type	= MTYPE_SEPARATOR;
+	s_map_message.generic.name	= "";
+	s_map_message.generic.flags = QMF_CENTERED|QMF_NONPROPORTIONAL;
+	s_map_message.generic.x		= 0;
+	s_map_message.generic.y		= y;
+	y += UI_StringHeightOffset( s_map_message.generic.flags ) * 1.5;
+
 	s_startmap_list.generic.type = MTYPE_SPINCONTROL;
 	s_startmap_list.generic.x	= 0;
 	s_startmap_list.generic.y	= y;
-	s_startmap_list.curvalue	%= nummaps;
+	s_startmap_list.curvalue	= startmap;
 	s_startmap_list.generic.callback = MapChangeFunc;
 	s_startmap_list.generic.name	= "initial map";
 	s_startmap_list.itemnames = mapnames;
+
 	MapChangeFunc ( (void *)&s_startmap_list );
 
 	s_rules_box.generic.type = MTYPE_SPINCONTROL;
@@ -307,6 +345,7 @@ qboolean StartServer_MenuInit( void )
 	s_startserver_start_action.generic.y	= y += y_offset*2;
 	s_startserver_start_action.generic.callback = StartServerActionFunc;
 
+	Menu_AddItem( &s_startserver_menu, &s_map_message );
 	Menu_AddItem( &s_startserver_menu, &s_startmap_list );
 	Menu_AddItem( &s_startserver_menu, &s_rules_box );
 	Menu_AddItem( &s_startserver_menu, &s_cheats_list );

@@ -5,6 +5,7 @@
 
 #include <X11/extensions/xf86dga.h>
 #include <X11/extensions/xf86vmode.h>
+#include <X11/extensions/Xinerama.h>
 
 #include <GL/glx.h>
 

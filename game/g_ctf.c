@@ -18,7 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 #include "g_local.h"
-#include "m_player.h"
+#include "gs_pmodels.h"
 
 typedef enum {
 	MATCH_NONE,
@@ -249,10 +249,10 @@ void CTFAssignSkin(edict_t *ent, char *s)
 
 	Q_snprintfz(t, sizeof(t), "%s", s);
 
-	if ((p = strchr(t, '/')) != NULL)
+	if( ( p = strchr(t, '/') ) != NULL )
 		p[1] = 0;
 	else
-		strcpy(t, "male/");
+		strcpy( t, DEFAULT_PLAYERMODEL );
 
 	switch (ent->r.client->resp.ctf_team) {
 	case CTF_TEAM1:
@@ -1324,8 +1324,7 @@ void CTFWeapon_Grapple_Fire (edict_t *ent)
 	VectorSet (offset, 24, 8, ent->viewheight-8+2);
 	P_ProjectSource (ent->r.client, ent->s.origin, offset, forward, right, start);
 
-	VectorScale (forward, -2, ent->r.client->kick_origin);
-	ent->r.client->kick_angles[0] = -1;
+	P_AddWeaponKick (ent->r.client, tv(-2, 0, 0), tv(-1, 0, 0), 0.2);
 
 	if (ent->r.client->silencer_shots)
 		volume = 0.2;
@@ -1334,21 +1333,11 @@ void CTFWeapon_Grapple_Fire (edict_t *ent)
 	CTFFireGrapple (ent, start, forward, damage, CTF_GRAPPLE_SPEED);
 
 	PlayerNoise (ent, start, PNOISE_WEAPON);
-
-	ent->r.client->ps.gunframe++;
 }
 
 void CTFWeapon_Grapple (edict_t *ent)
 {
-	static int	pause_frames[]	= {10, 18, 27, 0};
-	static int	fire_frames[]	= {6, 0};
 	int prevstate;
-
-	// if the the attack button is still down, stay in the firing frame
-	if ((ent->r.client->buttons & BUTTON_ATTACK) && 
-		ent->r.client->weaponstate == WEAPON_FIRING &&
-		ent->r.client->ctf_grapple)
-		ent->r.client->ps.gunframe = 9;
 
 	if (!(ent->r.client->buttons & BUTTON_ATTACK) && 
 		ent->r.client->ctf_grapple) {
@@ -1362,21 +1351,17 @@ void CTFWeapon_Grapple (edict_t *ent)
 		ent->r.client->weaponstate == WEAPON_FIRING) {
 		// he wants to change weapons while grappled
 		ent->r.client->weaponstate = WEAPON_DROPPING;
-		ent->r.client->ps.gunframe = 32;
+		ent->r.client->weapontime = 0;
 	}
 
+	// FRAME_ACTIVATE_LAST = 5, FRAME_FIRE_LAST = 9, FRAME_IDLE_LAST = 31, FRAME_DEACTIVATE_LAST = 36
 	prevstate = ent->r.client->weaponstate;
-	Weapon_Generic (ent, 5, 9, 31, 36, pause_frames, fire_frames, 
-		CTFWeapon_Grapple_Fire);
+	Weapon_Generic (ent, 500, 0, 400, 0, 500, CTFWeapon_Grapple_Fire);
 
 	// if we just switched back to grapple, immediately go to fire frame
 	if (prevstate == WEAPON_ACTIVATING &&
 		ent->r.client->weaponstate == WEAPON_READY &&
 		ent->r.client->ctf_grapplestate > CTF_GRAPPLE_STATE_FLY) {
-		if (!(ent->r.client->buttons & BUTTON_ATTACK))
-			ent->r.client->ps.gunframe = 9;
-		else
-			ent->r.client->ps.gunframe = 5;
 		ent->r.client->weaponstate = WEAPON_FIRING;
 	}
 }
@@ -1546,6 +1531,8 @@ char *CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 				last[0] = i;
 			}
 		}
+
+		*entry = 0;
 
 		// right side
 		if (i < total[1]) {
@@ -1877,7 +1864,7 @@ qboolean CTFApplyStrengthSound(edict_t *ent)
 		ent->r.client->pers.inventory[ITEM_INDEX(tech)]) {
 		if (ent->r.client->ctf_techsndtime < level.time) {
 			ent->r.client->ctf_techsndtime = level.time + 1;
-			if (ent->r.client->quad_framenum > level.framenum)
+			if (ent->r.client->quad_timeout > level.time)
 				G_Sound (ent, CHAN_VOICE, trap_SoundIndex("sound/ctf/tech2x.wav"), volume, ATTN_NORM);
 			else
 				G_Sound (ent, CHAN_VOICE, trap_SoundIndex("sound/ctf/tech2.wav"), volume, ATTN_NORM);
@@ -2387,12 +2374,14 @@ void CTFStartMatch(void)
 
 			ent->r.client->respawn_time = level.time + 1.0 + ((rand()%30)/10.0);
 			ent->r.client->ps.pmove.pm_type = PM_DEAD;
-			ent->r.client->anim_priority = ANIM_DEATH;
-			ent->s.frame = FRAME_death308-1;
-			ent->r.client->anim_end = FRAME_death308;
+			//splitmodels[start]
+			//ent->r.client->anim_priority = ANIM_DEATH;
+			//ent->s.frame = FRAME_death308-1;
+			//ent->r.client->anim_end = FRAME_death308;
+			//[end]
 			ent->deadflag = DEAD_DEAD;
 			ent->movetype = MOVETYPE_NOCLIP;
-			ent->r.client->ps.gunindex = 0;
+			ent->r.client->ps.stats[STAT_CHASE] = 0;
 			trap_LinkEntity (ent);
 		}
 	}
@@ -2946,7 +2935,7 @@ qboolean CTFStartClient(edict_t *ent)
 		ent->r.solid = SOLID_NOT;
 		ent->r.svflags |= SVF_NOCLIENT;
 		ent->r.client->resp.ctf_team = CTF_NOTEAM;
-		ent->r.client->ps.gunindex = 0;
+		ent->r.client->ps.stats[STAT_CHASE] = 0;
 		trap_LinkEntity (ent);
 
 		CTFOpenJoinMenu(ent);
@@ -2971,7 +2960,7 @@ void CTFObserver(edict_t *ent)
 	ent->r.solid = SOLID_NOT;
 	ent->r.svflags |= SVF_NOCLIENT;
 	ent->r.client->resp.ctf_team = CTF_NOTEAM;
-	ent->r.client->ps.gunindex = 0;
+	ent->r.client->ps.stats[STAT_CHASE] = 0;
 	ent->r.client->resp.score = 0;
 	memcpy (userinfo, ent->r.client->pers.userinfo, sizeof(userinfo));
 	InitClientPersistant(ent->r.client);

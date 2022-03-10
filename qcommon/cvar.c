@@ -337,7 +337,7 @@ cvar_t *Cvar_Set (char *var_name, char *value)
 Cvar_FullSet
 ============
 */
-cvar_t *Cvar_FullSet (char *var_name, char *value, int flags)
+cvar_t *Cvar_FullSet (char *var_name, char *value, int flags, qboolean overwriteFlags)
 {
 	cvar_t	*var;
 
@@ -357,8 +357,10 @@ cvar_t *Cvar_FullSet (char *var_name, char *value, int flags)
 	var->string = CopyString(value);
 	var->value = atof (var->string);
 	var->integer = Q_rint( var->value );
-	var->flags = flags;
-
+	if( overwriteFlags )
+	    var->flags = flags;
+	else
+		var->flags |= flags;
 	return var;
 }
 
@@ -499,7 +501,7 @@ void Cvar_Seta_f (void)
 		return;
 	}
 
-	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_ARCHIVE);
+	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_ARCHIVE, qfalse);
 }
 
 void Cvar_Sets_f (void)
@@ -510,7 +512,7 @@ void Cvar_Sets_f (void)
 		return;
 	}
 
-	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_SERVERINFO);
+	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_SERVERINFO, qfalse);
 }
 
 void Cvar_Setu_f (void)
@@ -521,7 +523,7 @@ void Cvar_Setu_f (void)
 		return;
 	}
 
-	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_USERINFO);
+	Cvar_FullSet (Cmd_Argv(1), Cmd_Argv(2), CVAR_USERINFO, qfalse);
 }
 
 /*

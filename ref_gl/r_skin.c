@@ -51,7 +51,7 @@ void R_InitSkinFiles( void ) {
 SkinFile_FreeSkinFile
 ================
 */
-void SkinFile_FreeSkinFile( skinfile_t *skinfile )
+static void SkinFile_FreeSkinFile( skinfile_t *skinfile )
 {
 	Mem_ZoneFree( skinfile->pairs );
 	memset( skinfile, 0, sizeof (skinfile_t) );
@@ -83,7 +83,7 @@ shader_t *R_FindShaderForSkinFile( skinfile_t *skinfile, char *meshname )
 SkinFile_ParseBuffer
 ================
 */
-int SkinFile_ParseBuffer( char *buffer, mesh_shader_pair_t *pairs )
+static int SkinFile_ParseBuffer( char *buffer, mesh_shader_pair_t *pairs )
 {
 	int numpairs;
 	char *ptr, *t, *token;
@@ -141,7 +141,7 @@ skinfile_t *R_RegisterSkinFile( char *name )
 		Com_Printf( S_COLOR_YELLOW "R_SkinFile_Load: Skin files limit exceeded\n");
 		return NULL;
 	}
-	if( FS_LoadFile( name, (void **)&buffer ) == -1 ) {
+	if( FS_LoadFile( name, (void **)&buffer, NULL, 0 ) == -1 ) {
 		Com_DPrintf( S_COLOR_YELLOW "R_SkinFile_Load: Failed to load %s\n", name );
 		return NULL;
 	}

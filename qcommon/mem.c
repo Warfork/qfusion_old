@@ -478,25 +478,27 @@ void Mem_CountPoolStats( mempool_t *pool, int *count, int *size, int *realsize )
 
 void Mem_PrintStats (void)
 {
-	int count, size;
-	int total, totalsize;
+	int count, size, real;
+	int total, totalsize, realsize;
 	mempool_t *pool;
 	memheader_t *mem;
 
 	Mem_CheckSentinelsGlobal ();
 
-	for( total = 0, totalsize = 0, pool = poolChain; pool; pool = pool->next ) {
-		count = 0; size = 0;
-		Mem_CountPoolStats( pool, &count, &size, NULL );
-		total += count; totalsize += size;
+	for( total = 0, totalsize = 0, realsize = 0, pool = poolChain; pool; pool = pool->next ) {
+		count = 0; size = 0; real = 0;
+		Mem_CountPoolStats( pool, &count, &size, &real );
+		total += count; totalsize += size; realsize += real;
 	}
 
-	Com_Printf( "%i memory pools, totalling %i bytes (%.3fMB)\n", total, totalsize, totalsize / 1048576.0 );
+	Com_Printf( "%i memory pools, totalling %i bytes (%.3fMB), %i bytes (%.3fMB) actual\n", total, totalsize, totalsize / 1048576.0,
+		realsize, realsize / 1048576.0 );
 
 	// temporary pools are not nested
 	for ( pool = poolChain; pool; pool = pool->next ) {
 		if ( (pool->flags & MEMPOOL_TEMPORARY) && pool->chain ) {
-			Com_Printf( "%i bytes (%.3fMB) of temporary memory still allocated (Leak!)\n", pool->totalsize, pool->totalsize / 1048576.0 );
+			Com_Printf( "%i bytes (%.3fMB) (%i bytes (%.3fMB actual)) of temporary memory still allocated (Leak!)\n", pool->totalsize, pool->totalsize / 1048576.0,
+				pool->realsize, pool->realsize / 1048576.0 );
 			Com_Printf( "listing temporary memory allocations for %s:\n", pool->name );
 
 			for( mem = tempMemPool->chain; mem; mem = mem->next)

@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "g_local.h"
 #include "m_player.h"
+#include "gs_pmodels.h"
 
 void SP_misc_teleporter_dest (edict_t *ent);
 
@@ -146,7 +147,7 @@ void TossClientWeapon (edict_t *self)
 	if (!(dmflags->integer & DF_QUAD_DROP))
 		quad = qfalse;
 	else
-		quad = (self->r.client->quad_framenum > (level.framenum + 10));
+		quad = (self->r.client->quad_timeout > (level.time + 1));
 
 	if (item && quad)
 		spread = 22.5;
@@ -169,7 +170,7 @@ void TossClientWeapon (edict_t *self)
 		drop->spawnflags |= DROPPED_PLAYER_ITEM;
 
 		drop->touch = Touch_Item;
-		drop->nextthink = level.time + (self->r.client->quad_framenum - level.framenum) * FRAMETIME;
+		drop->nextthink = self->r.client->quad_timeout;
 		drop->think = G_FreeEdict;
 	}
 }
@@ -218,8 +219,8 @@ player_die
 */
 void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point)
 {
-	int		n;
 	int		contents;
+	gclient_t	*client = self->r.client;
 
 	VectorClear (self->avelocity);
 
@@ -294,67 +295,71 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 	}
 
 	// remove powerups
-	self->r.client->quad_framenum = 0;
-	self->r.client->invincible_framenum = 0;
-	self->r.client->breather_framenum = 0;
-	self->r.client->enviro_framenum = 0;
+	self->r.client->quad_timeout = 0;
+	self->r.client->invincible_timeout = 0;
+	self->r.client->breather_timeout = 0;
+	self->r.client->enviro_timeout = 0;
 	self->flags &= ~FL_POWER_ARMOR;
 
 	// clear inventory
 	memset(self->r.client->pers.inventory, 0, sizeof(self->r.client->pers.inventory));
-
-	if ( self->health < GIB_HEALTH )
-	{	// gib
+	if( self->health < GIB_HEALTH ) {
 
 		// do not throw gibs in nodrop area but drop head 
-		if ( !(contents & CONTENTS_NODROP) ) {
-			for (n= 0; n < 4; n++)
-				ThrowGib (self, "models/objects/gibs/sm_meat/tris.md2", damage, GIB_ORGANIC);
-		}
+		ThrowSmallPileOfGibs ( self, 8, damage );
+		G_AddEvent( self, EV_GIB, 0, qtrue );
+		ThrowClientHead( self, damage );
 
-		G_AddEvent (self, EV_GIB, 0, qtrue);
+		//jal(gibbed): Don't send animations anymore, just send s.frame = 0
+		self->pmAnim.anim_priority[LOWER] = ANIM_DEATH;
+		self->pmAnim.anim_priority[UPPER] = ANIM_DEATH;
+		self->pmAnim.anim_priority[HEAD] = ANIM_DEATH;
+		self->pmAnim.anim[LOWER] = 0;
+		self->pmAnim.anim[UPPER] = 0;
+		self->pmAnim.anim[HEAD] = 0;
+		self->s.frame = 0;
 
-		ThrowClientHead (self, damage);
-//ZOID
-		self->r.client->anim_priority = ANIM_DEATH;
-		self->r.client->anim_end = 0;
-//ZOID
-	}
-	else
-	{	// normal death
-		if (!self->deadflag)
-		{
+	} else {	// normal death
+
+		if( !self->deadflag ) {
 			static int i;
-
+			
 			i = (i+1)%3;
-			// start a death animation
-			self->r.client->anim_priority = ANIM_DEATH;
-			if (self->r.client->ps.pmove.pm_flags & PMF_DUCKED)
-			{
-				self->s.frame = FRAME_crdeath1-1;
-				self->r.client->anim_end = FRAME_crdeath5;
-			}
-			else switch (i)
+			// start a death animation:
+			// jal: Set the DEAD (corpse) animation in the game,
+			// and send the DEATH (player dying) animation inside 
+			// the event, so it is set at cgame in EVENT_CHANNEL
+			switch (i)
 			{
 			case 0:
-				self->s.frame = FRAME_death101-1;
-				self->r.client->anim_end = FRAME_death106;
+				self->pmAnim.anim[LOWER] = BOTH_DEAD1;
+				self->pmAnim.anim[UPPER] = BOTH_DEAD1;
+				self->pmAnim.anim[HEAD] = 0;
 				break;
+				
 			case 1:
-				self->s.frame = FRAME_death201-1;
-				self->r.client->anim_end = FRAME_death206;
+				self->pmAnim.anim[LOWER] = BOTH_DEAD2;
+				self->pmAnim.anim[UPPER] = BOTH_DEAD2;
+				self->pmAnim.anim[HEAD] = 0;
 				break;
+				
 			case 2:
-				self->s.frame = FRAME_death301-1;
-				self->r.client->anim_end = FRAME_death308;
+				self->pmAnim.anim[LOWER] = BOTH_DEAD3;
+				self->pmAnim.anim[UPPER] = BOTH_DEAD3;
+				self->pmAnim.anim[HEAD] = 0;
 				break;
 			}
+			
+			//pause time for finishing the animation before respawning
+			self->r.client->respawn_time = level.time + ANIM_DEATH_TIME/1000;
 
-			if ( self->health <= GIB_HEALTH ) {
+			//send the death style (1, 2 or 3) inside parameters
+			G_AddEvent( self, EV_DIE, i, qtrue );
+			self->pmAnim.anim_priority[LOWER] = ANIM_DEATH;
+			self->pmAnim.anim_priority[UPPER] = ANIM_DEATH;
+			self->pmAnim.anim_priority[HEAD] = ANIM_DEATH;
+			if( self->health <= GIB_HEALTH )
 				self->health = GIB_HEALTH + 1;
-			}
-
-			G_AddEvent (self, EV_DIE, 0, qtrue);
 		}
 	}
 
@@ -589,6 +594,7 @@ edict_t *SelectRandomDeathmatchSpawnPoint (void)
 /*
 ================
 SelectFarthestDeathmatchSpawnPoint
+
 ================
 */
 edict_t *SelectFarthestDeathmatchSpawnPoint (void)
@@ -677,7 +683,7 @@ SelectSpawnPoint
 Chooses a player start, deathmatch start, coop start, etc
 ============
 */
-void SelectSpawnPoint (edict_t *ent, vec3_t origin, vec3_t angles)
+void	SelectSpawnPoint (edict_t *ent, vec3_t origin, vec3_t angles)
 {
 	edict_t	*spot = NULL;
 
@@ -740,19 +746,50 @@ void InitBodyQue (void)
 
 void body_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point)
 {
-	int n;
-
-	if (self->health >= GIB_HEALTH)
+	if( self->health >= GIB_HEALTH )
 		return;
 
-	for (n= 0; n < 4; n++)
-		ThrowGib (self, "models/objects/gibs/sm_meat/tris.md2", damage, GIB_ORGANIC);
-
-	G_AddEvent (self, EV_GIB, 0, qtrue);
+	ThrowSmallPileOfGibs( self, 8, damage );
+	G_AddEvent( self, EV_GIB, 0, qtrue );
 	self->s.origin[2] -= 48;
-	ThrowClientHead (self, damage);
+	ThrowClientHead( self, damage );
 }
 
+/*
+=============
+body_think
+  autodestruct body. Body self removal after some time.
+  fixme: make a better effect for the body when dissapearing
+=============
+*/
+void body_think( edict_t *self )
+{
+	int	damage;
+
+	self->health = GIB_HEALTH - 1;
+	damage = 25;
+	// effect: small gibs, and only when it is still a body, not a gibbed head.
+	if( self->s.type == ET_PLAYER ) {
+		G_AddEvent( self, EV_GIB, 0, qtrue );
+		ThrowSmallPileOfGibs( self, 6, damage );
+	}
+	self->takedamage = DAMAGE_NO;
+	self->r.solid = SOLID_NOT;
+	self->s.sound = 0;
+	self->flags |= FL_NO_KNOCKBACK;
+
+	//remove the model
+	self->s.type = ET_GENERIC;
+	self->r.svflags &= ~SVF_CORPSE;
+	self->s.modelindex = 0;
+	trap_LinkEntity(self);
+}
+
+/*
+=============
+CopyToBodyQue
+=============
+*/
 void CopyToBodyQue (edict_t *ent)
 {
 	edict_t		*body;
@@ -770,25 +807,91 @@ void CopyToBodyQue (edict_t *ent)
 
 	// FIXME: send an effect on the removed body
 
-	trap_UnlinkEntity (body);
-	body->s = ent->s;
-	body->s.number = body - game.edicts;
+	trap_UnlinkEntity( body );
 
-	VectorCopy (ent->r.mins, body->r.mins);
-	VectorCopy (ent->r.maxs, body->r.maxs);
-	VectorCopy (ent->r.absmin, body->r.absmin);
-	VectorCopy (ent->r.absmax, body->r.absmax);
-	VectorCopy (ent->r.size, body->r.size);
+	//clean up garbage
+	memset( body,0,sizeof( edict_t ) );
+
+	//init body edict
+	G_InitEdict( body );
+	body->classname = "body";
+
+	body->health = ent->health;
+	body->r.owner = ent->r.owner;
+	body->s.effects = ent->s.effects;
+	body->r.svflags = ent->r.svflags & ~SVF_FAKECLIENT;
+	body->r.svflags |= SVF_CORPSE;
+
+	//copy player position
+	VectorCopy( ent->s.old_origin, body->s.old_origin );
+	VectorCopy( ent->s.origin, body->s.origin );
+	VectorCopy( ent->s.origin2, body->s.origin2 );
+	//use flat yaw
+	body->s.angles[PITCH] = 0;
+	body->s.angles[ROLL] = 0;
+	body->s.angles[YAW] = ent->s.angles[YAW];
+
+	VectorCopy( ent->r.mins, body->r.mins );
+	VectorCopy( ent->r.maxs, body->r.maxs );
+	VectorCopy( ent->r.absmin, body->r.absmin );
+	VectorCopy( ent->r.absmax, body->r.absmax );
+	VectorCopy( ent->r.size, body->r.size );
+
+	//make a indexed pmodel from client skin
+	if( ent->s.type == ET_PLAYER ) {
+		char		*s, *t;
+		char		model_name[MAX_QPATH], skin_name[MAX_QPATH], scratch[MAX_QPATH];
+
+		body->s.type = ET_PLAYER;
+		s = Info_ValueForKey( ent->r.client->pers.userinfo, "skin" );
+		strcpy( model_name, s );
+		t = strstr( s, "/" );
+		if( t ) {
+			t++;
+			strcpy( skin_name, t );
+			model_name[strlen(model_name)-(strlen(skin_name)+1)] = 0;
+		}
+		
+		if( !model_name || !skin_name ) {
+			strcpy( model_name, DEFAULT_PLAYERMODEL );
+			strcpy( skin_name, DEFAULT_PLAYERSKIN );
+		}
+		
+		//in ctf, send client number to mirror his ctf skin
+		if( ctf->integer ) {
+			body->s.skinnum = ent - game.edicts - 1;
+			body->s.modelindex = qtrue;	//value doesn't matter as long as it has one
+			
+		} else {
+			Q_snprintfz( scratch, sizeof( scratch ), "$models/players/%s",model_name );
+			body->s.modelindex = trap_ModelIndex( scratch );
+			Q_snprintfz( scratch, sizeof( scratch ), "$models/players/%s/%s",model_name, skin_name );
+			body->s.skinnum = trap_ImageIndex( scratch );
+		}
+
+		//copy the last animation in the client
+		body->s.frame = ( (ent->pmAnim.anim[UPPER]&0x3F) | ((ent->pmAnim.anim[LOWER]&0x3F)<<6) | ((ent->pmAnim.anim[HEAD]&0xF)<<12) );
+	
+	} else {
+
+		body->s.type = ent->s.type;
+		body->s.modelindex = ent->s.modelindex;
+		body->s.frame = ent->s.frame;
+	}
+
+	G_AddEvent( body, EV_TELEPORT, 0, qtrue );
+
+	body->think = body_think;//body self destruction
+	body->nextthink = level.time + (FRAMETIME*400);
+	body->takedamage = DAMAGE_YES;
+	body->die = body_die;
+
 	body->r.solid = ent->r.solid;
 	body->r.clipmask = CONTENTS_SOLID | CONTENTS_PLAYERCLIP;
-	body->r.svflags = ent->r.svflags;
-	body->r.owner = ent->r.owner;
-	body->movetype = ent->movetype;
+	body->movetype = MOVETYPE_TOSS;
 
-	body->die = body_die;
-	body->takedamage = DAMAGE_YES;
-
-	trap_LinkEntity (body);
+	trap_LinkEntity( body );
+	M_CheckGround( body );
 }
 
 
@@ -902,7 +1005,6 @@ void PutClientInServer (edict_t *ent)
 	ent->deadflag = DEAD_NO;
 	ent->air_finished = level.time + 12;
 	ent->r.clipmask = MASK_PLAYERSOLID;
-	ent->model = "players/male/tris.md2";
 	ent->pain = player_pain;
 	ent->die = player_die;
 	ent->waterlevel = 0;
@@ -937,8 +1039,6 @@ void PutClientInServer (edict_t *ent)
 			client->ps.fov = 160;
 	}
 
-	client->ps.gunindex = trap_ModelIndex (client->pers.weapon->view_model);
-
 	// clear entity state values
 	ent->s.type = ET_PLAYER;
 	ent->s.effects = 0;
@@ -946,6 +1046,14 @@ void PutClientInServer (edict_t *ent)
 	ent->s.modelindex = 255;		// will use the skin specified model
 	ent->s.modelindex2 = 255;		// custom gun model
 	ent->s.skinnum = ent - game.edicts - 1;
+
+	ent->pmAnim.anim_priority[LOWER] = ANIM_BASIC;
+	ent->pmAnim.anim_priority[UPPER] = ANIM_BASIC;
+	ent->pmAnim.anim_priority[HEAD] = ANIM_BASIC;
+
+	ent->pmAnim.anim[LOWER] = LEGS_STAND;
+	ent->pmAnim.anim[UPPER] = TORSO_STAND;
+	ent->pmAnim.anim[HEAD] = ANIM_NONE;
 
 	ent->s.frame = 0;
 	VectorCopy (spawn_origin, ent->s.origin);
@@ -959,9 +1067,9 @@ void PutClientInServer (edict_t *ent)
 	VectorCopy (ent->s.angles, client->ps.viewangles);
 	VectorCopy (ent->s.angles, client->v_angle);
 
-	// set the delta angle
-	for (i=0 ; i<3 ; i++)
-		client->ps.pmove.delta_angles[i] = ANGLE2SHORT(ent->s.angles[i] - client->resp.cmd_angles[i]);
+	// set the delta angle 
+	for (i=0 ; i<3 ; i++) 
+		client->ps.pmove.delta_angles[i] = ANGLE2SHORT(ent->s.angles[i] - client->resp.cmd_angles[i]); 
 
 //ZOID
 	if (ctf->integer && CTFStartClient(ent))
@@ -1102,9 +1210,7 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo)
 
 	// check for malformed or illegal info strings
 	if (!Info_Validate(userinfo))
-	{
-		strcpy (userinfo, "\\name\\badinfo\\hand\\0\\skin\\male/grunt");
-	}
+		Q_snprintfz( userinfo, sizeof( userinfo ), "\\name\\badinfo\\hand\\0\\skin\\%s/%s", DEFAULT_PLAYERMODEL, DEFAULT_PLAYERSKIN );
 
 	// set name
 	s = Info_ValueForKey (userinfo, "name");
@@ -1112,10 +1218,8 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo)
 
 	// handedness
 	s = Info_ValueForKey (userinfo, "hand");
-	if (strlen(s))
-	{
+	if( strlen(s) )
 		cl->pers.hand = atoi(s);
-	}
 
 	// set skin
 	s = Info_ValueForKey (userinfo, "skin");
@@ -1291,7 +1395,7 @@ void ClientThink (edict_t *ent, usercmd_t *ucmd)
 {
 	gclient_t	*client;
 	edict_t	*other;
-	int		i, j;
+	int		i, j, xyspeedcheck;
 	pmove_t	pm;
 
 	level.current_entity = ent;
@@ -1317,10 +1421,14 @@ void ClientThink (edict_t *ent, usercmd_t *ucmd)
 	pm_passent = ent;
 
 //ZOID
-	if (ent->r.client->chase_target) {
+	if( ent->r.client->chase_target ) {
 		client->resp.cmd_angles[0] = SHORT2ANGLE(ucmd->angles[0]);
 		client->resp.cmd_angles[1] = SHORT2ANGLE(ucmd->angles[1]);
 		client->resp.cmd_angles[2] = SHORT2ANGLE(ucmd->angles[2]);
+		if( ucmd->upmove && level.time > client->chase.keytime ) {
+			client->chase.keytime = level.time + 1;
+			client->chase.keyNext = qtrue;
+		}
 		return;
 	}
 //ZOID
@@ -1378,10 +1486,37 @@ void ClientThink (edict_t *ent, usercmd_t *ucmd)
 	client->resp.cmd_angles[1] = SHORT2ANGLE(ucmd->angles[1]);
 	client->resp.cmd_angles[2] = SHORT2ANGLE(ucmd->angles[2]);
 
+	xyspeedcheck = sqrt(ent->velocity[0]*ent->velocity[0] + ent->velocity[1]*ent->velocity[1]);
+
 	if (ent->groundentity && (pm.groundentity == -1) && (pm.cmd.upmove >= 10) && (pm.waterlevel == 0))
 	{
-		G_AddEvent (ent, EV_JUMP, 0, qtrue);
-		PlayerNoise (ent, ent->s.origin, PNOISE_SELF);
+		G_AddEvent( ent, EV_JUMP, 0, qtrue );
+		PlayerNoise( ent, ent->s.origin, PNOISE_SELF );
+		// launch jump animations
+		if( pm.s.velocity[2] < 5500 || !ent->pmAnim.anim_jump ) { // is not a double jump
+			if( ent->pmAnim.anim_jump == qtrue && ent->pmAnim.anim_jump_thunk == qtrue )
+			{	// rebounce
+				if( xyspeedcheck > 50 ) {
+					if( ent->pmAnim.anim_jump_style < 2 )
+						ent->pmAnim.anim_jump_style = 2;
+					else
+						ent->pmAnim.anim_jump_style = 1;
+				} else
+					ent->pmAnim.anim_jump_style = 0;
+				
+			} else {	// is a simple jump
+				if( pm.cmd.forwardmove >= 20 && xyspeedcheck > 50 ) {
+					if( ent->pmAnim.anim_jump_style < 2 )
+						ent->pmAnim.anim_jump_style = 2;
+					else
+						ent->pmAnim.anim_jump_style = 1;
+				} else
+					ent->pmAnim.anim_jump_style = 0;
+			}
+			//set the jump as active and launch the animation change process.
+			ent->pmAnim.anim_jump_thunk = qfalse;
+			ent->pmAnim.anim_jump = qtrue;
+		}
 	}
 
 	ent->viewheight = pm.viewheight;
@@ -1408,7 +1543,6 @@ void ClientThink (edict_t *ent, usercmd_t *ucmd)
 		VectorCopy (pm.viewangles, client->v_angle);
 		VectorCopy (pm.viewangles, client->ps.viewangles);
 	}
-	client->backmove = (pm.cmd.forwardmove < 0);
 
 //ZOID
 	if (client->ctf_grapple)
@@ -1437,6 +1571,24 @@ void ClientThink (edict_t *ent, usercmd_t *ucmd)
 	client->oldbuttons = client->buttons;
 	client->buttons = ucmd->buttons;
 	client->latched_buttons |= client->buttons & ~client->oldbuttons;
+
+	ent->pmAnim.anim_moveflags = 0;//start from 0
+	if( ucmd->forwardmove < -1 )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_BACK;
+	else if( ucmd->forwardmove > 1 )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_FRONT;
+	if( ucmd->sidemove < -1 )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_LEFT;
+	else if( ucmd->sidemove > 1 )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_RIGHT;
+	if( xyspeedcheck > 240 )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_RUN;
+	else if( xyspeedcheck )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_WALK;
+	if( client->ps.pmove.pm_flags & PMF_DUCKED )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_DUCK;
+	if( client->ctf_grapple != NULL )
+		ent->pmAnim.anim_moveflags |= ANIMMOVE_GRAPPLE;
 
 	// fire weapon from final position if needed
 	if (client->latched_buttons & BUTTON_ATTACK

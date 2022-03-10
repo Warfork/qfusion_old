@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "g_local.h"
 #include "m_player.h"
+#include "gs_pmodels.h"
 
 
 char *ClientTeam (edict_t *ent)
@@ -439,39 +440,39 @@ Cmd_Drop_f
 Drop an inventory item
 ==================
 */
-void Cmd_Drop_f (edict_t *ent)
+void Cmd_Drop_f( edict_t *ent )
 {
 	int			index;
 	gitem_t		*it;
 	char		*s;
 
 //ZOID--special case for tech powerups
-	if (Q_stricmp(trap_Cmd_Args(), "tech") == 0 && (it = CTFWhat_Tech(ent)) != NULL) {
-		it->drop (ent, it);
+	if( Q_stricmp( trap_Cmd_Args(), "tech" ) == 0 && ( it = CTFWhat_Tech( ent ) ) != NULL ) {
+		it->drop( ent, it );
 		return;
 	}
 //ZOID
 
 	s = trap_Cmd_Args ();
-	it = FindItem (s);
-	if (!it)
-	{
+	it = FindItem( s );
+	if( !it ) {
 		G_PrintMsg (ent, PRINT_HIGH, "unknown item: %s\n", s);
 		return;
 	}
-	if (!it->drop)
-	{
-		G_PrintMsg (ent, PRINT_HIGH, "Item is not dropable.\n");
+	if( !it->drop ) {
+		G_PrintMsg( ent, PRINT_HIGH, "Item is not dropable.\n" );
 		return;
 	}
-	index = ITEM_INDEX(it);
-	if (!ent->r.client->pers.inventory[index])
-	{
-		G_PrintMsg (ent, PRINT_HIGH, "Out of item: %s\n", s);
+	index = ITEM_INDEX( it );
+	if( !ent->r.client->pers.inventory[index] ) {
+		G_PrintMsg( ent, PRINT_HIGH, "Out of item: %s\n", s );
 		return;
 	}
 
-	it->drop (ent, it);
+	if( ent->pmAnim.anim_priority[UPPER] <= ANIM_WAVE )
+		G_AddEvent( ent, EV_DROP, 0, qtrue );
+
+	it->drop( ent, it );
 }
 
 
@@ -596,7 +597,7 @@ void Cmd_LastWeap_f (edict_t *ent)
 Cmd_WeapPrev_f
 =================
 */
-void Cmd_WeapPrev_f (edict_t *ent)
+void Cmd_WeapPrev_f( edict_t *ent )
 {
 	gclient_t	*cl;
 	int			i, index;
@@ -605,24 +606,31 @@ void Cmd_WeapPrev_f (edict_t *ent)
 
 	cl = ent->r.client;
 
-	if (!cl->pers.weapon)
+	if( cl->menu ) {
+		PMenu_Prev( ent );
+		return;
+	} else if( cl->chase_target ) {
+		ChasePrev( ent );
+		return;
+	}
+
+	if( !cl->pers.weapon )
 		return;
 
-	selected_weapon = ITEM_INDEX(cl->pers.weapon);
+	selected_weapon = ITEM_INDEX( cl->pers.weapon );
 
 	// scan  for the next valid one
-	for (i=1 ; i<=MAX_ITEMS ; i++)
-	{
+	for( i = 1 ; i <= MAX_ITEMS ; i++ ) {
 		index = (selected_weapon + i)%MAX_ITEMS;
-		if (!cl->pers.inventory[index])
+		if( !cl->pers.inventory[index] )
 			continue;
 		it = &itemlist[index];
-		if (!it->use)
+		if( !it->use )
 			continue;
-		if (! (it->flags & IT_WEAPON) )
+		if(! (it->flags & IT_WEAPON) )
 			continue;
-		it->use (ent, it);
-		if (cl->pers.weapon == it)
+		it->use( ent, it );
+		if( cl->pers.weapon == it )
 			return;	// successful
 	}
 }
@@ -641,10 +649,18 @@ void Cmd_WeapNext_f (edict_t *ent)
 
 	cl = ent->r.client;
 
-	if (!cl->pers.weapon)
+	if( cl->menu ) {
+		PMenu_Next( ent );
+		return;
+	} else if( cl->chase_target ) {
+		ChaseNext( ent );
+		return;
+	}
+
+	if( !cl->pers.weapon )
 		return;
 
-	selected_weapon = ITEM_INDEX(cl->pers.weapon);
+	selected_weapon = ITEM_INDEX( cl->pers.weapon );
 
 	// scan  for the next valid one
 	for (i=1 ; i<=MAX_ITEMS ; i++)
@@ -716,7 +732,11 @@ void Cmd_InvDrop_f (edict_t *ent)
 		G_PrintMsg (ent, PRINT_HIGH, "Item is not dropable.\n");
 		return;
 	}
-	it->drop (ent, it);
+
+	if( ent->pmAnim.anim_priority[UPPER] <= ANIM_WAVE )
+		G_AddEvent( ent, EV_DROP, 0, qtrue );
+
+	it->drop( ent, it );
 }
 
 /*
@@ -822,50 +842,22 @@ void Cmd_Players_f (edict_t *ent)
 Cmd_Wave_f
 =================
 */
-void Cmd_Wave_f (edict_t *ent)
+void Cmd_Wave_f( edict_t *ent )
 {
 	int		i;
-	gclient_t *cl;
 
-	i = atoi (trap_Cmd_Argv(1));
-	cl = ent->r.client;
+	i = atoi( trap_Cmd_Argv(1) );
 
-	// can't wave when ducked
-	if (cl->ps.pmove.pm_flags & PMF_DUCKED)
+	if( ent->pmAnim.anim_priority[UPPER] > ANIM_WAVE )
 		return;
 
-	if (cl->anim_priority > ANIM_WAVE)
-		return;
+	ent->pmAnim.anim_priority[UPPER] = ANIM_WAVE;
 
-	cl->anim_priority = ANIM_WAVE;
-
-	switch (i)
+	switch( i )
 	{
 	case 0:
-		G_PrintMsg (ent, PRINT_HIGH, "flipoff\n");
-		ent->s.frame = FRAME_flip01-1;
-		cl->anim_end = FRAME_flip12;
-		break;
-	case 1:
-		G_PrintMsg (ent, PRINT_HIGH, "salute\n");
-		ent->s.frame = FRAME_salute01-1;
-		cl->anim_end = FRAME_salute11;
-		break;
-	case 2:
-		G_PrintMsg (ent, PRINT_HIGH, "taunt\n");
-		ent->s.frame = FRAME_taunt01-1;
-		cl->anim_end = FRAME_taunt17;
-		break;
-	case 3:
-		G_PrintMsg (ent, PRINT_HIGH, "wave\n");
-		ent->s.frame = FRAME_wave01-1;
-		cl->anim_end = FRAME_wave11;
-		break;
-	case 4:
 	default:
-		G_PrintMsg (ent, PRINT_HIGH, "point\n");
-		ent->s.frame = FRAME_point01-1;
-		cl->anim_end = FRAME_point12;
+		G_AddEvent( ent, EV_GESTURE, 0, qtrue );
 		break;
 	}
 }
@@ -1085,6 +1077,8 @@ void ClientCommand (edict_t *ent)
 		CTFPlayerList(ent);
 	} else if (Q_stricmp(cmd, "observer") == 0) {
 		CTFObserver(ent);
+	} else if ( !Q_stricmp( cmd, "chasecam" ) || !Q_stricmp( cmd, "chase" ) ) {
+		Cmd_ChaseCam_f( ent );
 	}
 //ZOID
 	else	// anything that doesn't match a command will be a chat

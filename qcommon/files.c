@@ -47,12 +47,6 @@ typedef struct
 	unsigned	restReadCompressed;				// number of bytes to be decompressed
 } zipEntry_t;
 
-typedef struct
-{
-	char		*name;
-	char		*searchName;
-} searchfile_t;
-
 #define FS_PACKFILE_DEFLATED		1
 #define FS_PACKFILE_COHERENT		2
 
@@ -73,6 +67,7 @@ typedef struct
 	char		filename[MAX_OSPATH];
 	int			numFiles;
 	int			hashSize;
+	void		*sysHandle;
 	packfile_t	*files;
 	char		*fileNames;
 	packfile_t	**filesHash;
@@ -95,23 +90,38 @@ typedef struct searchpath_s
 	struct		searchpath_s *next;
 } searchpath_t;
 
+typedef struct
+{
+	char		*name;
+	searchpath_t	*searchPath;
+} searchfile_t;
+
+static searchfile_t *fs_searchfiles;
+static int fs_numsearchfiles;
+static int fs_cursearchfiles;
+
 char			fs_gamedir[MAX_OSPATH];
 cvar_t			*fs_basepath;
 cvar_t			*fs_basedir;
 cvar_t			*fs_cdpath;
 cvar_t			*fs_gamedirvar;
 
-searchpath_t	*fs_searchpaths;
-searchpath_t	*fs_base_searchpaths;	// without gamedirs
+static searchpath_t	*fs_searchpaths;
+static searchpath_t	*fs_base_searchpaths;	// without gamedirs
 
-mempool_t		*fs_mempool;
+static mempool_t	*fs_mempool;
 
 #define FS_MAX_BLOCK_SIZE	0x10000
 #define FS_MAX_HASH_SIZE	1024
 #define FS_MAX_HANDLES		1024
 
-filehandle_t fs_filehandles[FS_MAX_HANDLES];
-filehandle_t fs_filehandles_headnode, *fs_free_filehandles;
+static filehandle_t fs_filehandles[FS_MAX_HANDLES];
+static filehandle_t fs_filehandles_headnode, *fs_free_filehandles;
+
+// we mostly read from one file at a time, so keep a global copy of one
+// zipEntry to save on malloc calls and linking in FS_FOpenFile
+static zipEntry_t	fs_globalZipEntry;
+static filehandle_t *fs_globalZipEntryUser;
 
 /*
 
@@ -355,7 +365,16 @@ int FS_FOpenFile( const char *filename, int *filenum, int mode )
 					file->offset = pakFile->offset;
 
 					if( pakFile->flags & FS_PACKFILE_DEFLATED ) {
-						file->zipEntry = Mem_Alloc( fs_mempool, sizeof(zipEntry_t) );
+						if( fs_globalZipEntryUser )
+							file->zipEntry = Mem_Alloc( fs_mempool, sizeof(zipEntry_t) );
+						else {
+							// reset zstream here too, Mem_Alloc does it for us above
+							memset( &fs_globalZipEntry.zstream, 0, sizeof( fs_globalZipEntry.zstream ) );
+
+							file->zipEntry = &fs_globalZipEntry;
+							fs_globalZipEntryUser = file;
+						}
+
 						file->zipEntry->compressedSize = pakFile->compressedSize;
 						file->zipEntry->restReadCompressed = pakFile->compressedSize;
 
@@ -433,7 +452,10 @@ void FS_FCloseFile( int file )
 	fh = FS_FileHandleForNum( file );
 	if( fh->zipEntry ) {
 		inflateEnd( &fh->zipEntry->zstream );
-		Mem_Free( fh->zipEntry );
+		if( fh != fs_globalZipEntryUser )
+			Mem_Free( fh->zipEntry );
+		else
+			fs_globalZipEntryUser = NULL;
 		fh->zipEntry = NULL;
 	}
 	if( fh->fstream ) {
@@ -720,7 +742,7 @@ Filename are relative to the quake search path
 a null buffer will just return the file length without loading
 ============
 */
-int FS_LoadFile( const char *path, void **buffer )
+int FS_LoadFile( const char *path, void **buffer, void *stack, size_t stackSize )
 {
 	qbyte	*buf;
 	int		len, fhandle;
@@ -740,7 +762,10 @@ int FS_LoadFile( const char *path, void **buffer )
 		return len;
 	}
 
-	buf = Mem_TempMallocExt( len + 1, 0 );
+	if( stack && (stackSize > len) )
+		buf = stack;
+	else
+		buf = Mem_TempMallocExt( len + 1, 0 );
 	buf[len] = 0;
 	*buffer = buf;
 
@@ -982,11 +1007,17 @@ pack_t *FS_LoadPK3File( const char *packfilename )
 	size_t namesLen, len;
 	pack_t *pack = NULL;
 	packfile_t *file;
-	FILE *fin;
+	FILE *fin = NULL;
 	char *names;
 	unsigned hashKey;
 	unsigned char zipHeader[20];	// we can't use a struct here because of packing
 	unsigned offset, centralPos, sizeCentralDir, offsetCentralDir, byteBeforeTheZipFile;
+	void *handle = NULL;
+
+	// lock the file for shared reading, don't throw a fatal error if failed for some reason
+	handle = Sys_LockFile( packfilename );
+	if( handle == NULL )
+		goto error;
 
     fin = fopen( packfilename, "rb" );
 	if( fin == NULL )
@@ -1035,6 +1066,7 @@ pack_t *FS_LoadPK3File( const char *packfilename )
 	pack->filesHash = ( packfile_t ** )( ( qbyte * )names + namesLen );
 	pack->numFiles = numFiles;
 	pack->hashSize = hashSize;
+	pack->sysHandle = handle;
 
 	// add all files to hash table
 	for( i = 0, file = pack->files, centralPos = offsetCentralDir + byteBeforeTheZipFile; i < numFiles; i++, file++, centralPos += offset, names += len + 1 ) {
@@ -1048,8 +1080,9 @@ pack_t *FS_LoadPK3File( const char *packfilename )
 	}
 
 	fclose( fin );
+	fin = NULL;
 
-	Com_Printf( "Added packfile %s (%i files)\n", pack->filename, pack->numFiles );
+	Com_Printf( "Added pk3 file %s (%i files)\n", pack->filename, pack->numFiles );
 
 	return pack;
 
@@ -1058,10 +1091,163 @@ error:
 		fclose( fin );
 	if( pack )
 		Mem_Free( pack );
+	if( handle != NULL )
+		Sys_UnlockFile( handle ); 
 
-	Com_Printf( "%s is not a valid packfile", packfilename );
+	Com_Printf( "%s is not a valid pk3 file", packfilename );
 
 	return NULL;
+}
+
+/*
+=================
+FS_LoadPakFile
+
+Quick and dirty
+=================
+*/
+#define IDPAKHEADER		(('K'<<24)+('C'<<16)+('A'<<8)+'P')
+
+pack_t *FS_LoadPakFile( const char *packfilename )
+{
+	int				i, j;
+	FILE			*fin = NULL;
+	char			*p, *names, dirName[56];
+	packfile_t		*file;
+	pack_t			*pack = NULL;
+	struct { int ident; int	dirofs; int dirlen; } header;
+	struct { char name[56]; int filepos, filelen; } *info = NULL;
+	struct { char name[56]; } *dirs = NULL;
+	unsigned		numFiles, numDirs, maxDirs, hashSize, hashKey, len, namesLen;
+	void			*handle = NULL;
+
+	// lock the file for shared reading, don't throw a fatal error if failed for some reason
+	handle = Sys_LockFile( packfilename );
+	if( handle == NULL )
+		goto error;
+
+	fin = fopen( packfilename, "rb" );
+	if( !fin )
+		goto error;
+
+	fread( &header, 1, sizeof( header ), fin );
+	if( LittleLong( header.ident ) != IDPAKHEADER )
+		goto error;
+
+	header.dirofs = LittleLong( header.dirofs );
+	header.dirlen = LittleLong( header.dirlen );
+
+	numFiles = header.dirlen / sizeof( *info );
+	if( !numFiles )
+		goto error;
+
+	info = Mem_TempMallocExt( header.dirlen + numFiles * sizeof( *dirs ), 0 );
+
+	numDirs = 0;
+	maxDirs = numFiles;
+	dirs = Mem_TempMallocExt( maxDirs * sizeof( *dirs ), 1 );
+
+	fseek( fin, header.dirofs, SEEK_SET );
+	for( i = 0, namesLen = 0; i < numFiles; i++ ) {
+		fread( &info[i], 1, sizeof( *info ), fin );
+		len = strlen( info[i].name );
+		if( !len )
+			goto error;		// something wrong occured
+
+		// add subdirectories too
+		strcpy( dirName, info[i].name );
+		while( (p = strrchr( dirName, '/' )) ) {
+			*(p + 1) = 0;
+
+			for( j = 0; j < numDirs; j++ ) {
+				if( !strcmp( dirs[j].name, dirName ) )
+					break;
+			}
+			if( j == numDirs ) {
+			    if( numDirs == maxDirs ) {
+			        // happens occasionally when there are more directories
+			        // (subdirectories) than files (vanilla Quake2 pak2.pak
+                    // is a good example)
+			        maxDirs++;
+			        dirs = Mem_Realloc( dirs, maxDirs * sizeof( *dirs ) );
+			    }
+				strcpy( dirs[numDirs].name, dirName );
+				numDirs++;
+				namesLen += strlen( dirName ) + 1;
+			}
+			*p = 0;        // remove the trailing '/'
+		}
+		namesLen += len + 1;
+	}
+
+	namesLen += 1; // add space for a guard
+
+	for( hashSize = 1; (hashSize <= numFiles) && (hashSize < FS_MAX_HASH_SIZE); hashSize <<= 1 );
+
+	pack = Mem_Alloc( fs_mempool, ( sizeof( pack_t ) + (numFiles + numDirs) * sizeof( packfile_t ) + namesLen + hashSize * sizeof( packfile_t * ) ) );
+	strcpy( pack->filename, packfilename );
+	pack->files = ( packfile_t * )( ( qbyte * )pack + sizeof( pack_t ) );
+	pack->fileNames = names = ( char * )( ( qbyte * )pack->files + (numFiles + numDirs) * sizeof( packfile_t ) );
+	pack->filesHash = ( packfile_t ** )( ( qbyte * )names + namesLen );
+	pack->numFiles = numFiles + numDirs;
+	pack->hashSize = hashSize;
+	pack->sysHandle = handle;
+
+	// add all files to hash table
+	for( i = 0, file = pack->files; i < numFiles; i++, file++, names += len + 1 ) {
+		file->name = names;
+		strcpy( file->name, info[i].name );
+		len = strlen( file->name );
+
+		file->flags = FS_PACKFILE_COHERENT;
+		file->offset = LittleLong( info[i].filepos );
+		file->compressedSize = file->uncompressedSize = LittleLong( info[i].filelen );
+
+		hashKey = FS_PackHashKey( file->name, hashSize );
+		file->hashNext = pack->filesHash[hashKey];
+		pack->filesHash[hashKey] = file;
+	}
+
+	// add all dirs then
+	for( i = 0; i < numDirs; i++, file++, names += len + 1 ) {
+		file->name = names;
+		strcpy( file->name, dirs[i].name );
+		len = strlen( file->name );
+		file->flags = FS_PACKFILE_COHERENT;
+	}
+
+	fclose( fin );
+	fin = NULL;
+
+	Mem_TempFree( info );
+	Mem_TempFree( dirs );
+	
+	Com_Printf( "Added pak file %s (%i files)\n", pack->filename, pack->numFiles );
+
+	return pack;
+
+error:
+	if( fin )
+		fclose( fin );
+	if( pack )
+		Mem_Free( pack );
+	if( info )
+		Mem_TempFree( info );
+	if( dirs )
+        Mem_TempFree( dirs );
+	if( handle != NULL )
+		Sys_UnlockFile( handle ); 
+
+	return NULL;
+}
+
+/*
+=================
+FS_SortStrings
+=================
+*/
+static int FS_SortStrings( const char **first, const char **second ) {
+	return Q_stricmp( *first, *second );
 }
 
 /*
@@ -1069,7 +1255,7 @@ error:
 FS_PathGetFileListExt
 =================
 */
-int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *extension, searchfile_t *files, size_t size )
+static int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *extension, searchfile_t *files, size_t size )
 {
 	int i, found;
 	char *p, *s, *name;
@@ -1132,21 +1318,26 @@ int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *ex
 		if( (filenames = FS_ListFiles( findname, &numfiles, musthave, canthave )) ) {
 			for( i = 0; i < numfiles - 1; i++ ) {
 				if( found < size ) {
-					if( (musthave & SFF_SUBDIR) ) {
-						size_t len = strlen( filenames[i] + searchlen );
+					size_t len = strlen( filenames[i] + searchlen );
 
+					if( (musthave & SFF_SUBDIR) ) {
 						if( filenames[i][searchlen+len-1] != '/' ) {
 							files[found].name = Mem_ZoneMalloc( len + 2 );
 							strcpy( files[found].name, filenames[i] + searchlen );
 							files[found].name[len] = '/';
 							files[found].name[len+1] = 0;
 						} else {
+							if( extension && (len <= extlen) ) {
+								Mem_ZoneFree( filenames[i] );
+								continue;
+							}
+
 							files[found].name = CopyString( filenames[i] + searchlen );
 						}
 					} else {
 						files[found].name = CopyString( filenames[i] + searchlen );
 					}
-					files[found].searchName = search->filename;
+					files[found].searchPath = search;
 					found++;
 				}
 				Mem_ZoneFree( filenames[i] );
@@ -1165,7 +1356,7 @@ int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *ex
 				continue;
 
 		// check extension
-		if( extlen )
+		if( extlen && (extension[0] != '/') )
 			if( tokenlen < extlen || Q_strnicmp( extension, s + tokenlen - extlen, extlen ) )
 				continue;
 
@@ -1181,7 +1372,7 @@ int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *ex
 				continue;
 
 		files[found].name = CopyString( name );
-		files[found].searchName = search->filename;
+		files[found].searchPath = search;
 		if( ++found == size )
 			return found;
 	}
@@ -1199,7 +1390,7 @@ then loads and adds pak1.pak pak2.pak ...
 */
 void FS_AddGameDirectory( const char *dir )
 {
-	int				i, numpaks;
+	int				i, j, numpaks;
 	searchpath_t	*search;
 	pack_t			*pak;
 	char			pakfile[MAX_OSPATH];
@@ -1213,21 +1404,30 @@ void FS_AddGameDirectory( const char *dir )
 	search->next = fs_searchpaths;
 	fs_searchpaths = search;
 
-	// add any pk3 files
-	Q_snprintfz( pakfile, sizeof(pakfile), "%s/*.pk3", dir );
- 	if( ( paknames = FS_ListFiles( pakfile, &numpaks, 0, SFF_SUBDIR | SFF_HIDDEN | SFF_SYSTEM ) ) != 0 ) {
-		for( i = 0; i < numpaks - 1; i++ ) {
-			pak = FS_LoadPK3File( paknames[i] );
-			if( !pak )
-				continue;
-			search = Mem_Alloc( fs_mempool, sizeof( searchpath_t ) );
-			strcpy( search->filename, paknames[i] );
-			search->pack = pak;
-			search->next = fs_searchpaths;
-			fs_searchpaths = search;
-			Mem_ZoneFree( paknames[i] );
+	Com_DPrintf( "FS_AddGameDirectory (\"%s\")\n", dir );
+
+	// add any pk3 and pak files
+	for( i = 0; i < 2; i++ ) {
+		Q_snprintfz( pakfile, sizeof(pakfile), "%s/*.%s", dir, (i ? "pk3" : "pak") );
+
+ 		if( ( paknames = FS_ListFiles( pakfile, &numpaks, 0, SFF_SUBDIR | SFF_HIDDEN | SFF_SYSTEM ) ) != 0 ) {
+			// sort pak files so that pak1.pk3 overrides pak0.pk3, etc
+			qsort( paknames, numpaks - 1, sizeof(char*), (int (*)(const void *, const void *))FS_SortStrings );
+
+			for( j = 0; j < numpaks - 1; j++ ) {
+				pak = (i ? FS_LoadPK3File( paknames[j] ) : FS_LoadPakFile( paknames[j] ));
+				if( !pak )
+					continue;
+
+				search = Mem_Alloc( fs_mempool, sizeof( searchpath_t ) );
+				strcpy( search->filename, paknames[j] );
+				search->pack = pak;
+				search->next = fs_searchpaths;
+				fs_searchpaths = search;
+				Mem_ZoneFree( paknames[j] );
+			}
+			Mem_ZoneFree( paknames );
 		}
-		Mem_ZoneFree( paknames );
 	}
 }
 
@@ -1250,14 +1450,12 @@ void FS_AddHomeAsGameDirectory( const char *dir )
 	if( !homedir || !homedir[0] )
 		return;
 
-	len = snprintf( gdir, sizeof(gdir), "%s/.qfusion/%s/\0", homedir, dir );
+	len = snprintf( gdir, sizeof(gdir), "%s/.qfusion/%s/", homedir, dir );
 	Com_Printf( "using %s for writing\n", gdir );
 	FS_CreatePath( gdir );
 	if( (len > 0) && (len < sizeof(gdir)) && (gdir[len-1] == '/') )
 		gdir[len-1] = 0;
 
-	Q_strncpyz( fs_gamedir, gdir, sizeof( fs_gamedir ) );
-	fs_gamedir[sizeof(fs_gamedir)-1] = 0;
 	FS_AddGameDirectory( gdir );
 }
 
@@ -1309,8 +1507,11 @@ void FS_SetGamedir( char *dir )
 
 	// free up any current game dir info
 	while( fs_searchpaths != fs_base_searchpaths ) {
-		if( fs_searchpaths->pack )
+		if( fs_searchpaths->pack ) {
+			if( fs_searchpaths->pack->sysHandle )
+				Sys_UnlockFile( fs_searchpaths->pack->sysHandle );
 			Mem_Free( fs_searchpaths->pack );
+		}
 		next = fs_searchpaths->next;
 		Mem_Free( fs_searchpaths );
 		fs_searchpaths = next;
@@ -1323,10 +1524,10 @@ void FS_SetGamedir( char *dir )
 	Q_snprintfz( fs_gamedir, sizeof(fs_gamedir), "%s/%s", fs_basepath->string, dir );
 
 	if( !strcmp (dir, BASEDIRNAME) || (*dir == 0) ) {
-		Cvar_FullSet( "fs_gamedir", "", CVAR_SERVERINFO|CVAR_NOSET );
-		Cvar_FullSet( "fs_game", "", CVAR_LATCH|CVAR_SERVERINFO );
+		Cvar_FullSet( "fs_gamedir", "", CVAR_SERVERINFO|CVAR_NOSET, qtrue );
+		Cvar_FullSet( "fs_game", "", CVAR_LATCH|CVAR_SERVERINFO, qtrue );
 	} else {
-		Cvar_FullSet( "fs_gamedir", dir, CVAR_SERVERINFO|CVAR_NOSET );
+		Cvar_FullSet( "fs_gamedir", dir, CVAR_SERVERINFO|CVAR_NOSET, qtrue );
 		if( fs_cdpath->string[0] )
 			FS_AddGameDirectory( va("%s/%s", fs_cdpath->string, dir) );
 		FS_AddGameDirectory( va("%s/%s", fs_basepath->string, dir) );
@@ -1377,7 +1578,8 @@ char **FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned 
 	return list;
 }
 
-#define FS_MAX_SEARCHFILES	1024
+#define FS_MIN_SEARCHFILES	0x400
+#define FS_MAX_SEARCHFILES	0xFFFF		// cap
 int FS_SortFiles( const searchfile_t *file1, const searchfile_t *file2 ) {
 	return Q_stricmp( (file1)->name, (file2)->name );
 }
@@ -1393,27 +1595,28 @@ void FS_Dir_f( void )
 	char dir[MAX_OSPATH];
 	char extension[MAX_OSPATH];
 	searchpath_t *search;
-	searchfile_t files[FS_MAX_SEARCHFILES];
+	searchfile_t *files;
 	qboolean truncated;
 
+	extension[0] = 0;
 	if( Cmd_Argc() == 1 ) {
 		dir[0] = '/';
-		extension[0] = 0;
+		dir[1] = 0;
 	} else {
 		if( Cmd_Argc() > 2 )
 			Q_strncpyz( extension, Cmd_Argv( 2 ), sizeof( extension ) );
+
 		Q_strncpyz( dir, Cmd_Argv( 1 ), sizeof( dir ) );
-		if( !strcmp( dir, "./" ) )
+		if( !strcmp( dir, "./" ) || !strcmp( dir, "." ) )
 			strcpy( dir, "/" );
 	}
 
 	allfound = 0;
-	memset( files, 0, sizeof( files ) );
-	truncated = qfalse;
+	files = fs_searchfiles;
 
 	for( search = fs_searchpaths ; search ; search = search->next ) {
-		allfound += FS_PathGetFileListExt( search, dir, extension, files + allfound, FS_MAX_SEARCHFILES - allfound );
-		if( allfound == FS_MAX_SEARCHFILES ) {
+		allfound += FS_PathGetFileListExt( search, dir, extension, files + allfound, fs_numsearchfiles - allfound );
+		if( allfound == fs_numsearchfiles ) {
 			truncated = qtrue;
 			break;	// we are done
 		}
@@ -1426,7 +1629,7 @@ void FS_Dir_f( void )
 
 	// free temp memory
 	for( i = 0; i < allfound; i++ ) {
-		Com_Printf( "%s/%s\n", files[i].searchName, files[i].name );
+		Com_Printf( "%s/%s\n", files[i].searchPath->filename, files[i].name );
 		Mem_ZoneFree( files[i].name );
 	}
 	if( truncated )
@@ -1437,66 +1640,118 @@ void FS_Dir_f( void )
 
 /*
 ================
-FS_GetFileListExt
+FS_GetFileListExt_
 ================
 */
-int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t *bufsize, char *buf2, size_t *buf2size )
+static int FS_GetFileListExt_( const char *dir, const char *extension, char *buf, size_t *bufsize, int maxFiles, int start, int end )
 {
 	int i;
-	int found, allfound;
-	size_t len, len2, alllen, all2len;
+	int allfound, found, limit;
+	size_t len, alllen;
 	searchpath_t *search;
-	searchfile_t files[FS_MAX_SEARCHFILES];
+	searchfile_t *files;
+	static int maxFilesCache;
+	static char dircache[MAX_QPATH], extcache[MAX_QPATH];
+	qboolean useCache;
 
-	if( !bufsize && !buf2size )
+	assert( !dir || dir[strlen(dir)-1] != '/' );
+
+	if( (dir && dir[strlen(dir)-1] == '/') || !bufsize )
 		return 0;
-
-	allfound = 0;
-	memset( files, 0, sizeof( files ) );
-
-	for( search = fs_searchpaths ; search ; search = search->next ) {
-		allfound += FS_PathGetFileListExt( search, dir, extension, files + allfound, FS_MAX_SEARCHFILES - allfound );
-		if( allfound == FS_MAX_SEARCHFILES )
-			break;	// we are done
+	
+	if( fs_cursearchfiles )
+	{
+		useCache = (maxFilesCache == maxFiles);
+		if( useCache ) {
+			useCache = dir ? !strcmp( dircache, dir ) : (dircache[0] == '\0');
+			if( useCache )
+				useCache = extension ? !strcmp( extcache, extension ) : (extcache[0] == '\0');
+		}
+	}
+	else
+	{
+		useCache = qfalse;
 	}
 
-	found = 0;
-	if( buf && bufsize ) {
-		alllen = 0;
-		qsort( files, allfound, sizeof (searchfile_t ), (int (*)(const void *, const void *))FS_SortFiles );
+	maxFilesCache = maxFiles;
+	if( dir )
+		Q_strncpyz( dircache, dir, sizeof( dircache ) );
+	else
+		dircache[0] = '\0';
+	if( extension )
+		Q_strncpyz( extcache, extension, sizeof( extcache ) );
+	else
+		extcache[0] = '\0';
 
-		if( buf2 && buf2size ) {
-			all2len = 0;
-			for( i = 0; i < allfound; alllen += len + 1, all2len += len2 + 1, found++, i++ ) {
-				len = strlen( files[i].name );
-				len2 = strlen( files[i].searchName );
-				if( *bufsize <= len + alllen || *buf2size <= len2 + all2len )
+	files = fs_searchfiles;
+	if( !useCache ) {
+		allfound = 0;
+		search = fs_searchpaths;
+
+		while( search ) {
+			limit = maxFiles ? min( fs_numsearchfiles, maxFiles ) : fs_numsearchfiles;
+			found = FS_PathGetFileListExt( search, dir, extension, files + allfound,
+				fs_numsearchfiles - allfound );
+
+			if( allfound+found == fs_numsearchfiles )
+			{
+				if( limit == maxFiles || fs_numsearchfiles == FS_MAX_SEARCHFILES )
 					break;	// we are done
-				strcpy( buf + alllen, files[i].name );
-				strcpy( buf2 + all2len, files[i].searchName );
+				fs_numsearchfiles *= 2;
+				if( fs_numsearchfiles > FS_MAX_SEARCHFILES )
+					fs_numsearchfiles = FS_MAX_SEARCHFILES;
+				fs_searchfiles = files = Mem_Realloc( fs_searchfiles, sizeof( searchfile_t ) * fs_numsearchfiles );
+				if( !search->pack ) {
+					for( i = 0; i < found; i++ )
+						Mem_ZoneFree( files[allfound+i].name );
+				}
+				continue;
 			}
-		} else {
-			for( i = 0; i < allfound; alllen += len + 1, found++, i++ ) {
+
+			allfound += found;
+			search = search->next;
+		}
+
+		fs_cursearchfiles = allfound;
+	}
+	else
+	{
+		allfound = fs_cursearchfiles;
+	}
+
+	if( start < 0 )
+		start = 0;
+	if( !end )
+		end = allfound;
+	else if( end > allfound )
+		end = allfound;
+
+	if( !useCache )
+		qsort( files, allfound, sizeof(searchfile_t), (int (*)(const void *, const void *))FS_SortFiles );
+
+	if( bufsize ) {
+		found = 0;
+
+		if( buf ) {
+			alllen = 0;
+			for( i = start; i < end; i++ ) {
 				len = strlen( files[i].name );
 				if( *bufsize <= len + alllen )
 					break;	// we are done
 				strcpy( buf + alllen, files[i].name );
+				alllen += len + 1;
+				found++;
 			}
+		} else {
+			*bufsize = 0;
+			for( i = start; i < end; found++, i++ )
+				*bufsize += strlen( files[i].name ) + 1;
 		}
-	} else {
-		if( buf2size )
-			for( i = 0, *bufsize = *buf2size = 0; i < allfound; *bufsize += strlen(files[i].name) + 1, *buf2size += strlen(files[i].searchName) + 1, found++, i++ );
-		else if( bufsize )
-			for( i = 0, *bufsize = 0; i < allfound; *bufsize += strlen(files[i].name) + 1, found++, i++ );
-		else
-			return 0;
+
+		return found;
 	}
 
-	// free temp memory
-	for( i = 0; i < allfound; i++ )
-		Mem_ZoneFree( files[i].name );
-
-	return found;
+	return allfound;
 }
 
 /*
@@ -1504,10 +1759,17 @@ int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t
 FS_GetFileList
 ================
 */
-int FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize ) {
-	if( buf )
-		return FS_GetFileListExt( dir, extension, buf, &bufsize, NULL, NULL );
-	return 0;
+int FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end ) {
+	return FS_GetFileListExt_( dir, extension, buf, &bufsize, FS_MAX_SEARCHFILES, start, end );
+}
+
+/*
+================
+FS_GetFileListExt
+================
+*/
+int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t *bufsize, int start, int end ) {
+	return FS_GetFileListExt_( dir, extension, buf, bufsize, FS_MAX_SEARCHFILES, start, end );
 }
 
 /*
@@ -1577,13 +1839,29 @@ char *FS_NextPath( char *prevpath )
 	return NULL;
 }
 
+/*
+================
+FS_FreeSearchFiles
+================
+*/
+static void FS_FreeSearchFiles (void)
+{
+	int i;
+
+	// free temp memory
+	for( i = 0; i < fs_cursearchfiles; i++ ) {
+		if( !fs_searchfiles[i].searchPath->pack )
+			Mem_ZoneFree( fs_searchfiles[i].name );
+	}
+	fs_cursearchfiles = 0;
+}
 
 /*
 ================
-FS_InitFilesystem
+FS_Init
 ================
 */
-void FS_InitFilesystem (void)
+void FS_Init (void)
 {
 	int i;
 
@@ -1592,16 +1870,19 @@ void FS_InitFilesystem (void)
 	Cmd_AddCommand( "fs_path", FS_Path_f );
 	Cmd_AddCommand( "fs_dir", FS_Dir_f );
 
+	fs_numsearchfiles = FS_MIN_SEARCHFILES;
+	fs_searchfiles = Mem_Alloc( fs_mempool, sizeof(searchfile_t) * fs_numsearchfiles );
+
+	fs_globalZipEntryUser = NULL;
+	memset( fs_filehandles, 0, sizeof(fs_filehandles) );
+
 	//
 	// link filehandles
 	//
-	memset( fs_filehandles, 0, sizeof(fs_filehandles) );
-
-	// link decals
 	fs_free_filehandles = fs_filehandles;
 	fs_filehandles_headnode.prev = &fs_filehandles_headnode;
 	fs_filehandles_headnode.next = &fs_filehandles_headnode;
-	for ( i = 0; i < FS_MAX_HANDLES - 1; i++ )
+	for( i = 0; i < FS_MAX_HANDLES - 1; i++ )
 		fs_filehandles[i].next = &fs_filehandles[i+1];
 
 	// basedir <path>
@@ -1628,4 +1909,57 @@ void FS_InitFilesystem (void)
 	fs_gamedirvar = Cvar_Get( "fs_game", "baseqf", CVAR_LATCH|CVAR_SERVERINFO );
 	if( fs_gamedirvar->string[0] )
 		FS_SetGamedir( fs_gamedirvar->string );
+}
+
+/*
+================
+FS_Frame
+================
+*/
+void FS_Frame (void)
+{
+	FS_FreeSearchFiles ();
+}
+
+/*
+================
+FS_Shutdown
+================
+*/
+void FS_Shutdown (void)
+{
+	searchpath_t	*search;
+	filehandle_t	*fh, *hnode, *next;
+
+	// close all currently open filehandles
+	hnode = &fs_filehandles_headnode;
+	for( fh = hnode->next; fh != hnode; fh = next ) {
+		next = fh->next;
+		FS_FCloseFile( fh - fs_filehandles + 1 );
+	}
+	memset( fs_filehandles, 0, sizeof( fs_filehandles ) );
+
+	fs_globalZipEntryUser = 0;
+
+	FS_FreeSearchFiles ();
+
+	// free up any current game dir info
+	while( fs_searchpaths != fs_base_searchpaths ) {
+		if( fs_searchpaths->pack ) {
+			if( fs_searchpaths->pack->sysHandle )
+				Sys_UnlockFile( fs_searchpaths->pack->sysHandle );
+			Mem_Free( fs_searchpaths->pack );
+		}
+		search = fs_searchpaths->next;
+		Mem_Free( fs_searchpaths );
+		fs_searchpaths = search;
+	}
+
+	fs_numsearchfiles = 0;
+	Mem_Free( fs_searchfiles );
+
+	Cmd_RemoveCommand( "fs_path" );
+	Cmd_RemoveCommand( "fs_dir" );
+
+	Mem_FreePool( &fs_mempool );
 }

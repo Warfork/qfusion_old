@@ -162,7 +162,7 @@ void SV_LinkEdict (edict_t *ent)
 	int			num_leafs;
 	int			i, j, k;
 	int			area;
-	int			topnode;
+	int			lastleaf;
 
 	if (ent->r.area.prev)
 		SV_UnlinkEdict (ent);	// unlink from old position
@@ -234,8 +234,7 @@ void SV_LinkEdict (edict_t *ent)
 	ent->r.areanum2 = 0;
 
 	// get all leafs, including solids
-	num_leafs = CM_BoxLeafnums (ent->r.absmin, ent->r.absmax,
-		leafs, MAX_TOTAL_ENT_LEAFS, &topnode);
+	num_leafs = CM_BoxLeafnums (ent->r.absmin, ent->r.absmax, leafs, MAX_TOTAL_ENT_LEAFS, &lastleaf);
 
 	// set areas
 	for (i=0 ; i<num_leafs ; i++)
@@ -257,32 +256,23 @@ void SV_LinkEdict (edict_t *ent)
 		}
 	}
 
-	if (num_leafs >= MAX_TOTAL_ENT_LEAFS)
-	{	// assume we missed some leafs, and mark by headnode
-		ent->r.num_clusters = -1;
-		ent->r.headnode = topnode;
-	}
-	else
+	ent->r.lastcluster = -1;
+	ent->r.num_clusters = 0;
+	for (i=0 ; i<num_leafs ; i++)
 	{
-		ent->r.num_clusters = 0;
-		for (i=0 ; i<num_leafs ; i++)
+		if (clusters[i] == -1)
+			continue;		// not a visible leaf
+		for (j=0 ; j<i ; j++)
+			if (clusters[j] == clusters[i])
+				break;
+		if (j == i)
 		{
-			if (clusters[i] == -1)
-				continue;		// not a visible leaf
-			for (j=0 ; j<i ; j++)
-				if (clusters[j] == clusters[i])
-					break;
-			if (j == i)
-			{
-				if (ent->r.num_clusters == MAX_ENT_CLUSTERS)
-				{	// assume we missed some leafs, and mark by headnode
-					ent->r.num_clusters = -1;
-					ent->r.headnode = topnode;
-					break;
-				}
-
-				ent->r.clusternums[ent->r.num_clusters++] = clusters[i];
+			if (ent->r.num_clusters == MAX_ENT_CLUSTERS)
+			{	// we missed some leafs, so store the last visible cluster
+				ent->r.lastcluster = CM_LeafCluster( lastleaf );
+				break;
 			}
+			ent->r.clusternums[ent->r.num_clusters++] = clusters[i];
 		}
 	}
 

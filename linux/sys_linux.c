@@ -329,37 +329,36 @@ void *Sys_LoadGameLibrary (gamelib_t gamelib, void *parms)
 	char *apifuncname;
 
 #if defined __i386__
-#define ARCH "i386"
-
 #ifdef NDEBUG
 	const char *debugdir = "releasei386";
 #else
 	const char *debugdir = "debugi386";
 #endif
 #elif defined __alpha__
-#define ARCH "axp"
 #ifdef NDEBUG
 	const char *debugdir = "releaseaxp";
 #else
 	const char *debugdir = "debugaxp";
 #endif
-
 #elif defined __powerpc__
-#define ARCH "axp"
 #ifdef NDEBUG
 	const char *debugdir = "releaseppc";
 #else
 	const char *debugdir = "debugppc";
 #endif
+#elif defined __x86_64__
+#ifdef NDEBUG
+	const char *debugdir = "releasex86_64";
+#else
+	const char *debugdir = "debugx86_64";
+#endif
 #elif defined __sparc__
-#define ARCH "sparc"
 #ifdef NDEBUG
 	const char *debugdir = "releasepsparc";
 #else
 	const char *debugdir = "debugpsparc";
 #endif
 #else
-#define ARCH	"UNKNOW"
 #ifdef NDEBUG
 	const char *debugdir = "release";
 #else
@@ -426,15 +425,23 @@ void *Sys_LoadGameLibrary (gamelib_t gamelib, void *parms)
 	}
 	else
 	{
+		char *prev;
+
 		// now run through the search paths
-		path = NULL;
+		prev = path = NULL;
 
 		while (1)
 		{
-			path = FS_NextPath (path);
+			path = FS_NextPath (prev);
 
 			if (!path) 
 				return NULL; // couldn't find one anywhere
+			if (prev)
+				if (!strcmp (path, prev))
+				{
+					prev = path;
+					continue;	// happens on UNIX systems (homedir as gamedir)
+				}
 
 			Q_snprintfz (name, sizeof(name), "%s/%s", path, libname);
 			*lib = dlopen (name, RTLD_NOW);
@@ -444,6 +451,7 @@ void *Sys_LoadGameLibrary (gamelib_t gamelib, void *parms)
 				Com_DPrintf ("LoadLibrary (%s)\n", name);
 				break;
 			}
+			prev = path;
 		}
 		
 	}
@@ -561,6 +569,25 @@ char *Sys_GetHomeDirectory (void)
 	return getenv ( "HOME" );
 }
 
+/*
+=================
+Sys_LockFile
+=================
+*/
+void *Sys_LockFile (const char *path)
+{
+	return (void *)1;	// return a non-NULL pointer
+}
+
+/*
+=================
+Sys_UnlockFile
+=================
+*/
+void Sys_UnlockFile (void *handle)
+{
+}
+
 //===============================================================================
 
 /*
@@ -579,10 +606,6 @@ Sys_SendKeyEvents
 */
 void Sys_SendKeyEvents (void)
 {
-#ifndef DEDICATED_ONLY
-	KBD_Update();
-#endif
-
 	// grab frame time 
 	sys_frame_time = Sys_Milliseconds();
 }

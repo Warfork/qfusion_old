@@ -129,19 +129,19 @@ void JoinServer_MenuInit( void )
 	s_joinserver_menu.x = uis.vidWidth / 2;
 	s_joinserver_menu.nitems = 0;
 
-	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );
+	y_offset = UI_StringHeightOffset ( QMF_NONPROPORTIONAL );
 	s_joinserver_ignore_full_box.generic.type	= MTYPE_SPINCONTROL;
 	s_joinserver_ignore_full_box.generic.x		= 65;
 	s_joinserver_ignore_full_box.generic.y		= y += y_offset;
-	s_joinserver_ignore_full_box.generic.flags	= QMF_NONPROPOTIONAL;
+	s_joinserver_ignore_full_box.generic.flags	= QMF_NONPROPORTIONAL;
 	s_joinserver_ignore_full_box.generic.name	= "Ignore full servers";
 	s_joinserver_ignore_full_box.itemnames		= noyes_names;
 
-	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );
+	y_offset = UI_StringHeightOffset ( QMF_NONPROPORTIONAL );
 	s_joinserver_ignore_empty_box.generic.type	= MTYPE_SPINCONTROL;
 	s_joinserver_ignore_empty_box.generic.x		= 65;
 	s_joinserver_ignore_empty_box.generic.y		= y+=y_offset;
-	s_joinserver_ignore_empty_box.generic.flags	= QMF_NONPROPOTIONAL;
+	s_joinserver_ignore_empty_box.generic.flags	= QMF_NONPROPORTIONAL;
 	s_joinserver_ignore_empty_box.generic.name	= "Ignore empty servers";
 	s_joinserver_ignore_empty_box.itemnames		= noyes_names;
 
@@ -164,14 +164,14 @@ void JoinServer_MenuInit( void )
 	Q_snprintfz ( sbar, sizeof(sbar), "Master server at %s", trap_Cvar_VariableString("cl_masterServer") );
 	s_joinserver_search_global_action.generic.statusbar = sbar;
 
-	y_offset = UI_StringHeightOffset ( QMF_NONPROPOTIONAL );
+	y_offset = UI_StringHeightOffset ( QMF_NONPROPORTIONAL );
 	y += y_offset;
 	for ( i = 0; i < MAX_MENU_SERVERS; i++ )
 	{
 		s_joinserver_server_actions[i].generic.type	= MTYPE_ACTION;
 		strcpy (local_server_names[i], NO_SERVER_STRING);
 		s_joinserver_server_actions[i].generic.name	= local_server_names[i];
-		s_joinserver_server_actions[i].generic.flags	= QMF_CENTERED|QMF_NONPROPOTIONAL;
+		s_joinserver_server_actions[i].generic.flags	= QMF_CENTERED|QMF_NONPROPORTIONAL;
 		s_joinserver_server_actions[i].generic.x		= 0;
 		s_joinserver_server_actions[i].generic.y		= y+=y_offset;
 		s_joinserver_server_actions[i].generic.callback = JoinServerFunc;

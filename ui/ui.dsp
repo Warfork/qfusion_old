@@ -106,6 +106,10 @@ SOURCE=.\ui_atoms.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\ui_boneposes.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\ui_connect.c
 # End Source File
 # Begin Source File
@@ -154,6 +158,10 @@ SOURCE=.\ui_playerconfig.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\ui_pmodels.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\ui_quit.c
 # End Source File
 # Begin Source File
@@ -182,6 +190,10 @@ SOURCE=.\ui_video.c
 # PROP Default_Filter "h;hpp;hxx;hm;inl"
 # Begin Source File
 
+SOURCE=..\game\gs_pmodels.h
+# End Source File
+# Begin Source File
+
 SOURCE=..\game\q_shared.h
 # End Source File
 # Begin Source File
@@ -190,11 +202,19 @@ SOURCE=.\ui_atoms.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\ui_boneposes.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\ui_keycodes.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\ui_local.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\ui_pmodels.h
 # End Source File
 # Begin Source File
 

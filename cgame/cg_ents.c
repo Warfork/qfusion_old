@@ -77,6 +77,12 @@ void CG_NewPacketEntityState( int entNum, entity_state_t state )
 			VectorCopy( state.old_origin, ent->prev.origin );
 			VectorCopy( state.old_origin, ent->lerpOrigin );
 		}
+
+		// initialize the animation when new into PVS
+		if ( cg.frame.valid && (state.type & ~ET_INVERSE) == ET_PLAYER ) {
+			CG_ClearEventAnimations( &state );
+			CG_AddAnimationFromState ( &state, (state.frame)&0x3F, (state.frame>>6)&0x3F, (state.frame>>12)&0xF, BASIC_CHANNEL );
+		}
 	}
 	else
 	{	// shuffle the last state to previous
@@ -118,16 +124,23 @@ void CG_EndFrameSequence( int numEntities )
 
 	// clamp time
 	if( !cg_paused->integer )
-		clamp( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
+		clamp( cg.time, cg.frame.serverTime - cgs.serverFrameTime, cg.frame.serverTime );
 
 	if( !cg.frame.valid )
 		return;
+
+	if( memcmp( cg.oldFrame.areabits, cg.frame.areabits, sizeof( cg.frame.areabits ) ) == 0 )
+		cg.oldAreabits = qtrue;
+	else
+		cg.oldAreabits = qfalse;
 
 	// verify our data is valid
 	if( cg.frame.numEntities != numEntities )
 		CG_Error( "CG_EndFrameSequence: bad sequence" );
 
 	CG_BuildSolidList ();
+	CG_PModelsUpdateStates ();
+	CG_vWeapUpdateState ();
 	CG_FireEvents ();
 	CG_CheckPredictionError ();
 }
@@ -154,7 +167,7 @@ void CG_AddBeamEnt( centity_t *cent )
 
 	state = &cent->current;
 	VectorCopy( state->origin, ent.origin );
-	VectorCopy( state->origin2, ent.oldorigin );
+	VectorCopy( state->origin2, ent.origin2 );
 
 	CG_AddLaser( state->origin, state->origin2, state->frame * 0.5f, state->colorRGBA, CG_MediaShader( cgs.media.shaderLaser ) );
 }
@@ -173,15 +186,19 @@ void CG_AddPortalSurfaceEnt( centity_t *cent )
 
 	state = &cent->current;
 	VectorCopy( state->origin, ent.origin );
-	VectorCopy( state->origin2, ent.oldorigin );
+	VectorCopy( state->origin2, ent.origin2 );
+
+	if( !VectorCompare( ent.origin, ent.origin2 ) )
+		cg.portalInView = qtrue;
 
 	ent.rtype = RT_PORTALSURFACE;
 	ent.scale = state->frame / 256.0f;
 	if( state->modelindex3 )
 		ent.frame = state->modelindex2 ? state->modelindex2 : 50;
 
-	ent.skinnum = state->skinnum;
-	trap_R_AddEntityToScene( &ent );
+	ent.skinNum = state->skinnum;
+
+	CG_AddEntityToScene( &ent );
 }
 
 /*
@@ -217,7 +234,6 @@ void CG_AddPlayerEnt( centity_t *cent )
 	entity_t		ent;
 	entity_state_t	*state;
 	vec3_t			ent_angles;
-	cg_clientInfo_t	*ci;
 	unsigned int	effects, renderfx;
 
 	state = &cent->current;
@@ -233,46 +249,11 @@ void CG_AddPlayerEnt( centity_t *cent )
 	ent.scale = 1.0f;
 	ent.rtype = RT_MODEL;
 
-	if( renderfx & RF_FRAMELERP ) {
-		// step origin discretely, because the frames
-		// do the animation properly
-		VectorCopy( cent->current.origin, ent.origin );
-		VectorCopy( cent->current.old_origin, ent.oldorigin );
-	} else {
-		// interpolate origin
-		for( i = 0; i < 3; i++ )
-			ent.origin[i] = ent.oldorigin[i] = cent->prev.origin[i] + cg.lerpfrac * 
-				(cent->current.origin[i] - cent->prev.origin[i]);
-	}
-
-	// create a new entity	
-	if( state->modelindex == 255 ) {
-		// use custom player skin
-		ci = &cgs.clientInfo[state->skinnum & 0xff];
-		if( ci->skin )
-			ent.customSkin = ci->skin;
-		else
-			ent.customShader = ci->shader;
-		ent.model = ci->model;
-		if( (!ent.customSkin && !ent.customShader) || !ent.model ) {
-			if( cgs.baseClientInfo.skin )
-				ent.customSkin = cgs.baseClientInfo.skin;
-			else
-				ent.customShader = cgs.baseClientInfo.shader;
-			ent.model = cgs.baseClientInfo.model;
-		}
-	} else {
-		ent.skinnum = state->skinnum;
-		ent.model = cgs.modelDraw[state->modelindex];
-	}
-
 	// render effects
 	if( renderfx & (RF_SHELL_GREEN | RF_SHELL_RED | RF_SHELL_BLUE) )
 		ent.flags = RF_MINLIGHT;	// renderfx go on color shell entity
 	else
 		ent.flags = renderfx | RF_MINLIGHT;
-
-	VectorCopy( ent.origin, ent.lightingOrigin );
 
 	// interpolate angles
 	for( i = 0; i < 3; i++ )
@@ -283,97 +264,59 @@ void CG_AddPlayerEnt( centity_t *cent )
 	else
 		Matrix_Copy( axis_identity, ent.axis );
 
-	if( state->number == cgs.playerNum + 1 ) {
+	if( renderfx & RF_FRAMELERP ) {
+		// step origin discretely, because the frames
+		// do the animation properly
+		vec3_t delta, move;
+
+		VectorSubtract( cent->current.old_origin, cent->current.origin, move );
+		Matrix_TransformVector( ent.axis, move, delta );
+		VectorMA( cent->current.origin, ent.backlerp, delta, ent.origin );
+	} else {
+		// interpolate origin
+		for( i = 0; i < 3; i++ )
+			ent.origin[i] = cent->prev.origin[i] + cg.lerpfrac * 
+				(cent->current.origin[i] - cent->prev.origin[i]);
+	}
+
+	VectorCopy( ent.origin, ent.lightingOrigin );
+
+	if( state->number == cg.chasedNum + 1 ) { 
 		cg.effects = effects;
 		
-		if ( !cg_thirdPerson->integer ) {
+		if( chaseCam.mode == CAM_THIRDPERSON )
+			cg.thirdPerson = qtrue;
+		else if ( !cg_thirdPerson->integer ) {
 			ent.flags |= RF_VIEWERMODEL;	// only draw from mirrors
 			cg.thirdPerson = qfalse;
-		} else { 
+		} else 
 			cg.thirdPerson = ( state->modelindex != 0 );
-		}
+
+		VectorCopy( ent.lightingOrigin, cg.lightingOrigin );
 	}
 
 	// if set to invisible, skip
 	if( !state->modelindex )
 		goto done;
 
-	// add to refresh list
-	trap_R_AddEntityToScene( &ent );
+	CG_AddPModel( &ent, state );	// add the player model
 
 	ent.customSkin = NULL;
 	ent.customShader = NULL;		// never use a custom skin on others
 
-	// quad and pent can do different things on client
-	if ( effects & EF_QUAD ) {
-		ent.customShader = CG_MediaShader( cgs.media.shaderPowerupQuad );
-		trap_R_AddEntityToScene( &ent );
-		ent.customShader = NULL;
-	}
-	if ( effects & EF_PENT ) {
-		ent.customShader = CG_MediaShader( cgs.media.shaderPowerupPenta );
-		trap_R_AddEntityToScene( &ent );
-		ent.customShader = NULL;
-	}
-
-	// color shells generate a separate entity for the main model
-	if( renderfx & (RF_SHELL_GREEN | RF_SHELL_RED | RF_SHELL_BLUE) ) {
-		vec4_t shadelight = { 0, 0, 0, 0.3 };
-
-		if( renderfx & RF_SHELL_RED )
-			shadelight[0] = 1.0;
-		if( renderfx & RF_SHELL_GREEN )
-			shadelight[1] = 1.0;
-		if( renderfx & RF_SHELL_BLUE )
-			shadelight[2] = 1.0;
-
-		for( i = 0; i < 4; i++ )
-			ent.color[i] = shadelight[i] * 255;
-
-		ent.customShader = CG_MediaShader( cgs.media.shaderShellEffect );
-		trap_R_AddEntityToScene( &ent );
-		ent.customShader = NULL;
-	}
-
-	ent.skinnum = 0;
+	ent.skinNum = 0;
 	ent.flags = ent.flags & RF_VIEWERMODEL;		// only draw from mirrors
 	Vector4Set( ent.color, 255, 255, 255, 255 );
 
 	// duplicate for linked models
-	if( state->modelindex2 ) {
-		if( state->modelindex2 == 255 ) {
-			// custom weapon
-			ci = &cgs.clientInfo[state->skinnum & 0xff];
-			i = state->weapon; // 0 is default weapon model
+	
+	if( state->modelindex2 && state->modelindex2 != 255 ) {
+		ent.model = cgs.modelDraw[state->modelindex2];
+		CG_SetBoneposesForTemporaryEntity( &ent );
+		CG_AddEntityToScene( &ent );
 
-			if( !cg_vwep->integer || i > WEAP_TOTAL - 1 )
-				i = 0;
-			ent.model = ci->weaponmodel[i];
-
-			if( !ent.model ) {
-				if( i != 0 )
-					ent.model = ci->weaponmodel[0];
-				if( !ent.model )
-					ent.model = cgs.baseClientInfo.weaponmodel[0];
-			}
-			trap_R_AddEntityToScene( &ent );
-		} else {
-			ent.model = cgs.modelDraw[state->modelindex2];
-			trap_R_AddEntityToScene( &ent );
-		}
-
-		// quad and pent can do different things on client
-		if( effects & EF_QUAD ) {
-			ent.customShader = CG_MediaShader( cgs.media.shaderPowerupQuad );
-			trap_R_AddEntityToScene( &ent );
-			ent.customShader = NULL;
-		}
-
-		if( effects & EF_PENT ) {
-			ent.customShader = CG_MediaShader( cgs.media.shaderPowerupPenta );
-			trap_R_AddEntityToScene( &ent );
-			ent.customShader = NULL;
-		}
+		CG_AddShellEffects( &ent, effects );
+		CG_AddColorShell( &ent, renderfx );
 	}
 
 	if( state->modelindex3 ) {
@@ -388,7 +331,8 @@ void CG_AddPlayerEnt( centity_t *cent )
 		}
 
 		ent.model = cgs.modelDraw[state->modelindex3];
-		trap_R_AddEntityToScene( &ent );
+		CG_SetBoneposesForTemporaryEntity( &ent );
+		CG_AddEntityToScene( &ent );
 
 		ent.frame = frame;
 		ent.oldframe = oldframe;
@@ -400,7 +344,8 @@ void CG_AddPlayerEnt( centity_t *cent )
 			ent.model = CG_MediaModel( cgs.media.modPowerScreen );
 			ent.oldframe = 0;
 			ent.frame = 0;
-			trap_R_AddEntityToScene( &ent );
+			CG_SetBoneposesForTemporaryEntity( &ent );
+			CG_AddEntityToScene( &ent );
 		}
 
 		CG_AddEntityEffects( cent, ent.origin, effects );
@@ -436,26 +381,29 @@ void CG_AddGenericEnt( centity_t *cent )
 	ent.oldframe = cent->prev.frame;
 	ent.backlerp = 1.0 - cg.lerpfrac;
 
-	if( renderfx & RF_FRAMELERP ) {
-		// step origin discretely, because the frames
-		// do the animation properly
-		VectorCopy( cent->current.origin, ent.origin );
-		VectorCopy( cent->current.old_origin, ent.oldorigin );
-	} else {
-		// interpolate origin
-		for( i = 0; i < 3; i++ )
-			ent.origin[i] = ent.oldorigin[i] = cent->prev.origin[i] + cg.lerpfrac * 
-				(cent->current.origin[i] - cent->prev.origin[i]);
-	}
-
 	// create a new entity	
-	ent.rtype = RT_MODEL;
-	if( state->solid == SOLID_BMODEL )	{
+	if( state->solid == SOLID_BMODEL ) {
+		ent.rtype = RT_MODEL;
 		ent.model = cgs.inlineModelDraw[state->modelindex];
 	} else {
-		ent.skinnum = state->skinnum;
-		ent.model = cgs.modelDraw[state->modelindex];
+		switch( state->type )
+		{
+			case ET_BLASTER:
+			case ET_BLASTER2:
+			case ET_HYPERBLASTER:
+				ent.rtype = RT_SPRITE;
+				ent.radius = 16;
+				ent.customShader = CG_MediaShader( cgs.media.shaderPlasmaBall );
+				break;
+			default:
+				ent.rtype = RT_MODEL;
+				ent.skinNum = state->skinnum;
+				ent.model = cgs.modelDraw[state->modelindex];
+				break;
+		}
 	}
+
+	CG_SetBoneposesForCGEntity( &ent, cent );
 
 	// render effects
 	if( renderfx & (RF_SHELL_GREEN | RF_SHELL_RED | RF_SHELL_BLUE) )
@@ -477,19 +425,6 @@ void CG_AddGenericEnt( centity_t *cent )
 	if( renderfx & RF_SCALEHACK )
 		ent.scale *= 1.5;
 
-	// bobbing items
-	if( effects & EF_ROTATE_AND_BOB ) {
-		float scale = 0.005f + state->number * 0.00001f;
-		float bob = 4 + cos( (cg.time + 1000) * scale ) * 4;
-		ent.oldorigin[2] += bob;
-		ent.origin[2] += bob;
-	}
-
-	VectorCopy( ent.origin, ent.lightingOrigin );
-
-	if( !ent.scale )
-		goto done;
-
 	// calculate angles
 	if( effects & EF_ROTATE_AND_BOB ) {	// some bonus items auto-rotate
 		Matrix_Copy ( cg.autorotateAxis, ent.axis );
@@ -503,12 +438,37 @@ void CG_AddGenericEnt( centity_t *cent )
 			Matrix_Copy( axis_identity, ent.axis );
 	}
 
+	if( renderfx & RF_FRAMELERP ) {
+		// step origin discretely, because the frames
+		// do the animation properly
+		vec3_t delta, move;
+
+		VectorSubtract( cent->current.old_origin, cent->current.origin, move );
+		Matrix_TransformVector( ent.axis, move, delta );
+		VectorMA( cent->current.origin, ent.backlerp, delta, ent.origin );
+	} else {
+		// interpolate origin
+		for( i = 0; i < 3; i++ )
+			ent.origin[i] = ent.origin2[i] = cent->prev.origin[i] + cg.lerpfrac * 
+				(cent->current.origin[i] - cent->prev.origin[i]);
+	}
+
+	// bobbing items
+	if( effects & EF_ROTATE_AND_BOB ) {
+		float scale = 0.005f + state->number * 0.00001f;
+		float bob = 4 + cos( (cg.time + 1000) * scale ) * 4;
+		ent.origin[2] += bob;
+		ent.origin2[2] += bob;
+	}
+
+	VectorCopy( ent.origin, ent.lightingOrigin );
+
 	// if set to invisible, skip
-	if( !state->modelindex )
+	if( !ent.scale || !state->modelindex )
 		goto done;
 
 	// add to refresh list
-	trap_R_AddEntityToScene( &ent );
+	CG_AddEntityToScene( &ent );
 
 	ent.customSkin = NULL;
 	ent.customShader = NULL;		// never use a custom skin on others
@@ -528,23 +488,31 @@ void CG_AddGenericEnt( centity_t *cent )
 			ent.color[i] = shadelight[i] * 255;
 
 		ent.customShader = CG_MediaShader( cgs.media.shaderShellEffect );
-		trap_R_AddEntityToScene( &ent );
+		CG_AddEntityToScene( &ent );
 		ent.customShader = NULL;
 	}
 
 	Vector4Set( ent.color, 255, 255, 255, 255 );
 
-	ent.skinnum = 0;
+	ent.skinNum = 0;
 
 	// duplicate for linked models
 	if( state->modelindex2 ) {
+		orientation_t	tag;
+
+		// tag to modelindex1, if it had a tag barrel
+		if( CG_GrabTag( &tag, &ent, "tag_barrel" ) )
+			CG_PlaceModelOnTag( &ent, &ent, &tag );
+		
 		ent.model = cgs.modelDraw[state->modelindex2];
-		trap_R_AddEntityToScene( &ent );
+		CG_SetBoneposesForTemporaryEntity( &ent );
+		CG_AddEntityToScene( &ent );
 		ent.customShader = NULL;
 	}
 	if( state->modelindex3 ) {
 		ent.model = cgs.modelDraw[state->modelindex3];
-		trap_R_AddEntityToScene( &ent );
+		CG_SetBoneposesForTemporaryEntity( &ent );
+		CG_AddEntityToScene( &ent );
 		ent.customShader = NULL;
 	}
 
@@ -585,7 +553,8 @@ void CG_AddGenericEnt( centity_t *cent )
 			ent.model = CG_MediaModel( cgs.media.modPowerScreen );
 			ent.oldframe = 0;
 			ent.frame = 0;
-			trap_R_AddEntityToScene( &ent );
+			CG_SetBoneposesForTemporaryEntity( &ent );
+			CG_AddEntityToScene( &ent );
 		}
 
 		CG_AddEntityEffects( cent, ent.origin, effects );
@@ -602,7 +571,6 @@ CG_AddPacketEntities
 */
 void CG_AddPacketEntities( void )
 {
-	entity_t		ent;
 	entity_state_t	*state;
 	vec3_t			autorotate;
 	int				pnum, type;
@@ -611,8 +579,6 @@ void CG_AddPacketEntities( void )
 	// bonus items rotate at a fixed rate
 	VectorSet( autorotate, 0, anglemod( cg.time * 0.1 ), 0 );
 	AnglesToAxis( autorotate, cg.autorotateAxis );
-
-	memset( &ent, 0, sizeof( ent ) );
 
 	for( pnum = 0; pnum < cg.frame.numEntities; pnum++ )
 	{
@@ -624,6 +590,7 @@ void CG_AddPacketEntities( void )
 			case ET_GENERIC:
 			case ET_GIB:
 			case ET_BLASTER:
+			case ET_BLASTER2:
 			case ET_HYPERBLASTER:
 			case ET_ROCKET:
 			case ET_GRENADE:
@@ -655,8 +622,12 @@ void CG_AddPacketEntities( void )
 		}
 
 		// add loop sound
-		if( cent->current.sound )
-			trap_S_AddLoopSound( cgs.soundPrecache[cent->current.sound], cent->lerpOrigin );
+		if( cent->current.sound ) {
+			vec3_t org;
+
+			CG_GetEntitySoundOrigin( state->number, org );
+			trap_S_AddLoopSound( cgs.soundPrecache[cent->current.sound], state->number, org, vec3_origin );
+      }
 
 		// glow if light is set
 		if( state->light )
@@ -667,101 +638,6 @@ void CG_AddPacketEntities( void )
 				COLOR_B( state->light ) * (1.0/255.0), NULL );
 	}
 }
-
-/*
-==============
-CG_CalcGunOffset
-==============
-*/
-void CG_CalcGunOffset( player_state_t *ps, player_state_t *ops, vec3_t angles )
-{
-	int		i;
-	float	delta;
-
-	// gun angles from bobbing
-	if( cg.bobCycle & 1 ) {
-		angles[ROLL] -= cg.xyspeed * cg.bobFracSin * 0.002;
-		angles[YAW] -= cg.xyspeed * cg.bobFracSin * 0.004;
-	} else {
-		angles[ROLL] += cg.xyspeed * cg.bobFracSin * 0.002;
-		angles[YAW] += cg.xyspeed * cg.bobFracSin * 0.004;
-	}
-	angles[PITCH] += cg.xyspeed * cg.bobFracSin * 0.002;
-
-	// gun angles from delta movement
-	for( i = 0; i < 3; i++ ) {
-		delta = ( ops->viewangles[i] - ps->viewangles[i] ) * cg.lerpfrac;
-		if( delta > 180 )
-			delta -= 360;
-		if( delta < -180 )
-			delta += 360;
-		clamp( delta, -45, 45 );
-
-		if( i == YAW )
-			angles[ROLL] += 0.001 * delta;
-		angles[i] += 0.002 * delta;
-	}
-}
-
-/*
-==============
-CG_AddViewWeapon
-==============
-*/
-void CG_AddViewWeapon( player_state_t *ps, player_state_t *ops )
-{
-	entity_t	gun;		// view model
-	vec3_t		gun_angles;
-
-	if( !cg_gun->integer || cg.thirdPerson || !ps->gunindex )
-		return;		// allow the gun to be completely removed
-	if( (ps->fov > 90) && (cg_gun->integer == 2) )
-		return;		// don't draw gun if in wide angle view
-	if( hand->integer == 2 )
-		return;		// don't draw if hand is centered
-
-	memset ( &gun, 0, sizeof(gun) );
-
-	gun.model = cgs.modelDraw[ps->gunindex];
-
-	if ( !gun.model )
-		return;
-
-	// set up gun position
-	VectorCopy( cg.refdef.vieworg, gun.origin );
-	VectorCopy( cg.refdef.vieworg, gun.oldorigin );	// don't lerp at all
-	VectorCopy( cg.refdef.vieworg, gun.lightingOrigin );
-	VectorCopy( cg.refdef.viewangles, gun_angles );
-
-	CG_CalcGunOffset( ps, ops, gun_angles );
-
-	AnglesToAxis( gun_angles, gun.axis );
-
-	gun.frame = ps->gunframe;
-	if( gun.frame == 0 )
-		gun.oldframe = 0;	// just changed weapons, don't lerp from old
-	else
-		gun.oldframe = ops->gunframe;
-	gun.scale = 1.0f;
-	gun.flags = RF_MINLIGHT | RF_WEAPONMODEL;
-	gun.backlerp = 1.0 - cg.lerpfrac;
-	if( hand->integer == 1 ) {
-		gun.flags |= RF_CULLHACK;
-		VectorInverse( gun.axis[1] );
-	}
-
-	trap_R_AddEntityToScene( &gun );
-
-	if( cg.effects & EF_QUAD ) {
-		gun.customShader = CG_MediaShader( cgs.media.shaderQuadWeapon );
-		trap_R_AddEntityToScene( &gun );
-	}
-	if( cg.effects & EF_PENT ) {
-		gun.customShader = CG_MediaShader( cgs.media.shaderPowerupPenta );
-		trap_R_AddEntityToScene( &gun );
-	}
-}
-
 
 /*
 ===============
@@ -840,8 +716,7 @@ void CG_CalcViewValues( void )
 	for( i = 0; i < 4; i++ )
 		cg.refdef.blend[i] = ps->blend[i];
 
-	// add the weapon
-	CG_AddViewWeapon( ps, ops );
+	vweap.ops = ops; //just for not having to find it out again later
 }
 
 /*
@@ -858,13 +733,17 @@ void CG_AddEntities( void )
 	if( cg_timeDemo->integer || cg_paused->integer )
 		cg.lerpfrac = 1.0;
 	else
-		cg.lerpfrac = 1.0 - (cg.frame.serverTime - cg.time) * 0.01;
+		cg.lerpfrac = 1.0 - (cg.frame.serverTime - cg.time) / (float)cgs.serverFrameTime;
+
+	cg.portalInView = qfalse;
 
 	CG_CalcViewValues ();
 
 	cg_numBeamEnts = 0;
 
 	CG_AddPacketEntities ();
+	CG_CalcViewOnGround ();
+	CG_AddViewWeapon ();
 	CG_AddBeams ();
 	CG_AddLocalEntities ();
 	CG_AddDecals ();

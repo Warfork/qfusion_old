@@ -52,6 +52,19 @@ cvar_t			*cg_timeDemo;
 cvar_t			*cg_thirdPerson;
 cvar_t			*cg_thirdPersonAngle;
 cvar_t			*cg_thirdPersonRange;
+	
+cvar_t			*cg_weaponFlashes;
+cvar_t			*cg_ejectBrass;
+cvar_t			*cg_gunx;
+cvar_t			*cg_guny;
+cvar_t			*cg_gunz;
+cvar_t			*cg_debugPlayerModels;
+cvar_t			*cg_debugWeaponModels;
+cvar_t			*cg_bobSpeed;
+cvar_t			*cg_bobPitch;
+cvar_t			*cg_bobYaw;
+cvar_t			*cg_bobRoll;
+cvar_t			*cg_showLegs;
 
 /*
 ============
@@ -103,11 +116,11 @@ void CG_Printf( char *fmt, ... )
 CG_CopyString
 =================
 */
-char *CG_CopyString( char *in )
+char *CG_CopyString( const char *in )
 {
 	char	*out;
 	
-	out = CG_Malloc( strlen(in) + 1 );
+	out = CG_Malloc( strlen( in ) + 1 );
 	strcpy( out, in );
 
 	return out;
@@ -130,8 +143,10 @@ void CG_RegisterModels( void )
 
 	CG_LoadingString( "models" );
 
+	CG_RegisterBasePModel ();
+
 	cgs.numWeaponModels = 1;
-	strcpy ( cgs.weaponModels[0], "weapon.md2" );
+	strcpy ( cgs.weaponModels[0], "generic/generic.md3" );
 
 	for ( i = 1; i < MAX_MODELS; i++ )
 	{
@@ -143,14 +158,18 @@ void CG_RegisterModels( void )
 				Q_strncpyz( cgs.weaponModels[cgs.numWeaponModels], name+1, sizeof(cgs.weaponModels[cgs.numWeaponModels]) );
 				cgs.numWeaponModels++;
 			}
+
+		} else if( name[0] == '$' ) {	// indexed pmodel
+			cgs.pModelsIndex[i] = CG_RegisterPModel( name+1 );
+
 		} else {
 			CG_LoadingFilename( name );
-			cgs.modelDraw[i] = trap_R_RegisterModel( name );
+			cgs.modelDraw[i] = CG_RegisterModel( name );
 		}
 	}
 
 	for( i = 1; i < trap_CM_NumInlineModels (); i++ )
-		cgs.inlineModelDraw[i] = trap_R_RegisterModel( va("*%i", i) );
+		cgs.inlineModelDraw[i] = CG_RegisterModel( va("*%i", i) );
 
 	CG_RegisterMediaModels ();
 }
@@ -194,9 +213,14 @@ void CG_RegisterShaders (void)
 	CG_LoadingString( "images" );
 
 	for( i = 1; i < MAX_IMAGES; i++ ) {
-		name = cgs.configStrings[MAX_IMAGES+i];
+		name = cgs.configStrings[CS_IMAGES+i];
 		if( !name[0] )
 			break;
+
+		if( name[0] == '$' ) {	// indexed pSkin
+			cgs.pSkinsIndex[i] = CG_RegisterPSkin(name+1);
+			continue;
+		}
 
 		CG_LoadingFilename( name );
 		cgs.imagePrecache[i] = trap_R_RegisterPic( name );
@@ -225,8 +249,6 @@ void CG_RegisterClients (void)
 		CG_LoadingString( va ("client %i", i) );
 		CG_LoadClientInfo( &cgs.clientInfo[i], name, i );
 	}
-
-	CG_LoadClientInfo( &cgs.baseClientInfo, "unnamed\\0\\male/grunt", -1 );
 }
 
 /*
@@ -256,6 +278,9 @@ CG_RegisterVariables
 */
 void CG_RegisterVariables (void)
 {
+	char default_skin[MAX_QPATH];
+	Q_snprintfz (default_skin, sizeof(default_skin), "%s/%s", DEFAULT_PLAYERMODEL, DEFAULT_PLAYERSKIN);
+
 	cg_paused = trap_Cvar_Get ( "paused", "0", 0 );
 	cg_noSkins = trap_Cvar_Get ( "cg_noSkins", "0", 0 );
 	cg_vwep = trap_Cvar_Get ( "cg_vwep", "1", 0 );
@@ -266,7 +291,7 @@ void CG_RegisterVariables (void)
 	cg_testEntities = trap_Cvar_Get ( "cg_testEntities", "0", CVAR_CHEAT );
 	cg_testLights = trap_Cvar_Get ( "cg_testLights", "0", CVAR_CHEAT );
 
-	skin = trap_Cvar_Get ( "skin", "male/grunt", CVAR_USERINFO | CVAR_ARCHIVE );
+	skin = trap_Cvar_Get ( "skin", default_skin, CVAR_USERINFO | CVAR_ARCHIVE );
 	hand = trap_Cvar_Get ( "hand", "0", CVAR_USERINFO | CVAR_ARCHIVE );
 	gender = trap_Cvar_Get ( "gender", "male", CVAR_USERINFO | CVAR_ARCHIVE );
 	gender_auto = trap_Cvar_Get ( "gender_auto", "1", CVAR_ARCHIVE );
@@ -282,6 +307,36 @@ void CG_RegisterVariables (void)
 	cg_thirdPerson = trap_Cvar_Get ( "cg_thirdPerson", "0", CVAR_CHEAT );
 	cg_thirdPersonAngle = trap_Cvar_Get ( "cg_thirdPersonAngle", "0", 0 );
 	cg_thirdPersonRange = trap_Cvar_Get ( "cg_thirdPersonRange", "70", 0 );
+
+	cg_weaponFlashes = trap_Cvar_Get ( "cg_weaponFlashes", "2", CVAR_ARCHIVE );
+	cg_ejectBrass = trap_Cvar_Get ( "cg_ejectBrass", "2", CVAR_ARCHIVE );
+	cg_gunx = trap_Cvar_Get ("cg_gunx", "0", CVAR_ARCHIVE);
+	cg_guny = trap_Cvar_Get ("cg_guny", "0", CVAR_ARCHIVE);
+	cg_gunz = trap_Cvar_Get ("cg_gunz", "0", CVAR_ARCHIVE);
+	cg_debugPlayerModels = trap_Cvar_Get ("cg_debugPlayerModels", "0", CVAR_ARCHIVE);
+	cg_debugWeaponModels = trap_Cvar_Get ("cg_debugWeaponModels", "0", CVAR_ARCHIVE);
+	cg_bobSpeed = trap_Cvar_Get ("cg_bobSpeed", "2.5", CVAR_ARCHIVE);
+	cg_bobPitch = trap_Cvar_Get ("cg_bobPitch", "6", CVAR_ARCHIVE);
+	cg_bobYaw = trap_Cvar_Get ("cg_bobYaw", "3", CVAR_ARCHIVE);
+	cg_bobRoll = trap_Cvar_Get ("cg_bobRoll", "6", CVAR_ARCHIVE);
+	cg_showLegs = trap_Cvar_Get ("cg_showLegs", "1", CVAR_ARCHIVE);
+}
+
+/*
+=================
+CG_RegisterGameType
+=================
+*/
+void CG_RegisterGameType (void)
+{
+	if( !Q_stricmp( cgs.configStrings[CS_GAMETYPE], "ctf" ) )
+		cgs.gametype = GAMETYPE_CTF;
+	else if( !Q_stricmp( cgs.configStrings[CS_GAMETYPE], "deathmatch" ) )
+		cgs.gametype = GAMETYPE_DM;
+	else if( !Q_stricmp( cgs.configStrings[CS_GAMETYPE], "cooperative" ) )
+		cgs.gametype = GAMETYPE_COOP;
+	else
+		cgs.gametype = GAMETYPE_SP;
 }
 
 /*
@@ -319,19 +374,23 @@ void CG_StartBackgroundTrack (void)
 CG_Init
 ============
 */
-void CG_Init ( int playerNum, qboolean attractLoop, int vidWidth, int vidHeight )
+void CG_Init( int playerNum, qboolean attractLoop, unsigned int serverFrameTime, int vidWidth, int vidHeight )
 {
 	cgamepool = CG_MemAllocPool ( "CGame" );
 
-	memset ( &cg, 0, sizeof(cg_state_t) );
-	memset ( &cgs, 0, sizeof(cg_static_t) );
+	memset( &cg, 0, sizeof(cg_state_t) );
+	memset( &cgs, 0, sizeof(cg_static_t) );
 
-	memset ( cg_entities, 0, sizeof(cg_entities) );
-	memset ( cg_parseEntities, 0, sizeof(cg_parseEntities) );
+	memset( cg_entities, 0, sizeof(cg_entities) );
+	memset( cg_parseEntities, 0, sizeof(cg_parseEntities) );
+
+	CG_InitTemporaryBoneposesCache();
+	CG_PModelsInit();
 
 	// save local player number
 	cgs.playerNum = playerNum;
 	cgs.attractLoop = attractLoop;		// true if demo playback
+	cgs.serverFrameTime = serverFrameTime;
 
 	// save current width and height
 	cgs.vidWidth = vidWidth;
@@ -343,6 +402,8 @@ void CG_Init ( int playerNum, qboolean attractLoop, int vidWidth, int vidHeight 
 	CG_RegisterConfigStrings ();
 
 	CG_RegisterVariables ();
+
+	CG_RegisterGameType ();
 
 	// register fonts here so loading screen works
 	cgs.shaderWhite = trap_R_RegisterPic ( "white" );

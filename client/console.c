@@ -49,6 +49,9 @@ void Con_Close (void)
 	Key_ClearTyping ();
 	Con_ClearNotify ();
 	Key_ClearStates ();
+
+	if( !Cvar_VariableValue( "vid_fullscreen" ) && !Cvar_VariableValue( "in_grabinconsole" ) )
+		IN_Activate( qtrue );
 }
 
 /*
@@ -78,6 +81,9 @@ void Con_ToggleConsole_f (void)
 		CL_SetKeyDest( cls.old_key_dest );
 		Key_ClearStates ();
 		Cvar_Set( "paused", "0" );
+		
+		if( !Cvar_VariableValue( "vid_fullscreen" ) && !Cvar_VariableValue( "in_grabinconsole" ) )
+			IN_Activate( qtrue );
 	} else {
 		Key_ClearStates ();
 
@@ -86,6 +92,8 @@ void Con_ToggleConsole_f (void)
 
 		if( Cvar_VariableValue( "sv_maxclients" ) == 1 && Com_ServerState () )
 			Cvar_Set( "paused", "1" );
+		if( !Cvar_VariableValue( "vid_fullscreen" ) && !Cvar_VariableValue( "in_grabinconsole" ) )
+			IN_Activate( qfalse );			
 	}
 }
 
@@ -391,27 +399,6 @@ void Con_Print (char *txt)
 
 		txt++;
 	}
-}
-
-
-/*
-==============
-Con_CenteredPrint
-==============
-*/
-void Con_CenteredPrint (char *text)
-{
-	int		l;
-	char	buffer[1024];
-
-	l = strlen(text);
-	l = (con.linewidth-l)/2;
-	if (l < 0)
-		l = 0;
-	memset (buffer, ' ', l);
-	strcpy (buffer+l, text);
-	strcat (buffer, "\n");
-	Con_Print (buffer);
 }
 
 /*

@@ -20,13 +20,13 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // cg_public.h -- client game dll information visible to engine
 
-#define	CGAME_API_VERSION	3
+#define	CGAME_API_VERSION	4
 
 //
 // structs and variables shared with the main engine
 //
 
-#define	CMD_BACKUP		64	// allow a lot of command backups for very fast systems
+#define	CMD_BACKUP		128	// allow a lot of command backups for very fast systems
 #define CMD_MASK		(CMD_BACKUP-1)
 
 #define	MAX_PARSE_ENTITIES	1024
@@ -86,7 +86,7 @@ typedef struct
 	int				(*FS_Eof)( int file );
 	int				(*FS_Flush)( int file );
 	void			(*FS_FCloseFile)( int file );
-	int				(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize );
+	int				(*FS_GetFileList)( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end );
 	char			*(*FS_Gamedir)( void );
 
 	// key bindings
@@ -115,12 +115,14 @@ typedef struct
 	struct shader_s 	*(*R_RegisterPic)( char *name );
 	struct shader_s 	*(*R_RegisterSkin)( char *name );
 	struct skinfile_s 	*(*R_RegisterSkinFile)( char *name );
-	qboolean		(*R_LerpTag)( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name );
+	qboolean		(*R_LerpTag)( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, const char *name );
 	void			(*R_DrawStretchPic)( int x, int y, int w, int h, float s1, float t1, float s2, float t2, vec4_t color, struct shader_s *shader );
 	void			(*R_TransformVectorToScreen)( refdef_t *rd, vec3_t in, vec2_t out );
 	int				(*R_SkeletalGetNumBones)( struct model_s *mod, int *numFrames );
 	int				(*R_SkeletalGetBoneInfo)( struct model_s *mod, int bone, char *name, int size, int *flags );
 	void			(*R_SkeletalGetBonePose)( struct model_s *mod, int bone, int frame, bonepose_t *bonepose );
+	void			(*R_SetCustomColor)( int num, int r, int g, int b );
+	void			(*R_LightForOrigin)( vec3_t origin, vec3_t dir, vec4_t ambient, vec4_t diffuse, float radius );
 
 	// collision detection
 	int				(*CM_NumInlineModels)( void );
@@ -131,12 +133,13 @@ typedef struct
 	int				(*CM_PointContents)( vec3_t p, struct cmodel_s *cmodel );
 	int				(*CM_TransformedPointContents)( vec3_t p, struct cmodel_s *cmodel, vec3_t origin, vec3_t angles );
 	void			(*CM_InlineModelBounds)( struct cmodel_s *cmodel, vec3_t mins, vec3_t maxs );
+	char			*(*CM_LoadMapMessage)( char *name, char *message, int size );
 
 	// sound system
 	struct sfx_s	*(*S_RegisterSound)( char *name );	
 	void			(*S_StartSound)( vec3_t origin, int entnum, int entchannel, struct sfx_s *sfx, float fvol, float attenuation, float timeofs );
-	void			(*S_Update)( vec3_t origin, vec3_t v_forward, vec3_t v_right, vec3_t v_up );
-	void			(*S_AddLoopSound)( struct sfx_s *sfx, vec3_t origin );
+	void			(*S_Update)( vec3_t origin, vec3_t veolicty, vec3_t v_forward, vec3_t v_right, vec3_t v_up );
+	void			(*S_AddLoopSound)( struct sfx_s *sfx, int entnum, vec3_t origin, vec3_t velocity );
 	void			(*S_StartBackgroundTrack)( char *intro, char *loop );
 	void			(*S_StopBackgroundTrack)( void );
 
@@ -157,7 +160,7 @@ typedef struct
 	int				(*API)( void );
 
 	// the init function will be called at each restart
-	void			(*Init)( int playerNum, qboolean attractLoop, int vidWidth, int vidHeight );
+	void			(*Init)( int playerNum, qboolean attractLoop, unsigned int serverFrameTime, int vidWidth, int vidHeight );
 	void			(*Shutdown)( void );
 
 	void			(*ServerCommand)( void );

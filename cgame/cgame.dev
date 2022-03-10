@@ -9,8 +9,8 @@ CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -fexceptions -DWIN32 -DND
 Includes=
 Linker=-lkernel32 -luser32 -lwinmm --def cgame.def_@@_
 Libs=
-UnitCount=25
-Folders="Source Files","Header Files","Resource Files"
+UnitCount=32
+Folders="Header Files","Resource Files","Source Files"
 ObjFiles=
 PrivateResource=
 ResourceIncludes=
@@ -31,7 +31,7 @@ CustomMakefile=
 
 [Unit1]
 FileName=cg_decals.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -41,7 +41,7 @@ BuildCmd=
 
 [Unit2]
 FileName=cg_draw.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -51,7 +51,7 @@ BuildCmd=
 
 [Unit3]
 FileName=cg_effects.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -61,7 +61,7 @@ BuildCmd=
 
 [Unit4]
 FileName=cg_ents.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -71,7 +71,7 @@ BuildCmd=
 
 [Unit5]
 FileName=cg_events.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -81,7 +81,7 @@ BuildCmd=
 
 [Unit6]
 FileName=cg_lents.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -91,7 +91,7 @@ BuildCmd=
 
 [Unit7]
 FileName=cg_main.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -101,7 +101,7 @@ BuildCmd=
 
 [Unit8]
 FileName=cg_media.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -111,7 +111,7 @@ BuildCmd=
 
 [Unit9]
 FileName=cg_players.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -121,7 +121,7 @@ BuildCmd=
 
 [Unit10]
 FileName=cg_predict.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -131,7 +131,7 @@ BuildCmd=
 
 [Unit11]
 FileName=cg_screen.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -141,7 +141,7 @@ BuildCmd=
 
 [Unit12]
 FileName=cg_svcmds.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -151,7 +151,7 @@ BuildCmd=
 
 [Unit13]
 FileName=cg_syscalls.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -161,7 +161,7 @@ BuildCmd=
 
 [Unit14]
 FileName=cg_view.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -171,7 +171,7 @@ BuildCmd=
 
 [Unit15]
 FileName=..\game\gs_misc.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -181,7 +181,7 @@ BuildCmd=
 
 [Unit16]
 FileName=..\game\gs_pmove.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -191,7 +191,7 @@ BuildCmd=
 
 [Unit17]
 FileName=..\game\q_math.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -201,7 +201,7 @@ BuildCmd=
 
 [Unit18]
 FileName=..\game\q_shared.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -211,7 +211,7 @@ BuildCmd=
 
 [Unit19]
 FileName=cg_local.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -221,7 +221,7 @@ BuildCmd=
 
 [Unit20]
 FileName=cg_public.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -231,7 +231,7 @@ BuildCmd=
 
 [Unit21]
 FileName=cg_syscalls.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -241,7 +241,7 @@ BuildCmd=
 
 [Unit22]
 FileName=..\game\gs_public.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -251,7 +251,7 @@ BuildCmd=
 
 [Unit23]
 FileName=..\game\q_shared.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -261,7 +261,7 @@ BuildCmd=
 
 [Unit24]
 FileName=ref.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -271,7 +271,7 @@ BuildCmd=
 
 [Unit25]
 FileName=cgame.def
-Folder="Resource Files"
+Folder=Resource Files
 Compile=0
 CompileCpp=0
 Link=0
@@ -296,4 +296,74 @@ OriginalFilename=cgame.exe
 ProductName=cgame
 ProductVersion=0.1
 AutoIncBuildNr=0
+
+[Unit26]
+FileName=cg_pmodels.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit27]
+FileName=cg_pmodels.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit28]
+FileName=cg_vweap.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit29]
+FileName=cg_wmodels.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit30]
+FileName=..\game\gs_pmodels.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit31]
+FileName=cg_boneposes.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit32]
+FileName=cg_boneposes.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
 

@@ -72,9 +72,9 @@ Called for important messages that should stay in the center of the screen
 for a few moments
 ==============
 */
-void SCR_CenterPrint( char *str )
+void SCR_CenterPrint( const char *str )
 {
-	char	*s;
+	const char	*s;
 
 	Q_strncpyz( scr_centerstring, str, sizeof(scr_centerstring) );
 	scr_centertime_off = cg_centerTime->value;
@@ -552,6 +552,7 @@ void SCR_ExecuteLayoutString( char *s )
 		return;
 
 	x = y = 0;
+	w = h = 1;
 	width = 3;
 	Vector4Copy( colorWhite, color );
 	Vector4Copy( colorWhite, flashColor );
@@ -668,8 +669,9 @@ void SCR_ExecuteLayoutString( char *s )
 				CG_DrawString( x+32, y+SMALL_CHAR_HEIGHT*3, va( "Time:  %i", time ), FONT_SMALL, color );
 
 				if( !ci->icon )
-					ci = &cgs.baseClientInfo;
-				trap_R_DrawStretchPic( x, y, 32, 32, 0, 0, 1, 1, colorWhite, trap_R_RegisterPic(ci->iconname) );
+					ci->icon = cgs.basePSkin->icon;
+				trap_R_DrawStretchPic( x, y, 32, 32, 0, 0, 1, 1, colorWhite, ci->icon );
+
 			} else if( !Q_stricmp( token, "ctf" ) ) {// draw a ctf client block
 				int		score, ping;
 				char	block[80];
@@ -701,13 +703,13 @@ void SCR_ExecuteLayoutString( char *s )
 				value = SCR_ParseValue( &s );
 				if( value < 0 || value >= MAX_MODELS )
 					CG_Error( "Model >= MAX_MODELS" );
-				model = value > 1 ? trap_R_RegisterModel ( cgs.configStrings[CS_MODELS+value] ) : NULL;
+				model = value > 1 ? CG_RegisterModel( cgs.configStrings[CS_MODELS+value] ) : NULL;
 				CG_DrawHUDModel ( x, y, w, h, model, NULL, atof( COM_Parse ( &s ) ) );
 			} else if( !Q_stricmp( token, "modeln" ) ) {// draw a model from a name
 				struct model_s *model;
 				struct shader_s *shader;
 
-				model = trap_R_RegisterModel( COM_Parse( &s ) );
+				model = CG_RegisterModel( COM_Parse( &s ) );
 				token = COM_Parse( &s );
 				shader = Q_stricmp( token, "NULL" ) ? trap_R_RegisterPic ( token ) : NULL;
 				CG_DrawHUDModel ( x, y, w, h, model, shader, atof( COM_Parse ( &s ) ) );

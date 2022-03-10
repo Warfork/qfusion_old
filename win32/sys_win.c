@@ -214,12 +214,36 @@ void Sys_FindClose (void)
 /*
 =================
 Sys_GetHomeDirectory
-
 =================
 */
 char *Sys_GetHomeDirectory (void)
 {
 	return NULL;
+}
+
+/*
+=================
+Sys_LockFile
+=================
+*/
+void *Sys_LockFile (const char *path)
+{
+	HANDLE handle;
+
+	handle = CreateFile (path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL);
+	if( handle == INVALID_HANDLE_VALUE )
+		return NULL;
+	return (void *)handle;
+}
+
+/*
+=================
+Sys_UnlockFile
+=================
+*/
+void Sys_UnlockFile (void *handle)
+{
+	CloseHandle( (HANDLE)handle );
 }
 
 //===============================================================================
@@ -575,18 +599,22 @@ void *Sys_LoadGameLibrary( gamelib_t gamelib, void *parms )
 	char	*apifuncname;
 
 #if defined _M_IX86
-#define ARCH	"x86"
 #ifdef NDEBUG
 	const char *debugdir = "release";
 #else
 	const char *debugdir = "debug";
 #endif
 #elif defined _M_ALPHA
-#define ARCH	"axp"
 #ifdef NDEBUG
 	const char *debugdir = "releaseaxp";
 #else
 	const char *debugdir = "debugaxp";
+#endif
+#elif defined _M_AMD64
+#ifdef NDEBUG
+	const char *debugdir = "releasex64";
+#else
+	const char *debugdir = "debugx64";
 #endif
 #endif
 

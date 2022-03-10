@@ -21,8 +21,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "client.h"
 
-cvar_t	*cl_freelook;
-
 cvar_t	*cl_stereo_separation;
 cvar_t	*cl_stereo;
 
@@ -37,15 +35,6 @@ cvar_t	*cl_shownet;
 cvar_t	*cl_paused;
 cvar_t	*cl_timedemo;
 cvar_t	*cl_avidemo;
-
-cvar_t	*lookspring;
-cvar_t	*lookstrafe;
-cvar_t	*sensitivity;
-
-cvar_t	*m_pitch;
-cvar_t	*m_yaw;
-cvar_t	*m_forward;
-cvar_t	*m_side;
 
 //
 // userinfo
@@ -327,6 +316,12 @@ void CL_Rcon_f (void)
 		return;
 	}
 
+	//r1: buffer check ffs!
+	if ((strlen(Cmd_Args()) + strlen(rcon_client_password->string) + 16) >= sizeof(message)) {
+		Com_Printf( "Length of password + command exceeds maximum allowed length.\n" );
+		return;
+	}
+
 	message[0] = (char)255;
 	message[1] = (char)255;
 	message[2] = (char)255;
@@ -493,6 +488,7 @@ void CL_Disconnect (void)
 	CL_SetClientState (ca_disconnected);
 
 done:
+	;
 	// drop loading plaque unless this is the initial game start
 	if (cls.disable_servercount != -1)
 		SCR_EndLoadingPlaque ();	// get rid of loading plaque
@@ -680,12 +676,11 @@ void CL_PingServers_f( void )
 {
 	netadr_t	adr;
 	char		*requeststring;
-	cvar_t		*noudp, *noipx;
+	cvar_t		*noudp;
 	char		gameName[MAX_QPATH];
 
 	NET_Config( qtrue );		// allow remote
 
-	noipx = Cvar_Get( "noipx", "0", CVAR_NOSET );
 	noudp = Cvar_Get( "noudp", "0", CVAR_NOSET );
 
 	if( !strcmp( Cmd_Argv(1), "local" ) ) {
@@ -696,10 +691,6 @@ void CL_PingServers_f( void )
 
 		if( !noudp->integer ) {
 			adr.type = NA_BROADCAST;
-			adr.port = BigShort( PORT_SERVER );
-			Netchan_OutOfBandPrint( NS_CLIENT, adr, requeststring );
-		} else if( !noipx->integer ) {
-			adr.type = NA_BROADCAST_IPX;
 			adr.port = BigShort( PORT_SERVER );
 			Netchan_OutOfBandPrint( NS_CLIENT, adr, requeststring );
 		}
@@ -812,6 +803,10 @@ void CL_ConnectionlessPacket (void)
 	if (!strcmp(c, "challenge"))
 	{
 		cls.challenge = atoi(Cmd_Argv(1));
+		//wsw : r1q2[start]
+		//r1: reset the timer so we don't send dup. getchallenges
+		cls.connect_time = Sys_Milliseconds ();
+		//wsw : r1q2[end]
 		CL_SendConnectPacket ();
 		return;
 	}
@@ -866,7 +861,10 @@ void CL_ReadPackets (void)
 
 		if (net_recieved.cursize < 8)
 		{
-			Com_Printf ("%s: Runt packet\n", NET_AdrToString(&net_from));
+			//wsw : r1q2[start]
+			//r1: delegated to DPrintf (someone could spam your console with crap otherwise)
+			Com_DPrintf ("%s: Runt packet\n", NET_AdrToString(&net_from));
+			//wsw : r1q2[end]
 			continue;
 		}
 
@@ -991,16 +989,21 @@ void CL_RequestNextDownload (void)
 		if (allow_download_players->integer) {
 			while (precache_check < CS_PLAYERSKINS + MAX_CLIENTS * PLAYER_MULT) {
 				int i, n;
+#if 0
 				char model[MAX_QPATH], skin[MAX_QPATH], *p;
+#endif
 
 				i = (precache_check - CS_PLAYERSKINS)/PLAYER_MULT;
 				n = (precache_check - CS_PLAYERSKINS)%PLAYER_MULT;
 
 				// Vic: disabled for now
-//				if (!cl.configstrings[CS_PLAYERSKINS+i][0]) {
+#if 1
+				precache_check = CS_PLAYERSKINS + (i + 1) * PLAYER_MULT;
+#else
+				if (!cl.configstrings[CS_PLAYERSKINS+i][0]) {
 					precache_check = CS_PLAYERSKINS + (i + 1) * PLAYER_MULT;
 					continue;
-//				}
+				}
 
 				if ((p = strchr(cl.configstrings[CS_PLAYERSKINS+i], '\\')) != NULL)
 				{
@@ -1068,6 +1071,7 @@ void CL_RequestNextDownload (void)
 					// move on to next model
 					precache_check = CS_PLAYERSKINS + (i + 1) * PLAYER_MULT;
 				}
+#endif
 			}
 		}
 		// precache phase completed
@@ -1224,6 +1228,7 @@ void CL_SetClientState( int state )
 		case ca_connecting:
 			Con_Close ();
 			CL_SetKeyDest( key_game );
+			SCR_EndLoadingPlaque ();
 //			SCR_UpdateScreen ();
 			break;
 		case ca_connected:
@@ -1331,20 +1336,6 @@ void CL_InitLocal (void)
 	cl_upspeed = Cvar_Get ("cl_upspeed", "200", 0);
 	cl_forwardspeed = Cvar_Get ("cl_forwardspeed", "200", 0);
 	cl_sidespeed = Cvar_Get ("cl_sidespeed", "200", 0);
-	cl_yawspeed = Cvar_Get ("cl_yawspeed", "140", 0);
-	cl_pitchspeed = Cvar_Get ("cl_pitchspeed", "150", 0);
-	cl_anglespeedkey = Cvar_Get ("cl_anglespeedkey", "1.5", 0);
-
-	cl_run = Cvar_Get ("cl_run", "1", CVAR_ARCHIVE);
-	cl_freelook = Cvar_Get( "cl_freelook", "1", CVAR_ARCHIVE );
-	lookspring = Cvar_Get ("lookspring", "0", CVAR_ARCHIVE);
-	lookstrafe = Cvar_Get ("lookstrafe", "0", CVAR_ARCHIVE);
-	sensitivity = Cvar_Get ("sensitivity", "3", CVAR_ARCHIVE);
-
-	m_pitch = Cvar_Get ("m_pitch", "0.022", CVAR_ARCHIVE);
-	m_yaw = Cvar_Get ("m_yaw", "0.022", 0);
-	m_forward = Cvar_Get ("m_forward", "1", 0);
-	m_side = Cvar_Get ("m_side", "1", 0);
 
 	cl_masterServer = Cvar_Get ("cl_masterServer", va("127.10.0.1:%i", PORT_MASTER), CVAR_ARCHIVE);
 
@@ -1579,6 +1570,14 @@ void CL_Frame (int msec)
 	// allow rendering DLL change
 	VID_CheckChanges ();
 
+	// drop to main menu if nothing else
+	if (cls.state == ca_disconnected && !cls.uiActive && !Com_ServerState ())
+	{
+		S_StopAllSounds ();
+		CL_UIModule_MenuMain ();
+		SCR_EndLoadingPlaque ();
+	}
+
 	// update the screen
 	if (host_speeds->integer)
 		time_before_ref = Sys_Milliseconds ();
@@ -1588,7 +1587,7 @@ void CL_Frame (int msec)
 
 	// update audio
 	if (cls.state != ca_active || cl.cin.time > 0)
-		S_Update (vec3_origin, vec3_origin, vec3_origin, vec3_origin);
+		S_Update (vec3_origin, vec3_origin, vec3_origin, vec3_origin, vec3_origin);
 
 	if( cl_avidemo->modified ) {
 		aviframe = 0;
@@ -1664,7 +1663,6 @@ void CL_Init (void)
 	cls.disable_screen = qtrue;	// don't draw yet
 
 	CL_InitLocal ();
-
 	IN_Init ();
 
 //	Cbuf_AddText ("exec autoexec.cfg\n");
@@ -1672,7 +1670,7 @@ void CL_Init (void)
 	Cbuf_Execute ();
 
 	CL_InitMedia ();
-	CL_UIModule_MenuMain ();
+//	CL_UIModule_MenuMain ();
 }
 
 

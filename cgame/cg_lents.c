@@ -27,6 +27,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_BEAMENTS		32
 #define NUM_BEAM_SEGS		6
 
+static vec3_t debris_maxs = { 4, 4, 8 };
+static vec3_t debris_mins = { -4, -4, 0 };
+
 typedef enum
 {
 	LE_FREE, 
@@ -53,6 +56,9 @@ typedef struct lentity_s
 
 	vec3_t		velocity;
 	vec3_t		accel;
+
+	int			bounce;
+	int			oldtime;
 
 	int			frames;
 } lentity_t;
@@ -122,7 +128,7 @@ lentity_t *CG_AllocLocalEntity( int type, float r, float g, float b, float a )
 
 	memset( le, 0, sizeof (*le) );
 	le->type = type;
-	le->start = cg.frame.serverTime - 100;
+	le->start = cg.frame.serverTime - cgs.serverFrameTime;
 	le->color[0] = r;
 	le->color[1] = g;
 	le->color[2] = b;
@@ -244,10 +250,10 @@ lentity_t *CG_AllocLaser( vec3_t start, vec3_t end, float radius, int frames,
 
 	le->ent.radius = radius;
 	le->ent.customShader = shader;
-	le->ent.skinnum = COLOR_RGBA( (int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(a * 255) );
+	le->ent.skinNum = COLOR_RGBA( (int)(r * 255), (int)(g * 255), (int)(b * 255), (int)(a * 255) );
 
 	VectorCopy( start, le->ent.origin );
-	VectorCopy( end, le->ent.oldorigin );
+	VectorCopy( end, le->ent.origin2 );
 
 	return le;
 }
@@ -296,6 +302,7 @@ void CG_AddLaser( vec3_t start, vec3_t end, float radius, int colors, struct sha
 		poly.colors = beamEnt->colors[i];
 		poly.stcoords = beamEnt->stcoords[i];
 		poly.verts = beamEnt->verts[i];
+		poly.fognum = 0;
 
 		VectorCopy( start_points[i], poly.verts[0] );
 		poly.stcoords[0][0] = 0;
@@ -478,7 +485,7 @@ void CG_BlasterExplosion( vec3_t pos, vec3_t dir )
 
 	trap_S_StartSound( pos,  0, 0, CG_MediaSfx( cgs.media.sfxLashit ), 1, ATTN_NORM, 0 );
 
-	CG_SpawnDecal( pos, dir, random()*360, 16, 1, 0.8, 0, 1, 8, 2, qtrue, CG_MediaShader( cgs.media.shaderEnergyMark ) );
+	CG_SpawnDecal( pos, dir, random()*360, 16, 0.8, 0.8, 1, 1, 8, 2, qtrue, CG_MediaShader( cgs.media.shaderEnergyMark ) );
 }
 
 /*
@@ -695,6 +702,95 @@ void CG_BFGBigExplosion( vec3_t pos )
 
 /*
 =================
+CG_SmallPileOfGibs
+ accepts NULL as velocity
+=================
+*/
+void CG_SmallPileOfGibs( vec3_t origin, int	count, vec3_t velocity )
+{
+	lentity_t	*le;
+	int			i;
+	float		mass = 60;
+	vec3_t		angles;
+
+	for( i = 0; i < count; i++ ) {
+
+		le = CG_AllocPoly( LE_NO_FADE, origin, vec3_origin, 200 + 200*random(), 
+			1, 1, 1, 1, 
+			0, 0, 0, 0, 
+			CG_MediaModel( cgs.media.modMeatyGib ), 
+			NULL );
+
+		// random rotation and scale variations
+		VectorSet( angles, crandom()*360, crandom()*360, crandom()*360 );
+		AnglesToAxis ( angles, le->ent.axis );
+		le->ent.scale = 1.0 + (crandom()*0.25);
+		
+		if( velocity ) {
+			// velocity brought by game + random variations
+			le->velocity[0] = velocity[0] + crandom()*75;
+			le->velocity[1] = velocity[1] + crandom()*75;
+			le->velocity[2] = velocity[2] + crandom()*75;
+		} else {
+			vec3_t		dir;
+			float		v;
+			// pure random dir & velocity
+			VectorSet( dir, crandom()*0.5, crandom()*0.5, random() );
+			v = 100 + random() * 100;
+			VectorSet( le->velocity, dir[0]*v, dir[1]*v, dir[2]*v );
+		}
+
+		// friction and gravity
+		VectorSet( le->accel, -0.2, -0.2, -9.8 * mass );
+		
+		le->bounce = 35;
+	}
+}
+
+/*
+=================
+CG_EjectBrass
+=================
+*/
+void CG_EjectBrass( vec3_t origin, int	count, struct model_s *model )
+{
+	lentity_t	*le;
+	int			i;
+	float		mass = 40;
+	vec3_t		angles;
+	vec3_t		dir;
+	float		v;
+
+	if( !cg_ejectBrass->integer )
+		return;
+
+	for( i = 0; i < count; i++ ) {
+
+		le = CG_AllocPoly( LE_NO_FADE, origin, vec3_origin, 50 + 50*random(), 
+			1, 1, 1, 1, 
+			0, 0, 0, 0, 
+			model, 
+			NULL );
+
+		//random rotation
+		VectorSet( angles, crandom()*360, crandom()*360, crandom()*360 );
+		AnglesToAxis ( angles, le->ent.axis );
+		
+		//pure random dir & velocity
+		VectorSet( dir, crandom()*0.25, crandom()*0.25, random() );
+		v = 100 + random() * 25;
+		VectorSet( le->velocity, dir[0]*v, dir[1]*v, dir[2]*v );
+		
+
+		//friction and gravity
+		VectorSet( le->accel, -0.2, -0.2, -9.8 * mass );
+		
+		le->bounce = 60;
+	}
+}
+
+/*
+=================
 CG_AddBeams
 =================
 */
@@ -748,7 +844,7 @@ void CG_AddBeams( void )
 		if( (b->model == CG_MediaModel( cgs.media.modLightning )) && (d <= model_length) ) {
 			VectorCopy( b->end, ent.origin );
 			VectorCopy( b->end, ent.lightingOrigin );
-			VectorCopy( b->end, ent.oldorigin );
+			VectorCopy( b->end, ent.origin2 );
 
 			// offset to push beam outside of tesla model
 			// (negative because dist is from end to start for this beam)
@@ -759,7 +855,7 @@ void CG_AddBeams( void )
 			angles[1] = angles2[1];
 			angles[2] = rand()%360;
 			AnglesToAxis( angles, ent.axis );
-			trap_R_AddEntityToScene( &ent );			
+			CG_AddEntityToScene( &ent );
 			return;
 		}
 
@@ -770,7 +866,7 @@ void CG_AddBeams( void )
 		while( d > 0 ) {
 			VectorCopy( org, ent.origin );
 			VectorCopy( org, ent.lightingOrigin );
-			VectorCopy( org, ent.oldorigin );
+			VectorCopy( org, ent.origin2 );
 
 			if( b->model == CG_MediaModel( cgs.media.modLightning ) ) {
 				angles[0] = -angles2[0];
@@ -783,8 +879,7 @@ void CG_AddBeams( void )
 			}
 			
 			AnglesToAxis( angles, ent.axis );
-			trap_R_AddEntityToScene( &ent );
-
+			CG_AddEntityToScene( &ent );
 			VectorMA( org, len, dist, org );
 			d -= model_length;
 		}
@@ -803,16 +898,17 @@ void CG_AddLocalEntities( void )
 	lentity_t	*le, *next, *hnode;
 	entity_t	*ent;
 	float		scale, frac, fade, time;
-	float		backlerp;
+	float		backlerp, fps;
 
-	time = cg.frameTime;
+	fps = 1.0f / 100.0f;
+	time = cg_paused->integer ? 0 : cg.frameTime;
 	backlerp = 1.0f - cg.lerpfrac;
 
 	hnode = &cg_localents_headnode;
 	for( le = hnode->next; le != hnode; le = next ) {
 		next = le->next;
 
-		frac = (cg.time - le->start) * 0.01f;
+		frac = (cg.time - le->start) * fps;
 		f = ( int )floor( frac );
 		f = max( f, 0 );
 
@@ -838,7 +934,7 @@ void CG_AddLocalEntities( void )
 			trap_R_AddLightToScene( ent->origin, le->light * scale, le->lightcolor[0], le->lightcolor[1], le->lightcolor[2], NULL );
 
 		if( le->type == LE_LASER ) {
-			CG_AddLaser( ent->origin, ent->oldorigin, ent->radius, ent->skinnum, ent->customShader );
+			CG_AddLaser( ent->origin, ent->origin2, ent->radius, ent->skinNum, ent->customShader );
 			continue;
 		}
 
@@ -862,11 +958,60 @@ void CG_AddLocalEntities( void )
 
 		ent->backlerp = backlerp;
 
-		VectorCopy( ent->origin, ent->oldorigin );
-		VectorMA( ent->origin, time, le->velocity, ent->origin );
+		if( le->bounce ) {
+			trace_t	trace;
+			vec3_t	next_origin;
+
+			VectorMA( ent->origin, time, le->velocity, next_origin );
+
+			CG_Trace( &trace, ent->origin, debris_mins, debris_maxs, next_origin, 0, MASK_SOLID );
+			if( trace.fraction != 1.0 ) {
+				float	dot;
+				vec3_t	vel;
+				float	xzyspeed;
+				float	timefraction = 10.0f / (float)( cg.time - le->oldtime );
+
+				// reflect velocity
+				VectorSubtract( next_origin, ent->origin, vel );
+				dot = -2 * DotProduct( vel, trace.plane.normal );
+				VectorMA( vel, dot, trace.plane.normal, le->velocity );
+
+				// put new origin in the impact point and 1 unit out along the normal
+				VectorMA( trace.endpos, 1, trace.plane.normal, ent->origin );
+
+				// the entity has not speed enough. Stop checks
+				xzyspeed = sqrt( le->velocity[0]*le->velocity[0] + le->velocity[1]*le->velocity[1] + le->velocity[2]*le->velocity[2] );
+				if( xzyspeed * timefraction < 1.0f ) {
+					trace_t traceground;
+					vec3_t	ground_origin;
+
+					//see if we have ground
+					VectorCopy( ent->origin, ground_origin );
+					ground_origin[2] += debris_mins[2] - 4;
+					CG_Trace( &traceground, ent->origin, debris_mins, debris_maxs, ground_origin, 0, MASK_SOLID );
+					if( traceground.fraction != 1.0 ) {
+						le->bounce = qfalse;
+						VectorClear(le->velocity);
+						VectorClear(le->accel);
+					}
+
+				} else 
+					VectorScale( le->velocity, le->bounce * timefraction, le->velocity );
+
+			} else {
+				VectorCopy( ent->origin, ent->origin2 );
+				VectorCopy( next_origin, ent->origin );
+			}
+
+		} else {
+			VectorCopy( ent->origin, ent->origin2 );
+			VectorMA( ent->origin, time, le->velocity, ent->origin );
+		}
+		
 		VectorCopy( ent->origin, ent->lightingOrigin );
 		VectorMA( le->velocity, time, le->accel, le->velocity );
-
-		trap_R_AddEntityToScene( ent );
+		CG_AddEntityToScene( ent );
+		
+		le->oldtime = cg.time;
 	}
 }

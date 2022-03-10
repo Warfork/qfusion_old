@@ -209,6 +209,9 @@ int (*qov_raw_seek)( OggVorbis_File *vf, ogg_int64_t pos );
 ogg_int64_t (*qov_raw_tell)( OggVorbis_File *vf );
 vorbis_info *(*qov_info)( OggVorbis_File *vf, int link );
 long (*qov_read)( OggVorbis_File *vf, char *buffer, int length, int bigendianp, int word, int sgned, int *bitstream );
+long (*qov_streams)(OggVorbis_File *vf);
+long (*qov_seekable)(OggVorbis_File *vf);
+int (*qov_pcm_seek)(OggVorbis_File *vf,ogg_int64_t pos);
 
 dllfunc_t oggvorbisfuncs[] =
 {
@@ -219,6 +222,9 @@ dllfunc_t oggvorbisfuncs[] =
 	{ "ov_raw_tell",		( void ** )&qov_raw_tell },
 	{ "ov_info",			( void ** )&qov_info },
 	{ "ov_read",			( void ** )&qov_read },
+	{ "ov_streams",			( void ** )&qov_streams },
+	{ "ov_seekable",		( void ** )&qov_seekable },
+	{ "ov_pcm_seek",		( void ** )&qov_pcm_seek },
 
 	{ NULL, NULL }
 };
@@ -235,9 +241,11 @@ void SNDOGG_Init( void )
 	if( vorbisLibrary )
 		SNDOGG_Shutdown ();
 
-	vorbisLibrary = Sys_LoadLibrary( VORBISFILE_LIBNAME, oggvorbisfuncs );
-	if( vorbisLibrary )
-		Com_Printf( "Loaded %s\n", VORBISFILE_LIBNAME );
+	if( s_vorbis->integer ) {
+		vorbisLibrary = Sys_LoadLibrary( VORBISFILE_LIBNAME, oggvorbisfuncs );
+		if( vorbisLibrary )
+			Com_Printf( "Loaded %s\n", VORBISFILE_LIBNAME );
+	}
 }
 
 /*
@@ -255,41 +263,41 @@ void SNDOGG_Shutdown( void )
 
 static size_t ovcb_read( void *ptr, size_t size, size_t nb, void *datasource )
 {
-	bgTrack_t *track = ( bgTrack_t * )datasource;
-
-	return FS_Read( ptr, size * nb, track->file ) / size;
+	int file = (int)datasource;
+	return FS_Read( ptr, size * nb, file ) / size;
 }
 
 static int ovcb_seek( void *datasource, ogg_int64_t offset, int whence )
 {
-	bgTrack_t *track = ( bgTrack_t * )datasource;
+	int file = (int)datasource;
 
 	switch( whence ) {
 		case SEEK_SET:
-			return FS_Seek( track->file, (int)offset, FS_SEEK_SET );
+			return FS_Seek( file, (int)offset, FS_SEEK_SET );
 		case SEEK_CUR:
-			return FS_Seek( track->file, (int)offset, FS_SEEK_CUR );
+			return FS_Seek( file, (int)offset, FS_SEEK_CUR );
 		case SEEK_END:
-			return FS_Seek( track->file, (int)offset, FS_SEEK_END );
+			return FS_Seek( file, (int)offset, FS_SEEK_END );
 	}
 
 	return -1;
 }
 
 static int ovcb_close( void *datasource ) {
+	int file = (int)datasource;
+	FS_FCloseFile( file );
 	return 0;
 }
 
 static long ovcb_tell( void *datasource )
 {
-	bgTrack_t *track = ( bgTrack_t * )datasource;
-
-	return FS_Tell( track->file );
+	int file = (int)datasource;
+	return FS_Tell( file );
 }
 
-int SNDOGG_FRead( bgTrack_t *track, void *ptr, size_t size );
-int SNDOGG_FSeek( bgTrack_t *track, int pos );
-void SNDOGG_FClose( bgTrack_t *track );
+static int SNDOGG_FRead( bgTrack_t *track, void *ptr, size_t size );
+static int SNDOGG_FSeek( bgTrack_t *track, int pos );
+static void SNDOGG_FClose( bgTrack_t *track );
 
 /*
 ===================
@@ -316,13 +324,15 @@ qboolean SNDOGG_OpenTrack( char *name, bgTrack_t *track )
 	track->file = file;
 	track->vorbisFile = vf = S_Malloc( sizeof( OggVorbis_File ) );
 
-	if( qov_open_callbacks( track, vf, NULL, 0, callbacks ) < 0 ) {
+	if( qov_open_callbacks( (void *)track->file, vf, NULL, 0, callbacks ) < 0 ) {
 		Com_Printf( "SNDOGG_OpenTrack: couldn't open %s for reading\n", path );
 		goto fail;
 	}
 
 	vi = qov_info( vf, -1 );
 	if( (vi->channels != 1) && (vi->channels != 2) ) {
+		file = 0;
+		qov_clear( vf );
 		Com_Printf( "SNDOGG_OpenTrack: %s has an unsupported number of channels: %i\n", path, vi->channels );
 		goto fail;
 	}
@@ -359,10 +369,14 @@ fail:
 SNDOGG_FRead
 ===================
 */
-int SNDOGG_FRead( bgTrack_t *track, void *ptr, size_t size ) {
+static int SNDOGG_FRead( bgTrack_t *track, void *ptr, size_t size ) {
 	int bs;
 
+#ifdef ENDIAN_BIG
+	return qov_read( track->vorbisFile, ( char * )ptr, (int)size, 1, 2, 1, &bs );
+#else
 	return qov_read( track->vorbisFile, ( char * )ptr, (int)size, 0, 2, 1, &bs );
+#endif
 }
 
 /*
@@ -370,7 +384,7 @@ int SNDOGG_FRead( bgTrack_t *track, void *ptr, size_t size ) {
 SNDOGG_FSeek
 ===================
 */
-int SNDOGG_FSeek( bgTrack_t *track, int pos ) {
+static int SNDOGG_FSeek( bgTrack_t *track, int pos ) {
 	return qov_raw_seek( track->vorbisFile, (ogg_int64_t)pos );
 }
 
@@ -379,9 +393,100 @@ int SNDOGG_FSeek( bgTrack_t *track, int pos ) {
 SNDOGG_FClose
 ===================
 */
-void SNDOGG_FClose( bgTrack_t *track )
+static void SNDOGG_FClose( bgTrack_t *track )
 {
-	FS_FCloseFile( track->file );
 	qov_clear( track->vorbisFile );
 	S_Free( track->vorbisFile );
+}
+
+/*
+===================
+SNDOGG_LoadSfx
+===================
+*/
+sfxcache_t *SNDOGG_LoadSfx( sfx_t *s )
+{
+	OggVorbis_File vorbisFile;
+	vorbis_info *vi;
+	sfxcache_t *sc;
+	char *buffer;
+	int file, bitstream, bytes_read, bytes_read_total, len, samples;
+	ov_callbacks callbacks = { ovcb_read, ovcb_seek, ovcb_close, ovcb_tell };
+
+	if( !vorbisLibrary )
+		return NULL;
+
+	FS_FOpenFile( s->name, &file, FS_READ );
+	if( !file )
+		return NULL;
+
+	if( qov_open_callbacks( (void *)file, &vorbisFile, NULL, 0, callbacks ) < 0 ) {
+		Com_Printf( "Error getting OGG callbacks: %s\n", s->name );
+		FS_FCloseFile( file );
+		return NULL;
+	}
+
+	if( !qov_seekable( &vorbisFile ) ) {
+		Com_Printf( "Error unsupported .ogg file (not seekable): %s\n", s->name );
+		qov_clear( &vorbisFile ); // Does FS_FCloseFile
+		return NULL;
+	}
+
+	if( qov_streams( &vorbisFile ) != 1 ) {
+		Com_Printf( "Error unsupported .ogg file (multiple logical bitstreams): %s\n", s->name );
+		qov_clear( &vorbisFile ); // Does FS_FCloseFile
+		return NULL;
+	}
+
+	vi = qov_info( &vorbisFile, -1 );
+	if( vi->channels != 1 && vi->channels != 2 ) {
+		Com_Printf( "Error unsupported .ogg file (unsupported number of channels: %i): %s\n", vi->channels, s->name );
+		qov_clear( &vorbisFile ); // Does FS_FCloseFile
+		return NULL;
+	}
+
+	samples = (int)qov_pcm_total( &vorbisFile, -1 );
+	len = (int) ((double) samples * (double) dma.speed / (double) vi->rate);
+	len = len * 2 * vi->channels;
+
+	sc = s->cache = S_Malloc( len + sizeof(sfxcache_t) );
+	sc->length = samples;
+	sc->loopstart = -1;
+	sc->speed = vi->rate;
+	sc->channels = vi->channels;
+	sc->width = 2;
+
+	if( dma.speed != vi->rate ) {
+		len = samples * 2 * vi->channels;
+		buffer = S_Malloc( len );
+	} else {
+		buffer = (char *)sc->data;
+	}
+
+	bytes_read_total = 0;
+	do {
+#ifdef ENDIAN_BIG
+		bytes_read = qov_read( &vorbisFile, buffer+bytes_read_total, len-bytes_read_total, 1, 2, 1, &bitstream );
+#else
+		bytes_read = qov_read( &vorbisFile, buffer+bytes_read_total, len-bytes_read_total, 0, 2, 1, &bitstream );
+#endif
+		bytes_read_total += bytes_read;
+	} while( bytes_read > 0 && bytes_read_total < len );
+	qov_clear( &vorbisFile ); // Does FS_FCloseFile
+
+	if( bytes_read_total != len ) {
+		Com_Printf( "Error reading .ogg file: %s\n", s->name );
+		if( (void *)buffer != sc->data )
+			S_Free( buffer );
+		S_Free( sc );
+		s->cache = NULL;
+		return NULL;
+	}
+
+	if( dma.speed != vi->rate ) {
+		ResampleSfx( sc, (qbyte *)buffer, s->name );
+		S_Free( buffer );
+	}
+
+	return sc;
 }

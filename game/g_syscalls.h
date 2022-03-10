@@ -188,8 +188,8 @@ static inline void trap_FS_FCloseFile( int file ) {
 	GAME_IMPORT.FS_FCloseFile( file );
 }
 
-static inline int trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize ) {
-	return GAME_IMPORT.FS_GetFileList( dir, extension, buf, bufsize );
+static inline int trap_FS_GetFileList( const char *dir, const char *extension, char *buf, size_t bufsize, int start, int end ) {
+	return GAME_IMPORT.FS_GetFileList( dir, extension, buf, bufsize, start, end );
 }
 
 static inline char *trap_FS_Gamedir( void ) {

@@ -110,6 +110,38 @@ void gib_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, 
 	G_FreeEdict (self);
 }
 
+
+void ThrowSmallPileOfGibs( edict_t *self, int count, int damage )
+{
+	vec3_t origin, velocity;
+	edict_t	*event;
+	int		contents;
+	
+	contents = trap_PointContents( self->s.origin );
+	if( contents & CONTENTS_NODROP )
+		return;
+	
+	VectorCopy( self->s.origin, origin );
+	origin[2] -= 16;
+	event = G_SpawnEvent( EV_SPOG, count, origin );
+	//transform damage into origin2 to scale speed at cgame
+	VelocityForDamage( damage, velocity );
+	VectorMA( self->velocity, 0.1, velocity, event->s.origin2 );
+	//clip gib velocity 
+	if( event->s.origin2[0] < -200 )
+		event->s.origin2[0] = -200;
+	else if( event->s.origin2[0] > 200 )
+		event->s.origin2[0] = 200;
+	if( event->s.origin2[1] < -200 )
+		event->s.origin2[1] = -200;
+	else if( event->s.origin2[1] > 200 )
+		event->s.origin2[1] = 200;
+	if( event->s.origin2[2] < 50 )
+		event->s.origin2[2] = 50;	// always some upwards
+	else if( event->s.origin2[2] > 300 )
+		event->s.origin2[2] = 300;
+}
+
 void ThrowGib (edict_t *self, char *gibname, int damage, int type)
 {
 	edict_t *gib;
@@ -236,12 +268,6 @@ void ThrowClientHead (edict_t *self, int damage)
 	self->movetype = MOVETYPE_BOUNCE;
 	VelocityForDamage (damage, vd);
 	VectorAdd (self->velocity, vd, self->velocity);
-
-	if (self->r.client)	// bodies in the queue don't have a client anymore
-	{
-		self->r.client->anim_priority = ANIM_DEATH;
-		self->r.client->anim_end = self->s.frame;
-	}
 
 	trap_LinkEntity (self);
 }
@@ -766,6 +792,7 @@ void func_explosive_explode (edict_t *self, edict_t *inflictor, edict_t *attacke
 	VectorCopy (origin, self->s.origin);
 
 	self->takedamage = DAMAGE_NO;
+	self->s.light = 0;
 
 	if (self->dmg)
 		T_RadiusDamage (self, attacker, self->dmg, NULL, self->dmg+40, MOD_EXPLOSIVE);
@@ -838,12 +865,10 @@ void SP_func_explosive (edict_t *self)
 		return;
 	}
 
-	self->movetype = MOVETYPE_PUSH;
-
 	trap_ModelIndex ("models/objects/debris1/tris.md2");
 	trap_ModelIndex ("models/objects/debris2/tris.md2");
 
-	self->s.modelindex = trap_ModelIndex (self->model);
+	G_InitMover (self);
 
 	if (self->spawnflags & 1)
 	{
@@ -853,7 +878,6 @@ void SP_func_explosive (edict_t *self)
 	}
 	else
 	{
-		self->r.solid = SOLID_BSP;
 		if (self->targetname)
 			self->use = func_explosive_use;
 	}
@@ -1215,15 +1239,12 @@ This is the dead player model. Comes in 6 exciting different poses!
 */
 void misc_deadsoldier_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point)
 {
-	int		n;
-
-	if (self->health > -80)
+	if( self->health > -80 )
 		return;
 
-	G_Sound (self, CHAN_BODY, trap_SoundIndex ("sound/misc/udeath.wav"), 1, ATTN_NORM);
-	for (n= 0; n < 4; n++)
-		ThrowGib (self, "models/objects/gibs/sm_meat/tris.md2", damage, GIB_ORGANIC);
-	ThrowHead (self, "models/objects/gibs/head2/tris.md2", damage, GIB_ORGANIC);
+	G_Sound( self, CHAN_BODY, trap_SoundIndex( "sound/misc/udeath.wav" ), 1, ATTN_NORM );
+	ThrowSmallPileOfGibs( self, 6, damage );
+	ThrowHead( self, "models/objects/gibs/head2/tris.md2", damage, GIB_ORGANIC );
 }
 
 void SP_misc_deadsoldier (edict_t *ent)
@@ -1883,4 +1904,19 @@ void SP_misc_portal_camera(edict_t *ent)
 
 	ent->r.svflags = SVF_NOCLIENT;
 	ent->count = (int)(st.roll / 360.0f * 256.0f);
+}
+
+/*QUAKED props_skyportal (.6 .7 .7) (-8 -8 0) (8 8 16)
+"fov" for the skybox default is 90
+To have the portal sky fogged, enter any of the following values:
+"fogcolor" (r g b) (values 0.0-1.0)
+"fogfar" distance from entity that fog is opaque
+*/
+void SP_skyportal(edict_t *ent)
+{
+//	if (!st.fov)
+//		st.fov = 90;
+
+	ent->r.svflags |= SVF_NOCLIENT;
+	trap_ConfigString( CS_SKYBOXORG, va("%.3f %.3f %.3f %.1f", ent->s.origin[0], ent->s.origin[1], ent->s.origin[2], st.fov ) );
 }

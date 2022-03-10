@@ -26,7 +26,7 @@ int		R_Init( void *hinstance, void *hWnd );
 void	R_Restart( void );
 void	R_Shutdown( void );
 
-void	R_RegisterWorldModel( char *model );
+void	R_RegisterWorldModel( char *model, const dvis_t *visData );
 void	R_ModelBounds( struct model_s *model, vec3_t mins, vec3_t maxs );
 
 struct model_s	*R_RegisterModel( char *name );
@@ -45,7 +45,10 @@ void	R_RenderScene( refdef_t *fd );
 void	R_DrawStretchPic( int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader );
 void	R_DrawStretchRaw( int x, int y, int w, int h, int cols, int rows, int frame, qbyte *data );
 
-qboolean R_LerpTag( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name );
+void	R_SetCustomColor( int num, int r, int g, int b );
+void	R_LightForOrigin( vec3_t origin, vec3_t dir, vec4_t ambient, vec4_t diffuse, float radius );
+
+qboolean R_LerpTag( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, const char *name );
 
 int		R_SkeletalGetNumBones( struct model_s *mod, int *numFrames );
 int		R_SkeletalGetBoneInfo( struct model_s *mod, int bone, char *name, int size, int *flags );
@@ -55,7 +58,7 @@ int		R_GetClippedFragments( vec3_t origin, float radius, vec3_t axis[3], int max
 
 void	R_TransformVectorToScreen( refdef_t *rd, vec3_t in, vec2_t out );
 
-void	R_BeginFrame( float cameraSeparation );
+void	R_BeginFrame( float cameraSeparation, qboolean forceClear );
 void	R_EndFrame( void );
 void	R_ApplySoftwareGamma( void );
 

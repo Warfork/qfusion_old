@@ -9,8 +9,8 @@ CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -fexceptions -DWIN32 -DND
 Includes=
 Linker=-lkernel32 -luser32 -lwinmm --def game.def_@@_
 Libs=
-UnitCount=39
-Folders="Source Files","Header Files","Resource Files"
+UnitCount=42
+Folders="Header Files","Resource Files","Source Files"
 ObjFiles=
 PrivateResource=
 ResourceIncludes=
@@ -31,7 +31,7 @@ CustomMakefile=
 
 [Unit1]
 FileName=g_ai.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -41,7 +41,7 @@ BuildCmd=
 
 [Unit2]
 FileName=g_chase.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -51,7 +51,7 @@ BuildCmd=
 
 [Unit3]
 FileName=g_cmds.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -61,7 +61,7 @@ BuildCmd=
 
 [Unit4]
 FileName=g_combat.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -71,7 +71,7 @@ BuildCmd=
 
 [Unit5]
 FileName=g_ctf.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -81,7 +81,7 @@ BuildCmd=
 
 [Unit6]
 FileName=g_func.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -91,7 +91,7 @@ BuildCmd=
 
 [Unit7]
 FileName=g_items.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -101,7 +101,7 @@ BuildCmd=
 
 [Unit8]
 FileName=g_main.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -111,7 +111,7 @@ BuildCmd=
 
 [Unit9]
 FileName=g_misc.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -121,7 +121,7 @@ BuildCmd=
 
 [Unit10]
 FileName=g_monster.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -131,7 +131,7 @@ BuildCmd=
 
 [Unit11]
 FileName=g_phys.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -141,7 +141,7 @@ BuildCmd=
 
 [Unit12]
 FileName=g_save.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -151,7 +151,7 @@ BuildCmd=
 
 [Unit13]
 FileName=g_spawn.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -161,7 +161,7 @@ BuildCmd=
 
 [Unit14]
 FileName=g_svcmds.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -171,7 +171,7 @@ BuildCmd=
 
 [Unit15]
 FileName=g_syscalls.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -181,7 +181,7 @@ BuildCmd=
 
 [Unit16]
 FileName=g_target.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -191,7 +191,7 @@ BuildCmd=
 
 [Unit17]
 FileName=g_trigger.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -201,7 +201,7 @@ BuildCmd=
 
 [Unit18]
 FileName=g_utils.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -211,7 +211,7 @@ BuildCmd=
 
 [Unit19]
 FileName=g_weapon.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -221,7 +221,7 @@ BuildCmd=
 
 [Unit20]
 FileName=gs_misc.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -231,7 +231,7 @@ BuildCmd=
 
 [Unit21]
 FileName=gs_pmove.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -241,7 +241,7 @@ BuildCmd=
 
 [Unit22]
 FileName=m_move.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -251,7 +251,7 @@ BuildCmd=
 
 [Unit23]
 FileName=p_client.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -261,7 +261,7 @@ BuildCmd=
 
 [Unit24]
 FileName=p_hud.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -271,7 +271,7 @@ BuildCmd=
 
 [Unit25]
 FileName=p_menu.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -281,7 +281,7 @@ BuildCmd=
 
 [Unit26]
 FileName=p_trail.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -291,7 +291,7 @@ BuildCmd=
 
 [Unit27]
 FileName=p_view.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -301,7 +301,7 @@ BuildCmd=
 
 [Unit28]
 FileName=p_weapon.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -311,7 +311,7 @@ BuildCmd=
 
 [Unit29]
 FileName=q_math.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -321,7 +321,7 @@ BuildCmd=
 
 [Unit30]
 FileName=q_shared.c
-Folder="Source Files"
+Folder=Source Files
 Compile=1
 CompileCpp=0
 Link=1
@@ -331,7 +331,7 @@ BuildCmd=
 
 [Unit31]
 FileName=g_ctf.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -341,7 +341,7 @@ BuildCmd=
 
 [Unit32]
 FileName=g_local.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -351,7 +351,7 @@ BuildCmd=
 
 [Unit33]
 FileName=g_public.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -361,7 +361,7 @@ BuildCmd=
 
 [Unit34]
 FileName=g_syscalls.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -371,7 +371,7 @@ BuildCmd=
 
 [Unit35]
 FileName=gs_public.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -381,7 +381,7 @@ BuildCmd=
 
 [Unit36]
 FileName=m_player.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -391,7 +391,7 @@ BuildCmd=
 
 [Unit37]
 FileName=p_menu.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -401,7 +401,7 @@ BuildCmd=
 
 [Unit38]
 FileName=q_shared.h
-Folder="Header Files"
+Folder=Header Files
 Compile=1
 CompileCpp=1
 Link=1
@@ -411,7 +411,7 @@ BuildCmd=
 
 [Unit39]
 FileName=game.def
-Folder="Resource Files"
+Folder=Resource Files
 Compile=0
 CompileCpp=0
 Link=0
@@ -436,4 +436,34 @@ OriginalFilename=game.exe
 ProductName=game
 ProductVersion=0.1
 AutoIncBuildNr=0
+
+[Unit40]
+FileName=g_pmodels.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit41]
+FileName=g_pmodels.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit42]
+FileName=gs_pmodels.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
 

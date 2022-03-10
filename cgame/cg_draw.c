@@ -149,7 +149,7 @@ typedef struct {
 	qbyte x, y, width;
 } propchardesc_t;
 
-static propchardesc_t propfont1[] =
+static const propchardesc_t propfont1[] =
 {
 	{0, 0, 0},		// space
 	{10, 122, 9},	// !
@@ -214,7 +214,7 @@ static propchardesc_t propfont1[] =
 	{234, 34, 19},	// Y
 	{4, 64, 15},	// Z
 	{59, 152, 9},	// [
-	{105, 152, 14},	// \ 
+	{105, 152, 14},	// backslash 
 	{82, 152, 9},	// ]
 	{128, 122, 17},	// ^
 	{4, 152, 21},	// _
@@ -523,12 +523,13 @@ void CG_DrawModel ( int x, int y, int w, int h, struct model_s *model, struct sh
 	entity.scale = 1.0f;
 	entity.flags = RF_FULLBRIGHT | RF_NOSHADOW | RF_FORCENOLOD;
 	VectorCopy( origin, entity.origin );
-	VectorCopy( entity.origin, entity.oldorigin );
+	VectorCopy( entity.origin, entity.origin2 );
 
 	AnglesToAxis ( angles, entity.axis );
 
 	trap_R_ClearScene ();
-	trap_R_AddEntityToScene( &entity );
+	CG_SetBoneposesForTemporaryEntity( &entity );
+	CG_AddEntityToScene( &entity );
 	trap_R_RenderScene( &refdef );
 }
 

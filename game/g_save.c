@@ -57,6 +57,7 @@ field_t fields[] = {
 	{"map", FOFS(map), F_LSTRING},
 
 	// temp spawn vars -- only valid when the spawn function is called
+	{"fov", STOFS(fov), F_FLOAT, FFL_SPAWNTEMP},
 	{"lip", STOFS(lip), F_INT, FFL_SPAWNTEMP},
 	{"distance", STOFS(distance), F_INT, FFL_SPAWNTEMP},
 	{"radius", STOFS(radius), F_FLOAT, FFL_SPAWNTEMP},
@@ -68,9 +69,6 @@ field_t fields[] = {
 	{"item", STOFS(item), F_LSTRING, FFL_SPAWNTEMP},
 	{"gravity", STOFS(gravity), F_LSTRING, FFL_SPAWNTEMP},
 	{"music", STOFS(music), F_LSTRING, FFL_SPAWNTEMP},
-	{"sky", STOFS(sky), F_LSTRING, FFL_SPAWNTEMP},
-	{"skyrotate", STOFS(skyrotate), F_FLOAT, FFL_SPAWNTEMP},
-	{"skyaxis", STOFS(skyaxis), F_VECTOR, FFL_SPAWNTEMP},
 	{"minyaw", STOFS(minyaw), F_FLOAT, FFL_SPAWNTEMP},
 	{"maxyaw", STOFS(maxyaw), F_FLOAT, FFL_SPAWNTEMP},
 	{"minpitch", STOFS(minpitch), F_FLOAT, FFL_SPAWNTEMP},

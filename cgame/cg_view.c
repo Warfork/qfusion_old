@@ -50,13 +50,24 @@ void CG_TestEntities( void )
 
 		ent.scale = 1.0f;
 		ent.rtype = RT_MODEL;
-		ent.model = cgs.baseClientInfo.model;
-		if( cgs.baseClientInfo.skin )
-			ent.customSkin = cgs.baseClientInfo.skin;
+#ifdef SKELMOD
+		ent.model = cgs.basePModelInfo->model;
+		if (cgs.basePSkin->skin)
+			ent.customSkin = cgs.basePSkin->skin;
 		else
-			ent.customShader = cgs.baseClientInfo.shader;
+			ent.customSkin = NULL;
 
-		trap_R_AddEntityToScene( &ent );
+		CG_AddEntityToScene( &ent );
+#else
+		// it will only show torso
+		ent.model = cgs.basePModelInfo->model[UPPER];
+		if( cgs.basePSkin->skin[UPPER] )
+			ent.customSkin = cgs.basePSkin->skin[UPPER];
+		else
+			ent.customSkin = NULL;
+
+		CG_AddEntityToScene( &ent );
+#endif
 	}
 }
 
@@ -152,6 +163,9 @@ void CG_ThirdPerson_CameraUpdate (void)
 /*
 ================
 CG_CalcViewBob
+
+Uses the ground/swimming values set in CG_CalcViewOnGround for 
+making more accurate decissions on bobbing state
 ================
 */
 void CG_CalcViewBob( void )
@@ -160,11 +174,8 @@ void CG_CalcViewBob( void )
 
 	if( cg.thirdPerson )
 		return;
-	if( cg_paused->integer ) {
-		cg.bobCycle = 0;
-		cg.bobFracSin = 0;
+	if( cg_paused->integer )
 		return;
-	}
 
 	//
 	// calculate speed and cycle to be used for
@@ -175,15 +186,41 @@ void CG_CalcViewBob( void )
 	bobMove = 0;
 	if( cg.xyspeed < 5 )
 		cg.oldBobTime = 0;			// start at beginning of cycle again
-	else if( cg.groundEntity != -1 )
-		bobMove = cg.frameTime;		// so bobbing only cycles when on ground
+	else if( vweap.isSwim )
+		bobMove = cg.frameTime * cg_bobSpeed->value * 0.3;
+	else if( cg.frame.playerState.pmove.pm_flags & PMF_DUCKED )
+		bobMove = cg.frameTime * cg_bobSpeed->value * 0.6;
+	else if( vweap.isOnGround )
+		bobMove = cg.frameTime * cg_bobSpeed->value;
 
-	bobTime = (cg.oldBobTime += bobMove);
-	if( cg.frame.playerState.pmove.pm_flags & PMF_DUCKED )
-		bobTime *= 4;
+	bobTime = cg.oldBobTime += bobMove;
 
 	cg.bobCycle = (int)bobTime;
-	cg.bobFracSin = fabs(sin(bobTime*M_PI));
+	cg.bobFracSin = fabs( sin( bobTime*M_PI ) );
+}
+
+//============================================================================
+
+/*
+==================
+CG_SkyPortal
+==================
+*/
+int CG_SkyPortal( void )
+{
+	float fov;
+	vec3_t origin;
+
+	if( cgs.configStrings[CS_SKYBOXORG][0] == '\0' )
+		return 0;
+
+	if( sscanf( cgs.configStrings[CS_SKYBOXORG], "%f %f %f %f", &origin[0], &origin[1], &origin[2], &fov ) == 4 ) {
+		cg.refdef.skyportal.fov = fov;
+		VectorCopy( origin, cg.refdef.skyportal.origin );
+		return RDF_SKYPORTALINVIEW;
+	}
+
+	return 0;
 }
 
 //============================================================================
@@ -205,6 +242,16 @@ int CG_RenderFlags( void )
 	else
 		rdflags &= ~RDF_UNDERWATER;
 
+	if( cg.oldAreabits )
+		rdflags |= RDF_OLDAREABITS;
+
+	if( cg.portalInView )
+		rdflags |= RDF_PORTALINVIEW;
+
+	rdflags |= RDF_BLOOM;
+
+	rdflags |= CG_SkyPortal ();
+
 	return rdflags;
 }
 
@@ -213,7 +260,6 @@ int CG_RenderFlags( void )
 /*
 ==================
 CG_RenderView
-
 ==================
 */
 #define	WAVE_AMPLITUDE	0.015	// [0..1]
@@ -240,11 +286,13 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 		cg.time += frameTime * 1000;
 
 		// clamp time
-		clamp( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
+		clamp( cg.time, cg.frame.serverTime - cgs.serverFrameTime, cg.frame.serverTime );
 	}
 
 	if( cg.frameTime > (1.0 / 5.0) )
 		cg.frameTime = (1.0 / 5.0);
+
+	CG_ChaseHack ();
 
 	// predict all unacknowledged movements
 	CG_PredictMovement ();
@@ -256,11 +304,12 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 
 	trap_R_ClearScene ();
 
-	CG_CalcViewBob ();
-
 	// build a refresh entity list
 	// this also calls CG_CalcViewValues which loads v_forward, etc.
 	CG_AddEntities ();
+
+	// update bob for next frame
+	CG_CalcViewBob ();
 
 	CG_AddLightStyles ();
 
@@ -306,8 +355,12 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 
 	trap_R_RenderScene( &cg.refdef );
 
+	cg.oldAreabits = qtrue;
+
 	// update audio
-	trap_S_Update( cg.refdef.vieworg, cg.v_forward, cg.v_right, cg.v_up );
+	trap_S_Update( cg.refdef.vieworg, cg.predictedVelocity, cg.v_forward, cg.v_right, cg.v_up );
 
 	SCR_Draw2D ();
+
+	CG_ResetTemporaryBoneposesCache();
 }

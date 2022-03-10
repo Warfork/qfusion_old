@@ -317,8 +317,8 @@ void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 	bolt->s.renderfx |= RF_NOSHADOW;
 	VectorClear (bolt->r.mins);
 	VectorClear (bolt->r.maxs);
-	bolt->s.modelindex = trap_ModelIndex ("models/objects/laser/tris.md2");
-	bolt->s.sound = trap_SoundIndex ("sound/misc/lasfly.wav");
+	bolt->s.modelindex = 1;
+	bolt->s.sound = trap_SoundIndex ("sound/weapons/plasma/lasfly.wav");
 	bolt->r.owner = self;
 	bolt->touch = blaster_touch;
 	bolt->nextthink = level.time + 2;
@@ -371,9 +371,7 @@ static void Grenade_Explode (edict_t *ent)
 		T_Damage (ent->enemy, ent, ent->r.owner, dir, ent->s.origin, vec3_origin, (int)points, (int)points, DAMAGE_RADIUS, mod);
 	}
 
-	if (ent->spawnflags & 2)
-		mod = MOD_HELD_GRENADE;
-	else if (ent->spawnflags & 1)
+	if (ent->spawnflags & 1)
 		mod = MOD_HG_SPLASH;
 	else
 		mod = MOD_G_SPLASH;
@@ -402,82 +400,6 @@ static void Grenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, int su
 
 	ent->enemy = other;
 	Grenade_Explode (ent);
-}
-
-static void LaserGrenade_SetupLaser (edict_t *ent)
-{
-	edict_t	*owner;
-	edict_t *laser;
-
-	if( !(owner = ent->r.owner) ) {
-		ent->nextthink = level.time + FRAMETIME;
-		ent->think = G_FreeEdict;
-		return;
-	}
-
-	laser = G_Spawn();
-	laser->s.sound = trap_SoundIndex ("world/laser.wav");
-	laser->classname = "grenade_laser";
-	laser->enemy = NULL;
-	laser->target = NULL;
-  	laser->r.owner = ent;
-	laser->activator = owner;
-  	laser->dmg = 25;
-	laser->delay = 10;
-	laser->count = MOD_LASER_TRAP;
-	laser->spawnflags = 1;
-
-	if( !ctf->integer || !owner->r.client || owner->r.client->resp.ctf_team == CTF_TEAM1 )
-		laser->spawnflags |= 2;		// red
-	else		
-		laser->spawnflags |= 8;		// blue
-
-	VectorCopy( ent->s.origin, laser->s.origin );
-	VectorCopy( ent->s.angles, laser->s.angles );
-
-	target_laser_start (laser);
-}
-
-static void LaserGrenade_Use (edict_t *self, edict_t *other, edict_t *activator)
-{
-	self->enemy = NULL;
-	Grenade_Explode (self);
-}
-
-static void LaserGrenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags)
-{
-	if (other == ent->r.owner)
-		return;
-	if (surfFlags & SURF_NOIMPACT)
-	{
-		G_FreeEdict (ent);
-		return;
-	}
-
-	if (other != world)
-	{
-		if (other->takedamage)
-			ent->enemy = other;
-		Grenade_Explode (ent);
-		return;
-	}
-
-	ent->use = LaserGrenade_Use;
-	ent->touch = NULL;
-	ent->movetype = MOVETYPE_NONE;
-	ent->s.sound = 0;
-	G_AddEvent (ent, EV_GRENADE_BOUNCE, 0, qtrue);
-
-	ent->nextthink = level.time + 2;
-	ent->think = LaserGrenade_SetupLaser;
-
-	VectorClear (ent->velocity);
-	VectorClear (ent->avelocity);
-
-	VecToAngles (plane->normal, ent->s.angles);
-	VectorCopy (plane->normal, ent->movedir);
-
-	trap_LinkEntity (ent);
 }
 
 void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius)
@@ -515,53 +437,6 @@ void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int s
 
 	trap_LinkEntity (grenade);
 }
-
-void fire_grenade2 (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius, qboolean held)
-{
-	edict_t	*grenade;
-	vec3_t	dir;
-	vec3_t	forward, right, up;
-
-	VecToAngles (aimdir, dir);
-	AngleVectors (dir, forward, right, up);
-
-	grenade = G_Spawn();
-	VectorCopy (start, grenade->s.origin);
-	VectorScale (aimdir, speed, grenade->velocity);
-	VectorMA (grenade->velocity, 200 + crandom() * 10.0, up, grenade->velocity);
-	VectorMA (grenade->velocity, crandom() * 10.0, right, grenade->velocity);
-	VectorSet (grenade->avelocity, 300, 300, 300);
-	VectorSet (grenade->movedir, 0, 0, 1);
-	grenade->movetype = MOVETYPE_BOUNCE;
-	grenade->r.clipmask = MASK_SHOT;
-	grenade->r.solid = SOLID_BBOX;
-	grenade->s.renderfx |= RF_NOSHADOW;
-	VectorClear (grenade->r.mins);
-	VectorClear (grenade->r.maxs);
-	grenade->s.modelindex = trap_ModelIndex ("models/objects/grenade2/tris.md2");
-	grenade->r.owner = self;
-	grenade->touch = LaserGrenade_Touch;
-	grenade->use = NULL;
-	grenade->nextthink = level.time + timer;
-	grenade->think = Grenade_Explode;
-	grenade->dmg = damage;
-	grenade->dmg_radius = damage_radius;
-	grenade->classname = "hgrenade";
-	if (held)
-		grenade->spawnflags = 3;
-	else
-		grenade->spawnflags = 1;
-	grenade->s.sound = trap_SoundIndex("sound/weapons/hgrenc1b.wav");
-
-	if (timer <= 0.0)
-		Grenade_Explode (grenade);
-	else
-	{
-		G_Sound (self, CHAN_WEAPON, trap_SoundIndex ("sound/weapons/hgrent1a.wav"), 1, ATTN_NORM);
-		trap_LinkEntity (grenade);
-	}
-}
-
 
 /*
 =================
@@ -660,11 +535,12 @@ void fire_rail (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int kick
 	}
 
 	// send gun puff / flash
-	event = G_SpawnEvent ( EV_RAILTRAIL, 0, start );
+	event = G_SpawnEvent( EV_RAILTRAIL, 0, start );
 	event->r.svflags = SVF_FORCEOLDORIGIN;
-	VectorCopy ( tr.endpos, event->s.origin2 );
+	VectorCopy( tr.endpos, event->s.origin2 );
+	event->s.ownerNum = self->s.number;	// identify who fired for cgame
 
-	if (self->r.client)
+	if( self->r.client )
 		PlayerNoise(self, tr.endpos, PNOISE_IMPACT);
 }
 

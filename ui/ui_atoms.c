@@ -152,7 +152,7 @@ typedef struct {
 	qbyte x, y, width;
 } propchardesc_t;
 
-static propchardesc_t propfont1[] =
+static const propchardesc_t propfont1[] =
 {
 	{0, 0, 0},		// space
 	{10, 122, 9},	// !
@@ -217,7 +217,7 @@ static propchardesc_t propfont1[] =
 	{234, 34, 19},	// Y
 	{4, 64, 15},	// Z
 	{59, 152, 9},	// [
-	{105, 152, 14},	// \ 
+	{105, 152, 14},	// backslash
 	{82, 152, 9},	// ]
 	{128, 122, 17},	// ^
 	{4, 152, 21},	// _
@@ -406,7 +406,7 @@ int UI_StringWidth ( int flags, char *s )
 {
 	int fontStyle = UI_FontstyleForFlags ( flags );
 
-	if ( flags & QMF_NONPROPOTIONAL ) {
+	if ( flags & QMF_NONPROPORTIONAL ) {
 		if ( fontStyle & FONT_BIG ) {
 			return UI_NonPropStringLength (s) * BIG_CHAR_WIDTH;
 		} else if ( fontStyle & FONT_GIANT ) {
@@ -429,7 +429,7 @@ int UI_StringHeight ( int flags )
 {
 	int fontStyle = UI_FontstyleForFlags ( flags );
 
-	if ( flags & QMF_NONPROPOTIONAL ) {
+	if ( flags & QMF_NONPROPORTIONAL ) {
 		if ( fontStyle & FONT_BIG ) {
 			return BIG_CHAR_HEIGHT;
 		} else if ( fontStyle & FONT_GIANT ) {
@@ -456,7 +456,7 @@ int UI_StringHeightOffset ( int flags )
 {
 	int fontStyle = UI_FontstyleForFlags ( flags );
 
-	if ( flags & QMF_NONPROPOTIONAL ) {
+	if ( flags & QMF_NONPROPORTIONAL ) {
 		if ( fontStyle & FONT_BIG ) {
 			return BIG_CHAR_HEIGHT - 3;
 		} else if ( fontStyle & FONT_GIANT ) {
@@ -501,7 +501,7 @@ void UI_DrawString ( int x, int y, char *str, int flags, int fsm, vec4_t color )
 {
 	x += UI_AdjustStringPosition ( flags, str );
 
-	if ( flags & QMF_NONPROPOTIONAL ) {
+	if ( flags & QMF_NONPROPORTIONAL ) {
 		UI_DrawNonPropString ( x, y, str, UI_FontstyleForFlags (flags) | fsm, color );
 	} else {
 		UI_DrawPropString ( x, y, str, UI_FontstyleForFlags (flags) | fsm, color );
@@ -588,22 +588,22 @@ void Field_Draw( menufield_s *f )
 		if ( offset > 0 ) {
 			strncpy( tempbuffer, f->buffer, offset - 1 );
 			len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
-			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
+			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPORTIONAL, 0, colorWhite );
 
 			strncpy( tempbuffer, f->buffer + offset - 1, 1 );
 			tempbuffer[1] = 0;
 			len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
-			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPOTIONAL, FONT_SHADOWED, colorWhite );
+			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPORTIONAL, FONT_SHADOWED, colorWhite );
 	
 			if ( offset < f->visible_length ) {
 				strncpy( tempbuffer, f->buffer + offset, f->visible_length - offset );
 				len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
-				UI_DrawString ( x, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
+				UI_DrawString ( x, y, tempbuffer, QMF_NONPROPORTIONAL, 0, colorWhite );
 			}
 		} else {
 			strncpy( tempbuffer, f->buffer + f->visible_offset, f->visible_length );
 			len += UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH;
-			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
+			UI_DrawString ( x + len, y, tempbuffer, QMF_NONPROPORTIONAL, 0, colorWhite );
 		}
 	}
 	else
@@ -612,7 +612,7 @@ void Field_Draw( menufield_s *f )
 		y = f->generic.y + f->generic.parent->y;
 
 		strncpy( tempbuffer, f->buffer + f->visible_offset, f->visible_length );
-		UI_DrawString ( x + UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH, y, tempbuffer, QMF_NONPROPOTIONAL, 0, colorWhite );
+		UI_DrawString ( x + UI_NonPropStringLength ( tempbuffer ) * SMALL_CHAR_WIDTH, y, tempbuffer, QMF_NONPROPORTIONAL, 0, colorWhite );
 	}
 }
 
@@ -1176,7 +1176,7 @@ void Separator_Draw( menuseparator_s *s )
 {
 	int x, y;
 
-	if ( !s->generic.name ) {
+	if ( !s->generic.name || !s->generic.name[0] ) {
 		return;
 	}
 
@@ -1286,7 +1286,7 @@ void SpinControl_Draw( menulist_s *s )
 
 	if ( !strchr( s->itemnames[s->curvalue], '\n' ) )
 	{
-		UI_DrawString ( x, y, ( char *)s->itemnames[s->curvalue], QMF_LEFT_JUSTIFY | (s->generic.flags & QMF_NONPROPOTIONAL), fsm, color );
+		UI_DrawString ( x, y, ( char *)s->itemnames[s->curvalue], QMF_LEFT_JUSTIFY | (s->generic.flags & QMF_NONPROPORTIONAL), fsm, color );
 	}
 	else
 	{
@@ -1296,7 +1296,7 @@ void SpinControl_Draw( menulist_s *s )
 		UI_DrawString ( x, y, buffer, s->generic.flags, fsm, color );
 
 		strcpy( buffer, strchr( s->itemnames[s->curvalue], '\n' ) + 1 );
-		UI_DrawString ( x, y + UI_StringHeightOffset (s->generic.flags), buffer, QMF_LEFT_JUSTIFY | (s->generic.flags & QMF_NONPROPOTIONAL), fsm, color );
+		UI_DrawString ( x, y + UI_StringHeightOffset (s->generic.flags), buffer, QMF_LEFT_JUSTIFY | (s->generic.flags & QMF_NONPROPORTIONAL), fsm, color );
 	}
 }
 

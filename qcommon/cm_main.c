@@ -109,13 +109,13 @@ qbyte			*cmod_base;
 CM_CreateFacetFromPoints
 =================
 */
-static int CM_CreateFacetFromPoints( cfacet_t *facet, vec3_t *verts, int numverts, cshaderref_t *shaderref )
+static int CM_CreateFacetFromPoints( cbrush_t *facet, vec3_t *verts, int numverts, cshaderref_t *shaderref )
 {
 	int				i, j, k;
 	int				axis, dir;
 	cbrushside_t	*s;
 	cplane_t		*planes;
-	vec3_t			normal;
+	vec3_t			normal, mins, maxs;
 	float			d, dist;
 	cplane_t		mainplane;
 	vec3_t			vec, vec2;
@@ -123,9 +123,9 @@ static int CM_CreateFacetFromPoints( cfacet_t *facet, vec3_t *verts, int numvert
 	cplane_t		brushplanes[32];
 
 	// set default values for brush
-	facet->brush.numsides = 0;
-	facet->brush.brushsides = NULL;
-	facet->brush.contents = shaderref->contents;
+	facet->numsides = 0;
+	facet->brushsides = NULL;
+	facet->contents = shaderref->contents;
 
 	// calculate plane for this triangle
 	PlaneFromPoints( verts, &mainplane );
@@ -161,9 +161,9 @@ static int CM_CreateFacetFromPoints( cfacet_t *facet, vec3_t *verts, int numvert
 	brushplanes[numbrushplanes].dist = mainplane.dist; numbrushplanes++;
 
 	// calculate mins & maxs
-	ClearBounds( facet->mins, facet->maxs );
+	ClearBounds( mins, maxs );
 	for( i = 0; i < numverts; i++ )
-		AddPointToBounds( verts[i], facet->mins, facet->maxs );
+		AddPointToBounds( verts[i], mins, maxs );
 
 	// add the axial planes
 	for( axis = 0; axis < 3; axis++ ) {
@@ -177,9 +177,9 @@ static int CM_CreateFacetFromPoints( cfacet_t *facet, vec3_t *verts, int numvert
 				VectorClear( normal );
 				normal[axis] = dir;
 				if (dir == 1)
-					dist = facet->maxs[axis];
+					dist = maxs[axis];
 				else
-					dist = -facet->mins[axis];
+					dist = -mins[axis];
 
 				VectorCopy( normal, brushplanes[numbrushplanes].normal );
 				brushplanes[numbrushplanes].dist = dist; numbrushplanes++;
@@ -245,7 +245,7 @@ static int CM_CreateFacetFromPoints( cfacet_t *facet, vec3_t *verts, int numvert
 		return 0;
 
 	// add brushsides
-	s = facet->brush.brushsides = Mem_Alloc( cmap_mempool, numbrushplanes * sizeof (*s) );
+	s = facet->brushsides = Mem_Alloc( cmap_mempool, numbrushplanes * sizeof (*s) );
 	planes = Mem_Alloc( cmap_mempool, numbrushplanes * sizeof(cplane_t) );
 	for( i = 0; i < numbrushplanes; i++, s++ ) {
 		planes[i] = brushplanes[i];
@@ -256,7 +256,7 @@ static int CM_CreateFacetFromPoints( cfacet_t *facet, vec3_t *verts, int numvert
 		s->surfFlags = shaderref->flags;
 	}
 
-	return( facet->brush.numsides = numbrushplanes );
+	return( facet->numsides = numbrushplanes );
 }
 
 /*
@@ -267,7 +267,7 @@ CM_CreatePatch
 static void CM_CreatePatch( cface_t *patch, cshaderref_t *shaderref, vec3_t *verts, int *patch_cp )
 {
 	int step[2], size[2], flat[2], i, u, v;
-	cfacet_t *facets;
+	cbrush_t *facets;
 	vec3_t *points;
 	vec3_t tverts[4];
 
@@ -282,7 +282,7 @@ static void CM_CreatePatch( cface_t *patch, cshaderref_t *shaderref, vec3_t *ver
 		return;
 
 	points = Mem_Alloc( cmap_mempool, size[0] * size[1] * sizeof (vec3_t) );
-	facets = Mem_Alloc( cmap_mempool, (size[0]-1) * (size[1]-1) * 2 * sizeof (cfacet_t) );
+	facets = Mem_Alloc( cmap_mempool, (size[0]-1) * (size[1]-1) * 2 * sizeof (cbrush_t) );
 
 	// fill in
 	Patch_Evaluate( verts[0], patch_cp, step, points[0], 3 );
@@ -331,8 +331,8 @@ static void CM_CreatePatch( cface_t *patch, cshaderref_t *shaderref, vec3_t *ver
 	}
 
 	patch->contents = shaderref->contents;
-	patch->facets = Mem_Alloc( cmap_mempool, patch->numfacets * sizeof(cfacet_t) );
-	memcpy( patch->facets, facets, patch->numfacets * sizeof(cfacet_t) );
+	patch->facets = Mem_Alloc( cmap_mempool, patch->numfacets * sizeof(cbrush_t) );
+	memcpy( patch->facets, facets, patch->numfacets * sizeof(cbrush_t) );
 
 	Mem_Free( points );
 	Mem_Free( facets );
@@ -642,7 +642,7 @@ CMod_LoadLeafs
 */
 static void CMod_LoadLeafs( lump_t *l )
 {
-	int			i, j;
+	int			i, j, k;
 	int			count;
 	cleaf_t		*out;
 	dleaf_t 	*in;
@@ -669,6 +669,20 @@ static void CMod_LoadLeafs( lump_t *l )
 		// OR brushes' contents
 		for( j = 0; j < out->nummarkbrushes; j++ )
 			out->contents |= out->markbrushes[j]->contents;
+
+		// exclude markfaces that have no facets
+		// so we don't perform this check at runtime
+		for( j = 0; j < out->nummarkfaces; ) {
+			k = j;
+			if( !out->markfaces[j]->facets ) {
+				for( ; (++j < out->nummarkfaces) && !out->markfaces[j]->facets; );
+				if( j < out->nummarkfaces )
+					memmove( &out->markfaces[k], &out->markfaces[j], (out->nummarkfaces - j) * sizeof( *out->markfaces ) );
+				out->nummarkfaces -= j - k;
+
+			}
+			j = k + 1;
+		}
 
 		// OR patches' contents
 		for( j = 0; j < out->nummarkfaces; j++ )
@@ -858,7 +872,6 @@ static void CMod_LoadVisibility( lump_t *l )
 	map_pvs->rowsize = LittleLong( map_pvs->rowsize );
 }
 
-
 /*
 =================
 CMod_LoadEntityString
@@ -921,6 +934,7 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	numareaportals = 1;
 	map_name[0] = 0;
 
+	map_pvs = map_phs = NULL;
 	map_leafs = &map_leaf_empty;
 	map_cmodels = &map_cmodel_empty;
 	map_areas = &map_area_empty;
@@ -938,7 +952,7 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	//
 	// load the file
 	//
-	length = FS_LoadFile( name, ( void ** )&buf );
+	length = FS_LoadFile( name, ( void ** )&buf, NULL, 0 );
 	if( !buf )
 		Com_Error( ERR_DROP, "Couldn't load %s", name );
 
@@ -948,7 +962,7 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	header = *(dheader_t *)buf;
 	version = LittleLong( header.version );
 	for( i = 0, cmap_bspFormat = bspFormats; i < numBspFormats; i++, cmap_bspFormat++ ) {
-		if( !strncmp( (unsigned char *)buf, cmap_bspFormat->header, 4 ) && (version == cmap_bspFormat->version) )
+		if( !strncmp( (char *)buf, cmap_bspFormat->header, 4 ) && (version == cmap_bspFormat->version) )
 			break;
 	}
 	if( i == numBspFormats )
@@ -998,6 +1012,98 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	Q_strncpyz( map_name, name, sizeof(map_name) );
 
 	return map_cmodels;
+}
+
+/*
+==================
+CM_LoadMapMessage
+==================
+*/
+char *CM_LoadMapMessage( char *name, char *message, int size )
+{
+	int i, file, len;
+	char ident[4], *data, *entitystring;
+	int version;
+	bspFormatDesc_t *format;
+	lump_t l;
+	qboolean isworld;
+	char key[MAX_KEY], value[MAX_VALUE], *token;
+
+	*message = '\0';
+
+	len = FS_FOpenFile( name, &file, FS_READ );
+	if( file == -1 )
+		return message;
+
+	FS_Read( ident, sizeof( ident ), file );
+	FS_Read( &version, sizeof( version ), file );
+
+	version = LittleLong( version );
+	for( i = 0, format = bspFormats; i < numBspFormats; i++, format++ ) {
+		if( !strncmp( ident, format->header, 4 ) && (version == format->version) )
+			break;
+	}
+	if( i == numBspFormats ) {
+		FS_FCloseFile( file );
+		Com_Printf( "CM_LoadMapMessage: %s: unknown bsp format, version %i", name, version );
+		return message;
+	}
+
+	FS_Seek( file, sizeof( lump_t ) * LUMP_ENTITIES, FS_SEEK_CUR );
+
+	FS_Read( &l.fileofs, sizeof( l.fileofs ), file );
+	l.fileofs = LittleLong( l.fileofs );
+
+	FS_Read( &l.filelen, sizeof( l.filelen ), file );
+	l.filelen = LittleLong( l.filelen );
+
+	if( !l.filelen ) {
+		FS_FCloseFile( file );
+		return message;
+	}
+
+	FS_Seek( file, l.fileofs, FS_SEEK_SET );
+
+	entitystring = Mem_TempMalloc( l.filelen );
+	FS_Read( entitystring, l.filelen, file );
+
+	FS_FCloseFile( file );
+
+	for( data = entitystring; (token = COM_Parse( &data )) && token[0] == '{'; ) {
+		isworld = qtrue;
+
+		while( 1 ) {
+			if( !(token = COM_Parse( &data )) )
+				break; // error
+			if( token[0] == '}' )
+				break; // end of entity
+
+			Q_strncpyz( key, token, sizeof(key) );
+			while( key[strlen(key)-1] == ' ' )	// remove trailing spaces
+				key[strlen(key)-1] = 0;
+
+			if( !(token = COM_Parse( &data )) )
+				break; // error
+
+			Q_strncpyz( value, token, sizeof(value) );
+
+			// now that we have the key pair worked out...
+			if( !strcmp( key, "classname" ) ) {
+				if( strcmp( value, "worldspawn" ) )
+					isworld = qfalse;
+			} else if( isworld && !strcmp( key, "message" ) ) {
+				Q_strncpyz( message, token, size );
+				break;
+			}
+		}
+
+		if( isworld )
+			break;
+	}
+
+	Mem_Free( entitystring );
+
+	return message;
 }
 
 /*
@@ -1099,7 +1205,7 @@ void CM_CalcPHS( void )
 	int			i, j, k, l, index;
 	int			rowbytes, rowwords;
 	int			bitbyte;
-	unsigned	*dest, *src;
+	unsigned int *dest, *src;
 	qbyte		*scan;
 	int			count, vcount;
 
@@ -1115,7 +1221,7 @@ void CM_CalcPHS( void )
 	map_phs->numclusters = map_pvs->numclusters;
 
 	rowbytes = map_pvs->rowsize;
-	rowwords = rowbytes / sizeof( long );
+	rowwords = rowbytes / sizeof( int );
 
 	vcount = 0;
 	for( i = 0; i < map_pvs->numclusters; i++ ) {
@@ -1128,7 +1234,7 @@ void CM_CalcPHS( void )
 
 	count = 0;
 	scan = ( qbyte * )map_pvs->data;
-	dest = ( unsigned * )(( qbyte * )map_phs->data);
+	dest = ( unsigned int * )(( qbyte * )map_phs->data);
 
 	for( i = 0; i < map_phs->numclusters; i++, dest += rowwords, scan += rowbytes ) {
 		memcpy( dest, scan, rowbytes );
@@ -1146,7 +1252,7 @@ void CM_CalcPHS( void )
 				if( index >= map_phs->numclusters )
 					Com_Error( ERR_DROP, "CM_CalcPHS: Bad bit in PVS" );	// pad bits should be 0
 
-				src = ( unsigned * )(( qbyte * )map_pvs->data) + index * rowwords;
+				src = ( unsigned int * )(( qbyte * )map_pvs->data) + index * rowwords;
 				for( l = 0; l < rowwords; l++ )
 					dest[l] |= src[l];
 			}
@@ -1176,6 +1282,15 @@ CM_NumClusters
 */
 int	CM_NumClusters( void ) {
 	return map_pvs->numclusters;
+}
+
+/*
+=================
+CM_VisData
+=================
+*/
+dvis_t *CM_VisData( void ) {
+	return map_pvs;
 }
 
 /*
@@ -1437,32 +1552,4 @@ void CM_ReadPortalState( FILE *f )
 	}
 
 	CM_FloodAreaConnections ();
-}
-
-/*
-=============
-CM_HeadnodeVisible
-
-Returns true if any leaf under headnode has a cluster that
-is potentially visible
-=============
-*/
-qboolean CM_HeadnodeVisible( int nodenum, qbyte *visbits )
-{
-	int		cluster;
-	cnode_t	*node;
-
-	while( nodenum >= 0 ) {
-		node = &map_nodes[nodenum];
-		if( CM_HeadnodeVisible( node->children[0], visbits ) )
-			return qtrue;
-		nodenum = node->children[1];
-	}
-
-	cluster = map_leafs[-1 - nodenum].cluster;
-	if( cluster == -1 )
-		return qfalse;
-	if( visbits[cluster>>3] & (1<<(cluster&7)) )
-		return qtrue;
-	return qfalse;
 }

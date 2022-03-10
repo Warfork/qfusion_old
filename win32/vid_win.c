@@ -22,11 +22,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // Quake refresh engine.
 #include <assert.h>
 #include <float.h>
-
 #include "../client/client.h"
 #include "winquake.h"
-
-cvar_t *win_noalttab;
 
 #ifndef WM_MOUSEWHEEL
 # define WM_MOUSEWHEEL (WM_MOUSELAST+1)  // message that will be supported by the OS 
@@ -54,33 +51,27 @@ cvar_t *win_noalttab;
 static UINT MSH_MOUSEWHEEL;
 
 // Console variables that we need to access from this module
-cvar_t		*vid_xpos;			// X coordinate of window position
-cvar_t		*vid_ypos;			// Y coordinate of window position
-cvar_t		*vid_fullscreen;
-cvar_t		*vid_displayfrequency;
+extern cvar_t		*vid_xpos;			// X coordinate of window position
+extern cvar_t		*vid_ypos;			// Y coordinate of window position
+extern cvar_t		*vid_fullscreen;
+extern cvar_t		*win_noalttab;
 
 // Global variables used internally by this module
-viddef_t	viddef;				// global video state; used by other modules
+extern	viddef_t	viddef;				// global video state; used by other modules
 
-HWND        cl_hwnd;            // Main window handle for life of program
-
-#define VID_NUM_MODES ( sizeof( vid_modes ) / sizeof( vid_modes[0] ) )
-
-LONG WINAPI MainWndProc( HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam );
+HWND	cl_hwnd;            // Main window handle for life of program
 
 static qboolean s_alttab_disabled;
 
 extern	unsigned	sys_msg_time;
 
-qboolean vid_ref_modified;
-qboolean vid_ref_active;
 
 /*
 ** WIN32 helper functions
 */
 extern qboolean s_win95;
 
-static void WIN_DisableAltTab( void )
+void WIN_DisableAltTab( void )
 {
 	if ( s_alttab_disabled )
 		return;
@@ -117,6 +108,19 @@ static void WIN_EnableAltTab( void )
 
 		s_alttab_disabled = qfalse;
 	}
+}
+
+/*
+====================
+VID_EnableAltTab
+====================
+*/
+void VID_EnableAltTab( qboolean enable )
+{
+	if( enable )
+		WIN_EnableAltTab ();
+	else
+		WIN_DisableAltTab ();
 }
 
 /*
@@ -230,13 +234,8 @@ void AppActivate(BOOL fActive, BOOL minimize)
 	// minimize/restore mouse-capture on demand
 	IN_Activate (ActiveApp);
 	S_Activate (ActiveApp);
-
-	if( win_noalttab->integer ) {
-		if (!ActiveApp)
-			WIN_EnableAltTab ();
-		else
-			WIN_DisableAltTab ();
-	}
+	if( win_noalttab->integer )
+		VID_EnableAltTab( !ActiveApp );
 
 	GLimp_AppActivate( fActive );
 }
@@ -315,8 +314,26 @@ LONG WINAPI MainWndProc (
         return DefWindowProc (hWnd, uMsg, wParam, lParam);
 
 	case WM_ACTIVATE:
-		// KJB: Watch this for problems in fullscreen modes with Alt-tabbing.
-		AppActivate( LOWORD(wParam) != WA_INACTIVE, (BOOL) HIWORD(wParam));
+		{
+			int	fActive, fMinimized;
+
+			// KJB: Watch this for problems in fullscreen modes with Alt-tabbing.
+			fActive = LOWORD(wParam);
+			fMinimized = (BOOL) HIWORD(wParam);
+
+			AppActivate( fActive != WA_INACTIVE, fMinimized);
+
+			if ( fActive != WA_INACTIVE )
+			{
+				SetForegroundWindow( cl_hwnd );
+				ShowWindow( cl_hwnd, SW_RESTORE );
+			}
+			else
+			{
+				if ( vid_fullscreen->integer )
+					ShowWindow( cl_hwnd, SW_MINIMIZE );
+			}
+		}
         return DefWindowProc (hWnd, uMsg, wParam, lParam);
 
 	case WM_MOVE:
@@ -408,65 +425,13 @@ LONG WINAPI MainWndProc (
     return DefWindowProc( hWnd, uMsg, wParam, lParam );
 }
 
-void VID_Restart (void)
-{
-	vid_ref_modified = qtrue;
-}
 
 /*
-============
-VID_Restart_f
-
-Console command to re-start the video mode and refresh DLL. We do this
-simply by setting the vid_ref_modified variable, which will
-cause the entire video mode and refresh DLL to be reset on the next frame.
-============
+** VID_Sys_Init
 */
-void VID_Restart_f (void)
+int VID_Sys_Init( void )
 {
-	VID_Restart ();
-}
-
-void VID_Front_f( void )
-{
-	SetWindowLong( cl_hwnd, GWL_EXSTYLE, WS_EX_TOPMOST );
-	SetForegroundWindow( cl_hwnd );
-}
-
-/*
-** VID_GetModeInfo
-*/
-typedef struct vidmode_s
-{
-	const char *description;
-	int         width, height;
-	int         mode;
-} vidmode_t;
-
-vidmode_t vid_modes[] =
-{
-	{ "Mode 0: 320x240",   320, 240,   0 },
-	{ "Mode 1: 400x300",   400, 300,   1 },
-	{ "Mode 2: 512x384",   512, 384,   2 },
-	{ "Mode 3: 640x480",   640, 480,   3 },
-	{ "Mode 4: 800x600",   800, 600,   4 },
-	{ "Mode 5: 960x720",   960, 720,   5 },
-	{ "Mode 6: 1024x768",  1024, 768,  6 },
-	{ "Mode 7: 1152x864",  1152, 864,  7 },
-	{ "Mode 8: 1280x960",  1280, 960, 8 },
-	{ "Mode 9: 1600x1200", 1600, 1200, 9 },
-	{ "Mode 10: 2048x1536", 2048, 1536, 10 }
-};
-
-qboolean VID_GetModeInfo( int *width, int *height, int mode )
-{
-	if ( mode < 0 || mode >= VID_NUM_MODES )
-		return qfalse;
-
-	*width  = vid_modes[mode].width;
-	*height = vid_modes[mode].height;
-
-	return qtrue;
+	return R_Init( global_hInstance, MainWndProc );
 }
 
 /*
@@ -493,125 +458,10 @@ void VID_UpdateWindowPosAndSize( int x, int y )
 }
 
 /*
-** VID_NewWindow
+** VID_Front_f
 */
-void VID_NewWindow ( int width, int height)
+void VID_Front_f( void )
 {
-	viddef.width  = width;
-	viddef.height = height;
-}
-
-
-/*
-============
-VID_CheckChanges
-
-This function gets called once just before drawing each frame, and its sole purpose in life
-is to check to see if any of the video mode parameters have changed, and if they have to 
-update the rendering DLL and/or video mode to match.
-============
-*/
-void VID_CheckChanges (void)
-{
-	extern cvar_t *gl_driver;
-
-	if ( win_noalttab->modified )
-	{
-		if( win_noalttab->integer )
-			WIN_DisableAltTab ();
-		else
-			WIN_EnableAltTab ();
-		win_noalttab->modified = qfalse;
-	}
-
-	if ( vid_ref_modified )
-	{
-		qboolean cgameActive = cls.cgameActive;
-
-		cls.disable_screen = qtrue;
-
-		CL_ShutdownMedia ();
-
-		if( vid_ref_active ) {
-			R_Shutdown ();
-			vid_ref_active = qfalse;
-		}
-
-		if( R_Init( global_hInstance, MainWndProc ) == -1 )
-			Com_Error ( ERR_FATAL, "Failed to load %s", (gl_driver && gl_driver->name) ? gl_driver->string : "" );
-
-		CL_InitMedia ();
-
-		cls.disable_screen = qfalse;
-
-		Con_Close ();
-
-		if( cgameActive ) {
-			CL_GameModule_Init ();
-			CL_SetKeyDest( key_game );
-		} else {
-			CL_UIModule_MenuMain ();
-			CL_SetKeyDest( key_menu );
-		}
-
-		vid_ref_active = qtrue;
-		vid_ref_modified = qfalse;
-	}
-
-	/*
-	** update our window position
-	*/
-	if ( vid_xpos->modified || vid_ypos->modified )
-	{
-		if (!vid_fullscreen->integer)
-			VID_UpdateWindowPosAndSize( vid_xpos->integer, vid_ypos->integer );
-
-		vid_xpos->modified = qfalse;
-		vid_ypos->modified = qfalse;
-	}
-}
-
-/*
-============
-VID_Init
-============
-*/
-void VID_Init (void)
-{
-	extern cvar_t *gl_driver;
-
-	/* Create the video variables so we know how to start the graphics drivers */
-	vid_xpos = Cvar_Get ( "vid_xpos", "3", CVAR_ARCHIVE );
-	vid_ypos = Cvar_Get ( "vid_ypos", "22", CVAR_ARCHIVE );
-	vid_fullscreen = Cvar_Get ( "vid_fullscreen", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
-	vid_displayfrequency = Cvar_Get ( "vid_displayfrequency", "0", CVAR_LATCH_VIDEO );
-	win_noalttab = Cvar_Get( "win_noalttab", "0", CVAR_ARCHIVE );
-
-	/* Add some console commands that we want to handle */
-	Cmd_AddCommand ("vid_restart", VID_Restart_f);
-	Cmd_AddCommand ("vid_front", VID_Front_f);
-
-	/* Disable the 3Dfx splash screen */
-	putenv( "FX_GLIDE_NO_SPLASH=0" );
-		
-	/* Start the graphics mode and load refresh DLL */
-	vid_ref_modified = qtrue;
-	vid_ref_active = qfalse;
-	vid_fullscreen->modified = qtrue;
-	VID_CheckChanges ();
-}
-
-/*
-============
-VID_Shutdown
-============
-*/
-void VID_Shutdown (void)
-{
-	if( vid_ref_active ) {
-		R_Shutdown();
-		vid_ref_active = qfalse;
-	}
-
-	Cmd_RemoveCommand ("vid_restart");
+	SetWindowLong( cl_hwnd, GWL_EXSTYLE, WS_EX_TOPMOST );
+	SetForegroundWindow( cl_hwnd );
 }

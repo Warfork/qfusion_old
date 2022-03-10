@@ -268,8 +268,8 @@ void Key_Console (int key)
 			strtok( cbd, "\n\r\b" );
 
 			i = strlen( cbd );
-			if ( i + key_linepos >= MAXCMDLINE)
-				i= MAXCMDLINE - key_linepos;
+			if( i + key_linepos >= MAXCMDLINE )
+				i = MAXCMDLINE - key_linepos;
 
 			if ( i > 0 )
 			{
@@ -277,7 +277,6 @@ void Key_Console (int key)
 				strcat( key_lines[edit_line], cbd );
 				key_linepos += i;
 			}
-			Q_free( cbd );
 		}
 
 		return;
@@ -415,13 +414,13 @@ void Key_Console (int key)
 		return;
 	}
 
-	if (key == K_PGUP || key == K_KP_PGUP )
+	if (key == K_PGUP || key == K_KP_PGUP || key == K_MWHEELUP)
 	{
 		con.display -= 2;
 		return;
 	}
 
-	if (key == K_PGDN || key == K_KP_PGDN ) 
+	if (key == K_PGDN || key == K_KP_PGDN || key == K_MWHEELDOWN) 
 	{
 		con.display += 2;
 		if (con.display > con.current)
@@ -774,6 +773,8 @@ void Key_Init (void)
 	consolekeys[K_KP_PLUS] = qtrue;
 	consolekeys[K_KP_MINUS] = qtrue;
 	consolekeys[K_KP_5] = qtrue;
+	consolekeys[K_MWHEELUP] = qtrue;
+	consolekeys[K_MWHEELDOWN] = qtrue;
 
 	consolekeys['`'] = qfalse;
 	consolekeys['~'] = qfalse;

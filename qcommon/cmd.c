@@ -381,7 +381,7 @@ void Cmd_Exec_f (void)
 		return;
 	}
 
-	len = FS_LoadFile (Cmd_Argv(1), (void **)&f);
+	len = FS_LoadFile (Cmd_Argv(1), (void **)&f, NULL, 0);
 	if (!f)
 	{
 		Com_Printf ("couldn't exec %s\n",Cmd_Argv(1));
@@ -390,6 +390,7 @@ void Cmd_Exec_f (void)
 	Com_Printf ("execing %s\n",Cmd_Argv(1));
 	
 	Cbuf_InsertText (f);
+	Cbuf_InsertText ("\n");
 
 	FS_FreeFile (f);
 }

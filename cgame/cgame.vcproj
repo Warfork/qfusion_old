@@ -87,9 +87,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="2"
-				GlobalOptimizations="TRUE"
 				InlineFunctionExpansion="1"
-				FavorSizeOrSpeed="1"
 				OptimizeForProcessor="1"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS"
 				StringPooling="TRUE"
@@ -150,6 +148,9 @@
 		<Filter
 			Name="Source Files"
 			Filter="cpp;c;cxx;rc;def;r;odl;idl;hpj;bat">
+			<File
+				RelativePath=".\cg_boneposes.c">
+			</File>
 			<File
 				RelativePath="cg_decals.c">
 				<FileConfiguration
@@ -322,6 +323,25 @@
 				</FileConfiguration>
 			</File>
 			<File
+				RelativePath="cg_pmodels.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;$(NoInherit)"
+						BasicRuntimeChecks="3"
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;$(NoInherit)"/>
+				</FileConfiguration>
+			</File>
+			<File
 				RelativePath="cg_predict.c">
 				<FileConfiguration
 					Name="Debug|Win32">
@@ -399,6 +419,44 @@
 			</File>
 			<File
 				RelativePath="cg_view.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;$(NoInherit)"
+						BasicRuntimeChecks="3"
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;$(NoInherit)"/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="cg_vweap.c">
+				<FileConfiguration
+					Name="Debug|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="0"
+						PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;$(NoInherit)"
+						BasicRuntimeChecks="3"
+						BrowseInformation="1"/>
+				</FileConfiguration>
+				<FileConfiguration
+					Name="Release|Win32">
+					<Tool
+						Name="VCCLCompilerTool"
+						Optimization="2"
+						PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;$(NoInherit)"/>
+				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="cg_wmodels.c">
 				<FileConfiguration
 					Name="Debug|Win32">
 					<Tool
@@ -497,13 +555,22 @@
 			Name="Header Files"
 			Filter="h;hpp;hxx;hm;inl">
 			<File
+				RelativePath=".\cg_boneposes.h">
+			</File>
+			<File
 				RelativePath="cg_local.h">
+			</File>
+			<File
+				RelativePath="cg_pmodels.h">
 			</File>
 			<File
 				RelativePath="cg_public.h">
 			</File>
 			<File
 				RelativePath="cg_syscalls.h">
+			</File>
+			<File
+				RelativePath="..\game\gs_pmodels.h">
 			</File>
 			<File
 				RelativePath="..\game\gs_public.h">

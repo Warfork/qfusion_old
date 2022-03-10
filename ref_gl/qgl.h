@@ -23,13 +23,29 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef QGL_H
 #define QGL_H
 
+#define GL_GLEXT_LEGACY
+#define GLX_GLXEXT_LEGACY
+
+#if !defined (__APPLE__) && !defined (MACOSX)
+#include <GL/gl.h>
+#endif
+
+#if defined (__linux__) || defined (__FreeBSD__)
+#include <GL/glx.h>
+#endif
+
+#if defined (__APPLE__) || defined (MACOSX)
+# include <OpenGL/gl.h>
+# include <OpenGL/glext.h>
+#endif
+
+#undef GL_GLEXT_LEGACY
+#undef GLX_GLXEXT_LEGACY
+
 QGL_EXTERN	qboolean QGL_Init( const char *dllname );
 QGL_EXTERN	void     QGL_Shutdown( void );
 
 QGL_EXTERN	void	*qglGetProcAddress( const GLubyte * );
-
-typedef int GLintptrARB;
-typedef int GLsizeiptrARB;
 
 #endif
 
@@ -80,14 +96,6 @@ typedef int GLsizeiptrARB;
 
 #endif /* GL_ARB_texture_env_combine */
 
-/* GL_ARB_texture_env_dot3 */
-#ifndef GL_ARB_texture_env_dot3
-#define GL_ARB_texture_env_dot3
-
-#define GL_DOT3_RGB_ARB										0x86AE
-#define GL_DOT3_RGBA_ARB									0x86AF
-#endif /* GL_ARB_texture_env_dot3 */
-
 /* NV_texture_env_combine4 */
 #ifndef GL_NV_texture_env_combine4
 #define GL_NV_texture_env_combine4
@@ -135,6 +143,9 @@ typedef int GLsizeiptrARB;
 /* GL_ARB_vertex_buffer_object */
 #ifndef GL_ARB_vertex_buffer_object
 #define GL_ARB_vertex_buffer_object
+
+typedef int GLintptrARB;
+typedef int GLsizeiptrARB;
 
 #define GL_ARRAY_BUFFER_ARB									0x8892
 #define GL_ELEMENT_ARRAY_BUFFER_ARB							0x8893
@@ -193,7 +204,131 @@ typedef int GLsizeiptrARB;
 
 #define GL_BGR_EXT											0x80E0
 #define GL_BGRA_EXT											0x80E1
+#endif /* GL_EXT_bgra */
+
+/* gl_ext_texture3D */
+#ifndef GL_EXT_texture3D
+#define GL_EXT_texture3D
+
+#define GL_PACK_SKIP_IMAGES									0x806B
+#define GL_PACK_IMAGE_HEIGHT								0x806C
+#define GL_UNPACK_SKIP_IMAGES								0x806D
+#define GL_UNPACK_IMAGE_HEIGHT								0x806E
+#define GL_TEXTURE_3D										0x806F
+#define GL_PROXY_TEXTURE_3D									0x8070
+#define GL_TEXTURE_DEPTH									0x8071
+#define GL_TEXTURE_WRAP_R									0x8072
+#define GL_MAX_3D_TEXTURE_SIZE								0x8073
+#define GL_TEXTURE_BINDING_3D								0x806A
+#endif /* GL_EXT_texture3D */
+
+/* GL_ARB_shader_objects */
+#ifndef GL_ARB_shader_objects
+#define GL_ARB_shader_objects
+
+typedef char GLcharARB;
+typedef unsigned int GLhandleARB;
+
+#ifndef GL_PROGRAM_OBJECT_ARB
+#define GL_PROGRAM_OBJECT_ARB								0x8B40
+#define GL_OBJECT_TYPE_ARB									0x8B4E
+#define GL_OBJECT_SUBTYPE_ARB								0x8B4F
+#define GL_OBJECT_DELETE_STATUS_ARB							0x8B80
+#define GL_OBJECT_COMPILE_STATUS_ARB						0x8B81
+#define GL_OBJECT_LINK_STATUS_ARB							0x8B82
+#define GL_OBJECT_VALIDATE_STATUS_ARB						0x8B83
+#define GL_OBJECT_INFO_LOG_LENGTH_ARB						0x8B84
+#define GL_OBJECT_ATTACHED_OBJECTS_ARB						0x8B85
+#define GL_OBJECT_ACTIVE_UNIFORMS_ARB						0x8B86
+#define GL_OBJECT_ACTIVE_UNIFORM_MAX_LENGTH_ARB				0x8B87
+#define GL_OBJECT_SHADER_SOURCE_LENGTH_ARB					0x8B88
+#define GL_SHADER_OBJECT_ARB								0x8B48
+#define GL_FLOAT											0x1406
+#define GL_FLOAT_VEC2_ARB									0x8B50
+#define GL_FLOAT_VEC3_ARB									0x8B51
+#define GL_FLOAT_VEC4_ARB									0x8B52
+#define GL_INT												0x1404
+#define GL_INT_VEC2_ARB										0x8B53
+#define GL_INT_VEC3_ARB										0x8B54
+#define GL_INT_VEC4_ARB										0x8B55
+#define GL_BOOL_ARB											0x8B56
+#define GL_BOOL_VEC2_ARB									0x8B57
+#define GL_BOOL_VEC3_ARB									0x8B58
+#define GL_BOOL_VEC4_ARB									0x8B59
+#define GL_FLOAT_MAT2_ARB									0x8B5A
+#define GL_FLOAT_MAT3_ARB									0x8B5B
+#define GL_FLOAT_MAT4_ARB									0x8B5C
+#define GL_SAMPLER_1D_ARB									0x8B5D
+#define GL_SAMPLER_2D_ARB									0x8B5E
+#define GL_SAMPLER_3D_ARB									0x8B5F
+#define GL_SAMPLER_CUBE_ARB									0x8B60
+#define GL_SAMPLER_1D_SHADOW_ARB							0x8B61
+#define GL_SAMPLER_2D_SHADOW_ARB							0x8B62
+#define GL_SAMPLER_2D_RECT_ARB								0x8B63
+#define GL_SAMPLER_2D_RECT_SHADOW_ARB						0x8B64
 #endif
+
+#endif /* GL_ARB_shader_objects */
+
+/* GL_ARB_vertex_shader */
+#ifndef GL_ARB_vertex_shader
+#define GL_ARB_vertex_shader
+
+#ifndef GL_VERTEX_SHADER_ARB
+#define GL_VERTEX_SHADER_ARB						0x8B31
+#define GL_MAX_VERTEX_UNIFORM_COMPONENTS_ARB		0x8B4A
+#define GL_MAX_VARYING_FLOATS_ARB					0x8B4B
+#define GL_MAX_VERTEX_ATTRIBS_ARB					0x8869
+#define GL_MAX_TEXTURE_IMAGE_UNITS_ARB				0x8872
+#define GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS_ARB		0x8B4C
+#define GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS_ARB		0x8B4D
+#define GL_MAX_TEXTURE_COORDS_ARB					0x8871
+#define GL_VERTEX_PROGRAM_POINT_SIZE_ARB			0x8642
+#define GL_VERTEX_PROGRAM_TWO_SIDE_ARB				0x8643
+#define GL_OBJECT_ACTIVE_ATTRIBUTES_ARB				0x8B89
+#define GL_OBJECT_ACTIVE_ATTRIBUTE_MAX_LENGTH_ARB	0x8B8A
+#define GL_VERTEX_ATTRIB_ARRAY_ENABLED_ARB			0x8622
+#define GL_VERTEX_ATTRIB_ARRAY_SIZE_ARB				0x8623
+#define GL_VERTEX_ATTRIB_ARRAY_STRIDE_ARB			0x8624
+#define GL_VERTEX_ATTRIB_ARRAY_TYPE_ARB				0x8625
+#define GL_VERTEX_ATTRIB_ARRAY_NORMALIZED_ARB		0x886A
+#define GL_CURRENT_VERTEX_ATTRIB_ARB				0x8626
+#define GL_VERTEX_ATTRIB_ARRAY_POINTER_ARB			0x8645
+#define GL_FLOAT									0x1406
+#define GL_FLOAT_VEC2_ARB							0x8B50
+#define GL_FLOAT_VEC3_ARB							0x8B51
+#define GL_FLOAT_VEC4_ARB							0x8B52
+#define GL_FLOAT_MAT2_ARB							0x8B5A
+#define GL_FLOAT_MAT3_ARB							0x8B5B
+#define GL_FLOAT_MAT4_ARB							0x8B5C
+#endif
+
+#endif /* GL_ARB_vertex_shader */
+
+/* GL_ARB_fragment_shader */
+#ifndef GL_ARB_fragment_shader
+#define GL_ARB_fragment_shader
+
+#ifndef GL_FRAGMENT_SHADER_ARB
+#define GL_FRAGMENT_SHADER_ARB								0x8B30
+#define GL_MAX_FRAGMENT_UNIFORM_COMPONENTS_ARB				0x8B49
+#define GL_MAX_TEXTURE_COORDS_ARB							0x8871
+#define GL_MAX_TEXTURE_IMAGE_UNITS_ARB						0x8872
+#define GL_FRAGMENT_SHADER_DERIVATIVE_HINT_ARB				0x8B8B
+#endif
+
+#endif /* GL_ARB_fragment_shader */
+
+/* GL_ARB_shading_language_100 */
+#ifndef GL_ARB_shading_language_100
+#define GL_ARB_shading_language_100
+
+#ifndef GL_SHADING_LANGUAGE_VERSION_ARB
+#define GL_SHADING_LANGUAGE_VERSION_ARB						0x8B8C
+#endif
+
+#endif /* GL_ARB_shading_language_100 */
+
 
 QGL_FUNC(void, glAlphaFunc, (GLenum func, GLclampf ref));
 QGL_FUNC(void, glArrayElement, (GLint i));
@@ -205,8 +340,6 @@ QGL_FUNC(void, glClearColor, (GLclampf red, GLclampf green, GLclampf blue, GLcla
 QGL_FUNC(void, glClearDepth, (GLclampd depth));
 QGL_FUNC(void, glClearStencil, (GLint s));
 QGL_FUNC(void, glClipPlane, (GLenum plane, const GLdouble *equation));
-QGL_FUNC(void, glColor3f, (GLfloat red, GLfloat green, GLfloat blue));
-QGL_FUNC(void, glColor3fv, (const GLfloat *v));
 QGL_FUNC(void, glColor4f, (GLfloat red, GLfloat green, GLfloat blue, GLfloat alpha));
 QGL_FUNC(void, glColor4fv, (const GLfloat *v));
 QGL_FUNC(void, glColor4ubv, (const GLubyte *v));
@@ -252,6 +385,7 @@ QGL_FUNC(void, glTexGeni, (GLenum coord, GLenum pname, GLint param));
 QGL_FUNC(void, glTexImage2D, (GLenum target, GLint level, GLint internalformat, GLsizei width, GLsizei height, GLint border, GLenum format, GLenum type, const GLvoid *pixels));
 QGL_FUNC(void, glTexParameteri, (GLenum target, GLenum pname, GLint param));
 QGL_FUNC(void, glTexSubImage2D, (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLsizei width, GLsizei height, GLenum format, GLenum type, const GLvoid *pixels));
+QGL_FUNC(void, glCopyTexSubImage2D, (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint x, GLint y, GLsizei width, GLsizei height));
 QGL_FUNC(void, glVertex2f, (GLfloat x, GLfloat y));
 QGL_FUNC(void, glVertex3f, (GLfloat x, GLfloat y, GLfloat z));
 QGL_FUNC(void, glVertex3fv, (const GLfloat *v));
@@ -269,6 +403,55 @@ QGL_EXT(void, glDeleteBuffersARB, (GLsizei n, const GLuint *buffers));
 QGL_EXT(void, glGenBuffersARB, (GLsizei n, GLuint *buffers));
 QGL_EXT(void, glBufferDataARB, (GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage));
 QGL_EXT(void, glBufferDataARB, (GLenum target, GLsizeiptrARB size, const GLvoid *data, GLenum usage));
+QGL_EXT(void, glTexImage3D, (GLenum target, GLint level, GLenum internalFormat, GLsizei width, GLsizei height, GLsizei depth, GLint border, GLenum format, GLenum type, const GLvoid *pixels));
+QGL_EXT(void, glTexSubImage3D, (GLenum target, GLint level, GLint xoffset, GLint yoffset, GLint zoffset, GLsizei width, GLsizei height, GLsizei depth, GLenum format, GLenum type, const GLvoid *pixels));
+
+QGL_EXT(void, glDeleteObjectARB, (GLhandleARB obj));
+QGL_EXT(GLhandleARB, glGetHandleARB, (GLenum pname));
+QGL_EXT(void, glDetachObjectARB, (GLhandleARB containerObj, GLhandleARB attachedObj));
+QGL_EXT(GLhandleARB, glCreateShaderObjectARB, (GLenum shaderType));
+QGL_EXT(void, glShaderSourceARB, (GLhandleARB shaderObj, GLsizei count, const GLcharARB **string, const GLint *length));
+QGL_EXT(void, glCompileShaderARB, (GLhandleARB shaderObj));
+QGL_EXT(GLhandleARB, glCreateProgramObjectARB, (void));
+QGL_EXT(void, glAttachObjectARB, (GLhandleARB containerObj, GLhandleARB obj));
+QGL_EXT(void, glLinkProgramARB, (GLhandleARB programObj));
+QGL_EXT(void, glUseProgramObjectARB, (GLhandleARB programObj));
+QGL_EXT(void, glValidateProgramARB, (GLhandleARB programObj));
+QGL_EXT(void, glUniform1fARB, (GLint location, GLfloat v0));
+QGL_EXT(void, glUniform2fARB, (GLint location, GLfloat v0, GLfloat v1));
+QGL_EXT(void, glUniform3fARB, (GLint location, GLfloat v0, GLfloat v1, GLfloat v2));
+QGL_EXT(void, glUniform4fARB, (GLint location, GLfloat v0, GLfloat v1, GLfloat v2, GLfloat v3));
+QGL_EXT(void, glUniform1iARB, (GLint location, GLint v0));
+QGL_EXT(void, glUniform2iARB, (GLint location, GLint v0, GLint v1));
+QGL_EXT(void, glUniform3iARB, (GLint location, GLint v0, GLint v1, GLint v2));
+QGL_EXT(void, glUniform4iARB, (GLint location, GLint v0, GLint v1, GLint v2, GLint v3));
+QGL_EXT(void, glUniform1fvARB, (GLint location, GLsizei count, const GLfloat *value));
+QGL_EXT(void, glUniform2fvARB, (GLint location, GLsizei count, const GLfloat *value));
+QGL_EXT(void, glUniform3fvARB, (GLint location, GLsizei count, const GLfloat *value));
+QGL_EXT(void, glUniform4fvARB, (GLint location, GLsizei count, const GLfloat *value));
+QGL_EXT(void, glUniform1ivARB, (GLint location, GLsizei count, const GLint *value));
+QGL_EXT(void, glUniform2ivARB, (GLint location, GLsizei count, const GLint *value));
+QGL_EXT(void, glUniform3ivARB, (GLint location, GLsizei count, const GLint *value));
+QGL_EXT(void, glUniform4ivARB, (GLint location, GLsizei count, const GLint *value));
+QGL_EXT(void, glUniformMatrix2fvARB, (GLint location, GLsizei count, GLboolean transpose, const GLfloat *value));
+QGL_EXT(void, glUniformMatrix3fvARB, (GLint location, GLsizei count, GLboolean transpose, const GLfloat *value));
+QGL_EXT(void, glUniformMatrix4fvARB, (GLint location, GLsizei count, GLboolean transpose, const GLfloat *value));
+QGL_EXT(void, glGetObjectParameterfvARB, (GLhandleARB obj, GLenum pname, GLfloat *params));
+QGL_EXT(void, glGetObjectParameterivARB, (GLhandleARB obj, GLenum pname, GLint *params));
+QGL_EXT(void, glGetInfoLogARB, (GLhandleARB obj, GLsizei maxLength, GLsizei *length, GLcharARB *infoLog));
+QGL_EXT(void, glGetAttachedObjectsARB, (GLhandleARB containerObj, GLsizei maxCount, GLsizei *count, GLhandleARB *obj));
+QGL_EXT(GLint, glGetUniformLocationARB, (GLhandleARB programObj, const GLcharARB *name));
+QGL_EXT(void, glGetActiveUniformARB, (GLhandleARB programObj, GLuint index, GLsizei maxLength, GLsizei *length, GLint *size, GLenum *type, GLcharARB *name));
+QGL_EXT(void, glGetUniformfvARB, (GLhandleARB programObj, GLint location, GLfloat *params));
+QGL_EXT(void, glGetUniformivARB, (GLhandleARB programObj, GLint location, GLint *params));
+QGL_EXT(void, glGetShaderSourceARB, (GLhandleARB obj, GLsizei maxLength, GLsizei *length, GLcharARB *source));
+
+QGL_EXT(void, glVertexAttribPointerARB, (GLuint index, GLint size, GLenum type, GLboolean normalized, GLsizei stride, const GLvoid *pointer));
+QGL_EXT(void, glEnableVertexAttribArrayARB, (GLuint index));
+QGL_EXT(void, glDisableVertexAttribArrayARB, (GLuint index));
+QGL_EXT(void, glBindAttribLocationARB, (GLhandleARB programObj, GLuint index, const GLcharARB *name));
+QGL_EXT(void, glGetActiveAttribARB, (GLhandleARB programObj, GLuint index, GLsizei maxLength, GLsizei *length, GLint *size, GLenum *type, GLcharARB *name));
+QGL_EXT(GLint, glGetAttribLocationARB, (GLhandleARB programObj, const GLcharARB *name));
 
 // WGL Functions
 QGL_WGL(int, wglChoosePixelFormat, (HDC, CONST PIXELFORMATDESCRIPTOR *));

@@ -23,7 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "gs_public.h"
 #include "g_public.h"
 #include "g_syscalls.h"
-
+#include "g_pmodels.h"
 
 //ZOID
 #include "p_menu.h"
@@ -35,9 +35,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //==================================================================
 
 // view pitching times
-#define DAMAGE_TIME		0.5
+#define DAMAGE_TIME		0.3
 #define	FALL_TIME		0.3
 
+#define MAX_CLIENT_WEAPON_KICKS		8
+#define MAX_CLIENT_VIEW_BLENDS		8
 
 // edict->spawnflags
 // these are set with checkboxes on each entity in the map editor
@@ -64,7 +66,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define FL_RESPAWN				0x80000000	// used for item respawning
 
 
-#define	FRAMETIME		0.1
+#define	FRAMETIME				game.frametime
 
 // memory tags to allow dynamic memory to be cleaned up
 #define	TAG_GAME	765		// clear when unloading the dll
@@ -87,7 +89,9 @@ typedef enum
 	WEAPON_READY, 
 	WEAPON_ACTIVATING,
 	WEAPON_DROPPING,
-	WEAPON_FIRING
+	WEAPON_FIRING,
+	WEAPON_POWERINGUP,
+	WEAPON_COOLINGDOWN
 } weaponstate_t;
 
 typedef enum
@@ -272,6 +276,10 @@ typedef struct
 	// cross level triggers
 	int			serverflags;
 
+	// seconds between server frames
+	float		frametime;
+	int			frametimeMsec;
+
 	// items
 	int			num_items;
 
@@ -331,9 +339,7 @@ typedef struct
 typedef struct
 {
 	// world vars
-	char		*sky;
-	float		skyrotate;
-	vec3_t		skyaxis;
+	float		fov;
 	char		*nextmap;
 
 	char		*music;
@@ -658,6 +664,7 @@ void ThrowHead (edict_t *self, char *gibname, int damage, int type);
 void ThrowClientHead (edict_t *self, int damage);
 void ThrowGib (edict_t *self, char *gibname, int damage, int type);
 void BecomeExplosion1(edict_t *self);
+void ThrowSmallPileOfGibs( edict_t *self, int count, int damage );
 
 //
 // g_ai.c
@@ -741,6 +748,8 @@ void	ServerCommand (void);
 // p_view.c
 //
 void ClientEndServerFrame (edict_t *ent);
+void P_AddWeaponKick (gclient_t *client, vec3_t offset, vec3_t angles, float time);
+void P_AddViewBlend (gclient_t *client, float r, float g, float b, float a, float time);
 
 //
 // p_hud.c
@@ -754,7 +763,7 @@ char *DeathmatchScoreboardMessage (edict_t *client, edict_t *killer);
 // p_weapon.c
 //
 void PlayerNoise(edict_t *who, vec3_t where, int type);
-void Weapon_Generic (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST, int FRAME_IDLE_LAST, int FRAME_DEACTIVATE_LAST, int *pause_frames, int *fire_frames, void (*fire)(edict_t *ent));
+void Weapon_Generic (edict_t *ent, int ACTIVATION_TIME, int POWERUP_TIME, int FIRE_DELAY, int COOLDOWN_TIME, int DEACTIVATION_TIME, void (*fire)(edict_t *ent));
 
 //
 // m_move.c
@@ -800,7 +809,7 @@ extern struct mempool_s *levelpool;
 int G_API (void);
 void G_Error ( char *fmt, ... );
 void G_Printf ( char *fmt, ... );
-void G_Init (unsigned int seed);
+void G_Init (unsigned int seed, unsigned int frametime);
 void G_Shutdown (void);
 void G_RunFrame (void);
 void G_EndDMLevel (void);
@@ -823,17 +832,12 @@ void ReadLevel (char *filename);
 //
 void SpawnEntities (char *mapname, char *entities, char *spawnpoint);
 
+//
+// g_pmodels.c
+//
+void G_SetClientFrame (edict_t *ent);
+
 //============================================================================
-
-// client_t->anim_priority
-#define	ANIM_BASIC		0		// stand / run
-#define	ANIM_WAVE		1
-#define	ANIM_JUMP		2
-#define	ANIM_PAIN		3
-#define	ANIM_ATTACK		4
-#define	ANIM_DEATH		5
-#define	ANIM_REVERSE	6
-
 
 // client data that stays across multiple level loads
 typedef struct
@@ -893,6 +897,21 @@ typedef struct
 	int			helpchanged;
 } client_respawn_t;
 
+typedef struct
+{	
+	vec3_t		angles;
+	vec3_t		origin;
+	float		endtime;
+	float		time;
+} client_kick_t;
+
+typedef struct
+{
+	vec4_t		color;
+	float		endtime;
+	float		time;
+} client_blend_t;
+
 // this structure is cleared on each PutClientInServer(),
 // except for 'client->pers'
 struct gclient_s
@@ -925,7 +944,6 @@ struct gclient_s
 	int			buttons;
 	int			oldbuttons;
 	int			latched_buttons;
-	qboolean	backmove;
 
 	qboolean	weapon_thunk;
 
@@ -942,13 +960,14 @@ struct gclient_s
 	float		killer_yaw;			// when dead, look at killer
 
 	weaponstate_t	weaponstate;
-	vec3_t		kick_angles;	// weapon kicks
-	vec3_t		kick_origin;
+	int			weapontime;
+
+	client_kick_t	kicks[MAX_CLIENT_WEAPON_KICKS];		// weapon kicks
+	client_blend_t	blends[MAX_CLIENT_VIEW_BLENDS];
+
 	float		v_dmg_roll, v_dmg_pitch, v_dmg_time;	// damage kicks
 	float		fall_time, fall_value;		// for view drop on fall
-	float		damage_alpha;
-	float		bonus_alpha;
-	vec3_t		damage_blend;
+
 	vec3_t		v_angle;			// aiming direction
 	float		bobtime;			// so off-ground doesn't change it
 	vec3_t		oldviewangles;
@@ -960,20 +979,14 @@ struct gclient_s
 
 	int			machinegun_shots;	// for weapon raising
 
-	// animation vars
-	int			anim_end;
-	int			anim_priority;
-	qboolean	anim_duck;
-	qboolean	anim_run;
+	chasecam_t	chase;
 
 	// powerup timers
-	float		quad_framenum;
-	float		invincible_framenum;
-	float		breather_framenum;
-	float		enviro_framenum;
+	float		quad_timeout;
+	float		invincible_timeout;
+	float		breather_timeout;
+	float		enviro_timeout;
 
-	qboolean	grenade_blew_up;
-	float		grenade_time;
 	int			silencer_shots;
 	int			weapon_sound;
 	qboolean	weapon_missed;
@@ -1134,6 +1147,8 @@ struct edict_s
 	// common data blocks
 	moveinfo_t		moveinfo;
 	monsterinfo_t	monsterinfo;
+
+	pmanim_t	pmAnim;				// animation stuff
 };
 
 //ZOID

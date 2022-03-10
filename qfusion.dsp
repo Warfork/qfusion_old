@@ -70,7 +70,7 @@ LINK32=link.exe
 # PROP Ignore_Export_Lib 0
 # PROP Target_Dir ""
 # ADD BASE CPP /nologo /W3 /Gm /GX /Zi /Od /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /YX /c
-# ADD CPP /nologo /G5 /MTd /W3 /GX /Zi /Od /I "qcommon" /I ".\win32/include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /FR /YX /FD /c
+# ADD CPP /nologo /G5 /MTd /W3 /GX /ZI /Od /I "qcommon" /I ".\win32/include" /D "WIN32" /D "_DEBUG" /D "_WINDOWS" /FR /YX /FD /c
 # ADD BASE MTL /nologo /D "_DEBUG" /win32
 # ADD MTL /nologo /D "_DEBUG" /mktyplib203 /win32
 # ADD BASE RSC /l 0x409 /d "_DEBUG"
@@ -80,8 +80,8 @@ BSC32=bscmake.exe
 # ADD BSC32 /nologo
 LINK32=link.exe
 # ADD BASE LINK32 kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /nologo /subsystem:windows /debug /machine:I386
-# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib dxguid.lib /nologo /subsystem:windows /incremental:no /map /debug /machine:I386 /nodefaultlib:"libc" /nodefaultlib:"libcmtd" /libpath:".\win32/lib"
-# SUBTRACT LINK32 /profile
+# ADD LINK32 winmm.lib wsock32.lib kernel32.lib user32.lib gdi32.lib zlibstat.lib libjpeg.lib dxguid.lib /nologo /subsystem:windows /map /debug /machine:I386 /nodefaultlib:"libc" /nodefaultlib:"libcmtd" /libpath:".\win32/lib"
+# SUBTRACT LINK32 /profile /incremental:no
 
 !ENDIF 
 
@@ -131,6 +131,10 @@ SOURCE=.\client\cl_screen.c
 # Begin Source File
 
 SOURCE=.\client\cl_ui.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\client\cl_vid.c
 # End Source File
 # Begin Source File
 
@@ -222,6 +226,10 @@ SOURCE=.\ref_gl\r_backend.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\ref_gl\r_bloom.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\ref_gl\r_cin.c
 # End Source File
 # Begin Source File
@@ -251,6 +259,10 @@ SOURCE=.\ref_gl\r_model.c
 # Begin Source File
 
 SOURCE=.\ref_gl\r_poly.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\r_program.c
 # End Source File
 # Begin Source File
 
@@ -287,6 +299,10 @@ SOURCE=.\client\snd_mem.c
 # Begin Source File
 
 SOURCE=.\client\snd_mix.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\client\snd_oal.c
 # End Source File
 # Begin Source File
 
@@ -375,10 +391,6 @@ SOURCE=.\client\keys.h
 # Begin Source File
 
 SOURCE=.\qcommon\mdfour.h
-# End Source File
-# Begin Source File
-
-SOURCE=.\win32\net_wins.h
 # End Source File
 # Begin Source File
 

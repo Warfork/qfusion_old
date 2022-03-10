@@ -18,6 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 #include "cg_local.h"
+#include "../game/gs_pmodels.h"
 
 /*
 ==============
@@ -57,22 +58,27 @@ void CG_PlayerMuzzleFlash( entity_state_t *ent, int parms )
 {
 	int			i, j, weapon;
 	centity_t	*pl;
-	float		volume, radius;
-	vec3_t		lightcolor;
+	float		volume;
+	float		*radius;
+	vec_t		*lightcolor;
 	vec3_t		muzzle;
 	int			silenced, shots;
+	pmodel_t	*pmodel;
 
 	i = ent->number;
+	pmodel = &cg_entPModels[i];
+	lightcolor = pmodel->pweapon.flashcolor;
+	radius = &pmodel->pweapon.flashradius;
 	weapon = ent->weapon;
 	silenced = parms & MZ_SILENCED;
 	shots = parms & ~MZ_SILENCED;
 
 	if ( silenced ) {
 		volume = 0.2f;
-		radius = 100 + (rand()&31);
+		*radius = 100 + (rand()&31);
 	} else {
 		volume = 1.0f;
-		radius = 200 + (rand()&31);
+		*radius = 200 + (rand()&31);
 	}
 
 	pl = &cg_entities[i];
@@ -102,8 +108,7 @@ void CG_PlayerMuzzleFlash( entity_state_t *ent, int parms )
 
 		case WEAP_SHOTGUN:
 			VectorSet( lightcolor, 1, 1, 0 );
-			trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxShotgunSplashes[0] ), volume, ATTN_NORM, 0 );
-			trap_S_StartSound( NULL, i, CHAN_AUTO,   CG_MediaSfx( cgs.media.sfxShotgunSplashes[1] ), volume, ATTN_NORM, 0.1 );
+			trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxShotgunSplash ), volume, ATTN_NORM, 0 );
 			break;
 
 		case WEAP_SUPERSHOTGUN:
@@ -116,20 +121,20 @@ void CG_PlayerMuzzleFlash( entity_state_t *ent, int parms )
 
 			switch( shots )	{
 				case 1:
-					radius = 200 + (rand()&31);
+					*radius = 200 + (rand()&31);
 					VectorSet( lightcolor, 1.0f, 0.25f, 0.0f );
 					trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxMachinegunSplashes[rand()%4] ), volume, ATTN_NORM, 0 );
 					break;
 
 				case 2:
-					radius = 225 + (rand()&31);
+					*radius = 225 + (rand()&31);
 					VectorSet( lightcolor, 1.0f, 0.5f, 0.0f );
 					trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxMachinegunSplashes[rand()%4] ), volume, ATTN_NORM, 0 );
 					trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxMachinegunSplashes[rand()%4] ), volume, ATTN_NORM, 0.05 );
 					break;
 
 				default:
-					radius = 250 + (rand()&31);
+					*radius = 250 + (rand()&31);
 					VectorSet( lightcolor, 1.0f, 1.0f, 0.0f );
 					trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxMachinegunSplashes[rand()%4] ), volume, ATTN_NORM, 0 );
 					trap_S_StartSound( NULL, i, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxMachinegunSplashes[rand()%4] ), volume, ATTN_NORM, 0.033 );
@@ -160,14 +165,10 @@ void CG_PlayerMuzzleFlash( entity_state_t *ent, int parms )
 
 		// default to no light
 		default:
-			radius = 0;
+			*radius = 0;
 			VectorClear( lightcolor );
 			break;
 	}
-
-	// spawn light if not cleared
-	if( radius )
-		CG_AllocDlight( radius, muzzle, lightcolor );
 }
 
 /*
@@ -175,7 +176,7 @@ void CG_PlayerMuzzleFlash( entity_state_t *ent, int parms )
 CG_MonsterMuzzleFlash
 ==============
 */
-void CG_MonsterMuzzleFlash( entity_state_t *ent, int parms )
+void CG_MonsterMuzzleFlash( entity_state_t *ent )
 {
 	int			i, flash_number;
 	vec3_t		origin;
@@ -453,7 +454,7 @@ static void CG_FireLead( int self, vec3_t start, vec3_t axis[3], int hspread, in
 	float		r;
 	float		u;
 	vec3_t		water_start;
-	qboolean	water = qfalse, impact = qfalse;
+	qboolean	water = qfalse;
 	int			content_mask = MASK_SHOT | MASK_WATER;
 
 	r = Q_crandom( seed ) * hspread;
@@ -598,8 +599,9 @@ An entity has just been parsed that has an event value
 */
 void CG_EntityEvent( entity_state_t *ent )
 {
+	static orientation_t projection;
 	int i;
-	int parm;
+	int parm, choose;
 	vec3_t dir;
 
 	for ( i = 0; i < 2; i++ ) {
@@ -608,24 +610,48 @@ void CG_EntityEvent( entity_state_t *ent )
 		switch( ent->events[i] ) {
 			case EV_FOOTSTEP:
 				if( cg_footSteps->integer )
-					trap_S_StartSound( NULL, ent->number, CHAN_BODY, CG_MediaSfx( cgs.media.sfxFootsteps[parm][rand()&3] ), 1, ATTN_NORM, 0 );
+					trap_S_StartSound( NULL, ent->number, CHAN_AUTO, CG_MediaSfx( cgs.media.sfxFootsteps[parm][rand()&3] ), 1, ATTN_NORM, 0 );
 				break;
 
 			case EV_FALL:
 				if( parm == FALL_MEDIUM )
-					CG_SexedSound( ent->number, CHAN_AUTO, "*fall2.wav", 1 );
+					CG_SexedSound( ent->number, CHAN_BODY, "*fall2.wav", 1 );
 				else if ( parm == FALL_FAR )
-					CG_SexedSound( ent->number, CHAN_AUTO, "*fall1.wav", 1 );
+					CG_SexedSound( ent->number, CHAN_BODY, "*fall1.wav", 1 );
 				else
-					trap_S_StartSound ( NULL, ent->number, CHAN_AUTO, CG_MediaSfx( cgs.media.sfxLand ), 1, ATTN_NORM, 0 );
+					trap_S_StartSound( NULL, ent->number, CHAN_BODY, CG_MediaSfx( cgs.media.sfxLand ), 1, ATTN_NORM, 0 );
+				
+#ifndef _ANIM_PRESTEP
+				CG_AddAnimationFromState( ent, LEGS_JUMP1ST, 0, 0, EVENT_CHANNEL );
+#endif			
 				break;
 
 			case EV_PAIN:
 				CG_SexedSound( ent->number, CHAN_VOICE, va("*pain%i_%i.wav", 25 * (parm+1), 1 + (rand()&1)), 1 );
+				choose = random();
+				if( choose <= 0.33 )
+					CG_AddAnimationFromState( ent, 0, TORSO_PAIN1, 0, EVENT_CHANNEL );
+				else if( choose <= 0.66 )
+					CG_AddAnimationFromState( ent, 0, TORSO_PAIN2, 0, EVENT_CHANNEL );
+				else
+					CG_AddAnimationFromState( ent, 0, TORSO_PAIN3, 0, EVENT_CHANNEL );
 				break;
 
 			case EV_DIE:
 				CG_SexedSound( ent->number, CHAN_BODY, va("*death%i.wav", ( rand()%4 ) + 1), 1 );
+
+				switch( parm ) {
+					case 0:
+					default:
+						CG_AddAnimationFromState( ent, BOTH_DEATH1, BOTH_DEATH1, ANIM_NONE, EVENT_CHANNEL );
+						break;
+					case 1:
+						CG_AddAnimationFromState( ent, BOTH_DEATH2, BOTH_DEATH2, ANIM_NONE, EVENT_CHANNEL );
+						break;
+					case 2:
+						CG_AddAnimationFromState( ent, BOTH_DEATH3, BOTH_DEATH3, ANIM_NONE, EVENT_CHANNEL );
+						break;
+				}
 				break;
 
 			case EV_GIB:
@@ -642,6 +668,7 @@ void CG_EntityEvent( entity_state_t *ent )
 
 			case EV_MUZZLEFLASH:
 				CG_PlayerMuzzleFlash( ent, parm );
+				CG_PModels_AddFireEffects( ent );
 				break;
 				
 			case EV_PLAYER_TELEPORT_IN:
@@ -690,7 +717,7 @@ void CG_EntityEvent( entity_state_t *ent )
 				break;
 
 			case EV_MUZZLEFLASH2:
-				CG_MonsterMuzzleFlash( ent, parm );
+				CG_MonsterMuzzleFlash( ent );
 				break;
 
 			case EV_FIRE_BULLET:
@@ -714,7 +741,10 @@ void CG_EntityEvent( entity_state_t *ent )
 				break;
 
 			case EV_RAILTRAIL:
-				CG_RailTrail( ent->origin, ent->origin2 );
+				if( CG_PModel_CalcProjectionSource( ent->ownerNum, &projection ) )
+					CG_RailTrail( projection.origin, ent->origin2 );
+				else
+					CG_RailTrail( ent->origin, ent->origin2 );
 				trap_S_StartSound( ent->origin2, 0, 0, CG_MediaSfx( cgs.media.sfxRailg ), 1, ATTN_NORM, 0 );
 				break;
 
@@ -778,6 +808,28 @@ void CG_EntityEvent( entity_state_t *ent )
 					COLOR_G (ent->colorRGBA) * (1.0 / 255.0), 
 					COLOR_B (ent->colorRGBA) * (1.0 / 255.0), 
 					ent->eventCount );
+				break;
+
+			case EV_GESTURE:
+				CG_SexedSound( ent->number, CHAN_VOICE, "*taunt.wav", 1 );
+				CG_AddAnimationFromState( ent, 0, TORSO_GESTURE, 0, EVENT_CHANNEL );
+				break;
+				
+			case EV_DROP:
+				CG_AddAnimationFromState( ent, 0, TORSO_DROP, 0, EVENT_CHANNEL );
+				break;
+
+			case EV_WEAPONUP:
+				if( parm == 1 )
+					trap_S_StartSound( ent->origin, 0, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxWeaponUp ), 1, ATTN_NORM, 0 );
+				else if( parm == 2 )
+					trap_S_StartSound ( ent->origin, 0, CHAN_WEAPON, CG_MediaSfx( cgs.media.sfxWeaponUpNoAmmo ), 1, ATTN_NORM, 0 );
+				CG_AddAnimationFromState( ent, 0, TORSO_FLIPIN, 0, EVENT_CHANNEL );
+				CG_PModels_ResetBarrelRotation( ent );
+				break;
+
+			case EV_SPOG:
+				CG_SmallPileOfGibs( ent->origin, parm, ent->origin2 );
 				break;
 		}
 	}

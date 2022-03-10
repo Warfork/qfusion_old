@@ -28,6 +28,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <stdlib.h>
 #include <time.h>
 
+//#define SKELMOD	// enable for using SKM player models instead of Q3 ones
+
 //==============================================
 
 #ifdef _WIN32
@@ -39,6 +41,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 # pragma warning(disable : 4018)		// signed/unsigned mismatch
 # pragma warning(disable : 4305)		// truncation from const double to float
+
+# if defined _M_AMD64
+#  pragma warning(disable : 4267)		// conversion from 'size_t' to whatever, possible loss of data
+# endif
 
 # define HAVE___INLINE
 
@@ -55,8 +61,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #  define HAVE_TCHAR
 #  define HAVE_MMSYSTEM
 #  define HAVE_DLLMAIN
-# else
-#  define HAVE_WSIPX
 # endif
 
 # define VID_INITFIRST
@@ -65,6 +69,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 # define VORBISFILE_LIBNAME	"vorbisfile.dll"
 
+# define OPENAL_LIBNAME	"openal32.dll"
+
 # ifdef NDEBUG
 #  define BUILDSTRING "Win32 RELEASE"
 # else
@@ -72,9 +78,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # endif
 
 # ifdef _M_IX86
+#  define ARCH "x86"
 #  define CPUSTRING	"x86"
 # elif defined(_M_ALPHA)
+#  define ARCH "axp"
 #  define CPUSTRING	"AXP"
+# elif defined(_M_AMD64)
+#  define ARCH "x64"
+#  define CPUSTRING	"x64"
+# else
+#  define ARCH "xxx"
+#  define CPUSTRING "Unknown"
 # endif
 
 // doh, some compilers need a _ prefix for variables so they can be 
@@ -89,7 +103,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //==============================================
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__FreeBSD__)
 
 # define HAVE_INLINE
 
@@ -100,17 +114,39 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 # define VORBISFILE_LIBNAME	"libvorbisfile.so"
 
-# define BUILDSTRING "Linux"
+# define OPENAL_LIBNAME	"libopenal.so.0"
+
+# ifdef __FreeBSD__
+#  define BUILDSTRING "FreeBSD"
+# else
+#  define BUILDSTRING "Linux"
+# endif
 
 # ifdef __i386__
+#  define ARCH "i386"
 #  define CPUSTRING "i386"
 # elif defined(__alpha__)
+#  define ARCH "axp"
 #  define CPUSTRING "axp"
+# elif defined (__powerpc__)
+#  define ARCH "ppc"
+#  define CPUSTRING "ppc"
+# elif defined(__x86_64__)
+#  define ARCH "x86_64"
+#  define CPUSTRING "x86_64"
+# elif defined(__sparc__)
+#  define ARCH "sparc"
+#  define CPUSTRING "sparc"
 # else
+#  define ARCH "xxx"
 #  define CPUSTRING "Unknown"
 # endif
 
 # define VAR(x)	#x
+
+# ifdef _GNU_SOURCE
+#  define HAVE_SINCOSF
+# endif
 
 #endif
 
@@ -166,6 +202,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #ifndef BUILDSTRING
 # define BUILDSTRING "NON-WIN32"
+#endif
+
+#ifndef ARCH
+# define ARCH "xxx"
 #endif
 
 #ifndef CPUSTRING
@@ -309,6 +349,7 @@ int		Q_log2 (int val);
 #define VectorCompare(v1,v2)	((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2])
 #define VectorLength(v)			(sqrt(DotProduct((v),(v))))
 #define VectorInverse(v)		((v)[0]=-(v)[0],(v)[1]=-(v)[1],(v)[2]=-(v)[2])
+#define VectorLerp(a,c,b,v)		((v)[0]=(a)[0]+(c)*((b)[0]-(a)[0]),(v)[1]=(a)[1]+(c)*((b)[1]-(a)[1]),(v)[2]=(a)[2]+(c)*((b)[2]-(a)[2]))
 #define VectorScale(in,scale,out) ((out)[0]=(in)[0]*(scale),(out)[1]=(in)[1]*(scale),(out)[2]=(in)[2]*(scale))
 
 #define DistanceSquared(v1,v2) (((v1)[0]-(v2)[0])*((v1)[0]-(v2)[0])+((v1)[1]-(v2)[1])*((v1)[1]-(v2)[1])+((v1)[2]-(v2)[2])*((v1)[2]-(v2)[2]))
@@ -406,12 +447,12 @@ void Quat_ConcatTransforms( const quat_t q1, const vec3_t v1, const quat_t q2, c
 
 //=============================================
 
-char *COM_SkipPath (char *pathname);
-void COM_StripExtension (char *in, char *out);
-char *COM_FileExtension (char *in);
-void COM_FileBase (char *in, char *out);
-void COM_FilePath (char *in, char *out);
-void COM_DefaultExtension (char *path, char *extension);
+const char *COM_SkipPath( const char *pathname );
+char *COM_StripExtension( const char *in, char *out );
+const char *COM_FileExtension( const char *in );
+char *COM_FileBase( const char *in, char *out );
+char *COM_FilePath( const char *in, char *out );
+char *COM_DefaultExtension( char *path, const char *extension );
 
 // data is an in/out parm, returns a parsed out token
 char *COM_ParseExt (char **data_p, qboolean nl);
@@ -469,10 +510,11 @@ void Q_strncatz( char *dest, const char *src, size_t size );
 void Q_snprintfz( char *dest, size_t size, const char *fmt, ... );
 char *Q_strlwr( char *s );
 qboolean Q_WildCmp( const char *pattern, const char *text );
+qboolean Q_isdigit( char *str );
 
 //=============================================
 #if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
-# if defined(__i386__) || defined(__ia64__) || defined(WIN32) || (defined(__alpha__) || defined(__alpha)) || defined(__arm__) || (defined(__mips__) && defined(__MIPSEL__)) || defined(__LITTLE_ENDIAN__)
+# if defined(__i386__) || defined(__ia64__) || defined(WIN32) || (defined(__alpha__) || defined(__alpha)) || defined(__arm__) || (defined(__mips__) && defined(__MIPSEL__)) || defined(__LITTLE_ENDIAN__) || defined(__x86_64__) || defined(_M_AMD64)
 #  define ENDIAN_LITTLE
 # else
 #  define ENDIAN_BIG
@@ -859,7 +901,8 @@ typedef enum
 #define	CS_MAPNAME			1
 #define	CS_AUDIOTRACK		2
 #define	CS_STATUSBAR		3		// display program string
-
+#define	CS_GAMETYPE			4
+#define CS_SKYBOXORG		5		// sky portal origin
 
 #define CS_AIRACCEL			29		// air acceleration control
 #define	CS_MAXCLIENTS		30
@@ -976,9 +1019,6 @@ typedef struct
 	vec3_t		viewoffset;		// add to pmovestate->origin
 	vec3_t		kick_angles;	// add to view direction to get render angles
 								// set by weapon kicks, pain effects, etc
-
-	int			gunindex;
-	int			gunframe;
 
 	float		blend[4];		// rgba full screen effect
 

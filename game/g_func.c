@@ -244,14 +244,14 @@ void plat_CalcAcceleratedMove(moveinfo_t *moveinfo)
 
 	moveinfo->move_speed = moveinfo->speed;
 
-	if (moveinfo->remaining_distance < moveinfo->accel)
+	if (moveinfo->remaining_distance < moveinfo->accel * FRAMETIME)
 	{
 		moveinfo->current_speed = moveinfo->remaining_distance;
 		return;
 	}
 
-	accel_dist = AccelerationDistance (moveinfo->speed, moveinfo->accel);
-	decel_dist = AccelerationDistance (moveinfo->speed, moveinfo->decel);
+	accel_dist = AccelerationDistance (moveinfo->speed * FRAMETIME, moveinfo->accel * FRAMETIME);
+	decel_dist = AccelerationDistance (moveinfo->speed * FRAMETIME, moveinfo->decel * FRAMETIME);
 
 	if ((moveinfo->remaining_distance - accel_dist - decel_dist) < 0)
 	{
@@ -338,7 +338,7 @@ void plat_Accelerate (moveinfo_t *moveinfo)
 
 void Think_AccelMove (edict_t *ent)
 {
-	ent->moveinfo.remaining_distance -= ent->moveinfo.current_speed;
+	ent->moveinfo.remaining_distance -= ent->moveinfo.current_speed * FRAMETIME;
 
 	if (ent->moveinfo.current_speed == 0)		// starting or blocked
 		plat_CalcAcceleratedMove(&ent->moveinfo);
@@ -346,13 +346,13 @@ void Think_AccelMove (edict_t *ent)
 	plat_Accelerate (&ent->moveinfo);
 
 	// will the entire move complete on next frame?
-	if (ent->moveinfo.remaining_distance <= ent->moveinfo.current_speed)
+	if (ent->moveinfo.remaining_distance <= ent->moveinfo.current_speed * FRAMETIME)
 	{
 		Move_Final (ent);
 		return;
 	}
 
-	VectorScale (ent->moveinfo.dir, ent->moveinfo.current_speed*10, ent->velocity);
+	VectorScale (ent->moveinfo.dir, ent->moveinfo.current_speed, ent->velocity);
 	ent->nextthink = level.time + FRAMETIME;
 	ent->think = Think_AccelMove;
 }
@@ -523,19 +523,13 @@ void SP_func_plat (edict_t *ent)
 	ent->blocked = plat_blocked;
 
 	if (!ent->speed)
-		ent->speed = 20;
-	else
-		ent->speed *= 0.1;
+		ent->speed = 200;
 
 	if (!ent->accel)
-		ent->accel = 5;
-	else
-		ent->accel *= 0.1;
+		ent->accel = 50;
 
 	if (!ent->decel)
-		ent->decel = 5;
-	else
-		ent->decel *= 0.1;
+		ent->decel = 50;
 
 	if (!ent->dmg)
 		ent->dmg = 2;

@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // this table is needed by both the game dll and client game dll,
 // the game needs it to source shot locations, the client
 // needs it to position muzzle flashes
-vec3_t monster_flash_offset [] =
+const vec3_t monster_flash_offset [] =
 {
 // flash 0 is not used
 	0.0, 0.0, 0.0,
@@ -388,17 +388,6 @@ void GS_Obituary ( void *victim, int gender, void *attacker, int mod, char *mess
 	{
 		switch (mod)
 		{
-		case MOD_HELD_GRENADE:
-			strcpy ( message, "tried to put the pin back in" );
-			break;
-		case MOD_LASER_TRAP:
-			if ( gender == GENDER_FEMALE )
-				strcpy ( message, "didn't see her own laser trap" );
-			else if ( gender == GENDER_MALE )
-				strcpy ( message, "didn't see his own laser trap" );
-			else
-				strcpy ( message, "didn't see its own laser trap" );
-			break;
 		case MOD_HG_SPLASH:
 		case MOD_G_SPLASH:
 			if ( gender == GENDER_FEMALE )
@@ -498,17 +487,9 @@ void GS_Obituary ( void *victim, int gender, void *attacker, int mod, char *mess
 			strcpy ( message, "didn't see" );
 			strcpy ( message2, "'s handgrenade" );
 			break;
-		case MOD_HELD_GRENADE:
-			strcpy ( message, "feels" );
-			strcpy ( message2, "'s pain" );
-			break;
 		case MOD_TELEFRAG:
 			strcpy ( message, "tried to invade" );
 			strcpy ( message2, "'s personal space" );
-			break;
-		case MOD_LASER_TRAP:
-			strcpy ( message, "got into" );
-			strcpy ( message2, "'s laser trap" );
 			break;
 			//ZOID
 		case MOD_GRAPPLE:

@@ -20,8 +20,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // r_surf.c: surface-related refresh code
 #include "r_local.h"
 
-entity_t		r_worldent;
-
 static vec3_t	modelorg;		// relative to viewpoint
 static vec3_t	modelmins;
 static vec3_t	modelmaxs;
@@ -41,91 +39,87 @@ R_SurfPotentiallyVisible
 */
 qboolean R_SurfPotentiallyVisible( msurface_t *surf )
 {
-	if( surf->shaderref->flags & SURF_NODRAW )
+	if( surf->facetype == FACETYPE_FLARE )
+		return qtrue;
+	if( surf->flags & SURF_NODRAW )
 		return qfalse;
 	if( !surf->mesh || R_InvalidMesh( surf->mesh ) )
 		return qfalse;
 	return qtrue;
 }
 
+
 /*
 =================
 R_AddSurfaceToList
 =================
 */
-void R_AddSurfaceToList( msurface_t *surf, int clipflags )
+meshbuffer_t *R_AddSurfaceToList( msurface_t *surf, int clipflags )
 {
-	mesh_t *mesh;
 	shader_t *shader;
 	meshbuffer_t *mb;
 
 	surf->visframe = r_framecount;
-	shader = surf->shaderref->shader;
+	shader = surf->shader;
+
+	if( (shader->flags & SHADER_SKY) && r_fastsky->integer )
+		return NULL;
 
 	// flare
 	if( surf->facetype == FACETYPE_FLARE ) {
 		if( r_flares->integer && r_flarefade->value ) {
-		if( !r_nocull->integer ) {
+			if( !r_nocull->integer ) {
 				vec3_t origin;
 
-				if( currentmodel != r_worldmodel ) {
-					Matrix_TransformVector( currententity->axis, surf->origin, origin );
-					VectorAdd( origin, currententity->origin, origin );
+				if( ri.currentmodel != r_worldmodel ) {
+					Matrix_TransformVector( ri.currententity->axis, surf->origin, origin );
+					VectorAdd( origin, ri.currententity->origin, origin );
 				} else {
 					VectorCopy( surf->origin, origin );
 				}
 
 				// cull it because we don't want to sort unneeded things
-				if( ( origin[0] - r_origin[0] ) * vpn[0] +
-					( origin[1] - r_origin[1] ) * vpn[1] + 
-					( origin[2] - r_origin[2] ) * vpn[2] < 0 )
-					return;
+				if( ( origin[0] - ri.viewOrigin[0] ) * ri.vpn[0] +
+					( origin[1] - ri.viewOrigin[1] ) * ri.vpn[1] + 
+					( origin[2] - ri.viewOrigin[2] ) * ri.vpn[2] < 0 )
+					return NULL;
 				if( R_CullSphere( origin, 1, clipflags ) )
-					return;
+					return NULL;
 			}
-			R_AddMeshToList( MB_MODEL, surf->fog, shader, surf - currentmodel->surfaces + 1 );
+			return R_AddMeshToList( MB_SPRITE, surf->fog, shader, surf - ri.currentmodel->surfaces + 1 );
 		}
-		return;
+		return NULL;
 	}
 
-	mesh = surf->mesh;
 	if( !r_nocull->integer ) {
-		if ( surf->facetype == FACETYPE_PLANAR && r_faceplanecull->integer && !VectorCompare(surf->origin, vec3_origin) && (shader->flags & (SHADER_CULL_FRONT|SHADER_CULL_BACK)) ) {
-			float dot;
-			float *vert;
+		if( surf->facetype == FACETYPE_PLANAR && r_faceplanecull->integer && (shader->flags & (SHADER_CULL_FRONT|SHADER_CULL_BACK)) ) {
+			// Vic: I hate q3map2. I really do.
+			if( !VectorCompare( surf->plane->normal, vec3_origin ) ) {
+				float dist;
 
-			vert = mesh->xyzArray[0];
-			if( surf->origin[0] == 1.0f )
-				dot = modelorg[0] - vert[0];
-			else if( surf->origin[1] == 1.0f )
-				dot = modelorg[1] - vert[1];
-			else if( surf->origin[2] == 1.0f )
-				dot = modelorg[2] - vert[2];
-			else
-				dot = 
-					(modelorg[0] - vert[0]) * surf->origin[0] +
-					(modelorg[1] - vert[1]) * surf->origin[1] + 
-					(modelorg[2] - vert[2]) * surf->origin[2];
-
-			if( (shader->flags & SHADER_CULL_FRONT) || r_mirrorview ) {
-				if( dot <= BACKFACE_EPSILON )
-					return;
-			} else {
-				if( dot >= -BACKFACE_EPSILON )
-					return;
+				dist = PlaneDiff( modelorg, surf->plane );
+				if( (shader->flags & SHADER_CULL_FRONT) || (ri.params & RP_MIRRORVIEW) ) {
+					if( dist <= BACKFACE_EPSILON )
+						return NULL;
+				} else {
+					if( dist >= -BACKFACE_EPSILON )
+						return NULL;
+				}
 			}
 		}
 
 		if( clipflags && R_CullBox( surf->mins, surf->maxs, clipflags ) )
-			return;
+			return NULL;
 	}
 
-	mb = R_AddMeshToList( MB_MODEL, surf->fog, shader, surf - currentmodel->surfaces + 1 );
+	mb = R_AddMeshToList( MB_MODEL, surf->fog, shader, surf - ri.currentmodel->surfaces + 1 );
 	if( mb ) {
-		if( (shader->flags & SHADER_SKY) && !r_fastsky->integer )
+		if( shader->flags & SHADER_SKY )
 			R_AddSkySurface( surf );
 		c_brush_polys++;
 	}
+
+	return mb;
 }
 
 /*
@@ -139,6 +133,8 @@ void R_AddBrushModelToList( entity_t *e )
 	qboolean	rotated;
 	model_t		*model = e->model;
 	msurface_t	*psurf;
+	unsigned int dlightbits;
+	meshbuffer_t *mb;
 
 	if( model->nummodelsurfaces == 0 )
 		return;
@@ -150,9 +146,7 @@ void R_AddBrushModelToList( entity_t *e )
 			modelmaxs[i] = e->origin[i] + model->radius * e->scale;
 		}
 
-		if( R_CullSphere( e->origin, model->radius, 15 ) )
-			return;
-		if( R_VisCullSphere( e->origin, model->radius ) )
+		if( R_CullSphere( e->origin, model->radius * e->scale, 15 ) )
 			return;
 	}
 	else
@@ -163,11 +157,14 @@ void R_AddBrushModelToList( entity_t *e )
 
 		if( R_CullBox( modelmins, modelmaxs, 15 ) )
 			return;
-		if( R_VisCullBox( modelmins, modelmaxs ) )
+	}
+
+	if( ri.refdef.rdflags & RDF_PORTALINVIEW ) {
+		if( R_VisCullSphere( e->origin, model->radius * e->scale ) )
 			return;
 	}
 
-	VectorSubtract( r_refdef.vieworg, e->origin, modelorg );
+	VectorSubtract( ri.refdef.vieworg, e->origin, modelorg );
 	if( rotated ) {
 		vec3_t	temp;
 
@@ -175,12 +172,23 @@ void R_AddBrushModelToList( entity_t *e )
 		Matrix_TransformVector( e->axis, temp, modelorg );
 	}
 
-	R_MarkLightsBmodel( e, modelmins, modelmaxs );
+	dlightbits = 0;
+	if( r_dynamiclight->integer && !r_fullbright->integer ) {
+		for( i = 0; i < r_numDlights; i++ ) {
+			if( BoundsIntersect( modelmins, modelmaxs, r_dlights[i].mins, r_dlights[i].maxs ) )
+				dlightbits |= (1<<i);
+		}
+	}
 
 	for( i = 0, psurf = model->firstmodelsurface; i < model->nummodelsurfaces; i++, psurf++ ) {
 		if( R_SurfPotentiallyVisible( psurf ) ) {
-			if( psurf->visframe != r_framecount )
-				R_AddSurfaceToList( psurf, 0 );
+			mb = R_AddSurfaceToList( psurf, 0 );
+			if( mb ) {
+				mb->sortkey |= ((psurf->superLightStyle+1) << 10);
+
+				if( R_SurfPotentiallyLit( psurf ) )
+					mb->dlightbits = dlightbits;
+			}
 		}
 	}
 }
@@ -198,19 +206,21 @@ void R_AddBrushModelToList( entity_t *e )
 R_RecursiveWorldNode
 ================
 */
-void R_RecursiveWorldNode( mnode_t *node, int clipflags )
+static void R_RecursiveWorldNode( mnode_t *node, int clipflags, unsigned int dlightbits )
 {
 	int			i, clipped;
+	unsigned int newDlightbits;
 	cplane_t	*clipplane;
 	msurface_t	**mark, *surf;
 	mleaf_t		*pleaf;
+	meshbuffer_t *mb;
 
 	while( 1 ) {
 		if( node->visframe != r_visframecount )
 			return;
 
 		if( clipflags ) {
-			for( i = 0, clipplane = frustum; i < 4; i++, clipplane++ ) {
+			for( i = 0, clipplane = ri.frustum; i < 4; i++, clipplane++ ) {
 				clipped = BoxOnPlaneSide( node->mins, node->maxs, clipplane );
 				if( clipped == 2 )
 					return;
@@ -222,30 +232,71 @@ void R_RecursiveWorldNode( mnode_t *node, int clipflags )
 		if( !node->plane )
 			break;
 
-		R_RecursiveWorldNode( node->children[0], clipflags );
+		newDlightbits = 0;
+		if( dlightbits ) {
+			unsigned int bit;
+			float dist;
+
+			for( i = 0, bit = 1; i < r_numDlights; i++, bit<<=1 ) {
+				if( !(dlightbits & bit) )
+					continue;
+
+				dist = PlaneDiff( r_dlights[i].origin, node->plane );
+
+				if( dist < -r_dlights[i].intensity )
+					dlightbits &= ~bit;
+				if( dist <  r_dlights[i].intensity )
+					newDlightbits |= bit;
+			}
+		}
+
+		R_RecursiveWorldNode( node->children[0], clipflags, dlightbits );
+
 		node = node->children[1];
+		dlightbits = newDlightbits;
 	}
 
 	// if a leaf node, draw stuff
 	pleaf = ( mleaf_t * )node;
-
-	// check for door connected areas
-	if( r_refdef.areabits ) {
-		if(! (r_refdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) )
-			return;		// not visible
-	}
-
 	if( !pleaf->firstVisSurface )
 		return;
 
 	mark = pleaf->firstVisSurface;
 	do {
 		surf = *mark++;
-		if( surf->visframe != r_framecount )
-			R_AddSurfaceToList( surf, clipflags );
+
+		if( !R_SurfPotentiallyVisible( surf ) )
+			continue;
+
+		// note that R_AddSurfaceToList may set meshBuffer to NULL
+		// for world ALL surfaces to prevent referencing to freed memory region
+		if( surf->visframe != r_framecount ) {
+			surf->meshBuffer = R_AddSurfaceToList( surf, clipflags );
+			if( surf->meshBuffer )
+				surf->meshBuffer->sortkey |= ((surf->superLightStyle+1) << 10);
+		}
+		mb = surf->meshBuffer;
+
+		newDlightbits = mb ? dlightbits & ~mb->dlightbits : 0;
+		if( newDlightbits && R_SurfPotentiallyLit( surf ) )
+			mb->dlightbits |= R_AddSurfDlighbits( surf, newDlightbits );
 	} while( *mark );
 
 	c_world_leafs++;
+}
+
+/*
+=============
+R_CalcDistancesToFogVolumes
+=============
+*/
+static void R_CalcDistancesToFogVolumes( void )
+{
+	int i;
+	mfog_t *fog;
+
+	for( i = 0, fog = r_worldmodel->fogs; i < r_worldmodel->numfogs; i++, fog++ )
+		ri.fog_dist_to_eye[fog - r_worldmodel->fogs] = PlaneDiff( ri.viewOrigin, fog->visibleplane );
 }
 
 /*
@@ -259,25 +310,22 @@ void R_DrawWorld( void )
 		return;
 	if( !r_worldmodel )
 		return;
-	if( r_refdef.rdflags & RDF_NOWORLDMODEL )
+	if( ri.refdef.rdflags & RDF_NOWORLDMODEL )
 		return;
 
-	VectorCopy( r_refdef.vieworg, modelorg );
+	VectorCopy( ri.refdef.vieworg, modelorg );
 
-	currententity = &r_worldent;
-	currentmodel = currententity->model;
+	ri.previousentity = NULL;
+	ri.currententity = r_worldent;
+	ri.currentmodel = ri.currententity->model;
 
 	R_ClearSkyBox ();
 
-	if( r_speeds->integer )
-		r_mark_lights = Sys_Milliseconds ();
-	R_MarkLightsWorldNode ();
-	if( r_speeds->integer )
-		r_mark_lights = Sys_Milliseconds () - r_mark_lights;
+	R_CalcDistancesToFogVolumes ();
 
 	if( r_speeds->integer )
 		r_world_node = Sys_Milliseconds ();
-	R_RecursiveWorldNode( currentmodel->nodes, (r_nocull->integer ? 0 : 15) );
+	R_RecursiveWorldNode( ri.currentmodel->nodes, r_nocull->integer ? 0 : 15, (!r_dynamiclight->integer || r_fullbright->integer ? 0 : r_numDlights < 32 ? (1 << r_numDlights) - 1 : -1) );
 	if( r_speeds->integer )
 		r_world_node = Sys_Milliseconds () - r_world_node;
 }
@@ -298,7 +346,9 @@ void R_MarkLeaves( void )
 	mnode_t *node;
 	int		cluster;
 
-	if( r_oldviewcluster == r_viewcluster && !r_novis->integer && r_viewcluster != -1 )
+	if( ri.refdef.rdflags & RDF_NOWORLDMODEL )
+		return;
+	if( r_oldviewcluster == r_viewcluster && (ri.refdef.rdflags & RDF_OLDAREABITS) && !r_novis->integer && r_viewcluster != -1 )
 		return;
 
 	// development aid to let you run around and see exactly where
@@ -323,6 +373,12 @@ void R_MarkLeaves( void )
 		cluster = leaf->cluster;
 		if( cluster == -1 )
 			continue;
+
+		// check for door connected areas
+		if( ri.refdef.areabits ) {
+			if(! (ri.refdef.areabits[leaf->area>>3] & (1<<(leaf->area&7)) ) )
+				continue;		// not visible
+		}
 
 		if( vis[cluster>>3] & (1<<(cluster&7)) ) {
 			node = (mnode_t *)leaf;
@@ -357,14 +413,14 @@ void R_FixAutosprites( msurface_t *surf )
 	mesh_t *mesh;
 	shader_t *shader;
 
-	if( (surf->facetype != FACETYPE_PLANAR && surf->facetype != FACETYPE_TRISURF) || !surf->shaderref )
+	if( (surf->facetype != FACETYPE_PLANAR && surf->facetype != FACETYPE_TRISURF) || !surf->shader )
 		return;
 
 	mesh = surf->mesh;
 	if( !mesh || !mesh->numIndexes || mesh->numIndexes % 6 )
 		return;
 
-	shader = surf->shaderref->shader;
+	shader = surf->shader;
 	if( !shader->numdeforms || !(shader->flags & SHADER_AUTOSPRITE) )
 		return;
 

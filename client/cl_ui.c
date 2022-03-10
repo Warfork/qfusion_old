@@ -171,14 +171,18 @@ void CL_UIModule_Init (void)
 	import.R_SkeletalGetNumBones = R_SkeletalGetNumBones;
 	import.R_SkeletalGetBoneInfo = R_SkeletalGetBoneInfo;
 	import.R_SkeletalGetBonePose = R_SkeletalGetBonePose;
+	import.R_SetCustomColor = R_SetCustomColor;
+
+	import.CM_LoadMapMessage = CM_LoadMapMessage;
 
 	import.S_StartLocalSound = S_StartLocalSound;
 	import.S_StartBackgroundTrack = S_StartBackgroundTrack;
 	import.S_StopBackgroundTrack = S_StopBackgroundTrack;
 
 	import.GetConfigString = CL_UIModule_GetConfigString;
-
 	import.Milliseconds = Sys_Milliseconds;
+
+	import.VID_GetModeInfo = VID_GetModeInfo;
 
 	import.Mem_Alloc = CL_UIModule_MemAlloc;
 	import.Mem_Free = CL_UIModule_MemFree;
@@ -200,6 +204,8 @@ void CL_UIModule_Init (void)
 	}
 
 	uie->Init( viddef.width, viddef.height );
+
+	cls.uiActive = qfalse;
 }
 
 /*
@@ -211,6 +217,8 @@ void CL_UIModule_Shutdown ( void )
 {
 	if ( !uie )
 		return;
+
+	cls.uiActive = qfalse;
 
 	uie->Shutdown ();
 	Sys_UnloadGameLibrary( LIB_UI );
@@ -236,8 +244,10 @@ CL_UIModule_DrawConnectScreen
 */
 void CL_UIModule_DrawConnectScreen( qboolean backGround )
 {
-	if( uie )
+	if( uie ) {
 		uie->DrawConnectScreen( cls.servername, cls.connect_count, backGround );
+//		cls.uiActive = qtrue;
+	}
 }
 
 /*
@@ -258,8 +268,10 @@ CL_UIModule_MenuMain
 */
 void CL_UIModule_MenuMain( void )
 {
-	if( uie )
+	if( uie ) {
 		uie->MainMenu ();
+		cls.uiActive = qtrue;
+	}
 }
 
 /*

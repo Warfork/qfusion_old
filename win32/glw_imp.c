@@ -160,13 +160,14 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 int GLimp_SetMode( int mode, qboolean fullscreen )
 {
 	int width, height;
+	qboolean wideScreen;
 	const char *win_fs[] = { "W", "FS" };
 
 	Com_Printf ( "Initializing OpenGL display\n");
 
 	Com_Printf ( "...setting mode %d:", mode );
 
-	if ( !VID_GetModeInfo( &width, &height, mode ) )
+	if ( !VID_GetModeInfo( &width, &height, &wideScreen, mode ) )
 	{
 		Com_Printf ( " invalid mode\n" );
 		return rserr_invalid_mode;

@@ -201,7 +201,7 @@ void SCR_PlayCinematic( char *arg )
 	// read header
 	RoQ_ReadChunk( cin );
 
-	if( LittleShort( chunk->id ) != RoQ_HEADER1 || LittleLong( chunk->size ) != RoQ_HEADER2 || LittleShort( chunk->argument ) != RoQ_HEADER3 ) {
+	if( chunk->id != RoQ_HEADER1 || chunk->size != RoQ_HEADER2 || chunk->argument != RoQ_HEADER3 ) {
 		SCR_StopCinematic ();
 		SCR_FinishCinematic ();
 		return;

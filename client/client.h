@@ -74,6 +74,7 @@ typedef struct
 	//
 	qboolean	attractloop;		// running the attract loop, any key will menu
 	int			servercount;	// server identification for prespawns
+	int			serverframetime;
 	char		gamedir[MAX_QPATH];
 	int			playernum;
 
@@ -105,6 +106,7 @@ typedef struct
 
 // screen rendering information
 	qboolean	cgameActive;
+	qboolean	uiActive;
 	qboolean	mediaInitialized;
 
 	int			disable_screen;		// showing loading plaque between levels
@@ -153,29 +155,7 @@ extern client_static_t	cls;
 extern	cvar_t	*cl_stereo_separation;
 extern	cvar_t	*cl_stereo;
 
-extern	cvar_t	*cl_upspeed;
-extern	cvar_t	*cl_forwardspeed;
-extern	cvar_t	*cl_sidespeed;
-
-extern	cvar_t	*cl_yawspeed;
-extern	cvar_t	*cl_pitchspeed;
-
-extern	cvar_t	*cl_run;
-
-extern	cvar_t	*cl_anglespeedkey;
-
 extern	cvar_t	*cl_shownet;
-
-extern	cvar_t	*lookspring;
-extern	cvar_t	*lookstrafe;
-extern	cvar_t	*sensitivity;
-
-extern	cvar_t	*m_pitch;
-extern	cvar_t	*m_yaw;
-extern	cvar_t	*m_forward;
-extern	cvar_t	*m_side;
-
-extern	cvar_t	*cl_freelook;
 
 extern	cvar_t	*cl_paused;
 extern	cvar_t	*cl_timedemo;
@@ -333,3 +313,9 @@ void Draw_Char ( int x, int y, int num, vec4_t color );
 void Draw_String ( int x, int y, char *str, vec4_t color );
 void Draw_StringLen ( int x, int y, char *str, int len, vec4_t color );
 void Draw_FillRect ( int x, int y, int w, int h, vec4_t color );
+
+//
+// cl_vid.c
+//
+void VID_NewWindow ( int width, int height );
+qboolean VID_GetModeInfo( int *width, int *height, qboolean *wideScreen, int mode );
