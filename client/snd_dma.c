@@ -843,90 +843,51 @@ Cinematic streaming and voice over network
 */
 void S_RawSamples (int samples, int rate, int width, int channels, qbyte *data, qboolean music)
 {
-	int		i;
-	int		src, dst;
-	float	scale;
-	int		snd_vol;
+	int			snd_vol;
+	unsigned	src, dst;
+	unsigned	fracstep, samplefrac;
 
 	if( !sound_started )
 		return;
 
-	if( music )
-		snd_vol = (int)(s_musicvolume->value * 256);
-	else
-		snd_vol = (int)(s_volume->value * 256);
+	snd_vol = (int)((music ? s_musicvolume->value : s_volume->value) * 256);
+	if( snd_vol < 0 )
+		snd_vol = 0;
 
 	if( s_rawend < paintedtime )
 		s_rawend = paintedtime;
-	scale = (float)rate / dma.speed;
 
-	if( scale == 1.0 ) {	// optimized case
-		if( channels == 2 && width == 2 ) {
-			for( i = 0; i < samples; i++ ) {
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = LittleShort( ((short *)data)[i*2] ) * snd_vol;
-				s_rawsamples[dst].right = LittleShort( ((short *)data)[i*2+1] ) * snd_vol;
+	fracstep = ((unsigned)rate << 8) / (unsigned)dma.speed;
+	samplefrac = 0;
+
+	if( width == 2 ) {
+		short *in = (short *)data;
+
+		if( channels == 2 ) {
+			for( src = 0; src < samples; samplefrac += fracstep, src = (samplefrac >> 8) ) {
+				dst = s_rawend++ & (MAX_RAW_SAMPLES - 1);
+				s_rawsamples[dst].left = LittleShort( in[src*2] ) * snd_vol;
+				s_rawsamples[dst].right = LittleShort( in[src*2+1] ) * snd_vol;
 			}
-		} else if( channels == 1 && width == 2 ) {
-			for( i = 0; i < samples; i++ ) {
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = s_rawsamples[dst].right = LittleShort( ((short *)data)[i] ) * snd_vol;
-			}
-		} else if( channels == 2 && width == 1 ) {
-			for( i = 0; i < samples; i++ ) {
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = ((char *)data)[i*2] << 8 * snd_vol;
-				s_rawsamples[dst].right = ((char *)data)[i*2+1] << 8 * snd_vol;
-			}
-		} else if( channels == 1 && width == 1 ) {
-			for( i = 0; i < samples; i++ ) {
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = s_rawsamples[dst].right = (((qbyte *)data)[i]-128) << 8 * snd_vol;
+		} else  {
+			for( src = 0; src < samples; samplefrac += fracstep, src = (samplefrac >> 8) ) {
+				dst = s_rawend++ & (MAX_RAW_SAMPLES - 1);
+				s_rawsamples[dst].left = s_rawsamples[dst].right = LittleShort( in[src] ) * snd_vol;
 			}
 		}
 	} else {
-		if( channels == 2 && width == 2 ) {
-			for( i = 0; ; i++ ) {
-				src = i * scale;
-				if( src >= samples )
-					break;
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = LittleShort( ((short *)data)[src*2] ) * snd_vol;
-				s_rawsamples[dst].right = LittleShort( ((short *)data)[src*2+1] ) * snd_vol;
+		if( channels == 2 ) {
+			char *in = (char *)data;
+
+			for( src = 0; src < samples; samplefrac += fracstep, src = (samplefrac >> 8) ) {
+				dst = s_rawend++ & (MAX_RAW_SAMPLES - 1);
+				s_rawsamples[dst].left = in[src*2] << 8 * snd_vol;
+				s_rawsamples[dst].right = in[src*2+1] << 8 * snd_vol;
 			}
-		}
-		else if( channels == 1 && width == 2 ) {
-			for( i = 0; ; i++ ) {
-				src = i * scale;
-				if( src >= samples )
-					break;
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = s_rawsamples[dst].right = LittleShort( ((short *)data)[src] ) * snd_vol;
-			}
-		} else if( channels == 2 && width == 1 ) {
-			for( i = 0; ; i++ ) {
-				src = i * scale;
-				if( src >= samples )
-					break;
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = ((char *)data)[src*2] << 8 * snd_vol;
-				s_rawsamples[dst].right = ((char *)data)[src*2+1] << 8 * snd_vol;
-			}
-		} else if( channels == 1 && width == 1 ) {
-			for( i = 0; ; i++ ) {
-				src = i * scale;
-				if( src >= samples )
-					break;
-				dst = s_rawend & (MAX_RAW_SAMPLES - 1);
-				s_rawend++;
-				s_rawsamples[dst].left = s_rawsamples[dst].right = (((qbyte *)data)[src]-128) << 8 * snd_vol;
+		} else {
+			for( src = 0; src < samples; samplefrac += fracstep, src = (samplefrac >> 8) ) {
+				dst = s_rawend++ & (MAX_RAW_SAMPLES - 1);
+				s_rawsamples[dst].left = s_rawsamples[dst].right = (data[src] - 128) << 8 * snd_vol;
 			}
 		}
 	}

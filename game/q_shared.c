@@ -471,6 +471,11 @@ skipwhite:
 ============================================================================
 */
 
+/*
+==============
+Q_strncpyz
+==============
+*/
 void Q_strncpyz( char *dest, const char *src, size_t size )
 {
 #ifdef HAVE_STRLCPY
@@ -483,6 +488,11 @@ void Q_strncpyz( char *dest, const char *src, size_t size )
 #endif
 }
 
+/*
+==============
+Q_strncatz
+==============
+*/
 void Q_strncatz( char *dest, const char *src, size_t size )
 {
 #ifdef HAVE_STRLCAT
@@ -499,6 +509,11 @@ void Q_strncatz( char *dest, const char *src, size_t size )
 #endif
 }
 
+/*
+==============
+Q_snprintfz
+==============
+*/
 void Q_snprintfz( char *dest, size_t size, const char *fmt, ... )
 {
 	va_list	argptr;
@@ -512,6 +527,11 @@ void Q_snprintfz( char *dest, size_t size, const char *fmt, ... )
 	}
 }
 
+/*
+==============
+Q_strlwr
+==============
+*/
 char *Q_strlwr( char *s )
 {
 	char *p;
@@ -523,6 +543,70 @@ char *Q_strlwr( char *s )
 	}
 
 	return NULL;
+}
+
+/*
+============================================================================
+
+					WILDCARD COMPARES FUNCTIONS
+
+============================================================================
+*/
+
+/*
+==============
+Q_WildCmpAfterStar
+==============
+*/
+static qboolean Q_WildCmpAfterStar( const char *pattern, const char *text )
+{
+	char c, c1;
+	const char *p = pattern, *t = text;
+
+	while( (c = *p++) == '?' || c == '*' ) {
+		if( c == '?' && *t++ == '\0' )
+			return qfalse;
+	}
+
+	if( c == '\0' )
+		return qtrue;
+
+	for( c1 = ((c == '\\') ? *p : c); ; ) {
+		if( tolower( *t ) == c1 && Q_WildCmp( p - 1, t ) )
+			return qtrue;
+		if( *t++ == '\0' )
+			return qfalse;
+	}
+}
+
+/*
+==============
+Q_WildCmp
+==============
+*/
+qboolean Q_WildCmp( const char *pattern, const char *text )
+{
+	char c;
+
+	while( (c = *pattern++) != '\0' ) {
+		switch( c ) {
+			case '?':
+				if( *text++ == '\0' )
+					return qfalse;
+				break;
+			case '\\':
+				if( tolower( *pattern++ ) != tolower( *text++ ) )
+					return qfalse;
+				break;
+			case '*':
+				return Q_WildCmpAfterStar( pattern, text );
+			default:
+				if( tolower( c ) != tolower( *text++ ) )
+					return qfalse;
+		}
+	}
+
+	return (*text == '\0');
 }
 
 /*

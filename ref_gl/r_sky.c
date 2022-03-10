@@ -189,8 +189,8 @@ static void Gen_BoxSide( skydome_t *skydome, int side, vec3_t orig, vec3_t drow,
 				st[1] = -w[1] * q[1];
 
 				// avoid bilerp seam
-				st[0] = (st[0] + 1) * 0.5;
-				st[1] = (st[1] + 1) * 0.5;
+				st[0] = (bound( -1, st[0], 1 ) + 1.0) * 0.5;
+				st[1] = (bound( -1, st[1], 1 ) + 1.0) * 0.5;
 			}
 
 			st2[0] = c * s;
@@ -475,8 +475,9 @@ void ClipSkyPolygon( int nump, vec3_t vecs, int stage )
 	int		i, j;
 
 	if( nump > MAX_CLIP_VERTS )
-		Com_Error (ERR_DROP, "ClipSkyPolygon: MAX_CLIP_VERTS");
+		Com_Error( ERR_DROP, "ClipSkyPolygon: MAX_CLIP_VERTS" );
 
+loc1:
 	if( stage == 6 ) {	// fully clipped, so draw it
 		DrawSkyPolygon( nump, vecs );
 		return;
@@ -495,13 +496,12 @@ void ClipSkyPolygon( int nump, vec3_t vecs, int stage )
 		} else {
 			sides[i] = SIDE_ON;
 		}
-
 		dists[i] = d;
 	}
 
 	if( !front || !back ) {	// not clipped
-		ClipSkyPolygon( nump, vecs, stage + 1 );
-		return;
+		stage++;
+		goto loc1;
 	}
 
 	// clip it
@@ -557,7 +557,7 @@ void R_AddSkySurface( msurface_t *fa )
 	vec3_t		*vert;
 	index_t		*index;
 	mesh_t		*mesh;
-	vec3_t		verts[MAX_CLIP_VERTS];
+	vec3_t		verts[4];
 
 	// calculate vertex values for sky box
 	r_warpface = fa;
@@ -634,7 +634,7 @@ void R_DrawFastSkyBox( void )
 	qglDisable( GL_TEXTURE_2D );
 	qglEnable( GL_BLEND );
 	qglBlendFunc( GL_ONE, GL_ZERO );
-	qglTexEnvf( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_TEXTURE_ENV_MODE, GL_MODULATE );
 	qglColor3f( 0, 0, 0 );
 	qglBegin( GL_QUADS );
 

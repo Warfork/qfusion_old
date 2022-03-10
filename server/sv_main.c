@@ -844,7 +844,7 @@ void SV_Frame (int msec)
 	if (!svs.initialized)
 		return;
 
-    svs.realtime += msec;
+	svs.realtime += msec;
 
 	// keep the random time dependent
 	rand ();
@@ -885,7 +885,7 @@ void SV_Frame (int msec)
 	SV_RecordDemoMessage ();
 
 	// send a heartbeat to the master if needed
-	Master_Heartbeat ();
+	SV_MasterHeartbeat ();
 
 	// clear teleport flags, etc for next frame
 	SV_PrepWorldFrame ();
@@ -895,14 +895,14 @@ void SV_Frame (int msec)
 
 /*
 ================
-Master_Heartbeat
+SV_MasterHeartbeat
 
 Send a message to the master every few minutes to
 let it know we are alive, and log information
 ================
 */
 #define	HEARTBEAT_SECONDS	300
-void Master_Heartbeat (void)
+void SV_MasterHeartbeat (void)
 {
 	int			i;
 

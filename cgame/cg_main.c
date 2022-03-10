@@ -173,8 +173,8 @@ void CG_RegisterSounds( void )
 		if( !name[0] )
 			break;
 		if( name[0] != '*' ) {
-			CG_LoadingFilename ( name );
-			cgs.soundPrecache[i] = trap_S_RegisterSound ( name );
+			CG_LoadingFilename( name );
+			cgs.soundPrecache[i] = trap_S_RegisterSound( name );
 		}
 	}
 
@@ -231,6 +231,26 @@ void CG_RegisterClients (void)
 
 /*
 =================
+CG_RegisterLightStyles
+=================
+*/
+void CG_RegisterLightStyles (void)
+{
+	int i;
+	char *name;
+
+	CG_LoadingFilename( "" );
+
+	for( i = 0; i < MAX_LIGHTSTYLES; i++ ) {
+		name = cgs.configStrings[CS_LIGHTS+i];
+		if( !name[0] )
+			continue;
+		CG_SetLightStyle( i );
+	}
+}
+
+/*
+=================
 CG_RegisterVariables
 =================
 */
@@ -273,8 +293,8 @@ void CG_RegisterConfigStrings (void)
 {
 	int i;
 
-	for ( i = 0; i < MAX_CONFIGSTRINGS; i++ )
-		trap_GetConfigString ( i, cgs.configStrings[i], MAX_QPATH );
+	for( i = 0; i < MAX_CONFIGSTRINGS; i++ )
+		trap_GetConfigString( i, cgs.configStrings[i], MAX_QPATH );
 }
 
 /*
@@ -344,6 +364,8 @@ void CG_Init ( int playerNum, qboolean attractLoop, int vidWidth, int vidHeight 
 	CG_ClearDecals ();
 	CG_ClearEffects ();
 	CG_ClearLocalEntities ();
+
+	CG_RegisterLightStyles ();
 
 	// start background track
 	CG_StartBackgroundTrack ();

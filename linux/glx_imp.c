@@ -499,8 +499,6 @@ void HandleEvents(void)
 						}
 						p_mouse_x = event.xmotion.x;
 						p_mouse_y = event.xmotion.y;
-
-
 					}
 				}
 				break;
@@ -512,6 +510,7 @@ void HandleEvents(void)
 				else if (event.xbutton.button == 3) Key_Event(K_MOUSE2, 1, Sys_Milliseconds());
 				else if (event.xbutton.button == 4) Key_Event(K_MWHEELUP, 1, Sys_Milliseconds());
 				else if (event.xbutton.button == 5) Key_Event(K_MWHEELDOWN, 1, Sys_Milliseconds());
+				else if (event.xbutton.button >= 6 && event.xbutton.button <= 10) Key_Event(K_MOUSE4+event.xbutton.button-6, 1, Sys_Milliseconds());
 				break;
 
 			case ButtonRelease:
@@ -520,6 +519,7 @@ void HandleEvents(void)
 				else if (event.xbutton.button == 3) Key_Event(K_MOUSE2, 0, Sys_Milliseconds());
 				else if (event.xbutton.button == 4) Key_Event(K_MWHEELUP, 0, Sys_Milliseconds());
 				else if (event.xbutton.button == 5) Key_Event(K_MWHEELDOWN, 0, Sys_Milliseconds());
+				else if (event.xbutton.button >= 6 && event.xbutton.button <= 10) Key_Event(K_MOUSE4+event.xbutton.button-6, 0, Sys_Milliseconds());
 				break;
 
 			case ClientMessage:

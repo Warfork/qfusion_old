@@ -90,7 +90,7 @@ image_t *R_ResampleCinematicFrame( shaderpass_t *pass )
 	if( pass->anim_frames[0] ) {
 		image = pass->anim_frames[0];
 	} else {
-		image = R_LoadPic( cin->name, &cin->pic, cin->width, cin->height, IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP, 3 );
+		image = R_LoadPic( cin->name, &cin->pic, cin->width, cin->height, IT_CINEMATIC, 3 );
 		cin->new_frame = qfalse;
 	}
 
@@ -99,7 +99,12 @@ image_t *R_ResampleCinematicFrame( shaderpass_t *pass )
 	cin->new_frame = qfalse;
 
 	GL_Bind( 0, image );
-	R_Upload32( &cin->pic, image->width, image->height, IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP, &image->upload_width, &image->upload_height, 3 );
+	if( image->width != cin->width || image->height != cin->height )
+		R_Upload32( &cin->pic, image->width, image->height, IT_CINEMATIC, NULL, NULL, 3, qfalse );
+	else
+		R_Upload32( &cin->pic, image->width, image->height, IT_CINEMATIC, NULL, NULL, 3, qtrue );
+	image->width = cin->width;
+	image->height = cin->height;
 
 	return image;
 }

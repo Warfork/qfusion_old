@@ -237,16 +237,17 @@ void CL_ParseFrame (void);
 //
 // cl_game.c
 //
-void CL_GameModule_Init (void);
-void CL_GameModule_Shutdown (void);
-void CL_GameModule_ServerCommand (void);
-void CL_GameModule_LoadLayout ( char *s );
-void CL_GameModule_RenderView ( float stereo_separation );
-void CL_GameModule_BeginFrameSequence (void);
-void CL_GameModule_NewPacketEntityState ( int entnum, entity_state_t *state );
-void CL_GameModule_EndFrameSequence (void);
-void CL_GameModule_GetEntitySoundOrigin ( int entnum, vec3_t origin );
-void CL_GameModule_Trace ( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int passent, int contentmask );
+void CL_GameModule_Init( void );
+void CL_GameModule_Shutdown( void );
+void CL_GameModule_ServerCommand( void );
+void CL_GameModule_LoadLayout( char *s );
+void CL_GameModule_RenderView( float stereo_separation );
+void CL_GameModule_BeginFrameSequence( void );
+void CL_GameModule_NewPacketEntityState( int entnum, entity_state_t *state );
+void CL_GameModule_EndFrameSequence( void );
+void CL_GameModule_GlobalSound( vec3_t origin, int entNum, int entChannel, int soundNum, float fvol, float attenuation );
+void CL_GameModule_GetEntitySoundOrigin( int entnum, vec3_t origin );
+void CL_GameModule_Trace( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int passent, int contentmask );
 
 //
 // cl_ui.c
@@ -311,7 +312,7 @@ qboolean CL_CheckOrDownloadFile (char *filename);
 #define GIANT_CHAR_WIDTH	32
 #define GIANT_CHAR_HEIGHT	48
 
-void SCR_Init (void);
+void SCR_InitScreen (void);
 void SCR_UpdateScreen (void);
 void SCR_BeginLoadingPlaque (void);
 void SCR_EndLoadingPlaque (void);

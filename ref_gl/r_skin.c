@@ -19,6 +19,22 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "r_local.h"
 
+#define MAX_SKINFILES		1024
+
+typedef struct
+{
+	char				meshname[MD3_MAX_PATH];
+	shader_t			*shader;
+} mesh_shader_pair_t;
+
+typedef struct skinfile_s
+{
+	char				name[MAX_QPATH];
+
+	mesh_shader_pair_t	*pairs;
+	int					numpairs;
+} skinfile_t;
+
 skinfile_t r_skinfiles[MAX_SKINFILES];
 
 /*
@@ -76,25 +92,24 @@ int SkinFile_ParseBuffer( char *buffer, mesh_shader_pair_t *pairs )
 	ptr = buffer;
 	numpairs = 0;
 
-	while ( ptr ) {
-		token = COM_ParseExt ( &ptr, qfalse );
-		if ( !token ) {
+	while( ptr ) {
+		token = COM_ParseExt( &ptr, qfalse );
+		if( !token )
 			break;
-		}
 
-		Q_strncpyz ( meshname, token, sizeof(meshname) );
+		Q_strncpyz( meshname, token, sizeof(meshname) );
 		
-		t = strstr ( meshname, "," );
-		if ( !t || !(t+1) )
+		t = strstr( meshname, "," );
+		if( !t || !(t+1) )
 			continue;
 		if( *(t+1) == '\0' || *(t+1) == '\n' )
 			continue;
 
 		*t = 0;
-		Q_strncpyz( shadername, token + strlen (meshname) + 1, sizeof(shadername) );
+		Q_strncpyz( shadername, token + strlen( meshname ) + 1, sizeof( shadername ) );
 
 		if( pairs ) {
-			Q_strncpyz( pairs[numpairs].meshname, meshname, sizeof(pairs[numpairs].meshname) );
+			Q_strncpyz( pairs[numpairs].meshname, meshname, sizeof( pairs[numpairs].meshname ) );
 			pairs[numpairs].shader = R_RegisterSkin( shadername );
 		}
 
@@ -116,9 +131,9 @@ skinfile_t *R_RegisterSkinFile( char *name )
 	skinfile_t *skinfile;
 
 	for( i = 0, f = -1, skinfile = r_skinfiles; i < MAX_SKINFILES; i++, skinfile++ ) {
-		if( !Q_stricmp (skinfile->name, name) )
+		if( !Q_stricmp( skinfile->name, name ) )
 			return skinfile;
-		if ( (f == -1) && !skinfile->name[0] )
+		if( (f == -1) && !skinfile->name[0] )
 			f = i;
 	}
 
@@ -126,16 +141,16 @@ skinfile_t *R_RegisterSkinFile( char *name )
 		Com_Printf( S_COLOR_YELLOW "R_SkinFile_Load: Skin files limit exceeded\n");
 		return NULL;
 	}
-	if( FS_LoadFile (name, (void **)&buffer) == -1 ) {
+	if( FS_LoadFile( name, (void **)&buffer ) == -1 ) {
 		Com_DPrintf( S_COLOR_YELLOW "R_SkinFile_Load: Failed to load %s\n", name );
 		return NULL;
 	}
 
 	skinfile = &r_skinfiles[f];
-	Q_strncpyz( skinfile->name, name, sizeof(skinfile->name) );
+	Q_strncpyz( skinfile->name, name, sizeof( skinfile->name ) );
 
-	skinfile->numpairs = SkinFile_ParseBuffer ( buffer, NULL );
-	if ( skinfile->numpairs ) {
+	skinfile->numpairs = SkinFile_ParseBuffer( buffer, NULL );
+	if( skinfile->numpairs ) {
 		skinfile->pairs = Mem_ZoneMalloc( skinfile->numpairs * sizeof (mesh_shader_pair_t) );
 		SkinFile_ParseBuffer( buffer, skinfile->pairs );
 	} else {
@@ -143,7 +158,7 @@ skinfile_t *R_RegisterSkinFile( char *name )
 	}
 
 	FS_FreeFile( (void *)buffer );
-	
+
 	return skinfile;
 }
 
@@ -157,9 +172,8 @@ void R_ShutdownSkinFiles( void )
 	int i;
 	skinfile_t *skinfile;
 
-	for ( i = 0, skinfile = r_skinfiles; i < MAX_SKINFILES; i++, skinfile++ ) {
-		if ( skinfile->numpairs ) {
+	for( i = 0, skinfile = r_skinfiles; i < MAX_SKINFILES; i++, skinfile++ ) {
+		if( skinfile->numpairs )
 			SkinFile_FreeSkinFile ( skinfile );
-		}
 	}
 }

@@ -151,17 +151,13 @@ void Gfx_MenuInit( void )
 	s_crosshair_box.generic.name		= "crosshair";
 	s_crosshair_box.generic.callback	= CrosshairFunc;
 	s_crosshair_box.itemnames			= crosshair_names;
-	y += y_offset;
-
-	trap_Cvar_SetValue( "cg_crosshair", M_ClampCvar( 0, NUM_CROSSHAIRS, trap_Cvar_VariableValue("crosshair") ) );
-	s_crosshair_box.curvalue		= trap_Cvar_VariableValue("cg_crosshair");
-	clamp ( s_crosshair_box.curvalue, 0, 10 );
-
-	if ( s_crosshair_box.curvalue == 0 ) {
+	s_crosshair_box.curvalue			= trap_Cvar_VariableValue("cg_crosshair");
+	clamp( s_crosshair_box.curvalue, 0, NUM_CROSSHAIRS );
+	if( s_crosshair_box.curvalue == 0 )
 		s_crosshair_pic = NULL;
-	} else {
+	else
 		s_crosshair_pic = trap_R_RegisterPic( va ("gfx/2d/crosshair%s", s_crosshair_box.itemnames[s_crosshair_box.curvalue]));
-	}
+	y += y_offset;
 
 	s_skyquality_list.generic.type			= MTYPE_SPINCONTROL;
 	s_skyquality_list.generic.x				= 0;

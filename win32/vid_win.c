@@ -29,7 +29,26 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 cvar_t *win_noalttab;
 
 #ifndef WM_MOUSEWHEEL
-#define WM_MOUSEWHEEL (WM_MOUSELAST+1)  // message that will be supported by the OS 
+# define WM_MOUSEWHEEL (WM_MOUSELAST+1)  // message that will be supported by the OS 
+#endif
+
+#ifndef MK_XBUTTON1
+# define MK_XBUTTON1         0x0020
+# define MK_XBUTTON2         0x0040
+#endif
+
+#ifndef MK_XBUTTON3
+# define MK_XBUTTON3         0x0080
+# define MK_XBUTTON4         0x0100
+#endif
+
+#ifndef MK_XBUTTON5
+# define MK_XBUTTON5         0x0200
+#endif
+
+#ifndef WM_XBUTTONUP
+# define WM_XBUTTONUP		 0x020C
+# define WM_XBUTTONDOWN      0x020B
 #endif
 
 static UINT MSH_MOUSEWHEEL;
@@ -209,24 +228,14 @@ void AppActivate(BOOL fActive, BOOL minimize)
 		ActiveApp = qfalse;
 
 	// minimize/restore mouse-capture on demand
-	if (!ActiveApp)
-	{
-		IN_Activate (qfalse);
-		S_Activate (qfalse);
+	IN_Activate (ActiveApp);
+	S_Activate (ActiveApp);
 
-		if ( win_noalttab->integer )
-		{
-			WIN_EnableAltTab();
-		}
-	}
-	else
-	{
-		IN_Activate (qtrue);
-		S_Activate (qtrue);
-		if ( win_noalttab->integer )
-		{
-			WIN_DisableAltTab();
-		}
+	if( win_noalttab->integer ) {
+		if (!ActiveApp)
+			WIN_EnableAltTab ();
+		else
+			WIN_DisableAltTab ();
 	}
 
 	GLimp_AppActivate( fActive );
@@ -247,15 +256,19 @@ LONG WINAPI MainWndProc (
 {
 	if ( uMsg == MSH_MOUSEWHEEL )
 	{
-		if ( ( ( int ) wParam ) > 0 )
+		if ( mouse_wheel_type != MWHEEL_DINPUT )
 		{
-			Key_Event( K_MWHEELUP, qtrue, sys_msg_time );
-			Key_Event( K_MWHEELUP, qfalse, sys_msg_time );
-		}
-		else
-		{
-			Key_Event( K_MWHEELDOWN, qtrue, sys_msg_time );
-			Key_Event( K_MWHEELDOWN, qfalse, sys_msg_time );
+			mouse_wheel_type = MWHEEL_WM;
+			if ( ( ( int ) wParam ) > 0 )
+			{
+				Key_Event( K_MWHEELUP, qtrue, sys_msg_time );
+				Key_Event( K_MWHEELUP, qfalse, sys_msg_time );
+			}
+			else
+			{
+				Key_Event( K_MWHEELDOWN, qtrue, sys_msg_time );
+				Key_Event( K_MWHEELDOWN, qfalse, sys_msg_time );
+			}
 		}
         return DefWindowProc (hWnd, uMsg, wParam, lParam);
 	}
@@ -267,15 +280,19 @@ LONG WINAPI MainWndProc (
 		** this chunk of code theoretically only works under NT4 and Win98
 		** since this message doesn't exist under Win95
 		*/
-		if ( ( short ) HIWORD( wParam ) > 0 )
+		if ( mouse_wheel_type != MWHEEL_DINPUT )
 		{
-			Key_Event( K_MWHEELUP, qtrue, sys_msg_time );
-			Key_Event( K_MWHEELUP, qfalse, sys_msg_time );
-		}
-		else
-		{
-			Key_Event( K_MWHEELDOWN, qtrue, sys_msg_time );
-			Key_Event( K_MWHEELDOWN, qfalse, sys_msg_time );
+			mouse_wheel_type = MWHEEL_WM;
+			if ( ( short ) HIWORD( wParam ) > 0 )
+			{
+				Key_Event( K_MWHEELUP, qtrue, sys_msg_time );
+				Key_Event( K_MWHEELUP, qfalse, sys_msg_time );
+			}
+			else
+			{
+				Key_Event( K_MWHEELDOWN, qtrue, sys_msg_time );
+				Key_Event( K_MWHEELDOWN, qfalse, sys_msg_time );
+			}
 		}
 		break;
 
@@ -305,7 +322,7 @@ LONG WINAPI MainWndProc (
 	case WM_MOVE:
 		{
 			int		xPos, yPos;
-			RECT r;
+			RECT	r;
 			int		style;
 
 			if (!vid_fullscreen->integer)
@@ -340,19 +357,16 @@ LONG WINAPI MainWndProc (
 	case WM_MBUTTONDOWN:
 	case WM_MBUTTONUP:
 	case WM_MOUSEMOVE:
+	case WM_XBUTTONUP:
+	case WM_XBUTTONDOWN:
 		{
-			int	temp;
+			int i, temp = 0;
+			int mbuttons[] = { MK_LBUTTON, MK_RBUTTON, MK_MBUTTON, 
+				MK_XBUTTON1, MK_XBUTTON2, MK_XBUTTON3, MK_XBUTTON4, MK_XBUTTON5 };
 
-			temp = 0;
-
-			if (wParam & MK_LBUTTON)
-				temp |= 1;
-
-			if (wParam & MK_RBUTTON)
-				temp |= 2;
-
-			if (wParam & MK_MBUTTON)
-				temp |= 4;
+			for (i = 0; i < mouse_buttons; i++)
+				if (wParam & mbuttons[i])
+					temp |= (1<<i);
 
 			IN_MouseEvent (temp);
 		}
@@ -368,6 +382,7 @@ LONG WINAPI MainWndProc (
 			if ( vid_fullscreen )
 			{
 				Cvar_SetValue( "vid_fullscreen", !vid_fullscreen->integer );
+				Cbuf_ExecuteText( EXEC_APPEND, "vid_restart\n" );
 			}
 			return 0;
 		}

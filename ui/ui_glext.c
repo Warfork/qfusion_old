@@ -31,10 +31,10 @@ OPENGL EXTENSIONS MENU
 static menuframework_s	s_glext_menu;
 
 static menulist_s		s_extensions_list;
-static menulist_s		s_vsync_list;
 static menulist_s		s_cva_list;
 static menulist_s		s_multitexture_list;
 static menulist_s		s_texenvcombine_list;
+static menulist_s		s_texenvdot3_list;
 static menulist_s		s_NVtexenvcombine4_list;
 static menulist_s		s_compressedtex_list;
 static menulist_s		s_cubemap_list;
@@ -45,10 +45,10 @@ static menuaction_s		s_apply_action;
 static void ApplyChanges( void *unused )
 {
 	trap_Cvar_SetValue( "gl_extensions", s_extensions_list.curvalue );
-	trap_Cvar_SetValue( "gl_ext_swapinterval", s_vsync_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_compiled_vertex_array", s_cva_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_multitexture", s_multitexture_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_texture_env_combine", s_texenvcombine_list.curvalue );
+	trap_Cvar_SetValue( "gl_ext_texture_env_dot3", s_texenvdot3_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_NV_texture_env_combine4", s_NVtexenvcombine4_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_compressed_textures", s_compressedtex_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_texture_cube_map", s_cubemap_list.curvalue );
@@ -81,14 +81,6 @@ static void GLExt_MenuInit( void )
 	s_extensions_list.generic.statusbar = "set this to 'off' to disable all extensions";
 	clamp ( s_extensions_list.curvalue, 0, 1 );
 
-	s_vsync_list.generic.type	= MTYPE_SPINCONTROL;
-	s_vsync_list.generic.name	= "Vertical Sync";
-	s_vsync_list.generic.x		= 0;
-	s_vsync_list.generic.y		= y+=y_offset;
-	s_vsync_list.itemnames		= on_off_names;
-	s_vsync_list.curvalue		= trap_Cvar_VariableValue( "gl_ext_swapinterval" );
-	clamp ( s_vsync_list.curvalue, 0, 1 );
-
 	s_cva_list.generic.type		= MTYPE_SPINCONTROL;
 	s_cva_list.generic.name		= "Compiled vertex array";
 	s_cva_list.generic.x		= 0;
@@ -112,6 +104,14 @@ static void GLExt_MenuInit( void )
 	s_texenvcombine_list.itemnames		= on_off_names;
 	s_texenvcombine_list.curvalue		= trap_Cvar_VariableValue( "gl_ext_texture_env_combine" );
 	clamp ( s_texenvcombine_list.curvalue, 0, 1 );
+
+	s_texenvdot3_list.generic.type		= MTYPE_SPINCONTROL;
+	s_texenvdot3_list.generic.name		= "Env Dot3";
+	s_texenvdot3_list.generic.x			= 0;
+	s_texenvdot3_list.generic.y			= y+=y_offset;
+	s_texenvdot3_list.itemnames			= on_off_names;
+	s_texenvdot3_list.curvalue			= trap_Cvar_VariableValue( "gl_ext_texture_env_dot3" );
+	clamp ( s_texenvdot3_list.curvalue, 0, 1 );
 
 	s_NVtexenvcombine4_list.generic.type	= MTYPE_SPINCONTROL;
 	s_NVtexenvcombine4_list.generic.name	= "NVidia Env Combine4";
@@ -157,10 +157,10 @@ static void GLExt_MenuInit( void )
 	s_apply_action.generic.callback = ApplyChanges;
 
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_extensions_list );
-	Menu_AddItem( &s_glext_menu, ( void * ) &s_vsync_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_cva_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_multitexture_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_texenvcombine_list );
+	Menu_AddItem( &s_glext_menu, ( void * ) &s_texenvdot3_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_NVtexenvcombine4_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_compressedtex_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_cubemap_list );

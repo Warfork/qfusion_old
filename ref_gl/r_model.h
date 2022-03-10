@@ -42,6 +42,9 @@ typedef struct
 	vec3_t			mins, maxs;
 	float			radius;
 	int				firstface, numfaces;
+	vec3_t			gridSize;
+	vec3_t			gridMins;
+	int				gridBounds[4];
 } mmodel_t;
 
 typedef struct
@@ -80,7 +83,8 @@ typedef struct msurface_s
 
 	int				fragmentframe;		// for R_GetClippedFragments
 
-	int				lightmapnum;
+	int				superLightStyle;
+
 	unsigned int	dlightbits;
 	int				dlightframe;
 } msurface_t;
@@ -117,8 +121,9 @@ typedef struct mleaf_s
 	int				cluster;
 	int				area;
 
-	msurface_t		**firstmarksurface;
-	int				nummarksurfaces;
+	msurface_t		**firstVisSurface;
+	msurface_t		**firstLitSurface;
+	msurface_t		**firstFragmentSurface;
 } mleaf_t;
 
 typedef struct
@@ -130,8 +135,9 @@ typedef struct
 
 typedef struct
 {
-	qbyte			ambient[3];
-	qbyte			diffuse[3];
+	qbyte			ambient[MAX_LIGHTMAPS][3];
+	qbyte			diffuse[MAX_LIGHTMAPS][3];
+	qbyte			styles[MAX_LIGHTMAPS];
 	qbyte			direction[2];
 } mgridlight_t;
 
@@ -223,13 +229,6 @@ SKELETAL MODELS
 //
 // in memory representation
 //
-
-typedef struct
-{
-	float			quat[4];
-	float			origin[3];
-} mskbonepose_t;
-
 typedef struct
 {
 	vec3_t			origin;
@@ -279,7 +278,7 @@ typedef struct
 
 typedef struct
 {
-	mskbonepose_t	*boneposes;
+	bonepose_t	*	boneposes;
 
 	float			mins[3], maxs[3];
 	float			radius;					// for clipping uses
@@ -352,10 +351,6 @@ typedef struct model_s
 //
 // brush model
 //
-	vec3_t			gridSize;
-	vec3_t			gridMins;
-	int				gridBounds[4];
-
 	int				numsubmodels;
 	mmodel_t		*submodels;
 
@@ -372,8 +367,8 @@ typedef struct model_s
 	vec3_t			*xyz_array;
 	vec3_t			*normals_array;		// normals
 	vec2_t			*st_array;			// texture coords		
-	vec2_t			*lmst_array;		// lightmap texture coords
-	byte_vec4_t		*colors_array;		// colors used for vertex lighting
+	vec2_t			*lmst_array[MAX_LIGHTMAPS];			// lightmap texture coords
+	byte_vec4_t		*colors_array[MAX_LIGHTMAPS];		// colors used for vertex lighting
 
 	int				numnodes;
 	mnode_t			*nodes;
@@ -384,14 +379,14 @@ typedef struct model_s
 	int				numsurfindexes;
 	int				*surfindexes;
 
-	int				nummarksurfaces;
-	msurface_t		**marksurfaces;
-
 	int				numshaderrefs;
 	mshaderref_t	*shaderrefs;
 
 	int				numlightgridelems;
 	mgridlight_t	*lightgrid;
+
+	int				numlightarrayelems;
+	mgridlight_t	**lightarray;
 
 	int				numfogs;
 	mfog_t			*fogs;

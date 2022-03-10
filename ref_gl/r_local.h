@@ -18,17 +18,47 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
+#ifdef __cplusplus
+# define QGL_EXTERN extern "C"
+#else
+# define QGL_EXTERN extern
+#endif
+
 #ifdef _WIN32
-#  include <windows.h>
+# include <windows.h>
+
+# define QGL_WGL(type,name,params) QGL_EXTERN type (APIENTRY * q##name) params;
+# define QGL_WGL_EXT(type,name,params) QGL_EXTERN type (APIENTRY * q##name) params;
+# define QGL_GLX(type,name,params)
+# define QGL_GLX_EXT(type,name,params)
 #endif
 
 #include <GL/gl.h>
 
+#ifdef __linux__
+# include <GL/glx.h>
+
+# define QGL_WGL(type,name,params)
+# define QGL_WGL_EXT(type,name,params)
+# define QGL_GLX(type,name,params) QGL_EXTERN type (APIENTRY * q##name) params;
+# define QGL_GLX_EXT(type,name,params) QGL_EXTERN type (APIENTRY * q##name) params;
+#endif
+
 #include "../qcommon/qcommon.h"
 
-#include "../client/cin.h"
+#define QGL_FUNC(type,name,params) QGL_EXTERN type (APIENTRY * q##name) params;
+#define QGL_EXT(type,name,params) QGL_EXTERN type (APIENTRY * q##name) params;
 
 #include "qgl.h"
+
+#undef QGL_GLX_EXT
+#undef QGL_GLX
+#undef QGL_WGL_EXT
+#undef QGL_WGL
+#undef QGL_EXT
+#undef QGL_FUNC
+
+#include "../client/cin.h"
 #include "render.h"
 
 #define	REF_VERSION	"GL 0.01"
@@ -53,6 +83,14 @@ typedef unsigned int index_t;
 #define IT_NOPICMIP		4
 #define IT_SKY			8
 #define IT_CUBEMAP		16
+#define IT_HEIGHTMAP	32
+#define IT_FLIPX		64
+#define IT_FLIPY		128
+#define IT_FLIPDIAGONAL	256
+#define IT_NORGB		512
+#define IT_NOALPHA		1024
+
+#define IT_CINEMATIC	(IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP)
 
 typedef struct image_s
 {
@@ -62,6 +100,7 @@ typedef struct image_s
 	int			width, height;					// source image
 	int			upload_width, upload_height;	// after power of two and picmip
 	int			texnum;							// gl texture binding
+	float		bumpScale;
 	struct image_s *hash_next;
 } image_t;
 
@@ -102,7 +141,6 @@ enum
 #include "r_backend.h"
 #include "r_shadow.h"
 #include "r_model.h"
-#include "r_skin.h"
 
 #define BACKFACE_EPSILON	0.01
 
@@ -114,8 +152,26 @@ enum
 
 //====================================================
 
+typedef struct
+{
+	vec3_t		origin;
+	vec3_t		color;
+	vec3_t		mins, maxs;
+	float		intensity;
+	shader_t	*shader;
+} dlight_t;
+
+typedef struct
+{
+	int			features;
+	int			lightmapNum[MAX_LIGHTMAPS];
+	int			lightmapStyles[MAX_LIGHTMAPS];
+	int			vertexStyles[MAX_LIGHTMAPS];
+} superLightStyle_t;
+
+//====================================================
+
 extern	char		*r_cubemapSuff[6];
-extern	vec3_t		r_cubemapAngles[6];
 
 extern qboolean		r_ligtmapsPacking;
 
@@ -134,6 +190,10 @@ extern	int			r_visframecount;
 extern	int			r_framecount;
 extern	cplane_t	frustum[4];
 extern	int			c_brush_polys, c_world_leafs;
+
+extern	int			r_mark_leaves, r_mark_lights, r_world_node;
+extern	int			r_add_polys, r_add_entities;
+extern	int			r_sort_meshes, r_draw_meshes;
 
 extern	int			gl_filter_min, gl_filter_max;
 
@@ -168,10 +228,14 @@ extern	dlight_t	r_dlights[MAX_DLIGHTS];
 extern	int			r_numPolys;
 extern	poly_t		r_polys[MAX_POLYS];
 
+extern	lightstyle_t	r_lightStyles[MAX_LIGHTSTYLES];
+
 extern	refdef_t	r_refdef;
 extern	refdef_t	r_lastRefdef;
 
 extern	int			r_viewcluster, r_oldviewcluster;
+
+extern	float		r_farclip, r_farclip_min, r_farclip_bias;
 
 extern	entity_t	r_worldent;
 extern	model_t		*r_worldmodel;
@@ -181,6 +245,7 @@ extern	cvar_t		*r_drawentities;
 extern	cvar_t		*r_drawworld;
 extern	cvar_t		*r_speeds;
 extern	cvar_t		*r_fullbright;
+extern	cvar_t		*r_lightmap;
 extern	cvar_t		*r_novis;
 extern	cvar_t		*r_nocull;
 extern	cvar_t		*r_lerpmodels;
@@ -188,7 +253,6 @@ extern	cvar_t		*r_fastsky;
 extern	cvar_t		*r_ignorehwgamma;
 extern	cvar_t		*r_overbrightbits;
 extern	cvar_t		*r_mapoverbrightbits;
-extern	cvar_t		*r_vertexlight;
 extern	cvar_t		*r_flares;
 extern	cvar_t		*r_flaresize;
 extern	cvar_t		*r_flarefade;
@@ -203,13 +267,15 @@ extern	cvar_t		*r_directedscale;
 extern	cvar_t		*r_draworder;
 extern	cvar_t		*r_packlightmaps;
 extern	cvar_t		*r_spherecull;
+extern	cvar_t		*r_bumpscale;
+extern	cvar_t		*r_maxlmblocksize;
 
 extern	cvar_t		*gl_extensions;
-extern	cvar_t		*gl_ext_swapinterval;
 extern	cvar_t		*gl_ext_multitexture;
 extern	cvar_t		*gl_ext_compiled_vertex_array;
 extern	cvar_t		*gl_ext_texture_env_add;
 extern	cvar_t		*gl_ext_texture_env_combine;
+extern	cvar_t		*gl_ext_texture_env_dot3;
 extern	cvar_t		*gl_ext_NV_texture_env_combine4;
 extern	cvar_t		*gl_ext_compressed_textures;
 extern	cvar_t		*gl_ext_texture_edge_clamp;
@@ -219,10 +285,12 @@ extern	cvar_t		*gl_ext_max_texture_filter_anisotropic;
 extern	cvar_t		*gl_ext_draw_range_elements;
 extern	cvar_t		*gl_ext_vertex_buffer_object;
 extern	cvar_t		*gl_ext_texture_cube_map;
+extern	cvar_t		*gl_ext_bgra;
 
 extern	cvar_t		*r_shadows;
 extern	cvar_t		*r_shadows_alpha;
 extern	cvar_t		*r_shadows_nudge;
+extern	cvar_t		*r_shadows_projection_distance;
 
 extern	cvar_t		*r_lodbias;
 extern	cvar_t		*r_lodscale;
@@ -240,13 +308,13 @@ extern	cvar_t		*r_polyblend;
 extern  cvar_t		*r_lockpvs;
 extern	cvar_t		*r_screenshot_jpeg;
 extern	cvar_t		*r_screenshot_jpeg_quality;
+extern	cvar_t		*r_swapinterval;
 
-extern	cvar_t		*gl_log;
 extern	cvar_t		*gl_finish;
+extern	cvar_t		*gl_delayfinish;
 extern	cvar_t		*gl_cull;
 extern	cvar_t		*gl_drawbuffer;
 extern  cvar_t		*gl_driver;
-extern	cvar_t		*gl_swapinterval;
 
 extern	cvar_t		*vid_fullscreen;
 
@@ -280,7 +348,7 @@ void R_LatLongToNorm( qbyte latlong[2], vec3_t out );
 // r_alias.c
 //
 void	R_AddAliasModelToList( entity_t *e );
-void	R_DrawAliasModel( meshbuffer_t *mb, qboolean shadow );
+void	R_DrawAliasModel( const meshbuffer_t *mb, qboolean shadow );
 qboolean R_AliasModelLerpTag( orientation_t *orient, maliasmodel_t *aliasmodel, int framenum, int oldframenum, float lerpfrac, char *name );
 
 //
@@ -297,6 +365,8 @@ image_t *R_ResampleCinematicFrame( shaderpass_t *pass );
 void	GL_SelectTexture( int tmu );
 void	GL_Bind( int tmu, image_t *tex );
 void	GL_TexEnv( GLenum mode );
+void	GL_LoadTexMatrix( mat4x4_t m );
+void	GL_LoadIdentityTexMatrix( void );
 
 void	R_InitImages( void );
 void	R_ShutdownImages( void );
@@ -307,21 +377,33 @@ void	R_ImageList_f( void );
 void	R_TextureMode( char *string );
 
 image_t *R_LoadPic( char *name, qbyte **pic, int width, int height, int flags, int samples );
-image_t	*R_FindImage( char *name, int flags );
+image_t	*R_FindImage( char *name, int flags, float bumpScale );
 image_t *R_LoadCubemapPic( char *name, qbyte *pic[6], int width, int height, int flags, int samples );
 image_t	*R_FindCubemapImage( char *name, int flags );
 
-void	R_Upload32( qbyte **data, int width, int height, int flags, int *upload_width, int *upload_height, int samples );
+void	R_Upload32( qbyte **data, int width, int height, int flags, int *upload_width, int *upload_height, int samples, qboolean subImage );
 
 //
 // r_light.c
 //
-void	R_MarkLights( void );
-void	R_SurfMarkLight( int bit, msurface_t *surf );
-void	R_AddDynamicLights( unsigned int dlightbits );
+#define DLIGHT_SCALE		0.5f
+#define MAX_SUPER_STYLES	1023
+
+extern	int		r_numSuperLightStyles;
+extern	superLightStyle_t	r_superLightStyles[MAX_SUPER_STYLES];
+
+void	R_LightBounds( const vec3_t origin, float intensity, vec3_t mins, vec3_t maxs );
+qboolean R_SurfPotentiallyLit( msurface_t *surf );
+void	R_MarkLightsWorldNode( void );
+void	R_MarkLightsBmodel( const entity_t *e, const vec3_t mins, const vec3_t maxs );
+void	R_AddDynamicLights( unsigned int dlightbits, GLenum func, GLenum sfactor, GLenum dfactor );
 void	R_LightForEntity( entity_t *e, qbyte *bArray );
-void	R_LightDirForOrigin( vec3_t origin, vec3_t dir );
-void	R_BuildLightmaps( int numLightmaps, qbyte *data, mlightmapRect_t *rects );
+void	R_LightForEntityDot3( entity_t *e, qbyte *bArray, vec4_t ambient, vec4_t diffuse );
+void	R_LightForOrigin( vec3_t origin, vec3_t dir, vec4_t ambient, vec4_t diffuse, float radius );
+void	R_BuildLightmaps( int numLightmaps, int w, int h, const qbyte *data, mlightmapRect_t *rects );
+void	R_InitLightStyles( void );
+int		R_AddSuperLightStyle( const int *lightmaps, const qbyte *lightmapStyles, const qbyte *vertexStyles );
+void	R_SortSuperLightStyles( void );
 
 //
 // r_main.c
@@ -345,40 +427,49 @@ mfog_t	*R_FogForSphere( const vec3_t centre, const float radius );
 void	R_LoadIdentity( void );
 void	R_RotateForEntity( entity_t *e );
 void	R_TranslateForEntity( entity_t *e );
-void	R_TransformToScreen_Vec2( vec3_t in, vec2_t out );
+void	R_TransformToScreen_Vec3( vec3_t in, vec3_t out );
+void	R_TransformVectorToScreen( refdef_t *rd, vec3_t in, vec2_t out );
 
-void	R_PushFlareSurf( meshbuffer_t *mb );
+void	R_PushFlareSurf( const meshbuffer_t *mb );
 qboolean R_SpriteOverflow( void );
 void	R_AddSpriteModelToList( entity_t *e );
-void	R_DrawSpriteModel( meshbuffer_t *mb );
+void	R_DrawSpriteModel( const meshbuffer_t *mb );
 void	R_AddSpritePolyToList( entity_t *e );
-void	R_DrawSpritePoly( meshbuffer_t *mb );
+void	R_DrawSpritePoly( const meshbuffer_t *mb );
 
 //
 // r_poly.c
 //
-qboolean R_PolyOverflow( meshbuffer_t *mb );
-void	R_PushPoly( meshbuffer_t *mb );
-void	R_DrawPoly( meshbuffer_t *mb );
+qboolean R_PolyOverflow( const meshbuffer_t *mb );
+void	R_PushPoly( const meshbuffer_t *mb );
+void	R_DrawPoly( const meshbuffer_t *mb );
 void	R_AddPolysToList( void );
+qboolean R_SurfPotentiallyFragmented( msurface_t *surf );
+int		R_GetClippedFragments( vec3_t origin, float radius, vec3_t axis[3], int maxfverts, vec3_t *fverts, int maxfragments, fragment_t *fragments );
 
 //
 // r_surf.c
 //
 void	R_MarkLeaves( void );
 void	R_DrawWorld( void );
-
+qboolean R_SurfPotentiallyVisible( msurface_t *surf );
 void	R_AddBrushModelToList( entity_t *e );
-
-void	R_CreateMeshForPatch( model_t *mod, dface_t *in, msurface_t *out );
 void	R_FixAutosprites( msurface_t *surf );
+
+//
+// r_skin.c
+//
+void R_InitSkinFiles( void );
+void R_ShutdownSkinFiles( void );
+struct skinfile_s *R_SkinFile_Load( char *name );
+struct skinfile_s *R_RegisterSkinFile( char *name );
+shader_t *R_FindShaderForSkinFile( struct skinfile_s *skinfile, char *meshname );
 
 //
 // r_skm.c
 //
 void	R_AddSkeletalModelToList( entity_t *e );
-void	R_DrawSkeletalModel( meshbuffer_t *mb, qboolean shadow );
-qboolean R_SkeletalModelLerpAttachment( orientation_t *orient, mskmodel_t *skmodel, int framenum, int oldframenum, float lerpfrac, char *name );
+void	R_DrawSkeletalModel( const meshbuffer_t *mb, qboolean shadow );
 
 //
 // r_warp.c
@@ -450,17 +541,18 @@ typedef struct
 
 	qboolean	compiledVertexArray;
 	qboolean	multiTexture;
-	qboolean	swapInterval;
 	qboolean	textureCubeMap;
 	qboolean	textureEnvAdd;
 	qboolean	textureEnvCombine;
+	qboolean	textureEnvDot3;
 	qboolean	NVTextureEnvCombine4;
 	qboolean	textureEdgeClamp;
 	qboolean	textureFilterAnisotropic;
-	float		maxTextureFilterAnisotropic;
+	int			maxTextureFilterAnisotropic;
 	qboolean	compressedTextures;
 	qboolean	drawRangeElements;
 	qboolean	vertexBufferObject;
+	qboolean	bgra;
 } glconfig_t;
 
 typedef struct
@@ -475,6 +567,7 @@ typedef struct
 	int			currentTMU;
 	int			currentTextures[MAX_TEXTURE_UNITS];
 	int			currentEnvModes[MAX_TEXTURE_UNITS];
+	qboolean	texIdentityMatrix[MAX_TEXTURE_UNITS];
 
 	float		cameraSeparation;
 	qboolean	stereoEnabled;
@@ -505,11 +598,8 @@ int 		GLimp_Init( void *hinstance, void *hWnd );
 void		GLimp_Shutdown( void );
 int     	GLimp_SetMode( int mode, qboolean fullscreen );
 void		GLimp_AppActivate( qboolean active );
-void		GLimp_EnableLogging( qboolean enable );
-void		GLimp_LogNewFrame( void );
 qboolean	GLimp_GetGammaRamp( size_t stride, unsigned short *ramp );
 void		GLimp_SetGammaRamp( size_t stride, unsigned short *ramp );
 
 void		VID_NewWindow( int width, int height);
 qboolean	VID_GetModeInfo( int *width, int *height, int mode );
-

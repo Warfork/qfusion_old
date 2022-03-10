@@ -240,18 +240,18 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 		MSG_WriteByte (msg, ps->pmove.pm_type);
 
 	if (pflags & PS_M_ORIGIN0)
-		MSG_WriteLong (msg, ps->pmove.origin[0]);
+		MSG_WriteInt3 (msg, ps->pmove.origin[0]);
 	if (pflags & PS_M_ORIGIN1)
-		MSG_WriteLong (msg, ps->pmove.origin[1]);
+		MSG_WriteInt3 (msg, ps->pmove.origin[1]);
 	if (pflags & PS_M_ORIGIN2)
-		MSG_WriteLong (msg, ps->pmove.origin[2]);
+		MSG_WriteInt3 (msg, ps->pmove.origin[2]);
 
 	if (pflags & PS_M_VELOCITY0)
-		MSG_WriteLong (msg, ps->pmove.velocity[0]);
+		MSG_WriteInt3 (msg, ps->pmove.velocity[0]);
 	if (pflags & PS_M_VELOCITY1)
-		MSG_WriteLong (msg, ps->pmove.velocity[1]);
+		MSG_WriteInt3 (msg, ps->pmove.velocity[1]);
 	if (pflags & PS_M_VELOCITY2)
-		MSG_WriteLong (msg, ps->pmove.velocity[2]);
+		MSG_WriteInt3 (msg, ps->pmove.velocity[2]);
 
 	if (pflags & PS_M_TIME)
 		MSG_WriteByte (msg, ps->pmove.pm_time);
@@ -583,7 +583,7 @@ void SV_BuildClientFrame (client_t *client)
 				continue;
 
 			// ignore ents without visible models unless they have an effect
-			if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] )
+			if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] && !ent->s.light )
 				continue;
 			if( !(ent->r.svflags & SVF_BROADCAST) || ent != clent )
 				continue;
@@ -621,7 +621,7 @@ void SV_BuildClientFrame (client_t *client)
 			continue;
 
 		// ignore ents without visible models unless they have an effect
-		if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] )
+		if( !ent->s.modelindex && !ent->s.effects && !ent->s.sound && !ent->s.events[0] && !ent->s.light )
 			continue;
 
 		// fix number if broken
@@ -633,7 +633,7 @@ void SV_BuildClientFrame (client_t *client)
 		// ignore if not touching a PV leaf
 		if( ent != clent || !(ent->r.svflags & SVF_BROADCAST) ) {
 			if( !(ent->r.svflags & SVF_PORTAL) ) {
-				if( !ent->s.modelindex && !ent->s.events[0] ) {
+				if( !ent->s.modelindex && !ent->s.events[0] && !ent->s.light && !ent->s.effects ) {
 					// don't send sounds if they will be attenuated away
 					vec3_t	delta;
 					float	len;
@@ -756,7 +756,7 @@ void SV_RecordDemoMessage (void)
 		// ignore ents without visible models unless they have an effect
 		if (ent->r.inuse &&
 			ent->s.number && 
-			(ent->s.modelindex || ent->s.effects || ent->s.sound || ent->s.events[0]) && 
+			(ent->s.modelindex || ent->s.effects || ent->s.sound || ent->s.events[0] || ent->s.light) && 
 			!(ent->r.svflags & SVF_NOCLIENT))
 			MSG_WriteDeltaEntity (&nostate, &ent->s, &buf, qfalse, qtrue);
 

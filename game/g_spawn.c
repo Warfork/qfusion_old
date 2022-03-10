@@ -76,6 +76,7 @@ void SP_target_crosslevel_target (edict_t *ent);
 void SP_target_laser (edict_t *self);
 void SP_target_help (edict_t *ent);
 void SP_target_actor (edict_t *ent);
+void SP_target_lightramp (edict_t *self);
 void SP_target_earthquake (edict_t *ent);
 void SP_target_character (edict_t *ent);
 void SP_target_string (edict_t *ent);
@@ -204,6 +205,7 @@ spawn_t	spawns[] = {
 #if 0 // remove monster code
 	{"target_actor", SP_target_actor},
 #endif
+	{"target_lightramp", SP_target_lightramp},
 	{"target_earthquake", SP_target_earthquake},
 	{"target_character", SP_target_character},
 	{"target_string", SP_target_string},
@@ -669,9 +671,9 @@ void SP_worldspawn (edict_t *ent)
 	ent->movetype = MOVETYPE_PUSH;
 	ent->r.solid = SOLID_BSP;
 	ent->r.inuse = qtrue;			// since the world doesn't use G_Spawn()
-	ent->s.modelindex = 1;		// world model is always index 1
 	VectorClear (ent->s.origin);
 	VectorClear (ent->s.angles);
+	trap_SetBrushModel (ent, "*0");	// sets mins / maxs and modelindex 1
 
 	//---------------
 
@@ -742,36 +744,18 @@ void SP_worldspawn (edict_t *ent)
 
 	trap_SoundIndex ("sound/misc/udeath.wav");
 
-	// sexed sounds
-	trap_SoundIndex ("*death1.wav");
-	trap_SoundIndex ("*death2.wav");
-	trap_SoundIndex ("*death3.wav");
-	trap_SoundIndex ("*death4.wav");
-	trap_SoundIndex ("*fall1.wav");
-	trap_SoundIndex ("*fall2.wav");	
-	trap_SoundIndex ("*gurp1.wav");		// drowning damage
-	trap_SoundIndex ("*gurp2.wav");	
-	trap_SoundIndex ("*pain25_1.wav");
-	trap_SoundIndex ("*pain25_2.wav");
-	trap_SoundIndex ("*pain50_1.wav");
-	trap_SoundIndex ("*pain50_2.wav");
-	trap_SoundIndex ("*pain75_1.wav");
-	trap_SoundIndex ("*pain75_2.wav");
-	trap_SoundIndex ("*pain100_1.wav");
-	trap_SoundIndex ("*pain100_2.wav");
-
 	// viewable weapon models
 	// THIS ORDER MUST MATCH THE DEFINES IN gs_public.h
 	// you can add more, max 255
 	trap_ModelIndex ("#w_blaster.md2");			// WEAP_BLASTER
 	trap_ModelIndex ("#w_shotgun.md2");			// WEAP_SHOTGUN
-	trap_ModelIndex ("#w_sshotgun.md2");			// WEAP_SUPERSHOTGUN
+	trap_ModelIndex ("#w_sshotgun.md2");		// WEAP_SUPERSHOTGUN
 	trap_ModelIndex ("#w_machinegun.md2");		// WEAP_MACHINEGUN
-	trap_ModelIndex ("#w_chaingun.md2");			// WEAP_CHAINGUN
-	trap_ModelIndex ("#a_grenades.md2");			// WEAP_GRENADES
-	trap_ModelIndex ("#w_glauncher.md2");			// WEAP_GRENADELAUNCHER
-	trap_ModelIndex ("#w_rlauncher.md2");			// WEAP_ROCKETLAUNCHER
-	trap_ModelIndex ("#w_hyperblaster.md2");		// WEAP_HYPERBLASTER
+	trap_ModelIndex ("#w_chaingun.md2");		// WEAP_CHAINGUN
+	trap_ModelIndex ("#a_grenades.md2");		// WEAP_GRENADES
+	trap_ModelIndex ("#w_glauncher.md2");		// WEAP_GRENADELAUNCHER
+	trap_ModelIndex ("#w_rlauncher.md2");		// WEAP_ROCKETLAUNCHER
+	trap_ModelIndex ("#w_hyperblaster.md2");	// WEAP_HYPERBLASTER
 	trap_ModelIndex ("#w_railgun.md2");			// WEAP_RAILGUN
 	trap_ModelIndex ("#w_bfg.md2");				// WEAP_BFG
 	trap_ModelIndex ("#w_grapple.md2");			// WEAP_GRAPPLE
@@ -781,15 +765,15 @@ void SP_worldspawn (edict_t *ent)
 	trap_SoundIndex ("sound/player/gasp1.wav");		// gasping for air
 	trap_SoundIndex ("sound/player/gasp2.wav");		// head breaking surface, not gasping
 
-	trap_SoundIndex ("sound/player/watr_in.wav");		// feet hitting water
+	trap_SoundIndex ("sound/player/watr_in.wav");	// feet hitting water
 	trap_SoundIndex ("sound/player/watr_out.wav");	// feet leaving water
 
-	trap_SoundIndex ("sound/player/watr_un.wav");		// head going underwater
+	trap_SoundIndex ("sound/player/watr_un.wav");	// head going underwater
 	
 	trap_SoundIndex ("sound/player/u_breath1.wav");
 	trap_SoundIndex ("sound/player/u_breath2.wav");
 
-	trap_SoundIndex ("sound/world/land.wav");			// landing thud
+	trap_SoundIndex ("sound/world/land.wav");		// landing thud
 	trap_SoundIndex ("sound/misc/h2ohit1.wav");		// landing splash
 
 	trap_SoundIndex ("sound/items/damage.wav");
@@ -804,5 +788,49 @@ void SP_worldspawn (edict_t *ent)
 	trap_ModelIndex ("models/objects/gibs/chest/tris.md2");
 	trap_ModelIndex ("models/objects/gibs/skull/tris.md2");
 	trap_ModelIndex ("models/objects/gibs/head2/tris.md2");
-}
 
+	//
+	// Setup light animation tables. 'a' is total darkness, 'z' is doublebright.
+	//
+
+	// 0 normal
+	trap_ConfigString( CS_LIGHTS+0, "m" );
+
+	// 1 FLICKER (first variety)
+	trap_ConfigString( CS_LIGHTS+1, "mmnmmommommnonmmonqnmmo" );
+
+	// 2 SLOW STRONG PULSE
+	trap_ConfigString( CS_LIGHTS+2, "abcdefghijklmnopqrstuvwxyzyxwvutsrqponmlkjihgfedcba" );
+
+	// 3 CANDLE (first variety)
+	trap_ConfigString( CS_LIGHTS+3, "mmmmmaaaaammmmmaaaaaabcdefgabcdefg" );
+
+	// 4 FAST STROBE
+	trap_ConfigString( CS_LIGHTS+4, "mamamamamama" );
+
+	// 5 GENTLE PULSE 1
+	trap_ConfigString( CS_LIGHTS+5, "jklmnopqrstuvwxyzyxwvutsrqponmlkj" );
+
+	// 6 FLICKER (second variety)
+	trap_ConfigString( CS_LIGHTS+6, "nmonqnmomnmomomno" );
+
+	// 7 CANDLE (second variety)
+	trap_ConfigString( CS_LIGHTS+7, "mmmaaaabcdefgmmmmaaaammmaamm" );
+
+	// 8 CANDLE (third variety)
+	trap_ConfigString( CS_LIGHTS+8, "mmmaaammmaaammmabcdefaaaammmmabcdefmmmaaaa" );
+
+	// 9 SLOW STROBE (fourth variety)
+	trap_ConfigString( CS_LIGHTS+9, "aaaaaaaazzzzzzzz" );
+
+	// 10 FLUORESCENT FLICKER
+	trap_ConfigString( CS_LIGHTS+10, "mmamammmmammamamaaamammma" );
+
+	// 11 SLOW PULSE NOT FADE TO BLACK
+	trap_ConfigString( CS_LIGHTS+11, "abcdefghijklmnopqrrqponmlkjihgfedcba" );
+
+	// styles 32-62 are assigned by the light program for switchable lights
+
+	// 63 testing
+	trap_ConfigString( CS_LIGHTS+63, "a" );
+}

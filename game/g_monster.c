@@ -238,7 +238,7 @@ void M_WorldEffects (edict_t *ent)
 	
 	if ( !(ent->flags & FL_INWATER) )
 	{	
-		if (!(ent->s.effects & EF_CORPSE))
+		if (!(ent->r.svflags & SVF_CORPSE))
 		{
 			if (ent->watertype & CONTENTS_LAVA)
 				if (random() <= 0.5)
@@ -331,7 +331,7 @@ void M_MoveFrame (edict_t *self)
 				move = self->monsterinfo.currentmove;
 
 				// check for death
-				if (self->s.effects & EF_CORPSE)
+				if (self->r.svflags & SVF_CORPSE)
 					return;
 			}
 		}
@@ -508,7 +508,7 @@ qboolean monster_start (edict_t *self)
 
 	self->s.skinnum = 0;
 	self->deadflag = DEAD_NO;
-	self->s.effects &= ~EF_CORPSE;
+	self->r.svflags &= ~SVF_CORPSE;
 
 	if (!self->monsterinfo.checkattack)
 		self->monsterinfo.checkattack = M_CheckAttack;

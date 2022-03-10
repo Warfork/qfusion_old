@@ -51,6 +51,10 @@ int			r_framecount;		// used for dlight push checking
 
 int			c_brush_polys, c_world_leafs;
 
+int			r_mark_leaves, r_mark_lights, r_world_node;
+int			r_add_polys, r_add_entities;
+int			r_sort_meshes, r_draw_meshes;
+
 void		R_GfxInfo_f( void );
 
 //
@@ -85,16 +89,21 @@ dlight_t	r_dlights[MAX_DLIGHTS];
 int			r_numPolys;
 poly_t		r_polys[MAX_POLYS];
 
+lightstyle_t	r_lightStyles[MAX_LIGHTSTYLES];
+
 refdef_t	r_refdef;
 refdef_t	r_lastRefdef;
 
 int			r_viewcluster, r_oldviewcluster;
+
+float		r_farclip, r_farclip_min, r_farclip_bias = 256.0f;
 
 cvar_t	*r_norefresh;
 cvar_t	*r_drawentities;
 cvar_t	*r_drawworld;
 cvar_t	*r_speeds;
 cvar_t	*r_fullbright;
+cvar_t	*r_lightmap;
 cvar_t	*r_novis;
 cvar_t	*r_nocull;
 cvar_t	*r_lerpmodels;
@@ -102,7 +111,6 @@ cvar_t	*r_fastsky;
 cvar_t	*r_ignorehwgamma;
 cvar_t	*r_overbrightbits;
 cvar_t	*r_mapoverbrightbits;
-cvar_t	*r_vertexlight;
 cvar_t	*r_flares;
 cvar_t	*r_flaresize;
 cvar_t	*r_flarefade;
@@ -117,6 +125,8 @@ cvar_t	*r_directedscale;
 cvar_t	*r_draworder;
 cvar_t	*r_packlightmaps;
 cvar_t	*r_spherecull;
+cvar_t	*r_bumpscale;
+cvar_t	*r_maxlmblocksize;
 
 cvar_t	*r_allow_software;
 cvar_t	*r_3dlabs_broken;
@@ -124,6 +134,7 @@ cvar_t	*r_3dlabs_broken;
 cvar_t	*r_shadows;	
 cvar_t	*r_shadows_alpha;
 cvar_t	*r_shadows_nudge;
+cvar_t	*r_shadows_projection_distance;
 
 cvar_t	*r_lodbias;
 cvar_t	*r_lodscale;
@@ -142,13 +153,14 @@ cvar_t	*r_polyblend;
 cvar_t	*r_lockpvs;
 cvar_t	*r_screenshot_jpeg;
 cvar_t	*r_screenshot_jpeg_quality;
+cvar_t	*r_swapinterval;
 
 cvar_t	*gl_extensions;
-cvar_t	*gl_ext_swapinterval;
 cvar_t	*gl_ext_multitexture;
 cvar_t	*gl_ext_compiled_vertex_array;
 cvar_t	*gl_ext_texture_env_add;
 cvar_t	*gl_ext_texture_env_combine;
+cvar_t	*gl_ext_texture_env_dot3;
 cvar_t	*gl_ext_NV_texture_env_combine4;
 cvar_t	*gl_ext_compressed_textures;
 cvar_t	*gl_ext_texture_edge_clamp;
@@ -157,13 +169,13 @@ cvar_t	*gl_ext_max_texture_filter_anisotropic;
 cvar_t	*gl_ext_draw_range_elements;
 cvar_t	*gl_ext_vertex_buffer_object;
 cvar_t	*gl_ext_texture_cube_map;
+cvar_t	*gl_ext_bgra;
 
-cvar_t	*gl_log;
 cvar_t	*gl_drawbuffer;
 cvar_t  *gl_driver;
 cvar_t	*gl_finish;
+cvar_t	*gl_delayfinish;
 cvar_t	*gl_cull;
-cvar_t	*gl_swapinterval;
 
 cvar_t	*vid_fullscreen;
 
@@ -286,12 +298,14 @@ qboolean R_VisCullBox( const vec3_t mins, const vec3_t maxs )
 		if( !node->plane ) {
 			mleaf_t *pleaf = ( mleaf_t * )node;
 
-			if(! (r_refdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) ) {
+			if( r_refdef.areabits ) {
+				if(! (r_refdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) ) {
 nextNodeOnStack:
-				if( !stackdepth )
-					return qtrue;
-				node = localstack[--stackdepth];
-				continue;
+					if( !stackdepth )
+						return qtrue;
+					node = localstack[--stackdepth];
+					continue;
+				}
 			}
 			return qfalse;
 		}
@@ -334,12 +348,14 @@ qboolean R_VisCullSphere( const vec3_t origin, float radius )
 		if( !node->plane ) {
 			mleaf_t *pleaf = ( mleaf_t * )node;
 
-			if(! (r_refdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) ) {
+			if( r_refdef.areabits ) {
+				if(! (r_refdef.areabits[pleaf->area>>3] & (1<<(pleaf->area&7)) ) ) {
 nextNodeOnStack:
-				if( !stackdepth )
-					return qtrue;
-				node = localstack[--stackdepth];
-				continue;
+					if( !stackdepth )
+						return qtrue;
+					node = localstack[--stackdepth];
+					continue;
+				}
 			}
 			return qfalse;
 		}
@@ -370,16 +386,21 @@ R_FogForSphere
 mfog_t *R_FogForSphere( const vec3_t centre, const float radius )
 {
 	int			i, j;
-	mfog_t		*fog;
+	mfog_t		*fog, *defaultFog;
 	cplane_t	*plane;
 
-	if ( !r_worldmodel || (r_refdef.rdflags & RDF_NOWORLDMODEL) || !r_worldmodel->numfogs )
+	if( !r_worldmodel || (r_refdef.rdflags & RDF_NOWORLDMODEL) || !r_worldmodel->numfogs )
 		return NULL;
 
+	defaultFog = NULL;
 	fog = r_worldmodel->fogs;
 	for( i = 0; i < r_worldmodel->numfogs; i++, fog++ ) {
-		if( !fog->visibleplane )
+		if( !fog->shader )
 			continue;
+		if( !fog->visibleplane ) {
+			defaultFog = fog;
+			continue;
+		}
 
 		plane = fog->planes;
 		for( j = 0; j < fog->numplanes; j++, plane++ ) {
@@ -392,7 +413,7 @@ mfog_t *R_FogForSphere( const vec3_t centre, const float radius )
 			return fog;
 	}
 
-	return NULL;
+	return defaultFog;
 }
 
 void R_LoadIdentity( void )
@@ -455,7 +476,7 @@ void R_TranslateForEntity( entity_t *e )
 	qglLoadMatrixf( r_modelview_matrix );
 }
 
-qboolean R_LerpAttachment( orientation_t *orient, model_t *mod, int oldframe, int frame, float lerpfrac, char *name )
+qboolean R_LerpTag( orientation_t *orient, model_t *mod, int oldframe, int frame, float lerpfrac, char *name )
 {
 	if( !orient )
 		return qfalse;
@@ -468,8 +489,6 @@ qboolean R_LerpAttachment( orientation_t *orient, model_t *mod, int oldframe, in
 
 	if( mod->type == mod_alias )
 		return R_AliasModelLerpTag( orient, mod->aliasmodel, oldframe, frame, lerpfrac, name );
-	else if( mod->type == mod_skeletal )
-		return R_SkeletalModelLerpAttachment( orient, mod->skmodel, oldframe, frame, lerpfrac, name );
 
 	return qfalse;
 }
@@ -494,7 +513,7 @@ static	meshbuffer_t	spr_mbuffer;
 R_DrawSprite
 =================
 */
-void R_DrawSprite( meshbuffer_t *mb, float rotation, float right, float left, float up, float down )
+void R_DrawSprite( const meshbuffer_t *mb, float rotation, float right, float left, float up, float down )
 {
 	vec3_t		point;
 	vec3_t		v_right, v_up;
@@ -533,16 +552,15 @@ void R_DrawSprite( meshbuffer_t *mb, float rotation, float right, float left, fl
 		Vector4Copy( e->color, spr_color[3] );
 	}
 
-	features = MF_NOCULL | mb->shader->features;
+	features = MF_NOCULL | MF_TRIFAN | mb->shader->features;
 	if( r_shownormals->integer )
 		features |= MF_NORMALS;
 
 	spr_mesh.numIndexes = 6;
-	spr_mesh.indexes = r_quad_indexes;
 	spr_mesh.numVertexes = 4;
 	spr_mesh.xyzArray = spr_xyz;
 	spr_mesh.stArray = spr_st;
-	spr_mesh.colorsArray = spr_color;
+	spr_mesh.colorsArray[0] = spr_color;
 
 	if( !(mb->shader->flags & SHADER_ENTITY_MERGABLE) ) {
 		R_TranslateForEntity( e );
@@ -562,7 +580,7 @@ void R_DrawSprite( meshbuffer_t *mb, float rotation, float right, float left, fl
 R_DrawSpriteModel
 =================
 */
-void R_DrawSpriteModel( meshbuffer_t *mb )
+void R_DrawSpriteModel( const meshbuffer_t *mb )
 {
 	sframe_t	*frame;
 	smodel_t	*psprite;
@@ -611,7 +629,7 @@ void R_AddSpriteModelToList( entity_t *e )
 R_DrawSpritePoly
 =================
 */
-void R_DrawSpritePoly( meshbuffer_t *mb )
+void R_DrawSpritePoly( const meshbuffer_t *mb )
 {
 	entity_t *e = mb->entity;
 
@@ -645,7 +663,7 @@ R_SpriteOverflow
 =================
 */
 qboolean R_SpriteOverflow( void ) {
-	return R_BackendOverflow( &spr_mesh );
+	return R_MeshOverflow( &spr_mesh );
 }
 
 /*
@@ -662,16 +680,32 @@ qboolean R_SpriteOverflow( void ) {
 R_PushFlareSurf
 =================
 */
-void R_PushFlareSurf( meshbuffer_t *mb )
+void R_PushFlareSurf( const meshbuffer_t *mb )
 {
 	vec4_t color;
-	vec3_t origin, point;
-	float radius = r_flaresize->value, flarescale;
+	vec3_t origin, point, v;
+	float radius = r_flaresize->value, flarescale, depth;
 	float up = radius, down = -radius, left = -radius, right = radius;
-	msurface_t *surf;
+	msurface_t *surf = &currentmodel->surfaces[mb->infokey - 1];
 
-	surf = &currentmodel->surfaces[mb->infokey];
-	VectorCopy( surf->origin, origin );
+	if( currentmodel != r_worldmodel ) {
+		Matrix_TransformVector( currententity->axis, surf->origin, origin );
+		VectorAdd( origin, currententity->origin, origin );
+	} else {
+		VectorCopy( surf->origin, origin );
+	}
+	R_TransformToScreen_Vec3( origin, v );
+
+	if( v[0] < r_refdef.x || v[0] > r_refdef.x + r_refdef.width )
+		return;
+	if( v[1] < r_refdef.y || v[1] > r_refdef.y + r_refdef.height )
+		return;
+
+	qglReadPixels( (int)(v[0]/* + 0.5f*/), (int)(v[1]/* + 0.5f*/), 1, 1, GL_DEPTH_COMPONENT, GL_FLOAT, &depth );
+	if( depth + 1e-4 < v[2] )
+		return;		// occluded
+
+	VectorCopy( origin, origin );
 
 	VectorMA( origin, down, vup, point );
 	VectorMA( point, -left, vright, spr_xyz[0] );
@@ -693,13 +727,15 @@ void R_PushFlareSurf( meshbuffer_t *mb )
 	Vector4Copy( color, spr_color[3] );
 
 	spr_mesh.numIndexes = 6;
-	spr_mesh.indexes = r_quad_indexes;
 	spr_mesh.numVertexes = 4;
 	spr_mesh.xyzArray = spr_xyz;
 	spr_mesh.stArray = spr_st;
-	spr_mesh.colorsArray = spr_color;
+	spr_mesh.colorsArray[0] = spr_color;
+	spr_mesh.colorsArray[1] = spr_color;
+	spr_mesh.colorsArray[2] = spr_color;
+	spr_mesh.colorsArray[3] = spr_color;
 
-	R_PushMesh( &spr_mesh, MF_NOCULL | mb->shader->features );
+	R_PushMesh( &spr_mesh, MF_NOCULL | MF_TRIFAN | mb->shader->features );
 }
 
 
@@ -938,67 +974,118 @@ void R_SetupFrame (void)
 }
 
 /*
+===============
+R_FarClip
+===============
+*/
+float R_FarClip( void )
+{
+	float farclip, farclip_dist;
+
+	farclip_dist = DotProduct( r_origin, vpn );
+	farclip = max( r_farclip_min, 256.0f ) + farclip_dist;
+
+	if( r_worldmodel && !(r_refdef.rdflags & RDF_NOWORLDMODEL) ) {
+		vec_t *mins, *maxs, dist;
+
+		mins = r_worldmodel->nodes[0].mins;
+		maxs = r_worldmodel->nodes[0].maxs;
+		dist = (vpn[0] < 0 ? mins[0] : maxs[0]) * vpn[0] + 
+			(vpn[1] < 0 ? mins[1] : maxs[1]) * vpn[1] +
+			(vpn[2] < 0 ? mins[2] : maxs[2]) * vpn[2];
+		if( dist > farclip )
+			farclip = dist;
+	}
+
+	return max( farclip - farclip_dist + r_farclip_bias, r_farclip );
+}
+
+/*
+=============
+R_SetupProjectionMatrix
+=============
+*/
+void R_SetupProjectionMatrix( refdef_t *rd, mat4x4_t m )
+{
+	GLdouble xMin, xMax, yMin, yMax, zNear, zFar;
+
+	r_farclip = R_FarClip ();
+
+	zNear = 4;
+	zFar = r_farclip;
+
+	yMax = zNear * tan( rd->fov_y * M_PI / 360.0 );
+	yMin = -yMax;
+
+	xMin = yMin * rd->width / rd->height;
+	xMax = yMax * rd->width / rd->height;
+
+	xMin += -( 2 * glState.cameraSeparation ) / zNear;
+	xMax += -( 2 * glState.cameraSeparation ) / zNear;
+
+	m[0] = (2.0 * zNear) / (xMax - xMin);
+	m[1] = 0.0f;
+	m[2] = 0.0f;
+	m[3] = 0.0f;
+	m[4] = 0.0f;
+	m[5] = (2.0 * zNear) / (yMax - yMin);
+	m[6] = 0.0f;
+	m[7] = 0.0f;
+	m[8] = (xMax + xMin) / (xMax - xMin);
+	m[9] = (yMax + yMin) / (yMax - yMin);
+	m[10] = -(zFar + zNear) / (zFar - zNear);
+	m[11] = -1.0f;
+	m[12] = 0.0f;
+	m[13] = 0.0f;
+	m[14] = -(2.0 * zFar * zNear) / (zFar - zNear);
+	m[15] = 0.0f;
+}
+
+/*
+=============
+R_SetupModelviewMatrix
+=============
+*/
+void R_SetupModelviewMatrix( refdef_t *rd, mat4x4_t m )
+{
+#if 0
+	Matrix4_Identity( m );
+	Matrix4_Rotate( m, -90, 1, 0, 0 );
+	Matrix4_Rotate( m,  90, 0, 0, 1 );
+#else
+	Vector4Set( &m[0], 0, 0, -1, 0 );
+	Vector4Set( &m[4], -1, 0, 0, 0 );
+	Vector4Set( &m[8], 0, 1, 0, 0 );
+	Vector4Set( &m[12], 0, 0, 0, 1 );
+#endif
+	Matrix4_Rotate( m, -rd->viewangles[2], 1, 0, 0 );
+	Matrix4_Rotate( m, -rd->viewangles[0], 0, 1, 0 );
+	Matrix4_Rotate( m, -rd->viewangles[1], 0, 0, 1 );
+	Matrix4_Translate( m, -rd->vieworg[0], -rd->vieworg[1], -rd->vieworg[2] );
+}
+
+/*
 =============
 R_SetupGL
 =============
 */
 void R_SetupGL( void )
 {
-	GLdouble	xMin, xMax, yMin, yMax, zNear, zFar;
-
-	if( r_portalview )
-		goto modelview;
-
-	if( !r_mirrorview ) {
+	if( !r_mirrorview && !r_portalview ) {
 		qglScissor( r_refdef.x, glState.height - r_refdef.height - r_refdef.y, r_refdef.width, r_refdef.height );
 		qglViewport( r_refdef.x, glState.height - r_refdef.height - r_refdef.y, r_refdef.width, r_refdef.height );
 		qglClear( GL_DEPTH_BUFFER_BIT );
 	}
 
 	// set up projection matrix
-	zNear = 4;
-	zFar = 65536;
-
-	yMax = zNear * tan( r_refdef.fov_y * M_PI / 360.0 );
-	yMin = -yMax;
-
-	xMin = yMin * r_refdef.width / r_refdef.height;
-	xMax = yMax * r_refdef.width / r_refdef.height;
-
-	xMin += -( 2 * glState.cameraSeparation ) / zNear;
-	xMax += -( 2 * glState.cameraSeparation ) / zNear;
-
+	R_SetupProjectionMatrix( &r_refdef, r_projection_matrix );
 	if( r_mirrorview )
-		r_projection_matrix[0] = -(2.0 * zNear) / (xMax - xMin);
-	else
-		r_projection_matrix[0] = (2.0 * zNear) / (xMax - xMin);
-	r_projection_matrix[1] = 0.0F;
-	r_projection_matrix[2] = 0.0F;
-	r_projection_matrix[3] = 0.0F;
-	r_projection_matrix[4] = 0.0F;
-	r_projection_matrix[5] = (2.0 * zNear) / (yMax - yMin);
-	r_projection_matrix[6] = 0.0F;
-	r_projection_matrix[7] = 0.0F;
-	r_projection_matrix[8] = (xMax + xMin) / (xMax - xMin);
-	r_projection_matrix[9] = (yMax + yMin) / (yMax - yMin);
-	r_projection_matrix[10] = -(zFar + zNear) / (zFar - zNear);
-	r_projection_matrix[11] = -1.0F;
-	r_projection_matrix[12] = 0.0F;
-	r_projection_matrix[13] = 0.0F;
-	r_projection_matrix[14] = -(2.0 * zFar * zNear) / (zFar - zNear);
-	r_projection_matrix[15] = 0.0F;
+		r_projection_matrix[0] = -r_projection_matrix[0];
 
 	qglMatrixMode( GL_PROJECTION );
 	qglLoadMatrixf( r_projection_matrix );
 
-modelview:
-	Matrix4_Identity( r_worldview_matrix );
-	Matrix4_Rotate( r_worldview_matrix, -90, 1, 0, 0 );
-	Matrix4_Rotate( r_worldview_matrix,  90, 0, 0, 1 );
-	Matrix4_Rotate( r_worldview_matrix, -r_refdef.viewangles[2], 1, 0, 0 );
-	Matrix4_Rotate( r_worldview_matrix, -r_refdef.viewangles[0], 0, 1, 0 );
-	Matrix4_Rotate( r_worldview_matrix, -r_refdef.viewangles[1], 0, 0, 1 );
-	Matrix4_Translate( r_worldview_matrix, -r_refdef.vieworg[0], -r_refdef.vieworg[1], -r_refdef.vieworg[2] );
+	R_SetupModelviewMatrix( &r_refdef, r_worldview_matrix );
 
 	qglMatrixMode( GL_MODELVIEW );
 	qglLoadMatrixf( r_worldview_matrix );
@@ -1021,12 +1108,11 @@ modelview:
 
 /*
 =============
-R_TransformToScreen_Vec2
+R_TransformToScreen_Vec3
 =============
 */
-void R_TransformToScreen_Vec2( vec3_t in, vec2_t out )
+void R_TransformToScreen_Vec3( vec3_t in, vec3_t out )
 {
-	float iw;
 	vec4_t temp, temp2;
 
 	temp[0] = in[0];
@@ -1036,9 +1122,41 @@ void R_TransformToScreen_Vec2( vec3_t in, vec2_t out )
 	Matrix4_Multiply_Vector( r_worldview_matrix, temp, temp2 );
 	Matrix4_Multiply_Vector( r_projection_matrix, temp2, temp );
 
-	iw = 1.0f / temp[3];
-	out[0] = r_refdef.x + (temp[0] * iw + 1.0f) * r_refdef.width * 0.5f;
-	out[1] = r_refdef.y + (temp[1] * iw + 1.0f) * r_refdef.height * 0.5f;
+	if( !temp[3] )
+		return;
+	out[0] = r_refdef.x + (temp[0] / temp[3] + 1.0f) * r_refdef.width * 0.5f;
+	out[1] = r_refdef.y + (temp[1] / temp[3] + 1.0f) * r_refdef.height * 0.5f;
+	out[2] = (temp[2] / temp[3] + 1.0f) * 0.5f;
+}
+
+/*
+=============
+R_TransformVectorToScreen
+=============
+*/
+void R_TransformVectorToScreen( refdef_t *rd, vec3_t in, vec2_t out )
+{
+	mat4x4_t p, m;
+	vec4_t temp, temp2;
+
+	if( !rd || !in || !out )
+		return;
+
+	temp[0] = in[0];
+	temp[1] = in[1];
+	temp[2] = in[2];
+	temp[3] = 1.0f;
+
+	R_SetupProjectionMatrix( rd, p );
+	R_SetupModelviewMatrix( rd, m );
+
+	Matrix4_Multiply_Vector( m, temp, temp2 );
+	Matrix4_Multiply_Vector( p, temp2, temp );
+
+	if( !temp[3] )
+		return;
+	out[0] = rd->x + (temp[0] / temp[3] + 1.0f) * rd->width * 0.5f;
+	out[1] = rd->y + (temp[1] / temp[3] + 1.0f) * rd->height * 0.5f;
 }
 
 /*
@@ -1046,17 +1164,17 @@ void R_TransformToScreen_Vec2( vec3_t in, vec2_t out )
 R_Clear
 =============
 */
-void R_Clear (void)
+void R_Clear( void )
 {
 	int	bits;
 
 	bits = GL_DEPTH_BUFFER_BIT;
 
-	if ( r_clear->integer ) {
+	if( r_clear->integer ) {
 		qglClearColor( 0.5, 0.5, 0.5, 1 );
 		bits |= GL_COLOR_BUFFER_BIT;
 	}
-	if ( glState.stencilEnabled && r_shadows->integer ) {
+	if( glState.stencilEnabled && r_shadows->integer ) {
 		qglClearStencil( 128 );
 		bits |= GL_STENCIL_BUFFER_BIT;
 	}
@@ -1094,17 +1212,37 @@ void R_RenderView( refdef_t *fd, meshlist_t *list )
 		goto done;
 	}
 
+	if( r_speeds->integer )
+		r_mark_leaves = Sys_Milliseconds ();
 	R_MarkLeaves ();
+	if( r_speeds->integer )
+		r_mark_leaves = Sys_Milliseconds () - r_mark_leaves;
 
 	R_DrawWorld ();
 
+	if( r_speeds->integer )
+		r_add_polys = Sys_Milliseconds ();
 	R_AddPolysToList ();
+	if( r_speeds->integer )
+		r_add_polys = Sys_Milliseconds () - r_add_polys;
 
+	if( r_speeds->integer )
+		r_add_entities = Sys_Milliseconds ();
 	R_AddEntitiesToList ();
+	if( r_speeds->integer )
+		r_add_entities = Sys_Milliseconds () - r_add_entities;
 
+	if( r_speeds->integer )
+		r_sort_meshes = Sys_Milliseconds ();
 	R_SortMeshes ();
+	if( r_speeds->integer )
+		r_sort_meshes = Sys_Milliseconds () - r_sort_meshes;
 
+	if( r_speeds->integer )
+		r_draw_meshes = Sys_Milliseconds ();
 	R_DrawMeshes( qfalse );
+	if( r_speeds->integer )
+		r_draw_meshes = Sys_Milliseconds () - r_draw_meshes;
 
 	R_DrawTriangleOutlines ();
 
@@ -1193,8 +1331,6 @@ void R_DrawStretchPic( int x, int y, int w, int h, float s1, float t1, float s2,
 	pic_st[3][1] = t2;
 	*(int *)pic_colors[3] = bcolor;
 
-	pic_mesh.numIndexes = 6;
-	pic_mesh.indexes = r_quad_indexes;
 #if SHADOW_VOLUMES
 	pic_mesh.trneighbors = NULL;
 #endif
@@ -1203,7 +1339,7 @@ void R_DrawStretchPic( int x, int y, int w, int h, float s1, float t1, float s2,
 	pic_mesh.xyzArray = pic_xyz;
 	pic_mesh.stArray = pic_st;
 	pic_mesh.normalsArray = pic_normals;
-	pic_mesh.colorsArray = pic_colors;
+	pic_mesh.colorsArray[0] = pic_colors;
 
 	pic_mbuffer.shader = shader;
 
@@ -1211,7 +1347,7 @@ void R_DrawStretchPic( int x, int y, int w, int h, float s1, float t1, float s2,
 	if( shader->flags & SHADER_VIDEOMAP )
 		R_UploadCinematicShader( shader );
 
-	R_PushMesh( &pic_mesh, MF_NONBATCHED | shader->features | (r_shownormals->integer ? MF_NORMALS : 0) );
+	R_PushMesh( &pic_mesh, MF_NONBATCHED | MF_TRIFAN | shader->features | (r_shownormals->integer ? MF_NORMALS : 0) );
 	R_RenderMeshBuffer( &pic_mbuffer, qfalse );
 }
 
@@ -1223,7 +1359,13 @@ R_DrawStretchRaw
 void R_DrawStretchRaw( int x, int y, int w, int h, int cols, int rows, int frame, qbyte *data )
 {
 	GL_Bind( 0, r_cintexture );
-	R_Upload32( &data, cols, rows, IT_NOPICMIP|IT_NOMIPMAP|IT_CLAMP, NULL, NULL, 3 );
+
+	if( cols != r_cintexture->width || rows != r_cintexture->height )
+		R_Upload32( &data, cols, rows, IT_CINEMATIC, NULL, NULL, 3, qfalse );
+	else
+		R_Upload32( &data, cols, rows, IT_CINEMATIC, NULL, NULL, 3, qtrue );
+	r_cintexture->width = cols;
+	r_cintexture->height = rows;
 
 	qglBegin( GL_QUADS );
 	qglTexCoord2f( 0, 0 );
@@ -1246,13 +1388,13 @@ R_UpdateSwapInterval
 */
 void R_UpdateSwapInterval( void )
 {
-	if( gl_swapinterval->modified ) {
-		gl_swapinterval->modified = qfalse;
+	if( r_swapinterval->modified ) {
+		r_swapinterval->modified = qfalse;
 
 		if( !glState.stereoEnabled ) {
 #ifdef _WIN32
-			if( glConfig.swapInterval )
-				qwglSwapIntervalEXT( gl_swapinterval->integer );
+			if( qwglSwapIntervalEXT )
+				qwglSwapIntervalEXT( r_swapinterval->integer );
 #endif
 		}
 	}
@@ -1292,13 +1434,11 @@ void R_BeginFrame( float cameraSeparation )
 {
 	glState.cameraSeparation = cameraSeparation;
 
-	if( gl_log->modified ) {
-		GLimp_EnableLogging( gl_log->integer );
-		gl_log->modified = qfalse;
+	if( gl_finish->integer && gl_delayfinish->integer ) {
+		R_ApplySoftwareGamma ();
+		qglFinish ();
+		GLimp_EndFrame ();
 	}
-
-	if( gl_log->integer )
-		GLimp_LogNewFrame();
 
 	GLimp_BeginFrame ();
 
@@ -1327,7 +1467,7 @@ void R_BeginFrame( float cameraSeparation )
 	}
 
 	// texturemode stuff
-	if ( r_texturemode->modified ) {
+	if( r_texturemode->modified ) {
 		R_TextureMode( r_texturemode->string );
 		r_texturemode->modified = qfalse;
 	}
@@ -1351,6 +1491,8 @@ void R_ClearScene( void )
 	r_entities[0] = r_worldent;
 	r_numDlights = 0;
 	r_numPolys = 0;
+	currententity = &r_worldent;
+	currentmodel = r_worldmodel;
 }
 
 /*
@@ -1360,7 +1502,7 @@ R_AddEntityToScene
 */
 void R_AddEntityToScene( entity_t *ent )
 {
-	if( r_numEntities < MAX_ENTITIES )
+	if( (r_numEntities < MAX_ENTITIES) && ent )
 		r_entities[r_numEntities++] = *ent;
 }
 
@@ -1369,16 +1511,19 @@ void R_AddEntityToScene( entity_t *ent )
 R_AddLightToScene
 =====================
 */
-void R_AddLightToScene( vec3_t org, float intensity, float r, float g, float b )
+void R_AddLightToScene( vec3_t org, float intensity, float r, float g, float b, shader_t *shader )
 {
-	if( r_numDlights < MAX_DLIGHTS ) {
+	if( (r_numDlights < MAX_DLIGHTS) && intensity && (r != 0 || g != 0 || b != 0) ) {
 		dlight_t *dl = &r_dlights[r_numDlights++];
 
-		VectorCopy (org, dl->origin);
-		dl->intensity = intensity;
+		VectorCopy( org, dl->origin );
+		dl->intensity = intensity * DLIGHT_SCALE;
 		dl->color[0] = r;
 		dl->color[1] = g;
 		dl->color[2] = b;
+		dl->shader = shader;
+
+		R_LightBounds( org, dl->intensity, dl->mins, dl->maxs );
 	}
 }
 
@@ -1389,8 +1534,30 @@ R_AddPolyToScene
 */
 void R_AddPolyToScene( poly_t *poly )
 {
-	if( r_numPolys < MAX_POLYS )
-		r_polys[r_numPolys++] = *poly;
+	if( (r_numPolys < MAX_POLYS) && poly && poly->numverts ) {
+		r_polys[r_numPolys] = *poly;
+		if( r_polys[r_numPolys].numverts > MAX_POLY_VERTS )
+			r_polys[r_numPolys].numverts = MAX_POLY_VERTS;
+		r_numPolys++;
+	}
+}
+
+/*
+=====================
+R_AddLightStyleToScene
+=====================
+*/
+void R_AddLightStyleToScene( int style, float r, float g, float b )
+{
+	lightstyle_t	*ls;
+
+	if( style < 0 || style > MAX_LIGHTSTYLES )
+		Com_Error( ERR_DROP, "R_AddLightStyleToScene: bad light style %i", style );
+
+	ls = &r_lightStyles[style];
+	ls->rgb[0] = max( 0, r );
+	ls->rgb[1] = max( 0, g );
+	ls->rgb[2] = max( 0, b );
 }
 
 /*
@@ -1402,14 +1569,13 @@ void R_RenderScene( refdef_t *fd )
 {
 	glState.in2DMode = qfalse;
 
-	if ( !r_norefresh->integer ) {
+	if( !r_norefresh->integer ) {
 		R_BackendStartFrame ();
-
-		if (gl_finish->integer)
-			qglFinish ();
 
 		if( !(fd->rdflags & RDF_NOWORLDMODEL ) )
 			r_lastRefdef = *fd;
+
+		r_farclip = 0;
 
 		r_mirrorview = qfalse;
 		r_portalview = qfalse;
@@ -1420,6 +1586,9 @@ void R_RenderScene( refdef_t *fd )
 		r_worldlist.skyDrawn = qfalse;
 		r_worldlist.num_meshes = 0;
 		r_worldlist.num_additive_meshes = 0;
+
+		if( gl_finish->integer && !gl_delayfinish->integer )
+			qglFinish ();
 
 		R_RenderView( fd, &r_worldlist );
 
@@ -1464,8 +1633,8 @@ void R_ApplySoftwareGamma( void )
 		div = 0.5 * (double)( 1 << r_overbrightbits->integer );
 	else
 		div = 0.5;
-	f = 1.3 + div - r_gamma->value;
-	clamp ( f, 0.1, 5.0 );
+	f = div + r_gamma->value;
+	clamp( f, 0.1, 5.0 );
 
 	qglBegin( GL_TRIANGLES );
 
@@ -1497,9 +1666,12 @@ R_BeginFrame
 */
 void R_EndFrame( void )
 {
-	R_ApplySoftwareGamma ();
+	if( gl_finish->integer && gl_delayfinish->integer ) {
+		qglFlush ();
+		return;
+	}
 
-	qglFlush ();
+	R_ApplySoftwareGamma ();
 
 	GLimp_EndFrame ();
 }
@@ -1512,6 +1684,7 @@ void R_Register( void )
 
 	r_norefresh = Cvar_Get( "r_norefresh", "0", 0 );
 	r_fullbright = Cvar_Get( "r_fullbright", "0", CVAR_CHEAT|CVAR_LATCH_VIDEO );
+	r_lightmap = Cvar_Get( "r_lightmap", "0", CVAR_CHEAT );
 	r_drawentities = Cvar_Get( "r_drawentities", "1", CVAR_CHEAT );
 	r_drawworld = Cvar_Get( "r_drawworld", "1", CVAR_CHEAT );
 	r_novis = Cvar_Get( "r_novis", "0", 0 );
@@ -1531,11 +1704,10 @@ void R_Register( void )
 	r_ignorehwgamma = Cvar_Get( "r_ignorehwgamma", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	r_overbrightbits = Cvar_Get( "r_overbrightbits", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	r_mapoverbrightbits = Cvar_Get( "r_mapoverbrightbits", "2", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
-	r_vertexlight = Cvar_Get( "r_vertexlight", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	r_detailtextures = Cvar_Get( "r_detailtextures", "1", CVAR_ARCHIVE );
 	r_flares = Cvar_Get( "r_flares", "0", CVAR_ARCHIVE );
 	r_flaresize = Cvar_Get( "r_flaresize", "40", CVAR_ARCHIVE );
-	r_flarefade = Cvar_Get( "r_flarefade", "7", CVAR_ARCHIVE );
+	r_flarefade = Cvar_Get( "r_flarefade", "3", CVAR_ARCHIVE );
 	r_dynamiclight = Cvar_Get( "r_dynamiclight", "1", CVAR_ARCHIVE );
 	r_subdivisions = Cvar_Get( "r_subdivisions", "4", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	r_packlightmaps = Cvar_Get( "r_packlightmaps", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
@@ -1545,6 +1717,8 @@ void R_Register( void )
 	r_ambientscale = Cvar_Get( "r_ambientscale", "0.6", 0 );
 	r_directedscale = Cvar_Get( "r_directedscale", "1", 0 );
 	r_draworder = Cvar_Get( "r_draworder", "0", CVAR_CHEAT );
+	r_bumpscale = Cvar_Get( "r_bumpscale", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	r_maxlmblocksize = Cvar_Get( "r_maxLMBlockSize", "512", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 
 	r_allow_software = Cvar_Get( "r_allow_software", "0", 0 );
 	r_3dlabs_broken = Cvar_Get( "r_3dlabs_broken", "1", CVAR_ARCHIVE );
@@ -1552,6 +1726,7 @@ void R_Register( void )
 	r_shadows = Cvar_Get( "r_shadows", "0", CVAR_ARCHIVE );
 	r_shadows_alpha = Cvar_Get( "r_shadows_alpha", "0.4", CVAR_ARCHIVE );
 	r_shadows_nudge = Cvar_Get( "r_shadows_nudge", "1", CVAR_ARCHIVE );
+	r_shadows_projection_distance = Cvar_Get( "r_shadows_projection_distance", "10000", CVAR_ARCHIVE );
 
 	r_lodbias = Cvar_Get( "r_lodbias", "0", CVAR_ARCHIVE );
 	r_lodscale = Cvar_Get( "r_lodscale", "5.0", CVAR_ARCHIVE );
@@ -1565,17 +1740,21 @@ void R_Register( void )
 	r_screenshot_jpeg = Cvar_Get( "r_screenshot_jpeg", "1", CVAR_ARCHIVE );					// Heffo - JPEG Screenshots
 	r_screenshot_jpeg_quality = Cvar_Get( "r_screenshot_jpeg_quality", "85", CVAR_ARCHIVE );	// Heffo - JPEG Screenshots
 
-	gl_log = Cvar_Get( "gl_log", "0", 0 );
+	r_swapinterval = Cvar_Get( "r_swapinterval", "0", CVAR_ARCHIVE );
+	// make sure r_swapinterval is checked after vid_restart
+	r_swapinterval->modified = qtrue;
+
 	gl_finish = Cvar_Get ("gl_finish", "0", CVAR_ARCHIVE);
+	gl_delayfinish = Cvar_Get( "gl_delayfinish", "1", CVAR_ARCHIVE );
 	gl_cull = Cvar_Get ("gl_cull", "1", 0);
 	gl_driver = Cvar_Get( "gl_driver", GL_DRIVERNAME, CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 
 	gl_extensions = Cvar_Get( "gl_extensions", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
-	gl_ext_swapinterval = Cvar_Get( "gl_ext_swapinterval", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_multitexture = Cvar_Get( "gl_ext_multitexture", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_compiled_vertex_array = Cvar_Get( "gl_ext_compiled_vertex_array", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_texture_env_add = Cvar_Get( "gl_ext_texture_env_add", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_texture_env_combine = Cvar_Get( "gl_ext_texture_env_combine", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	gl_ext_texture_env_dot3 = Cvar_Get( "gl_ext_texture_env_dot3", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_NV_texture_env_combine4 = Cvar_Get( "gl_ext_NV_texture_env_combine4", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_compressed_textures = Cvar_Get( "gl_ext_compressed_textures", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_texture_edge_clamp = Cvar_Get( "gl_ext_texture_edge_clamp", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
@@ -1584,11 +1763,9 @@ void R_Register( void )
 	gl_ext_draw_range_elements = Cvar_Get( "gl_ext_draw_range_elements", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_vertex_buffer_object = Cvar_Get( "gl_ext_vertex_buffer_object", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_texture_cube_map = Cvar_Get( "gl_ext_texture_cube_map", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	gl_ext_bgra = Cvar_Get( "gl_ext_bgra", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 
 	gl_drawbuffer = Cvar_Get( "gl_drawbuffer", "GL_BACK", 0 );
-	gl_swapinterval = Cvar_Get( "gl_swapinterval", "0", CVAR_ARCHIVE );
-	// make sure gl_swapinterval is checked after vid_restart
-	gl_swapinterval->modified = qtrue;
 
 	vid_fullscreen = Cvar_Get( "vid_fullscreen", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 
@@ -1674,10 +1851,10 @@ void R_CheckExtensions( void )
 {
 	glConfig.compiledVertexArray = qfalse;
 	glConfig.multiTexture = qfalse;
-	glConfig.swapInterval = qfalse;
 	glConfig.textureCubeMap = qfalse;
 	glConfig.textureEnvAdd = qfalse;
 	glConfig.textureEnvCombine = qfalse;
+	glConfig.textureEnvDot3 = qfalse;
 	glConfig.NVTextureEnvCombine4 = qfalse;
 	glConfig.compressedTextures = qfalse;
 	glConfig.textureEdgeClamp = qfalse;
@@ -1685,9 +1862,19 @@ void R_CheckExtensions( void )
 	glConfig.maxTextureFilterAnisotropic = 0.0f;
 	glConfig.drawRangeElements = qfalse;
 	glConfig.vertexBufferObject = qfalse;
+	glConfig.bgra = qfalse;
 
 	glConfig.maxTextureCubemapSize = 0;
 	glConfig.maxTextureFilterAnisotropic = 0;
+
+#ifdef _WIN32
+	if( strstr( glConfig.extensionsString, "WGL_EXT_swap_control" ) ) {
+		qwglSwapIntervalEXT = ( BOOL (WINAPI *)(int)) qglGetProcAddress( "wglSwapIntervalEXT" );
+
+		if( !qwglSwapIntervalEXT )
+			Com_Printf( "R_CheckExtensions: broken WGL_EXT_swap_control support, contact your video card vendor\n" );
+	}
+#endif
 
 	if( !gl_extensions->integer )
 		return;
@@ -1716,19 +1903,9 @@ void R_CheckExtensions( void )
 			if( qglDeleteBuffersARB )
 				qglGenBuffersARB = ( void * ) qglGetProcAddress("glGenBuffersARB");
 			if( qglGenBuffersARB )
-				qglIsBufferARB = ( void * ) qglGetProcAddress("glGenBuffersARB");
-			if( qglGenBuffersARB )
-				qglIsBufferARB = ( void * ) qglGetProcAddress("glIsBufferARB");
-			if( qglIsBufferARB )
-				qglMapBufferARB = ( void * ) qglGetProcAddress("glMapBufferARB");
-			if( qglMapBufferARB )
-				qglUnmapBufferARB = ( void * ) qglGetProcAddress("glUnmapBufferARB");
-			if( qglUnmapBufferARB )
 				qglBufferDataARB = ( void * ) qglGetProcAddress("glBufferDataARB");
-			if( qglBufferDataARB )
-				qglBufferSubDataARB = ( void * ) qglGetProcAddress("glBufferSubDataARB");
 
-			if( qglBufferSubDataARB )
+			if( qglBufferDataARB )
 				glConfig.vertexBufferObject = qtrue;
 			else
 				Com_Printf( "R_CheckExtensions: broken GL_ARB_vertex_buffer_object support, contact your video card vendor\n" );
@@ -1747,26 +1924,12 @@ void R_CheckExtensions( void )
 		}
 	}
 
-#ifdef _WIN32
-	if( gl_ext_swapinterval->integer ) {
-		if( strstr( glConfig.extensionsString, "WGL_EXT_swap_control" ) ) {
-			qwglSwapIntervalEXT = ( BOOL (WINAPI *)(int)) qglGetProcAddress( "wglSwapIntervalEXT" );
-
-			if( qwglSwapIntervalEXT )
-				glConfig.swapInterval = qtrue;
-			else
-				Com_Printf( "R_CheckExtensions: broken WGL_EXT_swap_control support, contact your video card vendor\n" );
-		}
-	}
-#endif
-
 	if ( gl_ext_multitexture->integer ) {
 		if( strstr( glConfig.extensionsString, "GL_ARB_multitexture" ) ) {
-			qglMTexCoord2f = ( void * ) qglGetProcAddress( "glMultiTexCoord2fARB" );
 			qglActiveTextureARB = ( void * ) qglGetProcAddress( "glActiveTextureARB" );
 			qglClientActiveTextureARB = ( void * ) qglGetProcAddress( "glClientActiveTextureARB" );
 
-			if( !qglMTexCoord2f || !qglActiveTextureARB || !qglClientActiveTextureARB )
+			if( !qglActiveTextureARB || !qglClientActiveTextureARB )
 				Com_Printf( "R_CheckExtensions: broken multitexture support, contact your video card vendor\n" );
 			else
 				glConfig.multiTexture = qtrue;
@@ -1774,10 +1937,9 @@ void R_CheckExtensions( void )
 
 		if( !glConfig.multiTexture ) {
 			if( strstr( glConfig.extensionsString, "GL_SGIS_multitexture" ) ) {
-				qglMTexCoord2f = ( void * ) qglGetProcAddress( "glMTexCoord2fSGIS" );
 				qglSelectTextureSGIS = ( void * ) qglGetProcAddress( "glSelectTextureSGIS" );
 
-				if( !qglMTexCoord2f || !qglSelectTextureSGIS )
+				if( !qglSelectTextureSGIS )
 					Com_Printf( "R_CheckExtensions: broken multitexture support, contact your video card vendor\n" );
 				else
 					glConfig.multiTexture = qtrue;
@@ -1809,6 +1971,11 @@ void R_CheckExtensions( void )
 			glConfig.textureEnvCombine = qtrue;
 	}
 
+	if( gl_ext_texture_env_dot3->integer && glConfig.textureEnvCombine ) {
+		if( strstr( glConfig.extensionsString, "GL_ARB_texture_env_dot3" ) )
+			glConfig.textureEnvDot3 = qtrue;
+	}
+
 	if( gl_ext_NV_texture_env_combine4->integer && glConfig.textureEnvCombine ) {
 		if ( strstr( glConfig.extensionsString, "NV_texture_env_combine4" ) )
 			glConfig.NVTextureEnvCombine4 = qtrue;
@@ -1833,6 +2000,11 @@ void R_CheckExtensions( void )
 	if( gl_ext_texture_cube_map->integer ) {
 		if( strstr( glConfig.extensionsString, "GL_ARB_texture_cube_map" ) )
 			glConfig.textureCubeMap = qtrue;
+	}
+
+	if( gl_ext_bgra->integer ) {
+		if( strstr( glConfig.extensionsString, "GL_EXT_bgra" ) )
+			glConfig.bgra = qtrue;
 	}
 }
 
@@ -1905,11 +2077,11 @@ void R_SetGLDefaults( void )
 
 	R_TextureMode( r_texturemode->string );
 
-	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min );
-	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max );
+	qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min );
+	qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max );
 
-	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
-	qglTexParameterf( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
+	qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT );
+	qglTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT );
 }
 
 /*
@@ -1926,28 +2098,30 @@ void R_GfxInfo_f( void )
 	Com_Printf( "GL_EXTENSIONS: %s\n", glConfig.extensionsString );
 	Com_Printf( "GL_MAX_TEXTURE_SIZE: %i\n", glConfig.maxTextureSize );
 	Com_Printf( "GL_MAX_TEXTURE_UNITS: %i\n", glConfig.maxTextureUnits );
-	if( glConfig.textureCubeMap )
+//	if( glConfig.textureCubeMap )
 		Com_Printf( "GL_MAX_CUBE_MAP_TEXTURE_SIZE: %i\n", glConfig.maxTextureCubemapSize );
-	if( glConfig.textureFilterAnisotropic )
-		Com_Printf( "GL_MAX_TEXTURE_MAX_ANISOTROPY: %1.1f\n", glConfig.maxTextureFilterAnisotropic );
+//	if( glConfig.textureFilterAnisotropic )
+		Com_Printf( "GL_MAX_TEXTURE_MAX_ANISOTROPY: %i\n", glConfig.maxTextureFilterAnisotropic );
 	Com_Printf( "\n" );
 
 	Com_Printf( "mode: %i, %s\n", r_mode->integer, glState.fullScreen ? "fullscreen" : "" );
 	Com_Printf( "CDS: %s\n", glConfig.allowCDS ? "enabled" : "disabled" );
 	Com_Printf( "picmip: %i\n", r_picmip->integer );
 	Com_Printf( "texturemode: %s\n", r_texturemode->string );
-	Com_Printf( "swap interval: %s\n", glConfig.swapInterval ? "enabled" : "disabled" );
+	Com_Printf( "swap interval: %s\n", r_swapinterval->integer ? "enabled" : "disabled" );
 	Com_Printf( "compiled vertex array: %s\n", glConfig.compiledVertexArray ? "enabled" : "disabled" );
 	Com_Printf( "multitexture: %s\n", glConfig.multiTexture ? "enabled" : "disabled" );
 	Com_Printf( "texture cube map: %s\n", glConfig.textureCubeMap ? "enabled" : "disabled" );
 	Com_Printf( "texenv add: %s\n", glConfig.textureEnvAdd ? "enabled" : "disabled" );
 	Com_Printf( "texenv combine: %s\n", glConfig.textureEnvCombine ? "enabled" : "disabled" );
+	Com_Printf( "texenv dot3: %s\n", glConfig.textureEnvDot3 ? "enabled" : "disabled" );
 	Com_Printf( "NVtexenv combine4: %s\n", glConfig.NVTextureEnvCombine4 ? "enabled" : "disabled" );
 	Com_Printf( "texture edge clamp: %s\n", glConfig.textureEdgeClamp ? "enabled" : "disabled" );
 	Com_Printf( "anisotropic filtering: %s\n", glConfig.textureFilterAnisotropic ? "enabled" : "disabled" );
 	Com_Printf( "compressed textures: %s\n", glConfig.compressedTextures ? "enabled" : "disabled" );
 	Com_Printf( "draw range elements: %s\n", glConfig.drawRangeElements ? "enabled" : "disabled" );
 	Com_Printf( "vertex buffer object: %s\n", glConfig.vertexBufferObject ? "enabled" : "disabled" );
+	Com_Printf( "BGRA byte order: %s\n", glConfig.bgra ? "enabled" : "disabled" );
 }
 
 /*
@@ -2006,24 +2180,24 @@ int R_Init( void *hinstance, void *hWnd )
 	Q_strncpyz( vendor_buffer, glConfig.vendorString, sizeof(vendor_buffer) );
 	Q_strlwr( vendor_buffer );
 
-	if ( strstr( renderer_buffer, "voodoo" ) ) {
-		if ( !strstr( renderer_buffer, "rush" ) )
+	if( strstr( renderer_buffer, "voodoo" ) ) {
+		if( !strstr( renderer_buffer, "rush" ) )
 			glConfig.renderer = GL_RENDERER_VOODOO;
 		else
 			glConfig.renderer = GL_RENDERER_VOODOO_RUSH;
-	} else if ( strstr( vendor_buffer, "sgi" ) )
+	} else if( strstr( vendor_buffer, "sgi" ) )
 		glConfig.renderer = GL_RENDERER_SGI;
-	else if ( strstr( renderer_buffer, "permedia" ) )
+	else if( strstr( renderer_buffer, "permedia" ) )
 		glConfig.renderer = GL_RENDERER_PERMEDIA2;
-	else if ( strstr( renderer_buffer, "glint" ) )
+	else if( strstr( renderer_buffer, "glint" ) )
 		glConfig.renderer = GL_RENDERER_GLINT_MX;
-	else if ( strstr( renderer_buffer, "glzicd" ) )
+	else if( strstr( renderer_buffer, "glzicd" ) )
 		glConfig.renderer = GL_RENDERER_REALIZM;
-	else if ( strstr( renderer_buffer, "gdi" ) )
+	else if( strstr( renderer_buffer, "gdi" ) )
 		glConfig.renderer = GL_RENDERER_MCD;
-	else if ( strstr( renderer_buffer, "pcx2" ) )
+	else if( strstr( renderer_buffer, "pcx2" ) )
 		glConfig.renderer = GL_RENDERER_PCX2;
-	else if ( strstr( renderer_buffer, "verite" ) )
+	else if( strstr( renderer_buffer, "verite" ) )
 		glConfig.renderer = GL_RENDERER_RENDITION;
 	else
 		glConfig.renderer = GL_RENDERER_OTHER;
@@ -2033,12 +2207,12 @@ int R_Init( void *hinstance, void *hWnd )
 #endif
 
 	// MCD has buffering issues
-	if ( glConfig.renderer == GL_RENDERER_MCD )
+	if( glConfig.renderer == GL_RENDERER_MCD )
 		Cvar_SetValue( "gl_finish", 1 );
 
 	glConfig.allowCDS = qtrue;
-	if ( glConfig.renderer & GL_RENDERER_3DLABS ) {
-		if ( r_3dlabs_broken->integer )
+	if( glConfig.renderer & GL_RENDERER_3DLABS ) {
+		if( r_3dlabs_broken->integer )
 			glConfig.allowCDS = qfalse;
 		else
 			glConfig.allowCDS = qtrue;
@@ -2049,9 +2223,8 @@ int R_Init( void *hinstance, void *hWnd )
 	R_SetGLDefaults ();
 
 	qglGetIntegerv( GL_MAX_TEXTURE_SIZE, &glConfig.maxTextureSize );
-	if( glConfig.maxTextureSize <= 0 ) {
+	if( glConfig.maxTextureSize <= 0 )
 		glConfig.maxTextureSize = 256;
-	}
 
 	qglGetIntegerv( GL_MAX_CUBE_MAP_TEXTURE_SIZE_ARB, &glConfig.maxTextureCubemapSize );
 
@@ -2065,17 +2238,19 @@ int R_Init( void *hinstance, void *hWnd )
 			glConfig.maxTextureUnits = MAX_TEXTURE_UNITS;
 	}
 	
-	qglGetFloatv ( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &glConfig.maxTextureFilterAnisotropic );
-	Cvar_ForceSet ( "gl_ext_max_texture_filter_anisotropic", va ("%1.1f", glConfig.maxTextureFilterAnisotropic) );
+	qglGetIntegerv( GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &glConfig.maxTextureFilterAnisotropic );
+	Cvar_ForceSet( "gl_ext_max_texture_filter_anisotropic", va ("%i", glConfig.maxTextureFilterAnisotropic) );
 
 	R_GfxInfo_f ();
 
 	R_BackendInit ();
 
+	R_ClearScene ();
+
 	glState.initializedMedia = qtrue;
 
 	err = qglGetError();
-	if ( err != GL_NO_ERROR )
+	if( err != GL_NO_ERROR )
 		Com_Printf( "glGetError() = 0x%x\n", err);
 
 	Com_Printf( "----- finished R_Init -----\n" );
@@ -2093,6 +2268,7 @@ void R_InitMedia( void )
 	if( glState.initializedMedia )
 		return;
 
+	R_InitLightStyles ();
 	R_InitImages ();
 	R_InitShaders( !r_firstTime );
 	R_InitModels ();

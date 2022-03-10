@@ -34,8 +34,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "cg_local.h"
 
-int			scr_draw_loading;
-
 vrect_t		scr_vrect;
 
 cvar_t		*cg_viewSize;
@@ -227,7 +225,7 @@ void SCR_Init (void)
 
 /*
 ==================
-SCR_Init
+SCR_Shutdown
 ==================
 */
 void SCR_Shutdown (void)

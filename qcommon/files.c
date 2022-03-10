@@ -29,14 +29,22 @@ QUAKE FILESYSTEM
 =============================================================================
 */
 
-#define FS_UNZ_BUFSIZE		2048
+#define FS_ZIP_BUFSIZE				0x00000800
+
+#define FS_ZIP_BUFREADCOMMENT		0x00000400
+#define FS_ZIP_SIZELOCALHEADER		0x0000001e
+#define FS_ZIP_SIZECENTRALDIRITEM	0x0000002e
+
+#define FS_ZIP_LOCALHEADERMAGIC		0x04034b50
+#define FS_ZIP_CENTRALHEADERMAGIC	0x02014b50
+#define FS_ZIP_ENDHEADERMAGIC		0x06054b50
 
 typedef struct
 {
-	unsigned char readBuffer[FS_UNZ_BUFSIZE];	// internal buffer for compressed data
-	z_stream	zstream;					// zLib stream structure for inflate
+	unsigned char readBuffer[FS_ZIP_BUFSIZE];	// internal buffer for compressed data
+	z_stream	zstream;						// zLib stream structure for inflate
 	unsigned	compressedSize;
-	unsigned	restReadCompressed;			// number of bytes to be decompressed
+	unsigned	restReadCompressed;				// number of bytes to be decompressed
 } zipEntry_t;
 
 typedef struct
@@ -45,8 +53,8 @@ typedef struct
 	char		*searchName;
 } searchfile_t;
 
-#define PACKFILE_DEFLATED		1
-#define PACKFILE_COHERENT		2
+#define FS_PACKFILE_DEFLATED		1
+#define FS_PACKFILE_COHERENT		2
 
 typedef struct packfile_s {
 	char		*name;
@@ -98,8 +106,8 @@ searchpath_t	*fs_base_searchpaths;	// without gamedirs
 
 mempool_t		*fs_mempool;
 
-#define FS_MAX_HASH_SIZE	1024
 #define FS_MAX_BLOCK_SIZE	0x10000
+#define FS_MAX_HASH_SIZE	1024
 #define FS_MAX_HANDLES		1024
 
 filehandle_t fs_filehandles[FS_MAX_HANDLES];
@@ -278,7 +286,7 @@ int FS_FOpenFile( const char *filename, int *filenum, int mode )
 		Q_snprintfz( netpath, sizeof(netpath), "%s/%s", FS_Gamedir (), filename );
 		FS_CreatePath( netpath );
 
-		f = fopen( netpath, "w" );
+		f = fopen( netpath, "wb" );
 		if( !f )
 			return -1;
 
@@ -296,7 +304,7 @@ int FS_FOpenFile( const char *filename, int *filenum, int mode )
 		Q_snprintfz( netpath, sizeof(netpath), "%s/%s", FS_Gamedir (), filename );
 		FS_CreatePath( netpath );
 
-		f = fopen( netpath, "a" );
+		f = fopen( netpath, "ab" );
 		if( !f )
 			return -1;
 
@@ -333,7 +341,7 @@ int FS_FOpenFile( const char *filename, int *filenum, int mode )
 					file->restReadUncompressed = pakFile->uncompressedSize;
 					file->zipEntry = NULL;
 
-					if( !(pakFile->flags & PACKFILE_COHERENT) ) {
+					if( !(pakFile->flags & FS_PACKFILE_COHERENT) ) {
 						unsigned offset = FS_PK3CheckFileCoherency( file->fstream, pakFile );
 						if( !offset ) {
 							Com_DPrintf( "FS_FOpenFile: can't get proper offset for %s\n", filename );
@@ -342,11 +350,11 @@ int FS_FOpenFile( const char *filename, int *filenum, int mode )
 							return -1;
 						}
 						pakFile->offset += offset;
-						pakFile->flags |= PACKFILE_COHERENT;
+						pakFile->flags |= FS_PACKFILE_COHERENT;
 					}
 					file->offset = pakFile->offset;
 
-					if( pakFile->flags & PACKFILE_DEFLATED ) {
+					if( pakFile->flags & FS_PACKFILE_DEFLATED ) {
 						file->zipEntry = Mem_Alloc( fs_mempool, sizeof(zipEntry_t) );
 						file->zipEntry->compressedSize = pakFile->compressedSize;
 						file->zipEntry->restReadCompressed = pakFile->compressedSize;
@@ -438,77 +446,68 @@ void FS_FCloseFile( int file )
 
 /*
 =================
+FS_ReadPK3File
+
+Properly handles partial reads, used by FS_Read and FS_Seek
+=================
+*/
+static int FS_ReadPK3File( qbyte *buf, size_t len, filehandle_t *fh )
+{
+	zipEntry_t *zipEntry;
+	size_t block, total;
+	int	read, error, totalOutBefore;
+
+	zipEntry = fh->zipEntry;
+	zipEntry->zstream.next_out = buf;
+	zipEntry->zstream.avail_out = len;
+
+	total = 0;
+	do {	// read in chunks
+		if( !zipEntry->zstream.avail_in && zipEntry->restReadCompressed ) {
+			block = min( zipEntry->restReadCompressed, FS_ZIP_BUFSIZE );
+
+			read = fread( zipEntry->readBuffer, 1, block, fh->fstream );
+			if( read == 0 ) {	// we might have been trying to read from a CD
+				read = fread( zipEntry->readBuffer, 1, block, fh->fstream );
+				if( read == 0 )
+					read = -1;
+			}
+			if( read == -1 )
+				Sys_Error( "FS_Read: can't read %i bytes", block );
+
+			zipEntry->restReadCompressed -= block;
+			zipEntry->zstream.next_in = zipEntry->readBuffer;
+			zipEntry->zstream.avail_in = block;
+		}
+
+		totalOutBefore = zipEntry->zstream.total_out;
+		error = inflate( &zipEntry->zstream, Z_SYNC_FLUSH );
+		total += (zipEntry->zstream.total_out - totalOutBefore);
+
+		if( error == Z_STREAM_END )
+			break;
+		if( error != Z_OK )
+			Sys_Error( "FS_ReadPK3File: can't inflate file" );
+	} while( zipEntry->zstream.avail_out > 0 );
+
+	return total;
+}
+
+/*
+=================
 FS_ReadFile
 
 Properly handles partial reads
 =================
 */
-int FS_Read( void *buffer, size_t len, int file )
+static int FS_ReadFile( qbyte *buf, size_t len, filehandle_t *fh )
 {
-	qbyte			*buf;
-	filehandle_t	*fh;
-	int				read, block, remaining, total;
+	size_t block, total;
+	int	read;
 
-	buf = (qbyte *)buffer;
-	fh = FS_FileHandleForNum( file );
-
-	// read in chunks for progress bar
 	total = 0;
-	remaining = len;
-	if( remaining > fh->restReadUncompressed )
-		remaining = fh->restReadUncompressed;
-	if( !remaining || !buf )
-		return 0;
-
-	if( fh->zipEntry ) {
-		zipEntry_t *zipEntry;
-		int error, totalOutBefore;
-
-		zipEntry = fh->zipEntry;
-		zipEntry->zstream.next_out = buf;
-		zipEntry->zstream.avail_out = remaining;
-
-		do {
-			if( !zipEntry->zstream.avail_in && zipEntry->restReadCompressed ) {
-				if( zipEntry->restReadCompressed < FS_UNZ_BUFSIZE )
-					block = zipEntry->restReadCompressed;
-				else
-					block = FS_UNZ_BUFSIZE;
-
-				read = fread( zipEntry->readBuffer, 1, block, fh->fstream );
-				if( read == 0 ) {	// we might have been trying to read from a CD
-					read = fread( zipEntry->readBuffer, 1, block, fh->fstream );
-					if( read == 0 )
-						read = -1;
-				}
-				if( read == -1 )
-					Sys_Error( "FS_Read: can't read %i bytes", block );
-
-				zipEntry->restReadCompressed -= block;
-				zipEntry->zstream.next_in = zipEntry->readBuffer;
-				zipEntry->zstream.avail_in = block;
-			}
-
-			totalOutBefore = zipEntry->zstream.total_out;
-			error = inflate( &zipEntry->zstream, Z_SYNC_FLUSH );
-			total += (zipEntry->zstream.total_out - totalOutBefore);
-
-			if( error == Z_STREAM_END ) {
-				fh->restReadUncompressed -= total;
-				return total;
-			}
-			if( error != Z_OK )
-				Sys_Error( "FS_Read: can't inflate file" );
-		} while( zipEntry->zstream.avail_out > 0 );
-
-		fh->restReadUncompressed -= total;
-		return total;
-	}
-
-	do {
-		block = remaining;
-		if( block > FS_MAX_BLOCK_SIZE )
-			block = FS_MAX_BLOCK_SIZE;
+	do {	// read in chunks
+		block = min( len, FS_MAX_BLOCK_SIZE );
 
 		read = fread( buf, 1, block, fh->fstream );
 		if( read == 0 ) {	// we might have been trying to read from a CD
@@ -520,12 +519,41 @@ int FS_Read( void *buffer, size_t len, int file )
 			Sys_Error( "FS_Read: could not read %i bytes", block );
 
 		// do some progress bar thing here...
-		remaining -= block;
+		len -= block;
 		buf += block;
 		total += block;
-	} while( remaining > 0 );
+	} while( len > 0 );
 
+	return total;
+}
+
+/*
+=================
+FS_Read
+
+Properly handles partial reads
+=================
+*/
+int FS_Read( void *buffer, size_t len, int file )
+{
+	filehandle_t	*fh;
+	size_t			total;
+
+	fh = FS_FileHandleForNum( file );
+
+	// read in chunks for progress bar
+	if( len > fh->restReadUncompressed )
+		len = fh->restReadUncompressed;
+	if( !len || !buffer )
+		return 0;
+
+	if( fh->zipEntry )
+		total = FS_ReadPK3File( ( qbyte * )buffer, len, fh );
+	else
+		total = FS_ReadFile( ( qbyte * )buffer, len, fh );
+	
 	fh->restReadUncompressed -= total;
+
 	return total;
 }
 
@@ -599,10 +627,10 @@ FS_Tell
 int	FS_Seek( int file, int offset, int whence )
 {
 	filehandle_t	*fh;
-	int				remaining, currentOffset;
-	qbyte			buf[FS_UNZ_BUFSIZE * 8];
 	zipEntry_t		*zipEntry;
-	int				error, block;
+	int				error, currentOffset;
+	size_t			remaining, block;
+	qbyte			buf[FS_ZIP_BUFSIZE * 8];
 
 	fh = FS_FileHandleForNum( file );
 	currentOffset = fh->uncompressedSize - fh->restReadUncompressed;
@@ -637,47 +665,20 @@ int	FS_Seek( int file, int offset, int whence )
 		zipEntry->zstream.avail_in = 0;
 		error = inflateReset( &zipEntry->zstream );
 		if( error != Z_OK )
-			return -1;
+			Sys_Error( "FS_Seek: can't inflateReset file" );
 
 		fh->restReadUncompressed = fh->uncompressedSize;
 		zipEntry->restReadCompressed = zipEntry->compressedSize;
 	}
 
 	remaining = offset;
-	while( remaining > 0 ) {
-		if( remaining > sizeof( buf ) ) {
-			zipEntry->zstream.next_out = buf;
-			zipEntry->zstream.avail_out = sizeof( buf );
-			remaining -= sizeof( buf );
-		} else {
-			zipEntry->zstream.next_out = buf;
-			zipEntry->zstream.avail_out = remaining;
-			remaining = 0;
-		}
+	do {
+		block = min( remaining, sizeof( buf ) );
 
-		do {
-			if( !zipEntry->zstream.avail_in && zipEntry->restReadCompressed ) {
-				if( zipEntry->restReadCompressed < FS_UNZ_BUFSIZE )
-					block = zipEntry->restReadCompressed;
-				else
-					block = FS_UNZ_BUFSIZE;
+		FS_ReadPK3File( buf, block, fh );
 
-				if( fread( zipEntry->readBuffer, 1, block, fh->fstream ) != block ) {
-					// we might have been trying to read from a CD
-					if( fread( buf, 1, block, fh->fstream ) != block )
-						Sys_Error( "FS_Read: can't read %i bytes" );
-				}
-
-				zipEntry->restReadCompressed -= block;
-				zipEntry->zstream.next_in = zipEntry->readBuffer;
-				zipEntry->zstream.avail_in = block;
-			}
-
-			error = inflate( &zipEntry->zstream, Z_SYNC_FLUSH );
-			if( error != Z_OK )
-				return -1;
-		} while( zipEntry->zstream.avail_out > 0 );
-	}
+		remaining -= block;
+	} while( remaining > 0 );
 
 	fh->restReadUncompressed -= offset;
 	return 0;
@@ -831,13 +832,11 @@ inline unsigned short LittleShortRaw( const qbyte *raw ) {
 	return (raw[1] << 8) | raw[0];
 }
 
-#define BUFREADCOMMENT (0x400)
 static unsigned FS_PK3SearchCentralDir( FILE *fin )
 {
 	unsigned fileSize, backRead;
 	unsigned maxBack = 0xffff;	// maximum size of global comment
-	unsigned posFound = 0;
-	unsigned char buf[BUFREADCOMMENT+4];
+	unsigned char buf[FS_ZIP_BUFREADCOMMENT+4];
 
 	if( fseek( fin, 0, SEEK_END ) != 0 )
 		return 0;
@@ -848,34 +847,31 @@ static unsigned FS_PK3SearchCentralDir( FILE *fin )
 
 	backRead = 4;
 	while( backRead < maxBack ) {
-		int i;
-		unsigned readSize, readPos;
+		unsigned i, readSize, readPos;
 
-		if( (backRead + BUFREADCOMMENT) > maxBack ) 
+		if( backRead + FS_ZIP_BUFREADCOMMENT > maxBack ) 
 			backRead = maxBack;
 		else
-			backRead += BUFREADCOMMENT;
+			backRead += FS_ZIP_BUFREADCOMMENT;
 
 		readPos = fileSize - backRead;
-		readSize = ((BUFREADCOMMENT+4) < (fileSize-readPos)) ? 
-                     (BUFREADCOMMENT+4) : (fileSize-readPos);
+		readSize = min( FS_ZIP_BUFREADCOMMENT + 4, backRead );
+		if( readSize < 4 )
+			continue;
+
 		if( fseek( fin, readPos, SEEK_SET ) != 0 )
 			break;
 		if( fread( buf, 1, readSize, fin ) != readSize )
 			break;
 
-		for( i = ( int )readSize - 3; (i--) > 0; ) {
-			if( ((*(buf+i)) == 0x50) && ((*(buf+i+1)) == 0x4b) && 
-				((*(buf+i+2)) == 0x05) && ((*(buf+i+3)) == 0x06) ) {
-				posFound = readPos + i;
-				break;
-			}
+		for( i = readSize - 3; i--; ) {
+			// check the magic
+			if( LittleLongRaw( buf + i ) == FS_ZIP_ENDHEADERMAGIC )
+				return readPos + i;
 		}
-		if( posFound != 0 )
-			break;
 	}
 
-	return posFound;
+	return 0;
 }
 
 /*
@@ -886,24 +882,23 @@ Read the local header of the current zipfile
 Check the coherency of the local header and info in the end of central directory about this file
 =================
 */
-#define SIZEZIPLOCALHEADER (0x1e)
 static unsigned FS_PK3CheckFileCoherency( FILE *f, packfile_t *file )
 {
 	unsigned flags;
-	unsigned char localHeader[30], compressed;
+	unsigned char localHeader[31], compressed;
 
 	if( fseek( f, file->offset, SEEK_SET ) != 0 )
 		return 0;
 	if( fread( localHeader, 1, sizeof( localHeader ), f ) != sizeof( localHeader ) )
 		return 0;
 
-	// check magic
-	if( LittleLongRaw( &localHeader[0] ) != 0x04034b50 )
+	// check the magic
+	if( LittleLongRaw( &localHeader[0] ) != FS_ZIP_LOCALHEADERMAGIC )
 		return 0;
 	compressed = LittleShortRaw( &localHeader[8] );
-	if( ( compressed == Z_DEFLATED ) && !( file->flags & PACKFILE_DEFLATED ) )
+	if( ( compressed == Z_DEFLATED ) && !( file->flags & FS_PACKFILE_DEFLATED ) )
 		return 0;
-	else if( !compressed && ( file->flags & PACKFILE_DEFLATED ) )
+	else if( !compressed && ( file->flags & FS_PACKFILE_DEFLATED ) )
 		return 0;
 
 	flags = LittleShortRaw( &localHeader[6] ) & 8;
@@ -912,9 +907,8 @@ static unsigned FS_PK3CheckFileCoherency( FILE *f, packfile_t *file )
 	if( ( LittleLongRaw( &localHeader[22] ) != file->uncompressedSize ) && !flags )
 		return 0;
 
-	return SIZEZIPLOCALHEADER + LittleShortRaw( &localHeader[26] ) + ( unsigned )LittleShortRaw( &localHeader[28] );
+	return FS_ZIP_SIZELOCALHEADER + LittleShortRaw( &localHeader[26] ) + ( unsigned )LittleShortRaw( &localHeader[28] );
 }
-
 
 /*
 =================
@@ -923,7 +917,6 @@ FS_PK3GetFileInfo
 Get Info about the current file in the zipfile, with internal only info
 =================
 */
-#define SIZECENTRALDIRITEM (0x2e)
 static unsigned FS_PK3GetFileInfo( FILE *f, unsigned pos, unsigned byteBeforeTheZipFile, packfile_t *file, size_t *fileNameLen, int *crc )
 {
 	size_t sizeRead;
@@ -936,7 +929,7 @@ static unsigned FS_PK3GetFileInfo( FILE *f, unsigned pos, unsigned byteBeforeThe
 		return 0;
 
 	// check the magic
-	if( LittleLongRaw( &infoHeader[0] ) != 0x02014b50 )
+	if( LittleLongRaw( &infoHeader[0] ) != FS_ZIP_CENTRALHEADERMAGIC )
 		return 0;
 
 	compressed = LittleShortRaw( &infoHeader[10] );
@@ -947,7 +940,7 @@ static unsigned FS_PK3GetFileInfo( FILE *f, unsigned pos, unsigned byteBeforeThe
 		*crc = LittleLongRaw( &infoHeader[16] );
 	if( file ) {
 		if( compressed == Z_DEFLATED )
-			file->flags |= PACKFILE_DEFLATED;
+			file->flags |= FS_PACKFILE_DEFLATED;
 		file->compressedSize = LittleLongRaw( &infoHeader[20] );
 		file->uncompressedSize = LittleLongRaw( &infoHeader[24] );
 		file->offset = LittleLongRaw( &infoHeader[42] ) + byteBeforeTheZipFile;
@@ -968,7 +961,7 @@ static unsigned FS_PK3GetFileInfo( FILE *f, unsigned pos, unsigned byteBeforeThe
 		*(file->name + sizeRead) = 0;
 	}
 
-	return SIZECENTRALDIRITEM + ( unsigned )LittleShortRaw( &infoHeader[28] ) +
+	return FS_ZIP_SIZECENTRALDIRITEM + ( unsigned )LittleShortRaw( &infoHeader[28] ) +
 				( unsigned )LittleShortRaw( &infoHeader[30] ) + ( unsigned )LittleShortRaw( &infoHeader[32] );
 }
 
@@ -1078,13 +1071,14 @@ FS_PathGetFileListExt
 */
 int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *extension, searchfile_t *files, size_t size )
 {
-	char *s;
-	int found;
+	int i, found;
+	char *p, *s, *name;
 	size_t dirlen, extlen, tokenlen;
 
 	if( !size )
 		return 0;
 
+	found = 0;
 	dirlen = 0;
 	extlen = 0;
 
@@ -1099,24 +1093,94 @@ int FS_PathGetFileListExt( searchpath_t *search, const char *dir, const char *ex
 	if( extension )
 		extlen = strlen( extension );
 
-	if( !search->pack )
-		return 0;
+	if( !search->pack ) {
+		size_t			searchlen;
+		int				numfiles;
+		char			**filenames;
+		char			findname[MAX_OSPATH];
+		unsigned int	musthave, canthave;
 
-	for( s = search->pack->fileNames, found = 0; *s; s += tokenlen + 1 ) {
+		musthave = 0;
+		canthave = SFF_HIDDEN | SFF_SYSTEM;
+
+		Q_snprintfz( findname, sizeof( findname ), "%s/", search->filename );
+		searchlen = strlen( findname );
+
+		if( dirlen ) {
+			Q_strncatz( findname, dir, sizeof( findname ) );
+			searchlen = strlen( findname );
+
+			if( findname[searchlen-1] != '/' ) {
+				Q_strncatz( findname, "/", sizeof( findname ) );
+				searchlen++;
+			}
+		}
+
+		if( extlen ) {
+			if( extension[0] != '/' ) {
+				Q_strncatz( findname, "*", sizeof( findname ) );
+				Q_strncatz( findname, extension, sizeof( findname ) );
+				canthave |= SFF_SUBDIR;
+			} else {
+				Q_strncatz( findname, "*.*", sizeof( findname ) );
+				musthave |= SFF_SUBDIR;
+			}
+		} else {
+			Q_strncatz( findname, "*.*", sizeof( findname ) );
+		}
+
+		if( (filenames = FS_ListFiles( findname, &numfiles, musthave, canthave )) ) {
+			for( i = 0; i < numfiles - 1; i++ ) {
+				if( found < size ) {
+					if( (musthave & SFF_SUBDIR) ) {
+						size_t len = strlen( filenames[i] + searchlen );
+
+						if( filenames[i][searchlen+len-1] != '/' ) {
+							files[found].name = Mem_ZoneMalloc( len + 2 );
+							strcpy( files[found].name, filenames[i] + searchlen );
+							files[found].name[len] = '/';
+							files[found].name[len+1] = 0;
+						} else {
+							files[found].name = CopyString( filenames[i] + searchlen );
+						}
+					} else {
+						files[found].name = CopyString( filenames[i] + searchlen );
+					}
+					files[found].searchName = search->filename;
+					found++;
+				}
+				Mem_ZoneFree( filenames[i] );
+			}
+		}
+
+		return found;
+	}
+
+	for( s = search->pack->fileNames; *s; s += tokenlen + 1 ) {
 		tokenlen = strlen( s );
 
+		// check directory
 		if( dirlen )
 			if( tokenlen <= dirlen + 1 || s[dirlen] != '/' || Q_strnicmp( s, dir, dirlen ) )
 				continue;
 
+		// check extension
 		if( extlen )
 			if( tokenlen < extlen || Q_strnicmp( extension, s + tokenlen - extlen, extlen ) )
 				continue;
 
 		if( dirlen )
-			files[found].name = s + dirlen + 1;
+			name = s + dirlen + 1;
 		else
-			files[found].name = s;
+			name = s;
+
+		// ignore subdirectories
+		p = strchr( name, '/' );
+		if( p )
+			if( *(p + 1) )
+				continue;
+
+		files[found].name = CopyString( name );
 		files[found].searchName = search->filename;
 		if( ++found == size )
 			return found;
@@ -1192,9 +1256,9 @@ void FS_AddHomeAsGameDirectory( const char *dir )
 	if( (len > 0) && (len < sizeof(gdir)) && (gdir[len-1] == '/') )
 		gdir[len-1] = 0;
 
-	strncpy( fs_gamedir, gdir, sizeof(fs_gamedir) - 1 );
+	Q_strncpyz( fs_gamedir, gdir, sizeof( fs_gamedir ) );
 	fs_gamedir[sizeof(fs_gamedir)-1] = 0;
-	FS_AddGameDirectory ( gdir );
+	FS_AddGameDirectory( gdir );
 }
 
 /*
@@ -1219,10 +1283,7 @@ void FS_ExecAutoexec( void )
 	char name[MAX_OSPATH];
 
 	dir = Cvar_VariableString( "fs_gamedir" );
-	if( *dir )
-		Q_snprintfz( name, sizeof(name), "%s/%s/autoexec.cfg", fs_basepath->string, dir );
-	else
-		Q_snprintfz( name, sizeof(name), "%s/%s/autoexec.cfg", fs_basepath->string, BASEDIRNAME );
+	Q_snprintfz( name, sizeof( name ), "%s/%s/autoexec.cfg", fs_basepath->string, ( *dir ) ? dir : BASEDIRNAME );
 
 	if( Sys_FindFirst( name, 0, SFF_SUBDIR | SFF_HIDDEN | SFF_SYSTEM ) )
 		Cbuf_AddText( "exec autoexec.cfg\n" );
@@ -1316,6 +1377,11 @@ char **FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned 
 	return list;
 }
 
+#define FS_MAX_SEARCHFILES	1024
+int FS_SortFiles( const searchfile_t *file1, const searchfile_t *file2 ) {
+	return Q_stricmp( (file1)->name, (file2)->name );
+}
+
 /*
 ================
 FS_Dir_f
@@ -1323,47 +1389,50 @@ FS_Dir_f
 */
 void FS_Dir_f( void )
 {
-	char	*path = NULL;
-	char	findname[1024];
-	char	wildcard[1024] = "*.*";
-	char	**dirnames;
-	int		ndirs;
+	int i, allfound;
+	char dir[MAX_OSPATH];
+	char extension[MAX_OSPATH];
+	searchpath_t *search;
+	searchfile_t files[FS_MAX_SEARCHFILES];
+	qboolean truncated;
 
-	if( Cmd_Argc() != 1 )
-		strcpy( wildcard, Cmd_Argv( 1 ) );
-
-	while( ( path = FS_NextPath( path ) ) != NULL ) {
-		char *tmp = findname;
-
-		Q_snprintfz( findname, sizeof(findname), "%s/%s", path, wildcard );
-
-		while( *tmp != 0 ) {
-			if( *tmp == '\\' ) 
-				*tmp = '/';
-			tmp++;
-		}
-		Com_Printf( "Directory of %s\n", findname );
-		Com_Printf( "----\n" );
-
-		if( ( dirnames = FS_ListFiles( findname, &ndirs, 0, 0 ) ) != 0 ) {
-			int i;
-
-			for( i = 0; i < ndirs - 1; i++ ) {
-				if( strrchr( dirnames[i], '/' ) )
-					Com_Printf( "%s\n", strrchr( dirnames[i], '/' ) + 1 );
-				else
-					Com_Printf( "%s\n", dirnames[i] );
-				Mem_ZoneFree( dirnames[i] );
-			}
-			Mem_ZoneFree( dirnames );
-		}
-		Com_Printf( "\n" );
+	if( Cmd_Argc() == 1 ) {
+		dir[0] = '/';
+		extension[0] = 0;
+	} else {
+		if( Cmd_Argc() > 2 )
+			Q_strncpyz( extension, Cmd_Argv( 2 ), sizeof( extension ) );
+		Q_strncpyz( dir, Cmd_Argv( 1 ), sizeof( dir ) );
+		if( !strcmp( dir, "./" ) )
+			strcpy( dir, "/" );
 	}
-}
 
-#define FS_MAX_SEARCHFILES	1024
-int FS_SortFiles( const searchfile_t *file1, const searchfile_t *file2 ) {
-	return Q_stricmp( (file1)->name, (file2)->name );
+	allfound = 0;
+	memset( files, 0, sizeof( files ) );
+	truncated = qfalse;
+
+	for( search = fs_searchpaths ; search ; search = search->next ) {
+		allfound += FS_PathGetFileListExt( search, dir, extension, files + allfound, FS_MAX_SEARCHFILES - allfound );
+		if( allfound == FS_MAX_SEARCHFILES ) {
+			truncated = qtrue;
+			break;	// we are done
+		}
+	}
+
+	qsort( files, allfound, sizeof (searchfile_t ), (int (*)(const void *, const void *))FS_SortFiles );
+
+	Com_Printf( "Directory of %s\n", dir );
+	Com_Printf( "----\n" );
+
+	// free temp memory
+	for( i = 0; i < allfound; i++ ) {
+		Com_Printf( "%s/%s\n", files[i].searchName, files[i].name );
+		Mem_ZoneFree( files[i].name );
+	}
+	if( truncated )
+		Com_Printf( "...\n" );
+
+	Com_Printf( "\n%i files listed\n", allfound );
 }
 
 /*
@@ -1386,9 +1455,9 @@ int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t
 	memset( files, 0, sizeof( files ) );
 
 	for( search = fs_searchpaths ; search ; search = search->next ) {
-		if ( allfound >= FS_MAX_SEARCHFILES )
-			break;	// we are done
 		allfound += FS_PathGetFileListExt( search, dir, extension, files + allfound, FS_MAX_SEARCHFILES - allfound );
+		if( allfound == FS_MAX_SEARCHFILES )
+			break;	// we are done
 	}
 
 	found = 0;
@@ -1401,7 +1470,7 @@ int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t
 			for( i = 0; i < allfound; alllen += len + 1, all2len += len2 + 1, found++, i++ ) {
 				len = strlen( files[i].name );
 				len2 = strlen( files[i].searchName );
-				if ( *bufsize <= len + alllen || *buf2size <= len2 + all2len )
+				if( *bufsize <= len + alllen || *buf2size <= len2 + all2len )
 					break;	// we are done
 				strcpy( buf + alllen, files[i].name );
 				strcpy( buf2 + all2len, files[i].searchName );
@@ -1409,7 +1478,7 @@ int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t
 		} else {
 			for( i = 0; i < allfound; alllen += len + 1, found++, i++ ) {
 				len = strlen( files[i].name );
-				if ( *bufsize <= len + alllen )
+				if( *bufsize <= len + alllen )
 					break;	// we are done
 				strcpy( buf + alllen, files[i].name );
 			}
@@ -1422,6 +1491,10 @@ int FS_GetFileListExt( const char *dir, const char *extension, char *buf, size_t
 		else
 			return 0;
 	}
+
+	// free temp memory
+	for( i = 0; i < allfound; i++ )
+		Mem_ZoneFree( files[i].name );
 
 	return found;
 }

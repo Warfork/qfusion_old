@@ -269,6 +269,12 @@ static void *game_library = NULL;
 static void *cgame_library = NULL;
 static void *ui_library = NULL;
 
+#ifdef __cplusplus
+# define EXTERN_API_FUNC	extern "C"
+#else
+# define EXTERN_API_FUNC	extern
+#endif
+
 /*
 =================
 Sys_UnloadGameLibrary
@@ -281,23 +287,30 @@ void Sys_UnloadGameLibrary (gamelib_t gamelib)
 	switch( gamelib ) {
 		case LIB_GAME:
 			lib = &game_library;
+#ifdef GAME_HARD_LINKED
+			*lib = NULL;
+#endif
 			break;
 		case LIB_CGAME:
 			lib = &cgame_library;
+#ifdef CGAME_HARD_LINKED
+			*lib = NULL;
+#endif
 			break;
 		case LIB_UI:
 			lib = &ui_library;
+#ifdef UI_HARD_LINKED
+			*lib = NULL;
+#endif
 			break;
-		default:
-			return;
+		default: assert( 0 );
 	}
 
 	if( *lib ) {
 		if( dlclose (*lib) )
 			Com_Error (ERR_FATAL, "dlclose failed");
+		*lib = NULL;
 	}
-
-	*lib = NULL;
 }
 
 /*
@@ -354,26 +367,51 @@ void *Sys_LoadGameLibrary (gamelib_t gamelib, void *parms)
 #endif
 #endif
 
-	switch ( gamelib ) {
+	APIfunc = NULL;
+	switch( gamelib ) {
 		case LIB_GAME:
+		{
+#ifdef GAME_HARD_LINKED
+			EXTERN_API_FUNC void *GetGameAPI( void * );
+			APIfunc = GetGameAPI;
+#endif
 			lib = &game_library;
 			libname = "game_" ARCH ".so";
 			apifuncname = "GetGameAPI";
 			break;
-
+		}
 		case LIB_CGAME:
+		{
+#ifdef CGAME_HARD_LINKED
+			EXTERN_API_FUNC void *GetCGameAPI( void * );
+			APIfunc = GetCGameAPI;
+#endif
 			lib = &cgame_library;
 			libname = "cgame_" ARCH ".so";
 			apifuncname = "GetCGameAPI";
 			break;
-
+		}
 		case LIB_UI:
+		{
+#ifdef UI_HARD_LINKED
+			EXTERN_API_FUNC void *GetUIAPI( void * );
+			APIfunc = GetUIAPI;
+#endif
 			lib = &ui_library;
 			libname = "ui_" ARCH ".so";
 			apifuncname = "GetUIAPI";
 			break;
-
+		}
 		default: assert( 0 );
+	}
+
+	if (*lib)
+		Com_Error (ERR_FATAL, "Sys_LoadGameLibrary without Sys_UnloadGameLibrary");
+
+	if (APIfunc)
+	{
+		*lib = ( void * )1;
+		return APIfunc (parms);
 	}
 
 	// check the current debug directory first for development purposes
@@ -521,17 +559,6 @@ Sys_GetHomeDirectory
 char *Sys_GetHomeDirectory (void)
 {
 	return getenv ( "HOME" );
-}
-
-//===============================================================================
-
-/*
-=================
-Sys_PrintCPUInfo
-================
-*/
-void Sys_PrintCPUInfo (void)
-{
 }
 
 //===============================================================================

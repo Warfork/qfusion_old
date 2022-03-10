@@ -593,31 +593,40 @@ void Cvar_List_f (void)
 {
 	cvar_t	*var;
 	int		i;
+	char	*pattern;
 
-	i = 0;
-	for (var = cvar_vars ; var ; var = var->next, i++)
+	if( Cmd_Argc () == 1 )
+		pattern = NULL;		// no wildcard
+	else
+		pattern = Cmd_Args ();
+
+	Com_Printf( "\nConsole variables:\n" );
+	for (var = cvar_vars, i = 0 ; var ; var = var->next)
 	{
-		if (var->flags & CVAR_ARCHIVE)
-			Com_Printf ("*");
-		else
-			Com_Printf (" ");
-		if (var->flags & CVAR_USERINFO)
-			Com_Printf ("U");
-		else
-			Com_Printf (" ");
-		if (var->flags & CVAR_SERVERINFO)
-			Com_Printf ("S");
-		else
-			Com_Printf (" ");
-		if (var->flags & CVAR_NOSET)
-			Com_Printf ("-");
-		else if (var->flags & (CVAR_LATCH|CVAR_LATCH_VIDEO))
-			Com_Printf ("L");
-		else
-			Com_Printf (" ");
-		Com_Printf (" %s \"%s\"\n", var->name, var->string);
+		if (!pattern || Q_WildCmp( pattern, var->name ) ) {
+			if (var->flags & CVAR_ARCHIVE)
+				Com_Printf ("*");
+			else
+				Com_Printf (" ");
+			if (var->flags & CVAR_USERINFO)
+				Com_Printf ("U");
+			else
+				Com_Printf (" ");
+			if (var->flags & CVAR_SERVERINFO)
+				Com_Printf ("S");
+			else
+				Com_Printf (" ");
+			if (var->flags & CVAR_NOSET)
+				Com_Printf ("-");
+			else if (var->flags & (CVAR_LATCH|CVAR_LATCH_VIDEO))
+				Com_Printf ("L");
+			else
+				Com_Printf (" ");
+			i++;
+			Com_Printf (" %s \"%s\"\n", var->name, var->string);
+		}
 	}
-	Com_Printf ("%i cvars\n", i);
+	Com_Printf( "%i variables\n", i );
 }
 
 

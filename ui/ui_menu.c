@@ -477,6 +477,14 @@ void UI_Init ( int vidWidth, int vidHeight )
 {
 	uipool = UI_MemAllocPool ( "UI" );
 
+	m_active = NULL;
+	m_cursoritem = NULL;
+	m_drawfunc = NULL;
+	m_keyfunc = NULL;
+	m_entersound = qfalse;
+
+	memset( &uis, 0, sizeof( uis ) );
+
 	uis.vidWidth = vidWidth;
 	uis.vidHeight = vidHeight;
 

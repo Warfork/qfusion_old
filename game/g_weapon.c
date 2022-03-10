@@ -301,7 +301,11 @@ void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 	VectorNormalize (dir);
 
 	bolt = G_Spawn();
-	bolt->r.svflags = 0;
+	bolt->r.svflags = SVF_PROJECTILE;
+	// when prediction is used against the object
+	// (blaster/hyperblaster shots), the player won't be solid clipped against
+	// the object. Right now trying to run into a firing hyperblaster
+	// is very jerky since you are predicted 'against' the shots.
 	VectorCopy (start, bolt->s.origin);
 	VectorCopy (start, bolt->s.old_origin);
 	VecToAngles (dir, bolt->s.angles);
@@ -376,8 +380,8 @@ static void Grenade_Explode (edict_t *ent)
 	T_RadiusDamage(ent, ent->r.owner, ent->dmg, ent->enemy, ent->dmg_radius, mod);
 
 	// turn entity into event
-	VectorMA ( ent->s.origin, -0.02, ent->velocity, ent->s.origin );
-	G_TurnEntityIntoEvent ( ent, ent->groundentity ? EV_GRENADE_EXPLOSION : EV_ROCKET_EXPLOSION, DirToByte (NULL) );
+	VectorMA (ent->s.origin, -0.02, ent->velocity, ent->s.origin);
+	G_TurnEntityIntoEvent ( ent, ent->groundentity ? EV_GRENADE_EXPLOSION : EV_ROCKET_EXPLOSION, DirToByte (ent->movedir) );
 }
 
 static void Grenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags)
@@ -405,7 +409,9 @@ static void LaserGrenade_SetupLaser (edict_t *ent)
 	edict_t	*owner;
 	edict_t *laser;
 
-	if ( !(owner = ent->r.owner) ) {
+	if( !(owner = ent->r.owner) ) {
+		ent->nextthink = level.time + FRAMETIME;
+		ent->think = G_FreeEdict;
 		return;
 	}
 
@@ -421,14 +427,13 @@ static void LaserGrenade_SetupLaser (edict_t *ent)
 	laser->count = MOD_LASER_TRAP;
 	laser->spawnflags = 1;
 
-	if ( !ctf->integer || !owner->r.client || owner->r.client->resp.ctf_team == CTF_TEAM1 ) {
+	if( !ctf->integer || !owner->r.client || owner->r.client->resp.ctf_team == CTF_TEAM1 )
 		laser->spawnflags |= 2;		// red
-	} else {		
+	else		
 		laser->spawnflags |= 8;		// blue
-	}
 
-	VectorCopy ( ent->s.origin, laser->s.origin );
-	VectorCopy ( ent->s.angles, laser->s.angles );
+	VectorCopy( ent->s.origin, laser->s.origin );
+	VectorCopy( ent->s.angles, laser->s.angles );
 
 	target_laser_start (laser);
 }
@@ -469,7 +474,8 @@ static void LaserGrenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, i
 	VectorClear (ent->velocity);
 	VectorClear (ent->avelocity);
 
-	VecToAngles ( plane->normal, ent->s.angles );
+	VecToAngles (plane->normal, ent->s.angles);
+	VectorCopy (plane->normal, ent->movedir);
 
 	trap_LinkEntity (ent);
 }
@@ -489,6 +495,7 @@ void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int s
 	grenade->velocity[2] += 200 * up[2] + crandom() * 10.0;
 	VectorMA (grenade->velocity, crandom() * 10.0, right, grenade->velocity);
 	VectorSet (grenade->avelocity, 300, 300, 300);
+	VectorSet (grenade->movedir, 0, 0, 1);
 	grenade->movetype = MOVETYPE_BOUNCEGRENADE;
 	grenade->r.clipmask = MASK_SHOT;
 	grenade->r.solid = SOLID_BBOX;
@@ -524,6 +531,7 @@ void fire_grenade2 (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int 
 	VectorMA (grenade->velocity, 200 + crandom() * 10.0, up, grenade->velocity);
 	VectorMA (grenade->velocity, crandom() * 10.0, right, grenade->velocity);
 	VectorSet (grenade->avelocity, 300, 300, 300);
+	VectorSet (grenade->movedir, 0, 0, 1);
 	grenade->movetype = MOVETYPE_BOUNCE;
 	grenade->r.clipmask = MASK_SHOT;
 	grenade->r.solid = SOLID_BBOX;

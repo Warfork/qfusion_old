@@ -625,9 +625,9 @@ void CL_ParseStatusMessage (void)
 {
 	char	*s = MSG_ReadString( &net_recieved );
 
-	Com_Printf ( "%s\n", s );
+	Com_Printf( "%s", s );
 
-	CL_UIModule_AddToServerList ( NET_AdrToString(&net_from), s );
+	CL_UIModule_AddToServerList( NET_AdrToString(&net_from), s );
 }
 
 /*
@@ -637,34 +637,37 @@ CL_ParseGetServersResponse
 Handle a reply from getservers message to master server
 =================
 */
-void CL_ParseGetServersResponse ( qbyte *s )
+void CL_ParseGetServersResponse( qbyte *s )
 {
-	char		adrstring[32];
-	int			port;
+	char		adrString[32];
+	int			port, len;
 	netadr_t	adr;
-	char		*requeststring;
+	char		requestString[32];
 
-	requeststring = va ("info %i", PROTOCOL_VERSION);
+	len = strlen( s );
+	Q_snprintfz( requestString, sizeof( requestString ), "info %i full empty", PROTOCOL_VERSION );
 
-	while (*s && strncmp (s, "EOT", 3))
-	{
+	while( len && strncmp( s, "EOT", 3 ) ) {
+		if( len < 6 )
+			break;
+
 		port = s[5] | (s[4] << 8);
 		if( port < 1 || port >= 65535 )
 			break;
 
-		Q_snprintfz ( adrstring, sizeof(adrstring), "%u.%u.%u.%u:%i\n", s[0], s[1], s[2], s[3], port );
+		Q_snprintfz( adrString, sizeof( adrString ), "%u.%u.%u.%u:%i", s[0], s[1], s[2], s[3], port );
 
-		Com_Printf ( "%s\n", adrstring );
-		if (!NET_StringToAdr (adrstring, &adr))
-		{
-			Com_Printf ("Bad address: %s\n", adrstring);
+		Com_DPrintf( "%s\n", adrString );
+		if( !NET_StringToAdr( adrString, &adr ) ) {
+			Com_Printf( "Bad address: %s\n", adrString );
 			continue;
 		}
-		Netchan_OutOfBandPrint (NS_CLIENT, adr, requeststring);
+		Netchan_OutOfBandPrint( NS_CLIENT, adr, requestString );
 
-		if (s[6] != '\\')
+		if( s[6] != '\\' )
 			break;
 		s += 7;
+		len -= 7;
 	}
 }
 
@@ -677,18 +680,18 @@ void CL_PingServers_f( void )
 {
 	netadr_t	adr;
 	char		*requeststring;
-	cvar_t		*noudp;
-	cvar_t		*noipx;
+	cvar_t		*noudp, *noipx;
+	char		gameName[MAX_QPATH];
 
 	NET_Config( qtrue );		// allow remote
-
-	// send a broadcast packet
-	Com_Printf( "pinging broadcast...\n" );
 
 	noipx = Cvar_Get( "noipx", "0", CVAR_NOSET );
 	noudp = Cvar_Get( "noudp", "0", CVAR_NOSET );
 
 	if( !strcmp( Cmd_Argv(1), "local" ) ) {
+		// send a broadcast packet
+		Com_Printf( "pinging broadcast...\n" );
+
 		requeststring = va( "info %i %s %s", PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
 
 		if( !noudp->integer ) {
@@ -701,7 +704,16 @@ void CL_PingServers_f( void )
 			Netchan_OutOfBandPrint( NS_CLIENT, adr, requeststring );
 		}
 	} else if( !noudp->integer ) {
-		requeststring = va( "getservers %i %s %s", PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
+		// send a broadcast packet
+		Com_Printf( "quering %s...\n", cl_masterServer->string );
+
+		Q_strncpyz( gameName, Cvar_VariableString( "cl_gameName" ), sizeof( gameName ) );
+		if( !gameName[0] ) {
+			Q_strncpyz( gameName, APPLICATION, sizeof( gameName ) );
+			Q_strlwr( gameName );
+		}
+
+		requeststring = va( "getservers %s %i %s %s", gameName, PROTOCOL_VERSION, Cmd_Argv(2), Cmd_Argv(3) );
 
 		if( NET_StringToAdr( cl_masterServer->string, &adr ) ) {
 			if( !adr.port )
@@ -1215,6 +1227,7 @@ void CL_SetClientState( int state )
 //			SCR_UpdateScreen ();
 			break;
 		case ca_connected:
+			Con_Close ();
 			Cvar_FixCheatVars ();
 //			SCR_UpdateScreen ();
 			break;
@@ -1428,11 +1441,11 @@ typedef struct
 } cheatvar_t;
 
 cheatvar_t	cheatvars[] = {
-	{"timescale", "1"},
-	{"timedemo", "0"},
-	{"paused", "0"},
-	{"fixedtime", "0"},
-	{NULL, NULL}
+	{"timescale", "1", NULL},
+	{"timedemo", "0", NULL},
+	{"paused", "0", NULL},
+	{"fixedtime", "0", NULL},
+	{NULL, NULL, NULL}
 };
 
 int		numcheatvars;
@@ -1526,6 +1539,7 @@ void CL_Frame (int msec)
 	static double	trueframetime;
 	double			minframetime;
 	static int		lasttimecalled;
+	static int		aviframe;
 
 	if (dedicated->integer)
 		return;
@@ -1576,23 +1590,17 @@ void CL_Frame (int msec)
 	if (cls.state != ca_active || cl.cin.time > 0)
 		S_Update (vec3_origin, vec3_origin, vec3_origin, vec3_origin);
 
-	if ( cl_avidemo->integer ) {
-		char picname[80];
-		static int aviframe;
-
-		if ( cl_avidemo->modified ) {
-			aviframe = 0;
-			cl_avidemo->modified = qfalse;
-		}
-
-		strcpy (picname, "avidemo000");
-
-		picname[7] = aviframe/100 + '0'; 
-		picname[8] = (aviframe%100)/10 + '0'; 
-		picname[9] = ((aviframe%100)%10) + '0'; 
-		R_ScreenShot (picname, qtrue);
-		aviframe++;
+	if( cl_avidemo->modified ) {
+		aviframe = 0;
+		if( cl_avidemo->integer )
+			R_BeginAviDemo ();
+		else
+			R_StopAviDemo ();
+		cl_avidemo->modified = qfalse;
 	}
+
+	if( cl_avidemo->integer )
+		R_WriteAviFrame( aviframe++, cl_avidemo->integer == 2 );
 
 	// advance local effects for next frame
 	SCR_RunCinematic ();
@@ -1639,8 +1647,6 @@ void CL_Init (void)
 
 	Con_Init ();
 
-	Sys_PrintCPUInfo ();
-
 #ifndef VID_INITFIRST
 	S_Init ();	
 	VID_Init ();
@@ -1653,7 +1659,8 @@ void CL_Init (void)
 	SZ_Init (&net_message, net_message_buffer, sizeof(net_message_buffer));
 
 	RoQ_Init ();
-	SCR_Init ();
+
+	SCR_InitScreen ();
 	cls.disable_screen = qtrue;	// don't draw yet
 
 	CL_InitLocal ();

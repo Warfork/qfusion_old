@@ -25,11 +25,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 CG_BeginFrameSequence
 ==================
 */
-void CG_BeginFrameSequence ( frame_t frame ) 
+void CG_BeginFrameSequence( frame_t frame ) 
 {
-	if ( cg.frameSequenceRunning ) {
-		CG_Error ( "CG_BeginFrameSequence: already running sequence" );
-	}
+	if( cg.frameSequenceRunning )
+		CG_Error( "CG_BeginFrameSequence: already running sequence" );
 
 	cg.oldFrame = cg.frame;
 	cg.frame = frame;
@@ -41,20 +40,19 @@ void CG_BeginFrameSequence ( frame_t frame )
 CG_NewPacketEntityState
 ==================
 */
-void CG_NewPacketEntityState ( int entnum, entity_state_t state )
+void CG_NewPacketEntityState( int entNum, entity_state_t state )
 {
 	centity_t *ent;
 
-	if ( !cg.frameSequenceRunning ) {
-		CG_Error ( "CG_NewPacketEntityState: no sequence" );
-	}
+	if( !cg.frameSequenceRunning )
+		CG_Error( "CG_NewPacketEntityState: no sequence" );
 
-	ent = &cg_entities[entnum];
+	ent = &cg_entities[entNum];
 	cg_parseEntities[(cg.frame.parseEntities+cg.frame.numEntities) & (MAX_PARSE_ENTITIES-1)] = state;
 	cg.frame.numEntities++;
 
 	// some data changes will force no lerping
-	if ( state.modelindex != ent->current.modelindex
+	if( state.modelindex != ent->current.modelindex
 		|| state.modelindex2 != ent->current.modelindex2
 		|| state.modelindex3 != ent->current.modelindex3
 		|| abs(state.origin[0] - ent->current.origin[0]) > 512
@@ -67,17 +65,17 @@ void CG_NewPacketEntityState ( int entnum, entity_state_t state )
 		ent->serverFrame = -99;
 	}
 
-	if ( ent->serverFrame != cg.frame.serverFrame - 1 )
+	if( ent->serverFrame != cg.frame.serverFrame - 1 )
 	{	// wasn't in last update, so initialize some things
 		// duplicate the current state so lerping doesn't hurt anything
 		ent->prev = state;
 
 		if ( state.events[0] == EV_TELEPORT || state.events[1] == EV_TELEPORT ) {
-			VectorCopy ( state.origin, ent->prev.origin );
-			VectorCopy ( state.origin, ent->lerpOrigin );
+			VectorCopy( state.origin, ent->prev.origin );
+			VectorCopy( state.origin, ent->lerpOrigin );
 		} else {
-			VectorCopy ( state.old_origin, ent->prev.origin );
-			VectorCopy ( state.old_origin, ent->lerpOrigin );
+			VectorCopy( state.old_origin, ent->prev.origin );
+			VectorCopy( state.old_origin, ent->lerpOrigin );
 		}
 	}
 	else
@@ -94,17 +92,15 @@ void CG_NewPacketEntityState ( int entnum, entity_state_t state )
 CG_FireEvents
 ==================
 */
-void CG_FireEvents (void)
+void CG_FireEvents( void )
 {
 	int					pnum;
 	entity_state_t		*state;
 
-	for ( pnum = 0; pnum < cg.frame.numEntities; pnum++ )
-	{
+	for( pnum = 0; pnum < cg.frame.numEntities; pnum++ ) {
 		state = &cg_parseEntities[(cg.frame.parseEntities+pnum)&(MAX_PARSE_ENTITIES-1)];
-		if ( state->events[0] ) {
-			CG_EntityEvent ( state );
-		}
+		if( state->events[0] )
+			CG_EntityEvent( state );
 	}
 }
 
@@ -113,25 +109,23 @@ void CG_FireEvents (void)
 CG_EndFrameSequence
 ==================
 */
-void CG_EndFrameSequence ( int numEntities )
+void CG_EndFrameSequence( int numEntities )
 {
-	if ( !cg.frameSequenceRunning ) {
-		CG_Error ( "CG_EndFrameSequence: no sequence" );
-	}
+	if( !cg.frameSequenceRunning )
+		CG_Error( "CG_EndFrameSequence: no sequence" );
 
 	cg.frameSequenceRunning = qfalse;
 
 	// clamp time
-	clamp ( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
+	if( !cg_paused->integer )
+		clamp( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
 
-	if ( !cg.frame.valid ) {
+	if( !cg.frame.valid )
 		return;
-	}
 
 	// verify our data is valid
-	if ( cg.frame.numEntities != numEntities ) {
-		CG_Error ( "CG_EndFrameSequence: bad sequence" );
-	}
+	if( cg.frame.numEntities != numEntities )
+		CG_Error( "CG_EndFrameSequence: bad sequence" );
 
 	CG_BuildSolidList ();
 	CG_FireEvents ();
@@ -193,23 +187,22 @@ void CG_AddPortalSurfaceEnt( centity_t *cent )
 /*
 ===============
 CG_AddEntityEffects
-
 ===============
 */
-void CG_AddEntityEffects ( centity_t *cent, vec3_t origin, int effects )
+void CG_AddEntityEffects( centity_t *cent, vec3_t origin, int effects )
 {
 	if( effects & EF_CORPSE ) {
 		CG_FlyEffect( cent, origin ); 
 	} else if( (effects & (EF_FLAG1|EF_FLAG2)) == EF_FLAG1 ) {
 		CG_FlagTrail( cent->lerpOrigin, origin, EF_FLAG1 );
-		trap_R_AddLightToScene( origin, 225, 1, 0.1, 0.1 );
+		trap_R_AddLightToScene( origin, 225, 1, 0.1, 0.1, NULL );
 	} else if( (effects & (EF_FLAG1|EF_FLAG2)) == EF_FLAG2 ) {
 		CG_FlagTrail( cent->lerpOrigin, origin, EF_FLAG2 );
-		trap_R_AddLightToScene( origin, 225, 0.1, 0.1, 1 );
+		trap_R_AddLightToScene( origin, 225, 0.1, 0.1, 1, NULL );
 	} else if( (effects & (EF_FLAG1|EF_FLAG2)) == (EF_FLAG1|EF_FLAG2) ) {
 		CG_FlagTrail( cent->lerpOrigin, origin, EF_FLAG1 );
 		CG_FlagTrail( cent->lerpOrigin, origin, EF_FLAG2 );
-		trap_R_AddLightToScene( origin, 225, 1, 0.2, 1 );
+		trap_R_AddLightToScene( origin, 225, 1, 0.2, 1, NULL );
 	}
 }
 
@@ -566,21 +559,21 @@ void CG_AddGenericEnt( centity_t *cent )
 				break;
 			case ET_BLASTER:
 				CG_BlasterTrail( cent->lerpOrigin, ent.origin );
-				trap_R_AddLightToScene( ent.origin, 300, 1, 1, 0 );
+				trap_R_AddLightToScene( ent.origin, 300, 1, 1, 0, NULL );
 				break;
 			case ET_HYPERBLASTER:
-				trap_R_AddLightToScene( ent.origin, 300, 1, 1, 0 );
+				trap_R_AddLightToScene( ent.origin, 300, 1, 1, 0, NULL );
 				break;
 			case ET_ROCKET:
 				CG_RocketTrail( cent->lerpOrigin, ent.origin );
-				trap_R_AddLightToScene( ent.origin, 300, 1, 1, 0 );
+				trap_R_AddLightToScene( ent.origin, 300, 1, 1, 0, NULL );
 				break;
 			case ET_GRENADE:
 				CG_GrenadeTrail( cent->lerpOrigin, ent.origin );
 				break;
 			case ET_BFG:
 				CG_BfgParticles( ent.origin );
-				trap_R_AddLightToScene( ent.origin, 300, 0, 1, 0 );
+				trap_R_AddLightToScene( ent.origin, 300, 0, 1, 0, NULL );
 				break;
 			default:
 				break;
@@ -671,7 +664,7 @@ void CG_AddPacketEntities( void )
 				COLOR_A( state->light ) * 4.0, 
 				COLOR_R( state->light ) * (1.0/255.0), 
 				COLOR_G( state->light ) * (1.0/255.0),	
-				COLOR_B( state->light ) * (1.0/255.0) );
+				COLOR_B( state->light ) * (1.0/255.0), NULL );
 	}
 }
 
@@ -862,7 +855,7 @@ void CG_AddEntities( void )
 {
 	extern int cg_numBeamEnts;
 
-	if( cg_timeDemo->integer )
+	if( cg_timeDemo->integer || cg_paused->integer )
 		cg.lerpfrac = 1.0;
 	else
 		cg.lerpfrac = 1.0 - (cg.frame.serverTime - cg.time) * 0.01;
@@ -881,21 +874,37 @@ void CG_AddEntities( void )
 
 /*
 ===============
+CG_GlobalSound
+===============
+*/
+void CG_GlobalSound( vec3_t origin, int entNum, int entChannel, int soundNum, float fvol, float attenuation )
+{
+	if( entNum < 0 || entNum >= MAX_EDICTS )
+		CG_Error( "CG_GlobalSound: bad entnum" );
+
+	if( cgs.soundPrecache[soundNum] )
+		trap_S_StartSound( origin, entNum, entChannel, cgs.soundPrecache[soundNum], fvol, attenuation, 0.0 ); 
+	else if( cgs.configStrings[CS_SOUNDS + soundNum][0] == '*' )
+		CG_SexedSound( entNum, entChannel, cgs.configStrings[CS_SOUNDS + soundNum], fvol );
+}
+
+/*
+===============
 CG_GetEntitySoundOrigin
 
 Called to get the sound spatialization origin
 ===============
 */
-void CG_GetEntitySoundOrigin ( int entnum, vec3_t org )
+void CG_GetEntitySoundOrigin( int entNum, vec3_t org )
 {
 	centity_t	*ent;
 	struct cmodel_s *cmodel;
 	vec3_t		mins, maxs;
 
-	if( entnum < 0 || entnum >= MAX_EDICTS )
+	if( entNum < 0 || entNum >= MAX_EDICTS )
 		CG_Error( "CG_GetEntitySoundOrigin: bad entnum" );
 
-	ent = &cg_entities[entnum];
+	ent = &cg_entities[entNum];
 	if( ent->current.solid != SOLID_BMODEL ) {
 		VectorCopy( ent->lerpOrigin, org );
 		return;

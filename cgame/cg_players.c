@@ -20,12 +20,25 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "cg_local.h"
 
+static char *cg_defaultSexedSounds[] = 
+{
+	"*death1.wav", "*death2.wav", "*death3.wav", "*death4.wav",
+	"*fall1.wav", "*fall2.wav",
+	"*gurp1.wav", "*gurp2.wav",			// drowning damage
+	"*jump1.wav",						// player jump
+	"*pain25_1.wav", "*pain25_2.wav",
+	"*pain50_1.wav", "*pain50_2.wav",
+	"*pain75_1.wav", "*pain75_2.wav",
+	"*pain100_1.wav", "*pain100_2.wav",
+	NULL
+};
+
 /*
 ================
 CG_RegisterSexedSound
 ================
 */
-struct sfx_s *CG_RegisterSexedSound ( int entnum, char *name )
+struct sfx_s *CG_RegisterSexedSound( int entnum, char *name )
 {
 	cg_clientInfo_t *ci;
 	char			*p, *s, model[MAX_QPATH];
@@ -33,12 +46,12 @@ struct sfx_s *CG_RegisterSexedSound ( int entnum, char *name )
 	char			sexedFilename[MAX_QPATH];
 
 	if( entnum < 1 || entnum > MAX_CLIENTS )
-		CG_Error ( "CG_RegisterSexedSound: bad entnum" );
+		return NULL;
 
 	ci = &cgs.clientInfo[entnum-1];
 
 	for( sexedSfx = ci->sexedSfx; sexedSfx; sexedSfx = sexedSfx->next ) {
-		if( !Q_stricmp (sexedSfx->name, name) )
+		if( !Q_stricmp( sexedSfx->name, name ) )
 			return sexedSfx->sfx;
 	}
 
@@ -61,7 +74,7 @@ struct sfx_s *CG_RegisterSexedSound ( int entnum, char *name )
 
 	// if we can't figure it out, they're male
 	if( !model[0] )
-		strcpy ( model, "male" );
+		strcpy( model, "male" );
 
 	sexedSfx = CG_Malloc( sizeof(cg_sexedSfx_t) );
 	sexedSfx->name = CG_CopyString( name );
@@ -72,7 +85,7 @@ struct sfx_s *CG_RegisterSexedSound ( int entnum, char *name )
 	Q_snprintfz( sexedFilename, sizeof(sexedFilename), "players/%s/%s", model, name+1 );
 
 	// so see if it exists
-	if( trap_FS_FOpenFile (sexedFilename, NULL, FS_READ) != -1 ) {	// yes, register it
+	if( trap_FS_FOpenFile( sexedFilename, NULL, FS_READ) != -1 ) {	// yes, register it
 		sexedSfx->sfx = trap_S_RegisterSound( sexedFilename );
 	} else {		// no, revert to the male sound
 		Q_snprintfz( sexedFilename, sizeof(sexedFilename), "sound/player/%s/%s", "male", name+1 );
@@ -87,10 +100,8 @@ struct sfx_s *CG_RegisterSexedSound ( int entnum, char *name )
 CG_SexedSound
 ================
 */
-void CG_SexedSound ( int entnum, int entchannel, char *name, float fvol )
-{
-	if( name[0] == '*' )
-		trap_S_StartSound ( NULL, entnum, entchannel, CG_RegisterSexedSound (entnum, name), fvol, ATTN_NORM, 0.0f );
+void CG_SexedSound( int entnum, int entchannel, char *name, float fvol ) {
+	trap_S_StartSound( NULL, entnum, entchannel, CG_RegisterSexedSound( entnum, name ), fvol, ATTN_NORM, 0.0f );
 }
 
 /*
@@ -116,8 +127,16 @@ void CG_LoadClientInfo( cg_clientInfo_t *ci, char *s, int client )
 	}
 	ci->sexedSfx = NULL;
 
-	// load sounds server told us
 	if( client != -1 ) {
+		// load default sounds
+		for( i = 0; ; i++ ) {
+			name = cg_defaultSexedSounds[i];
+			if( !name )
+				break;
+			CG_RegisterSexedSound( client+1, name );
+		}
+
+		// load sounds server told us
 		for( i = 1; i < MAX_SOUNDS; i++ ) {
 			name = cgs.configStrings[CS_SOUNDS+i];
 

@@ -58,6 +58,23 @@ int		time_before_ref;
 int		time_after_ref;
 
 /*
+==============================================================
+
+BSP FORMATS
+
+==============================================================
+*/
+
+bspFormatDesc_t bspFormats[] =
+{
+	{ QFBSPHEADER, QFBSPVERSION, QF_LIGHTMAP_WIDTH, QF_LIGHTMAP_HEIGHT, BSP_RAVEN },
+	{ IDBSPHEADER, Q3BSPVERSION, LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, BSP_NONE },
+	{ IDBSPHEADER, RTCWBSPVERSION, LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, BSP_NONE },
+	{ RBSPHEADER, RBSPVERSION, LIGHTMAP_WIDTH, LIGHTMAP_HEIGHT, BSP_RAVEN }
+};
+int numBspFormats = sizeof( bspFormats ) / sizeof( bspFormats[0] );
+
+/*
 ============================================================================
 
 CLIENT / SERVER interactions
@@ -1389,9 +1406,6 @@ void Qcommon_Init (int argc, char **argv)
 		Cmd_AddCommand ("quit", Com_Quit);
 
 	Sys_Init ();
-
-	if (dedicated->integer)
-		Sys_PrintCPUInfo ();
 
 	NET_Init ();
 	Netchan_Init ();

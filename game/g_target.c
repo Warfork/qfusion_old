@@ -64,7 +64,7 @@ void Use_Target_Speaker (edict_t *ent, edict_t *other, edict_t *activator)
 	else
 	{	// normal sound
 		if( ent->spawnflags & 8 )
-			G_GlobalSound( CHAN_VOICE|CHAN_RELIABLE, ent->noise_index );
+			G_Sound( activator, CHAN_VOICE|CHAN_RELIABLE, ent->noise_index, ent->volume, ent->attenuation );
 		// use a G_PositionedSound, because this entity won't normally be
 		// sent to any clients because it is invisible
 		else if( ent->spawnflags & 4 )
@@ -652,6 +652,109 @@ void SP_target_laser (edict_t *self)
 	self->think = target_laser_start;
 	self->nextthink = level.time + 1;
 	self->count = MOD_TARGET_LASER;
+}
+
+//==========================================================
+
+/*QUAKED target_lightramp (0 .5 .8) (-8 -8 -8) (8 8 8) TOGGLE
+speed		How many seconds the ramping will take
+message		two letters; starting lightlevel and ending lightlevel
+*/
+
+void target_lightramp_think (edict_t *self)
+{
+	char	style[2];
+
+	style[0] = 'a' + self->movedir[0] + (level.time - self->timestamp) / FRAMETIME * self->movedir[2];
+	style[1] = 0;
+	trap_ConfigString (CS_LIGHTS+self->enemy->style, style);
+
+	if ((level.time - self->timestamp) < self->speed)
+	{
+		self->nextthink = level.time + FRAMETIME;
+	}
+	else if (self->spawnflags & 1)
+	{
+		char	temp;
+
+		temp = self->movedir[0];
+		self->movedir[0] = self->movedir[1];
+		self->movedir[1] = temp;
+		self->movedir[2] *= -1;
+	}
+}
+
+void target_lightramp_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	if (!self->enemy)
+	{
+		edict_t		*e;
+
+		// check all the targets
+		e = NULL;
+		while (1)
+		{
+			e = G_Find (e, FOFS(targetname), self->target);
+			if (!e)
+				break;
+			if (strcmp(e->classname, "light") != 0)
+			{
+				if (developer->integer)
+				{
+					G_Printf ("%s at %s ", self->classname, vtos(self->s.origin));
+					G_Printf ("target %s (%s at %s) is not a light\n", self->target, e->classname, vtos(e->s.origin));
+				}
+			}
+			else
+			{
+				self->enemy = e;
+			}
+		}
+
+		if (!self->enemy)
+		{
+			if (developer->integer)
+				G_Printf ("%s target %s not found at %s\n", self->classname, self->target, vtos(self->s.origin));
+			G_FreeEdict (self);
+			return;
+		}
+	}
+
+	self->timestamp = level.time;
+	target_lightramp_think (self);
+}
+
+void SP_target_lightramp (edict_t *self)
+{
+	if (!self->message || strlen(self->message) != 2 || self->message[0] < 'a' || self->message[0] > 'z' || self->message[1] < 'a' || self->message[1] > 'z' || self->message[0] == self->message[1])
+	{
+		if (developer->integer)
+			G_Printf ("target_lightramp has bad ramp (%s) at %s\n", self->message, vtos(self->s.origin));
+		G_FreeEdict (self);
+		return;
+	}
+/*
+	if (deathmatch->value)
+	{
+		G_FreeEdict (self);
+		return;
+	}
+*/
+	if (!self->target)
+	{
+		if (developer->integer)
+			G_Printf ("%s with no target at %s\n", self->classname, vtos(self->s.origin));
+		G_FreeEdict (self);
+		return;
+	}
+
+	self->r.svflags |= SVF_NOCLIENT;
+	self->use = target_lightramp_use;
+	self->think = target_lightramp_think;
+
+	self->movedir[0] = self->message[0] - 'a';
+	self->movedir[1] = self->message[1] - 'a';
+	self->movedir[2] = (self->movedir[1] - self->movedir[0]) / (self->speed / FRAMETIME);
 }
 
 //==========================================================

@@ -237,9 +237,8 @@ void SV_InitOperatorCommands (void);
 void SV_SendServerinfo (client_t *client);
 void SV_UserinfoChanged (client_t *cl);
 
+void SV_MasterHeartbeat (void);
 
-void Master_Heartbeat (void);
-void Master_Packet (void);
 void SVC_MasterInfoResponse (void);
 void SVC_FakeConnect( char *fakeUserinfo, char *fakeIP );
 

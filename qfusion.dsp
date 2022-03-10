@@ -426,10 +426,6 @@ SOURCE=.\ref_gl\r_shadow.h
 # End Source File
 # Begin Source File
 
-SOURCE=.\ref_gl\r_skin.h
-# End Source File
-# Begin Source File
-
 SOURCE=.\ref_gl\render.h
 # End Source File
 # Begin Source File
@@ -458,11 +454,11 @@ SOURCE=.\win32\winquake.h
 # PROP Default_Filter "ico;cur;bmp;dlg;rc2;rct;bin;cnt;rtf;gif;jpg;jpeg;jpe"
 # Begin Source File
 
-SOURCE=.\win32\qe3.ico
+SOURCE=.\win32\qf.rc
 # End Source File
 # Begin Source File
 
-SOURCE=.\win32\qf.rc
+SOURCE=.\win32\qfusion.ico
 # End Source File
 # End Group
 # End Target

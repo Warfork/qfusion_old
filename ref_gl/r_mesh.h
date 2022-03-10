@@ -28,10 +28,18 @@ enum
 	MF_NORMALS			= 1 << 1,
 	MF_STCOORDS			= 1 << 2,
 	MF_LMCOORDS			= 1 << 3,
-	MF_COLORS			= 1 << 4,
-	MF_TRNORMALS		= 1 << 5,
-	MF_NOCULL			= 1 << 6,
-	MF_DEFORMVS			= 1 << 7
+	MF_LMCOORDS1		= 1 << 4,
+	MF_LMCOORDS2		= 1 << 5,
+	MF_LMCOORDS3		= 1 << 6,
+	MF_COLORS			= 1 << 7,
+	MF_COLORS1			= 1 << 8,
+	MF_COLORS2			= 1 << 9,
+	MF_COLORS3			= 1 << 10,
+	MF_TRNORMALS		= 1 << 11,
+	MF_NOCULL			= 1 << 12,
+	MF_DEFORMVS			= 1 << 13,
+	MF_STVECTORS		= 1 << 14,
+	MF_TRIFAN			= 1 << 15
 };
 
 enum
@@ -48,9 +56,11 @@ typedef struct mesh_s
     int					numVertexes;
 	vec3_t				*xyzArray;
 	vec3_t				*normalsArray;
+	vec3_t				*sVectorsArray;
+	vec3_t				*tVectorsArray;
 	vec2_t				*stArray;
-	vec2_t				*lmstArray;
-	byte_vec4_t			*colorsArray;
+	vec2_t				*lmstArray[MAX_LIGHTMAPS];
+	byte_vec4_t			*colorsArray[MAX_LIGHTMAPS];
 
     int					numIndexes;
     index_t				*indexes;
@@ -113,6 +123,8 @@ void R_DrawTriangleOutlines( void );
 
 void R_DrawPortalSurface( meshbuffer_t *mb );
 void R_DrawCubemapView( vec3_t origin, vec3_t angles, int size );
+
+void R_BuildTangentVectors( int numVerts, vec3_t *xyzArray, vec2_t *stArray, int numTris, index_t *indexes, vec3_t *sVectorsArray, vec3_t *tVectorsArray );
 
 extern	meshlist_t	r_worldlist;
 extern	meshlist_t	*r_currentlist;

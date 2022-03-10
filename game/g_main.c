@@ -244,6 +244,24 @@ void G_Shutdown (void)
 //======================================================================
 
 /*
+================
+G_SetEntityBits
+
+Set misc bits like ET_INVERSE, EF_CORPSE, etc
+================
+*/
+void G_SetEntityBits (edict_t *ent)
+{
+	// inverse entity type if it can take damage
+	if (ent->takedamage)
+		ent->s.type |= ET_INVERSE;
+
+	// set EF_CORPSE for client side prediction
+	if (ent->r.svflags & SVF_CORPSE)
+		ent->s.effects |= EF_CORPSE;
+}
+
+/*
 =================
 ClientEndServerFrames
 =================
@@ -260,7 +278,10 @@ void ClientEndServerFrames (void)
 		ent = game.edicts + 1 + i;
 		if (!ent->r.inuse || !ent->r.client)
 			continue;
+
 		ClientEndServerFrame (ent);
+
+		G_SetEntityBits (ent);
 	}
 }
 
@@ -323,7 +344,7 @@ void G_EndDMLevel (void)
 						BeginIntermission (CreateTargetChangeLevel (f) );
 				} else
 					BeginIntermission (CreateTargetChangeLevel (t) );
-				free(s);
+				G_Free (s);
 				return;
 			}
 			if (!f)
@@ -349,10 +370,10 @@ void G_EndDMLevel (void)
 
 /*
 =================
-CheckDMRules
+G_CheckDMRules
 =================
 */
-void CheckDMRules (void)
+void G_CheckDMRules (void)
 {
 	int			i;
 	gclient_t	*cl;
@@ -401,10 +422,10 @@ void CheckDMRules (void)
 
 /*
 =============
-ExitLevel
+G_ExitLevel
 =============
 */
-void ExitLevel (void)
+void G_ExitLevel (void)
 {
 	int		i;
 	edict_t	*ent;
@@ -454,18 +475,15 @@ void G_RunFrame (void)
 	ent = &game.edicts[0];
 	for (i=0 ; i<game.numentities ; i++, ent++)
 	{
-		if ( !ent->r.inuse ) {
+		if( !ent->r.inuse )
 			continue;
-		}
 
 		// free if no events
-		if ( !ent->s.events[0] ) {
+		if( !ent->s.events[0] ) {
 			ent->numEvents = 0;
 			ent->eventPriority[0] = ent->eventPriority[1] = qfalse;
-
-			if ( ent->freeAfterEvent ) {
-				G_FreeEdict (ent);
-			}
+			if( ent->freeAfterEvent )
+				G_FreeEdict( ent );
 		}
 	}
 
@@ -476,7 +494,7 @@ void G_RunFrame (void)
 
 	if (level.exitintermission)
 	{
-		ExitLevel ();
+		G_ExitLevel ();
 		return;
 	}
 
@@ -492,6 +510,9 @@ void G_RunFrame (void)
 		if (ent->freeAfterEvent)
 			continue;		// events do not think
 
+		ent->s.type &= ~ET_INVERSE;		// remove ET_INVERSE bit
+		ent->s.effects &= ~EF_CORPSE;	// remove EF_CORPSE bit
+
 		level.current_entity = ent;
 
 		if (!(ent->r.svflags & SVF_FORCEOLDORIGIN))
@@ -502,9 +523,7 @@ void G_RunFrame (void)
 		{
 			ent->groundentity = NULL;
 			if ( !(ent->flags & (FL_SWIM|FL_FLY)) && (ent->r.svflags & SVF_MONSTER) )
-			{
 				M_CheckGround (ent);
-			}
 		}
 
 		if (i > 0 && i <= game.maxclients)
@@ -514,27 +533,14 @@ void G_RunFrame (void)
 		}
 
 		G_RunEntity (ent);
+		G_SetEntityBits (ent);
 	}
 
 	// see if it is time to end a deathmatch
-	CheckDMRules ();
+	G_CheckDMRules ();
 
 	// build the playerstate_t structures for all players
 	ClientEndServerFrames ();
-
-	// inverse entity type if it can take damage
-	ent = &game.edicts[0];
-	for (i=0 ; i<game.numentities ; i++, ent++)
-	{
-		if (!ent->r.inuse)
-			continue;
-		if (ent->freeAfterEvent)
-			continue;
-		if (ent->takedamage)
-			ent->s.type |= ET_INVERSE;
-		else
-			ent->s.type &= ~ET_INVERSE;
-	}
 }
 
 //======================================================================

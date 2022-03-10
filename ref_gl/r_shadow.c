@@ -252,10 +252,6 @@ R_DrawShadowVolume
 void R_DrawShadowVolume( void )
 {
 	if( glConfig.vertexBufferObject ) {
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_INDEXES] );
-		qglBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, numShadowVolumeTris * 3 * sizeof( int ), shadowVolumeIndexes, GL_STREAM_DRAW_ARB );
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
-
 		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_VERTS] );
 		qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * 2 * sizeof( vec3_t ), vertsArray, GL_STREAM_DRAW_ARB );
 		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
@@ -297,6 +293,9 @@ void R_CastShadowVolume( vec3_t mins, vec3_t maxs, float radius, vec3_t lightorg
 	float projectdistance, intensity2;
 	vec3_t lightdist, lightdist2;
 
+	if( R_CullSphere( lightorg, intensity, 15 ) )
+		return;
+
 	intensity2 = intensity * intensity;
 	VectorSubtract( lightorg, currententity->origin, lightdist2 );
 
@@ -304,7 +303,7 @@ void R_CastShadowVolume( vec3_t mins, vec3_t maxs, float radius, vec3_t lightorg
 		return;
 
 	projectdistance = radius - VectorLength( lightdist2 );
-	if( projectdistance > 0 )	// light is inside the bbox
+	if( projectdistance > 0 )		// light is inside the bbox
 		return;
 
 	projectdistance += intensity;
@@ -336,10 +335,9 @@ void R_CastShadowVolume( vec3_t mins, vec3_t maxs, float radius, vec3_t lightorg
 R_DrawShadowVolumes
 ===============
 */
-void R_DrawShadowVolumes( mesh_t *mesh, vec3_t mins, vec3_t maxs, float radius )
+void R_DrawShadowVolumes( mesh_t *mesh, vec3_t lightingOrigin, vec3_t mins, vec3_t maxs, float radius )
 {
 	int i;
-	mlight_t *wlight;
 	dlight_t *dlight;	
 
 	if( !r_worldmodel || !r_worldmodel->numworldlights ) {
@@ -347,9 +345,25 @@ void R_DrawShadowVolumes( mesh_t *mesh, vec3_t mins, vec3_t maxs, float radius )
 		return;
 	}
 
-	wlight = r_worldmodel->worldlights;
-	for ( i = 0; i < r_worldmodel->numworldlights; i++, wlight++ )
-		R_CastShadowVolume( mins, maxs, radius, wlight->origin, wlight->intensity );
+	if (0)
+	{
+		mlight_t *wlight;
+
+		wlight = r_worldmodel->worldlights;
+		for ( i = 0; i < r_worldmodel->numworldlights; i++, wlight++ )
+			R_CastShadowVolume( mins, maxs, radius, wlight->origin, wlight->intensity );
+	}
+	else
+	{
+		vec3_t lightdir, origin;
+
+		R_LightForOrigin( lightingOrigin, lightdir, NULL, NULL, 0 );
+		VectorSet( lightdir, -lightdir[0], -lightdir[1], -1 );
+		VectorNormalize( lightdir );
+		VectorMA( lightingOrigin, -(radius + 10), lightdir, origin );
+
+		R_CastShadowVolume( mins, maxs, radius, origin, r_shadows_projection_distance->value );
+	}
 
 	dlight = r_dlights;
 	for( i = 0; i < r_numDlights; i++, dlight++ )
@@ -413,12 +427,11 @@ void R_Draw_SimpleShadow( entity_t *e )
 	float planedist, dist;
 	vec3_t planenormal, lightdir, lightdir2, point;
 	trace_t tr;
-	extern void CL_GameModule_Trace (trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask);
 
 	if( e->flags & RF_NOSHADOW )
 		return;
 
-	R_LightDirForOrigin( e->lightingOrigin, lightdir );
+	R_LightForOrigin( e->lightingOrigin, lightdir, NULL, NULL, e->model->radius * e->scale );
 
 	VectorSet( lightdir, -lightdir[0], -lightdir[1], -1 );	
 	VectorNormalizeFast( lightdir );
@@ -446,18 +459,9 @@ void R_Draw_SimpleShadow( entity_t *e )
 			VectorMA( v, dist, lightdir2, v );
 	}
 
-	if( glConfig.vertexBufferObject ) {
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_INDEXES] );
-		qglBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, numIndexes * 3 * sizeof( int ), indexesArray, GL_STREAM_DRAW_ARB );
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
-	}
-
 	R_LockArrays( numVerts );
 
-	if( glConfig.drawRangeElements )
-		qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts, numIndexes, GL_UNSIGNED_INT, indexesArray );
-	else
-		qglDrawElements( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT, indexesArray );
+	R_FlushArrays ();
 
 	R_UnlockArrays ();
 

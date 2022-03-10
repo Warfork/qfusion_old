@@ -50,16 +50,16 @@ void SV_SetMaster_f (void)
 	// make sure the server is listed public
 	Cvar_Set ("sv_public", "1");
 
-	for (i=1 ; i<MAX_MASTERS ; i++)
+	for (i=0 ; i<MAX_MASTERS ; i++)
 		memset (&master_adr[i], 0, sizeof(master_adr[i]));
 
-	slot = 1;		// slot 0 will always contain the id master
+	slot = 0;
 	for (i=1 ; i<Cmd_Argc() ; i++)
 	{
 		if (slot == MAX_MASTERS)
 			break;
 
-		if (!NET_StringToAdr (Cmd_Argv(i), &master_adr[i]))
+		if (!NET_StringToAdr (Cmd_Argv(i), &master_adr[slot]))
 		{
 			Com_Printf ("Bad address: %s\n", Cmd_Argv(i));
 			continue;
@@ -230,7 +230,6 @@ void SV_CopySaveGame (char *src, char *dst)
 /*
 ==============
 SV_WriteLevelFile
-
 ==============
 */
 void SV_WriteLevelFile (void)
@@ -258,7 +257,6 @@ void SV_WriteLevelFile (void)
 /*
 ==============
 SV_ReadLevelFile
-
 ==============
 */
 void SV_ReadLevelFile (void)
@@ -287,7 +285,6 @@ void SV_ReadLevelFile (void)
 /*
 ==============
 SV_WriteServerFile
-
 ==============
 */
 void SV_WriteServerFile (qboolean autosave)
@@ -360,7 +357,6 @@ void SV_WriteServerFile (qboolean autosave)
 /*
 ==============
 SV_ReadServerFile
-
 ==============
 */
 void SV_ReadServerFile (void)
@@ -410,20 +406,6 @@ void SV_ReadServerFile (void)
 
 
 //=========================================================
-
-/*
-==================
-SV_DemoMap_f
-
-Puts the server in demo mode on a specific map/cinematic
-
-FIXME: remove?
-==================
-*/
-void SV_DemoMap_f (void)
-{
-	SV_Map (qtrue, Cmd_Argv(1), qfalse, qfalse );
-}
 
 /*
 ==================
@@ -572,13 +554,16 @@ For development work
 void SV_Map_f (void)
 {
 	char	*map;
-	char	expanded[MAX_QPATH];
+	char	filename[MAX_QPATH], expanded[MAX_QPATH];
 
 	// if not a pcx, demo, or cinematic, check to make sure the level exists
 	map = Cmd_Argv(1);
 	if (!strstr (map, "."))
 	{
-		Q_snprintfz (expanded, sizeof(expanded), "maps/%s.bsp", map);
+		Q_strncpyz (filename, map, sizeof(filename)-4);
+		COM_DefaultExtension (filename, ".bsp");
+
+		Q_snprintfz (expanded, sizeof(expanded), "maps/%s", filename);
 		if ( FS_FOpenFile (expanded, NULL, FS_READ) == -1 )
 		{
 			Com_Printf ("Can't find %s\n", expanded);
@@ -603,7 +588,6 @@ void SV_Map_f (void)
 /*
 ==============
 SV_Loadgame_f
-
 ==============
 */
 void SV_Loadgame_f (void)
@@ -645,12 +629,9 @@ void SV_Loadgame_f (void)
 	SV_Map (qfalse, svs.mapcmd, qtrue, qfalse);
 }
 
-
-
 /*
 ==============
 SV_Savegame_f
-
 ==============
 */
 void SV_Savegame_f (void)
@@ -851,7 +832,7 @@ void SV_Heartbeat_f (void)
 ===========
 SV_Serverinfo_f
 
-  Examine or change the serverinfo string
+Examine or change the serverinfo string
 ===========
 */
 void SV_Serverinfo_f (void)
@@ -1054,7 +1035,6 @@ void SV_InitOperatorCommands (void)
 	Cmd_AddCommand ("map", SV_Map_f);
 	Cmd_AddCommand ("devmap", SV_Map_f);
 	Cmd_AddCommand ("demo", SV_Demo_f);
-	Cmd_AddCommand ("demomap", SV_DemoMap_f);
 	Cmd_AddCommand ("cinematic", SV_Cinematic_f);
 	Cmd_AddCommand ("gamemap", SV_GameMap_f);
 	Cmd_AddCommand ("setmaster", SV_SetMaster_f);

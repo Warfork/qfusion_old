@@ -40,7 +40,7 @@ NULL will be returned if the end of the list is reached.
 
 =============
 */
-edict_t *G_Find (edict_t *from, int fieldofs, char *match)
+edict_t *G_Find (edict_t *from, size_t fieldofs, char *match)
 {
 	char	*s;
 
@@ -689,7 +689,7 @@ Prints death message to all clients
 void G_Obituary ( edict_t *victim, edict_t *attacker, int mod )
 {
 	if( victim && attacker )
-		trap_ServerCmd ( victim, va ( "obry %i %i %i", victim - game.edicts, attacker - game.edicts, mod ) );
+		trap_ServerCmd ( NULL, va ( "obry %i %i %i", victim - game.edicts, attacker - game.edicts, mod ) );
 }
 
 /*

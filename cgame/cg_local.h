@@ -269,7 +269,8 @@ void CG_BeginFrameSequence( frame_t frame );
 void CG_EndFrameSequence( int numEntities );
 void CG_NewPacketEntityState( int entnum, entity_state_t state );
 void CG_AddEntities( void );
-void CG_GetEntitySoundOrigin( int entnum, vec3_t org );
+void CG_GlobalSound( vec3_t origin, int entNum, int entChannel, int soundNum, float fvol, float attenuation );
+void CG_GetEntitySoundOrigin( int entNum, vec3_t org );
 
 //
 // cg_draw.c
@@ -456,6 +457,10 @@ void CG_ClearEffects( void );
 
 void CG_AllocDlight( float radius, const vec3_t origin, const vec3_t color );
 void CG_AddDlights( void );
+
+void CG_RunLightStyles( void );
+void CG_SetLightStyle( int i );
+void CG_AddLightStyles( void );
 
 void CG_AddParticles( void );
 void CG_ParticleEffect( vec3_t org, vec3_t dir, float r, float g, float b, int count );

@@ -110,6 +110,8 @@ void CG_CS_ConfigString (void)
 		if ( cgs.configStrings[i][0] != '*' ) {
 			cgs.soundPrecache[i-CS_SOUNDS] = trap_S_RegisterSound ( cgs.configStrings[i] );
 		}
+	} else if( i >= CS_LIGHTS && i < CS_LIGHTS+MAX_LIGHTSTYLES ) {
+		CG_SetLightStyle( i - CS_LIGHTS );
 	} else if ( i >= CS_IMAGES && i < CS_IMAGES+MAX_IMAGES ) {
 		cgs.imagePrecache[i-CS_IMAGES] = trap_R_RegisterPic ( cgs.configStrings[i] );
 	} else if ( i >= CS_PLAYERSKINS && i < CS_PLAYERSKINS+MAX_CLIENTS ) {
@@ -151,7 +153,7 @@ typedef struct
 	void	(*func) (void);
 } svcmd_t;
 
-svcmd_t svcmds[] =
+svcmd_t cg_svcmds[] =
 {
 	{ "pr", CG_SC_Print },
 	{ "cp", CG_SC_CenterPrint },
@@ -172,7 +174,7 @@ void CG_ServerCommand (void)
 	svcmd_t *cmd;
 
 	s = trap_Cmd_Argv ( 0 );
-	for (cmd = svcmds; cmd->name; cmd++)
+	for (cmd = cg_svcmds; cmd->name; cmd++)
 		if (!strcmp (s, cmd->name) ) {
 			cmd->func ();
 			return;

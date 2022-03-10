@@ -1,0 +1,409 @@
+[Project]
+FileName=qfds.dev
+Name=qfds
+Ver=1
+IsCpp=0
+Type=0
+Compiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WINDOWS -DDEDICATED_ONLY -DC_ONLY -Wno-sign-compare_@@_
+CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WINDOWS -DDEDICATED_ONLY -DC_ONLY -Wno-sign-compare_@@_
+Includes=qcommon;.\win32/include
+Linker=-lwinmm -lwsock32 -lkernel32 -luser32 -lgdi32 -lzstat_@@_
+Libs=.\win32/lib/mingw
+UnitCount=36
+Folders="Source Files","Header Files","Resource Files"
+ObjFiles=
+PrivateResource=
+ResourceIncludes=
+MakeIncludes=
+Icon=
+ExeOutput=.\release\
+ObjectOutput=.\release_ds\
+OverrideOutput=0
+OverrideOutputName=qfds.exe
+HostApplication=
+CommandLine=
+IncludeVersionInfo=0
+SupportXPThemes=0
+CompilerSet=0
+CompilerSettings=0000000000010000000100
+UseCustomMakefile=0
+CustomMakefile=
+
+[Unit1]
+FileName=null\cl_null.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit2]
+FileName=qcommon\cm_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit3]
+FileName=qcommon\cm_trace.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit4]
+FileName=qcommon\cmd.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit5]
+FileName=qcommon\common.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit6]
+FileName=win32\conproc.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit7]
+FileName=qcommon\cvar.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit8]
+FileName=qcommon\files.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit9]
+FileName=qcommon\huff.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit10]
+FileName=qcommon\mdfour.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit11]
+FileName=qcommon\mem.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit12]
+FileName=qcommon\net_chan.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit13]
+FileName=win32\net_wins.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit14]
+FileName=qcommon\patch.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit15]
+FileName=game\q_math.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit16]
+FileName=game\q_shared.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit17]
+FileName=server\sv_ccmds.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit18]
+FileName=server\sv_ents.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit19]
+FileName=server\sv_game.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit20]
+FileName=server\sv_init.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit21]
+FileName=server\sv_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit22]
+FileName=server\sv_send.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit23]
+FileName=server\sv_user.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit24]
+FileName=server\sv_world.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit25]
+FileName=win32\sys_win.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit26]
+FileName=qcommon\cm_local.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit27]
+FileName=qcommon\cmodel.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit28]
+FileName=win32\conproc.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit29]
+FileName=game\g_public.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit30]
+FileName=qcommon\mdfour.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit31]
+FileName=win32\net_wins.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit32]
+FileName=game\q_shared.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit33]
+FileName=qcommon\qcommon.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit34]
+FileName=qcommon\qfiles.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit35]
+FileName=server\server.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit36]
+FileName=win32\winquake.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[VersionInfo]
+Major=0
+Minor=1
+Release=1
+Build=1
+LanguageID=1033
+CharsetID=1252
+CompanyName=
+FileVersion=0.1
+FileDescription=Developed using the Dev-C++ IDE
+InternalName=
+LegalCopyright=
+LegalTrademarks=
+OriginalFilename=qfds.exe
+ProductName=qfds
+ProductVersion=0.1
+AutoIncBuildNr=0
+

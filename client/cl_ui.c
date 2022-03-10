@@ -165,8 +165,12 @@ void CL_UIModule_Init (void)
 	import.R_RegisterPic = R_RegisterPic;
 	import.R_RegisterSkin = R_RegisterSkin;
 	import.R_RegisterSkinFile = R_RegisterSkinFile;
-	import.R_LerpAttachment = R_LerpAttachment;
+	import.R_LerpTag = R_LerpTag;
 	import.R_DrawStretchPic = R_DrawStretchPic;
+	import.R_TransformVectorToScreen = R_TransformVectorToScreen;
+	import.R_SkeletalGetNumBones = R_SkeletalGetNumBones;
+	import.R_SkeletalGetBoneInfo = R_SkeletalGetBoneInfo;
+	import.R_SkeletalGetBonePose = R_SkeletalGetBonePose;
 
 	import.S_StartLocalSound = S_StartLocalSound;
 	import.S_StartBackgroundTrack = S_StartBackgroundTrack;

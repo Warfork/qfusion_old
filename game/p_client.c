@@ -240,9 +240,9 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 	self->r.maxs[2] = -8;
 
 //	self->solid = SOLID_NOT;
-	self->s.effects = EF_CORPSE;
+	self->r.svflags |= SVF_CORPSE;
 
-	contents = trap_PointContents ( self->s.origin );
+	contents = trap_PointContents( self->s.origin );
 
 	if (!self->deadflag)
 	{
@@ -589,7 +589,6 @@ edict_t *SelectRandomDeathmatchSpawnPoint (void)
 /*
 ================
 SelectFarthestDeathmatchSpawnPoint
-
 ================
 */
 edict_t *SelectFarthestDeathmatchSpawnPoint (void)
@@ -678,7 +677,7 @@ SelectSpawnPoint
 Chooses a player start, deathmatch start, coop start, etc
 ============
 */
-void	SelectSpawnPoint (edict_t *ent, vec3_t origin, vec3_t angles)
+void SelectSpawnPoint (edict_t *ent, vec3_t origin, vec3_t angles)
 {
 	edict_t	*spot = NULL;
 
@@ -761,11 +760,9 @@ void CopyToBodyQue (edict_t *ent)
 
 	trap_UnlinkEntity (ent);
 
-	contents = trap_PointContents ( ent->s.origin );
-
-	if ( contents & CONTENTS_NODROP ) {
+	contents = trap_PointContents( ent->s.origin );
+	if( contents & CONTENTS_NODROP )
 		return;
-	}
 
 	// grab a body que and cycle to the next one
 	body = &game.edicts[game.maxclients + level.body_que + 1];
@@ -784,7 +781,7 @@ void CopyToBodyQue (edict_t *ent)
 	VectorCopy (ent->r.size, body->r.size);
 	body->r.solid = ent->r.solid;
 	body->r.clipmask = CONTENTS_SOLID | CONTENTS_PLAYERCLIP;
-	body->s.effects |= EF_CORPSE;
+	body->r.svflags = ent->r.svflags;
 	body->r.owner = ent->r.owner;
 	body->movetype = ent->movetype;
 
@@ -911,6 +908,7 @@ void PutClientInServer (edict_t *ent)
 	ent->waterlevel = 0;
 	ent->watertype = 0;
 	ent->flags &= ~FL_NO_KNOCKBACK;
+	ent->r.svflags &= ~SVF_CORPSE;
 
 	VectorCopy (mins, ent->r.mins);
 	VectorCopy (maxs, ent->r.maxs);
@@ -954,15 +952,16 @@ void PutClientInServer (edict_t *ent)
 	ent->s.origin[2] += 1;	// make sure off ground
 	VectorCopy (ent->s.origin, ent->s.old_origin);
 
-	// set the delta angle
-	for (i=0 ; i<3 ; i++)
-		client->ps.pmove.delta_angles[i] = ANGLE2SHORT(spawn_angles[i] - client->resp.cmd_angles[i]);
-
+	// set angles
 	ent->s.angles[PITCH] = 0;
 	ent->s.angles[YAW] = spawn_angles[YAW];
 	ent->s.angles[ROLL] = 0;
 	VectorCopy (ent->s.angles, client->ps.viewangles);
 	VectorCopy (ent->s.angles, client->v_angle);
+
+	// set the delta angle
+	for (i=0 ; i<3 ; i++)
+		client->ps.pmove.delta_angles[i] = ANGLE2SHORT(ent->s.angles[i] - client->resp.cmd_angles[i]);
 
 //ZOID
 	if (ctf->integer && CTFStartClient(ent))

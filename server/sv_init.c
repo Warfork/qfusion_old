@@ -170,8 +170,7 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	int			i;
 	unsigned	checksum;
 
-	if (attractloop)
-		Cvar_Set ("paused", "0");
+	Cvar_Set ("paused", "0");
 
 	if (devmap)
 		Cvar_ForceSet ("sv_cheats", "1");

@@ -233,7 +233,7 @@ typedef struct
 #define SKM_MAX_BONES			256
 #define SKM_MAX_SHADERS			256
 #define SKM_MAX_FILESIZE		16777216
-#define SKM_MAX_ATTACHMENTS		DPM_MAX_BONES
+#define SKM_MAX_ATTACHMENTS		SKM_MAX_BONES
 #define SKM_MAX_LODS			4
 
 // model format related flags
@@ -366,9 +366,13 @@ typedef struct {
 */
 
 #define IDBSPHEADER			"IBSP"
+#define RBSPHEADER			"RBSP"
+#define QFBSPHEADER			"FBSP"
 
 #define Q3BSPVERSION		46
 #define RTCWBSPVERSION		47
+#define RBSPVERSION			1
+#define QFBSPVERSION		1
 
 // there shouldn't be any problem with increasing these values at the
 // expense of more memory allocation in the utilities
@@ -394,10 +398,17 @@ typedef struct {
 #define	MAX_MAP_VISIBILITY	0x200000
 
 // lightmaps
+#define MAX_LIGHTMAPS			4
+
 #define LIGHTMAP_BYTES			3
+
 #define	LIGHTMAP_WIDTH			128
 #define	LIGHTMAP_HEIGHT			128
 #define LIGHTMAP_SIZE			(LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT*LIGHTMAP_BYTES)
+
+#define QF_LIGHTMAP_WIDTH		512
+#define QF_LIGHTMAP_HEIGHT		512
+#define QF_LIGHTMAP_SIZE		(QF_LIGHTMAP_WIDTH*QF_LIGHTMAP_HEIGHT*LIGHTMAP_BYTES)
 
 // key / value pair sizes
 
@@ -428,7 +439,9 @@ typedef struct
 #define LUMP_LIGHTING			14
 #define LUMP_LIGHTGRID			15
 #define LUMP_VISIBILITY			16
-#define	HEADER_LUMPS			17
+#define LUMP_LIGHTARRAY			17
+
+#define	HEADER_LUMPS			17		// 16 for IDBSP
 
 typedef struct
 {
@@ -451,11 +464,19 @@ typedef struct
     float			tex_st[2];		// texture coords
 	float			lm_st[2];		// lightmap texture coords
     float			normal[3];		// normal
-    unsigned char	color[4];		// color used for vertex lighting?
+    unsigned char	color[4];		// color used for vertex lighting
 } dvertex_t;
 
-// planes (x&~1) and (x&~1)+1 are always opposites
+typedef struct
+{
+	float			point[3];
+    float			tex_st[2];
+	float			lm_st[MAX_LIGHTMAPS][2];
+    float			normal[3];
+    unsigned char	color[MAX_LIGHTMAPS][4];
+} rdvertex_t;
 
+// planes (x&~1) and (x&~1)+1 are always opposites
 typedef struct
 {
 	float	normal[3];
@@ -536,10 +557,12 @@ typedef struct shaderref_s
 
 enum
 {
-    FACETYPE_PLANAR   = 1,
-    FACETYPE_PATCH    = 2,
-    FACETYPE_TRISURF  = 3,
-    FACETYPE_FLARE    = 4
+	FACETYPE_BAD		= 0,
+    FACETYPE_PLANAR		= 1,
+    FACETYPE_PATCH		= 2,
+    FACETYPE_TRISURF	= 3,
+    FACETYPE_FLARE		= 4,
+	FACETYPE_FOLIAGE	= 5
 };
 
 typedef struct
@@ -568,6 +591,33 @@ typedef struct
 
 typedef struct
 {
+	int				shadernum;
+	int				fognum;
+	int				facetype;
+
+    int				firstvert;
+	int				numverts;
+	unsigned		firstindex;
+	int				numindexes;
+
+	unsigned char	lightmapStyles[MAX_LIGHTMAPS];
+	unsigned char	vertexStyles[MAX_LIGHTMAPS];
+
+    int				lm_texnum[MAX_LIGHTMAPS];		// lightmap info
+    int				lm_offset[MAX_LIGHTMAPS][2];
+    int				lm_size[2];
+
+    float			origin[3];		// FACETYPE_FLARE only
+
+    float			mins[3];
+    float			maxs[3];		// FACETYPE_PATCH and FACETYPE_TRISURF only
+    float			normal[3];		// FACETYPE_PLANAR only
+
+    int				patch_cp[2];	// patch control point dimensions
+} rdface_t;
+
+typedef struct
+{
 	int				cluster;
 	int				area;
 
@@ -586,6 +636,13 @@ typedef struct
 	int				planenum;
 	int				shadernum;
 } dbrushside_t;
+
+typedef struct
+{
+	int				planenum;
+	int				shadernum;
+	int				surfacenum;
+} rdbrushside_t;
 
 typedef struct
 {
@@ -613,3 +670,11 @@ typedef struct
 	unsigned char	diffuse[3];
 	unsigned char	direction[2];
 } dgridlight_t;
+
+typedef struct
+{
+	unsigned char	ambient[MAX_LIGHTMAPS][3];
+	unsigned char	diffuse[MAX_LIGHTMAPS][3];
+	unsigned char	styles[MAX_LIGHTMAPS];
+	unsigned char	direction[2];
+} rdgridlight_t;

@@ -419,16 +419,27 @@ Cmd_AliasList_f
 void Cmd_AliasList_f (void)
 {
 	cmd_alias_t	*a;
+	int			i;
+	char		*pattern;
 
-	if (!cmd_alias)
-	{
-		Com_Printf ("No alias commands\n");
+	if( !cmd_alias ) {
+		Com_Printf( "No alias commands\n" );
 		return;
 	}
 
-	Com_Printf ("Current alias commands:\n");
-	for (a = cmd_alias; a; a = a->next)
-		Com_Printf ("%s : %s\n\n", a->name, a->value);
+	if( Cmd_Argc () == 1 )
+		pattern = NULL;		// no wildcard
+	else
+		pattern = Cmd_Args ();
+
+	Com_Printf( "\nAlias commands:\n" );
+	for( a = cmd_alias, i = 0; a; a = a->next ) {
+		if( !pattern || Q_WildCmp( pattern, a->name ) ) {
+			i++;
+			Com_Printf( "%s : %s\n\n", a->name, a->value );
+		}
+	}
+	Com_Printf( "%i commands\n", i );
 }
 
 /*
@@ -1162,11 +1173,21 @@ void Cmd_List_f (void)
 {
 	cmd_function_t	*cmd;
 	int				i;
+	char			*pattern;
 
-	i = 0;
-	for (cmd=cmd_functions ; cmd ; cmd=cmd->next, i++)
-		Com_Printf ("%s\n", cmd->name);
-	Com_Printf ("%i commands\n", i);
+	if( Cmd_Argc () == 1 )
+		pattern = NULL;		// no wildcard
+	else
+		pattern = Cmd_Args ();
+
+	Com_Printf ("\nCommands:\n");
+	for( cmd = cmd_functions, i = 0; cmd; cmd = cmd->next ) {
+		if( !pattern || Q_WildCmp( pattern, cmd->name ) ) {
+			i++;
+			Com_Printf( "%s\n", cmd->name );
+		}
+	}
+	Com_Printf( "%i commands\n", i );
 }
 
 /*

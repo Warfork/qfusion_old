@@ -223,8 +223,8 @@ void ThrowClientHead (edict_t *self, int damage)
 	self->s.origin[2] += 32;
 	self->s.frame = 0;
 	self->s.modelindex = trap_ModelIndex (gibname);
-	VectorSet (self->r.mins, -16, -16, 0);
-	VectorSet (self->r.maxs, 16, 16, 16);
+	VectorSet (self->r.mins, -15, -15, 0);
+	VectorSet (self->r.maxs, 15, 15, 16);
 
 	self->takedamage = DAMAGE_NO;
 	self->r.solid = SOLID_NOT;
@@ -551,9 +551,36 @@ Default _cone value is 10 (used to set size of light for spotlights)
 
 #define START_OFF	1
 
+static void light_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	if (self->spawnflags & START_OFF)
+	{
+		trap_ConfigString (CS_LIGHTS+self->style, "m");
+		self->spawnflags &= ~START_OFF;
+	}
+	else
+	{
+		trap_ConfigString (CS_LIGHTS+self->style, "a");
+		self->spawnflags |= START_OFF;
+	}
+}
+
 void SP_light (edict_t *self)
 {
-	G_FreeEdict (self);
+	if (!self->targetname/* || deathmatch->value*/)
+	{
+		G_FreeEdict (self);
+		return;
+	}
+
+	if (self->style >= 32)
+	{
+		self->use = light_use;
+		if (self->spawnflags & START_OFF)
+			trap_ConfigString (CS_LIGHTS+self->style, "a");
+		else
+			trap_ConfigString (CS_LIGHTS+self->style, "m");
+	}
 }
 
 
@@ -1229,8 +1256,7 @@ void SP_misc_deadsoldier (edict_t *ent)
 	VectorSet (ent->r.maxs, 16, 16, 16);
 	ent->deadflag = DEAD_DEAD;
 	ent->takedamage = DAMAGE_YES;
-	ent->r.svflags = SVF_MONSTER;
-	ent->s.effects = EF_CORPSE;
+	ent->r.svflags = SVF_MONSTER|SVF_CORPSE;
 	ent->die = misc_deadsoldier_die;
 	ent->monsterinfo.aiflags |= AI_GOOD_GUY;
 
@@ -1771,7 +1797,10 @@ void SP_misc_model (edict_t *ent)
 
 void misc_portal_surface_think (edict_t *ent)
 {
-	VectorCopy ( ent->pos1, ent->s.origin2 );
+	if( !ent->r.owner || !ent->r.owner->r.inuse )
+		VectorCopy( ent->s.origin, ent->s.origin2 );
+	else
+		VectorCopy( ent->r.owner->s.origin, ent->s.origin2 );
 	ent->nextthink = level.time + FRAMETIME;
 }
 
@@ -1782,44 +1811,36 @@ void locateCamera (edict_t *ent)
 	edict_t		*owner;
 
 	owner = G_PickTarget (ent->target);
-	if ( !owner ) {
-		G_Printf ( "Couldn't find target for misc_partal_surface\n" );
+	if( !owner ) {
+		G_Printf( "Couldn't find target for %s\n", ent->classname );
 		G_FreeEdict (ent);
 		return;
 	}
 
-	ent->s.modelindex = owner->s.number;
-
 	// modelindex2 holds the rotate speed
-	if ( owner->spawnflags & 1 ) {
+	if( owner->spawnflags & 1 )
 		ent->s.modelindex2 = 25;
-	} else if ( owner->spawnflags & 2 ) {
+	else if ( owner->spawnflags & 2 )
 		ent->s.modelindex2 = 75;
-	}
 
 	// swing camera ?
-	if ( owner->spawnflags & 4 ) {
+	if( owner->spawnflags & 4 )
 		// set to 0 for no rotation at all
 		ent->s.modelindex3 = 0;
-	}
-	else {
+	else
 		ent->s.modelindex3 = 1;
-	}
 
-	ent->s.modelindex = owner->s.number;
-
+	ent->r.owner = owner;
 	ent->think = misc_portal_surface_think;
 	ent->nextthink = level.time + FRAMETIME;
-	VectorCopy ( owner->s.origin, ent->pos1 );
 
 	// see if the portal_camera has a target
-	if ( owner->target ) {
-		target = G_PickTarget ( owner->target );
-	} else {
+	if( owner->target )
+		target = G_PickTarget( owner->target );
+	else
 		target = NULL;
-	}
 
-	if ( target ) {
+	if( target ) {
 		VectorSubtract( target->s.origin, owner->s.origin, dir );
 		VectorNormalize( dir );
 	} else {
@@ -1838,17 +1859,16 @@ void SP_misc_portal_surface(edict_t *ent)
 {
 	VectorClear( ent->r.mins );
 	VectorClear( ent->r.maxs );
-	trap_LinkEntity ( ent );
+	trap_LinkEntity( ent );
 
 	ent->s.type = ET_PORTALSURFACE;
 	ent->s.modelindex = 1;
 	ent->r.svflags = SVF_PORTAL|SVF_FORCEOLDORIGIN;
 
 	// mirror
-	if ( !ent->target ) {
+	if( !ent->target ) {
 		ent->think = misc_portal_surface_think;
 		ent->nextthink = level.time + FRAMETIME;
-		VectorCopy ( ent->s.origin, ent->pos1 );
 	} else {
 		ent->think = locateCamera;
 		ent->nextthink = level.time + 1;
@@ -1859,10 +1879,8 @@ void SP_misc_portal_camera(edict_t *ent)
 {
 	VectorClear( ent->r.mins );
 	VectorClear( ent->r.maxs );
-	trap_LinkEntity ( ent );
+	trap_LinkEntity( ent );
 
 	ent->r.svflags = SVF_NOCLIENT;
 	ent->count = (int)(st.roll / 360.0f * 256.0f);
 }
-
-

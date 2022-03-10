@@ -26,6 +26,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_SHADER_ANIM_FRAMES		16
 #define MAX_SHADER_TCMODS			8
 
+// shader types
 enum
 {
 	SHADER_BSP,
@@ -37,7 +38,7 @@ enum
 	SHADER_NEARBOX
 };
 
-// Shader flags
+// shader flags
 enum
 {
 	SHADER_DEPTHWRITE			= 1 << 0,
@@ -52,10 +53,12 @@ enum
 	SHADER_DEFORMV_BULGE		= 1 << 9,
 	SHADER_ENTITY_MERGABLE		= 1 << 10,
 	SHADER_FLARE				= 1 << 11,
-	SHADER_AUTOSPRITE			= 1 << 12
+	SHADER_AUTOSPRITE			= 1 << 12,
+	SHADER_NO_MODULATIVE_DLIGHTS= 1 << 13,
+	SHADER_LIGHTMAP				= 1 << 14
 };
 
-// Shaderpass flags
+// shaderpass flags
 enum
 {
 	SHADER_PASS_DEPTHWRITE		= 1 << 0,
@@ -66,10 +69,10 @@ enum
     SHADER_PASS_ANIMMAP			= 1 << 5,
 	SHADER_PASS_DETAIL			= 1 << 6,
 	SHADER_PASS_NOCOLORARRAY	= 1 << 7,
-	SHADER_PASS_CUBEMAP			= 1 << 8
+	SHADER_PASS_DLIGHT			= 1 << 8
 };	
 
-// Transform functions
+// transform functions
 enum
 {
     SHADER_FUNC_SIN             = 1,
@@ -95,7 +98,7 @@ enum
 };
 
 
-// RedGreenBlue pal generation
+// RGB colors generation
 enum 
 {
 	RGB_GEN_UNKNOWN,
@@ -108,7 +111,10 @@ enum
 	RGB_GEN_VERTEX,
 	RGB_GEN_ONE_MINUS_VERTEX,
 	RGB_GEN_LIGHTING_DIFFUSE,
-	RGB_GEN_EXACT_VERTEX 
+	RGB_GEN_EXACT_VERTEX,
+	RGB_GEN_LIGHTING_DIFFUSE_ONLY,
+	RGB_GEN_LIGHTING_AMBIENT_ONLY,
+	RGB_GEN_FOG
 };
 
 // alpha channel generation
@@ -119,14 +125,16 @@ enum
 	ALPHA_GEN_CONST,
 	ALPHA_GEN_PORTAL,
 	ALPHA_GEN_VERTEX,
+	ALPHA_GEN_ONE_MINUS_VERTEX,
 	ALPHA_GEN_ENTITY,
 	ALPHA_GEN_SPECULAR,
 	ALPHA_GEN_WAVE,
 	ALPHA_GEN_DOT,
-	ALPHA_GEN_ONE_MINUS_DOT
+	ALPHA_GEN_ONE_MINUS_DOT,
+	ALPHA_GEN_FOG
 };
 
-// AlphaFunc
+// alphaFunc
 enum
 {
 	ALPHA_FUNC_GT0,
@@ -141,7 +149,8 @@ enum
 	TC_GEN_LIGHTMAP,
 	TC_GEN_ENVIRONMENT,
 	TC_GEN_VECTOR,
-	TC_GEN_REFLECTION
+	TC_GEN_REFLECTION,
+	TC_GEN_FOG
 };
 
 // tcmod functions
@@ -170,7 +179,6 @@ enum
 	DEFORMV_AUTOPARTICLE
 };
 
-// Periodic functions
 typedef struct
 {
     int				type;				// SHADER_FUNC enum
@@ -239,6 +247,7 @@ typedef struct shader_s
     int				flags;
 	int				features;
 	unsigned int	sort;
+	unsigned int	sortkey;
 
     int				numpasses;
     shaderpass_t	*passes;
@@ -266,7 +275,7 @@ void R_ShutdownShaders( void );
 void R_RunCinematicShaders( void );
 void R_UploadCinematicShader( shader_t *shader );
 
-shader_t *R_LoadShader( char *name, int type, qboolean forceDefault );
+shader_t *R_LoadShader( char *name, int type, qboolean forceDefault, int addFlags );
 
 shader_t *R_RegisterPic (char *name);
 shader_t *R_RegisterShader (char *name);

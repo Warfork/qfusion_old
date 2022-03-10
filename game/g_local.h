@@ -29,7 +29,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "p_menu.h"
 //ZOID
 
-// the "gamename" cvar will print this plus compile date
+// the "gamename" cvar will print this
 #define	GAMENAME	"qfusion"
 
 //==================================================================
@@ -454,10 +454,10 @@ extern	int	snd_fry;
 extern	int	meansOfDeath;
 
 
-#define	FOFS(x) (int)&(((edict_t *)0)->x)
-#define	STOFS(x) (int)&(((spawn_temp_t *)0)->x)
-#define	LLOFS(x) (int)&(((level_locals_t *)0)->x)
-#define	CLOFS(x) (int)&(((gclient_t *)0)->x)
+#define	FOFS(x) (size_t)&(((edict_t *)0)->x)
+#define	STOFS(x) (size_t)&(((spawn_temp_t *)0)->x)
+#define	LLOFS(x) (size_t)&(((level_locals_t *)0)->x)
+#define	CLOFS(x) (size_t)&(((gclient_t *)0)->x)
 
 extern	cvar_t	*maxentities;
 extern	cvar_t	*deathmatch;
@@ -534,7 +534,7 @@ typedef enum {
 typedef struct
 {
 	char	*name;
-	int		ofs;
+	size_t	ofs;
 	fieldtype_t	type;
 	int		flags;
 } field_t;
@@ -575,7 +575,7 @@ void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags);
 // g_utils.c
 //
 qboolean	KillBox (edict_t *ent);
-edict_t *G_Find (edict_t *from, int fieldofs, char *match);
+edict_t *G_Find (edict_t *from, size_t fieldofs, char *match);
 edict_t *findradius (edict_t *from, vec3_t org, float rad);
 edict_t *G_PickTarget (char *targetname);
 void	G_UseTargets (edict_t *ent, edict_t *activator);

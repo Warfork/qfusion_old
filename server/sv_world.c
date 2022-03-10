@@ -33,8 +33,7 @@ FIXME: this use of "area" is different from the bsp file use
 // (type *)STRUCT_FROM_LINK(link_t *link, type, member)
 // ent = STRUCT_FROM_LINK(link,entity_t,order)
 // FIXME: remove this mess!
-#define	STRUCT_FROM_LINK(l,t,m) ((t *)((qbyte *)l - (int)&(((t *)0)->m)))
-
+#define	STRUCT_FROM_LINK(l,t,m) ((t *)((qbyte *)l - (size_t)&(((t *)0)->m)))
 #define	EDICT_FROM_AREA(l) STRUCT_FROM_LINK(l,edict_t,r.area)
 
 typedef struct areanode_s
@@ -46,19 +45,11 @@ typedef struct areanode_s
 	link_t	solid_edicts;
 } areanode_t;
 
-#define	AREA_DEPTH	4
-#define	AREA_NODES	32
+#define	AREA_DEPTH	5
+#define	AREA_NODES	64
 
 areanode_t	sv_areanodes[AREA_NODES];
 int			sv_numareanodes;
-
-float	*area_mins, *area_maxs;
-edict_t	**area_list;
-int		area_count, area_maxcount;
-int		area_type;
-
-struct cmodel_s *SV_CollisionModelForEntity (edict_t *ent);
-
 
 // ClearLink is used for new headnodes
 void ClearLink (link_t *l)
@@ -93,33 +84,31 @@ areanode_t *SV_CreateAreaNode (int depth, vec3_t mins, vec3_t maxs)
 	vec3_t		size;
 	vec3_t		mins1, maxs1, mins2, maxs2;
 
-	anode = &sv_areanodes[sv_numareanodes];
-	sv_numareanodes++;
-
+	anode = &sv_areanodes[sv_numareanodes++];
 	ClearLink (&anode->trigger_edicts);
 	ClearLink (&anode->solid_edicts);
-	
+
 	if (depth == AREA_DEPTH)
 	{
 		anode->axis = -1;
 		anode->children[0] = anode->children[1] = NULL;
 		return anode;
 	}
-	
+
 	VectorSubtract (maxs, mins, size);
 	if (size[0] > size[1])
 		anode->axis = 0;
 	else
 		anode->axis = 1;
-	
+
 	anode->dist = 0.5 * (maxs[anode->axis] + mins[anode->axis]);
-	VectorCopy (mins, mins1);	
-	VectorCopy (mins, mins2);	
-	VectorCopy (maxs, maxs1);	
-	VectorCopy (maxs, maxs2);	
-	
+	VectorCopy (mins, mins1);
+	VectorCopy (mins, mins2);
+	VectorCopy (maxs, maxs1);
+	VectorCopy (maxs, maxs2);
+
 	maxs1[anode->axis] = mins2[anode->axis] = anode->dist;
-	
+
 	anode->children[0] = SV_CreateAreaNode (depth+1, mins2, maxs2);
 	anode->children[1] = SV_CreateAreaNode (depth+1, mins1, maxs1);
 
@@ -129,7 +118,6 @@ areanode_t *SV_CreateAreaNode (int depth, vec3_t mins, vec3_t maxs)
 /*
 ===============
 SV_ClearWorld
-
 ===============
 */
 void SV_ClearWorld (void)
@@ -149,7 +137,6 @@ void SV_ClearWorld (void)
 /*
 ===============
 SV_UnlinkEdict
-
 ===============
 */
 void SV_UnlinkEdict (edict_t *ent)
@@ -164,7 +151,6 @@ void SV_UnlinkEdict (edict_t *ent)
 /*
 ===============
 SV_LinkEdict
-
 ===============
 */
 #define MAX_TOTAL_ENT_LEAFS		128
@@ -191,7 +177,7 @@ void SV_LinkEdict (edict_t *ent)
 	VectorSubtract (ent->r.maxs, ent->r.mins, ent->r.size);
 	
 	// encode the size into the entity_state for client prediction
-	if (ent->r.solid == SOLID_BBOX)
+	if (ent->r.solid == SOLID_BBOX && !(ent->r.svflags & SVF_PROJECTILE))
 	{	// assume that x/y are equal and symetric
 		i = ent->r.maxs[0]/8;
 		clamp ( i, 1, 31 );
@@ -331,57 +317,6 @@ void SV_LinkEdict (edict_t *ent)
 		InsertLinkBefore (&ent->r.area, &node->solid_edicts);
 }
 
-
-/*
-====================
-SV_AreaEdicts_r
-
-====================
-*/
-void SV_AreaEdicts_r (areanode_t *node)
-{
-	link_t		*l, *next, *start;
-	edict_t		*check;
-	int			count;
-
-	count = 0;
-
-	// touch linked edicts
-	if (area_type == AREA_SOLID)
-		start = &node->solid_edicts;
-	else
-		start = &node->trigger_edicts;
-
-	for (l=start->next  ; l != start ; l = next)
-	{
-		next = l->next;
-		check = EDICT_FROM_AREA(l);
-
-		if (check->r.solid == SOLID_NOT)
-			continue;		// deactivated
-		if ( !BoundsIntersect (check->r.absmin, check->r.absmax, area_mins, area_maxs) )
-			continue;		// not touching
-
-		if (area_count == area_maxcount)
-		{
-			Com_Printf ("SV_AreaEdicts: MAXCOUNT\n");
-			return;
-		}
-
-		area_list[area_count] = check;
-		area_count++;
-	}
-	
-	if (node->axis == -1)
-		return;		// terminal node
-
-	// recurse down both sides
-	if (area_maxs[node->axis] > node->dist)
-		SV_AreaEdicts_r (node->children[0]);
-	if (area_mins[node->axis] < node->dist)
-		SV_AreaEdicts_r (node->children[1]);
-}
-
 /*
 ================
 SV_SetAreaPortalState
@@ -394,36 +329,105 @@ with the same entity.
 void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 {
 	// entity must touch at least two areas
-	if ( !ent->r.areanum || !ent->r.areanum2 ) {
+	if( !ent->r.areanum || !ent->r.areanum2 )
 		return;
-	}
 
 	// change areaportal's state
 	CM_SetAreaPortalState ( ent->s.number, ent->r.areanum, ent->r.areanum2, open );
 }
+
 
 /*
 ================
 SV_AreaEdicts
 ================
 */
-int SV_AreaEdicts (vec3_t mins, vec3_t maxs, edict_t **list,
-	int maxcount, int areatype)
+int SV_AreaEdicts (vec3_t mins, vec3_t maxs, edict_t **list, int maxcount, int areatype)
 {
-	area_mins = mins;
-	area_maxs = maxs;
-	area_list = list;
-	area_count = 0;
-	area_maxcount = maxcount;
-	area_type = areatype;
+	link_t		*l, *start;
+	edict_t		*check;
+	int			stackdepth = 0, count = 0;
+	areanode_t	*localstack[AREA_NODES], *node = sv_areanodes;
 
-	SV_AreaEdicts_r (sv_areanodes);
+	while (1)
+	{
+		// touch linked edicts
+		if (areatype == AREA_SOLID)
+			start = &node->solid_edicts;
+		else
+			start = &node->trigger_edicts;
 
-	return area_count;
+		for (l=start->next  ; l != start ; l = l->next)
+		{
+			check = EDICT_FROM_AREA(l);
+
+			if (check->r.solid == SOLID_NOT)
+				continue;		// deactivated
+			if (!BoundsIntersect (check->r.absmin, check->r.absmax, mins, maxs))
+				continue;		// not touching
+
+			if (count == maxcount)
+			{
+				Com_Printf ("SV_AreaEdicts: MAXCOUNT\n");
+				return count;
+			}
+			list[count++] = check;
+		}
+		
+		if (node->axis == -1)
+			goto checkstack;		// terminal node
+
+		// recurse down both sides
+		if (maxs[node->axis] > node->dist)
+		{
+			if (mins[node->axis] < node->dist)
+			{
+				localstack[stackdepth++] = node->children[0];
+				node = node->children[1];
+				continue;
+			}
+			node = node->children[0];
+			continue;
+		}
+		if (mins[node->axis] < node->dist)
+		{
+			node = node->children[1];
+			continue;
+		}
+
+checkstack:
+		if( !stackdepth )
+			return count;
+		node = localstack[--stackdepth];
+	}
+
+	return count;
 }
 
+/*
+================
+SV_CollisionModelForEntity
 
-//===========================================================================
+Returns a collision model that can be used for testing or clipping an
+object of mins/maxs size.
+================
+*/
+struct cmodel_s *SV_CollisionModelForEntity (edict_t *ent)
+{
+	struct cmodel_s	*model;
+
+	if (ent->r.solid == SOLID_BSP)
+	{	// explicit hulls in the BSP model
+		model = CM_InlineModel (ent->s.modelindex);
+		if (!model)
+			Com_Error (ERR_FATAL, "MOVETYPE_PUSH with a non bsp model");
+
+		return model;
+	}
+
+	// create a temp hull from bounding box sizes
+	return CM_ModelForBBox (ent->r.mins, ent->r.maxs);
+}
 
 /*
 =============
@@ -463,53 +467,22 @@ int SV_PointContents (vec3_t p)
 	return contents;
 }
 
-
+//===========================================================================
 
 typedef struct
 {
-	vec3_t		boxmins, boxmaxs;// enclose the test object along entire move
-	float		*mins, *maxs;	// size of the moving object
-	vec3_t		mins2, maxs2;	// size when clipping against mosnters
+	vec3_t		boxmins, boxmaxs;	// enclose the test object along entire move
+	float		*mins, *maxs;		// size of the moving object
+	vec3_t		mins2, maxs2;		// size when clipping against mosnters
 	float		*start, *end;
 	trace_t		*trace;
 	edict_t		*passedict;
 	int			contentmask;
 } moveclip_t;
 
-
-
-/*
-================
-SV_CollisionModelForEntity
-
-Returns a collision model that can be used for testing or clipping an
-object of mins/maxs size.
-================
-*/
-struct cmodel_s *SV_CollisionModelForEntity (edict_t *ent)
-{
-	struct cmodel_s	*model;
-
-	if (ent->r.solid == SOLID_BSP)
-	{	// explicit hulls in the BSP model
-		model = CM_InlineModel (ent->s.modelindex);
-		if (!model)
-			Com_Error (ERR_FATAL, "MOVETYPE_PUSH with a non bsp model");
-
-		return model;
-	}
-
-	// create a temp hull from bounding box sizes
-	return CM_ModelForBBox (ent->r.mins, ent->r.maxs);
-}
-
-
-//===========================================================================
-
 /*
 ====================
 SV_ClipMoveToEntities
-
 ====================
 */
 void SV_ClipMoveToEntities ( moveclip_t *clip )
@@ -528,21 +501,18 @@ void SV_ClipMoveToEntities ( moveclip_t *clip )
 	for (i=0 ; i<num ; i++)
 	{
 		touch = touchlist[i];
-		if (touch->r.solid == SOLID_NOT)
-			continue;
-		if (touch == clip->passedict)
-			continue;
 		if (clip->passedict)
 		{
+			if (touch == clip->passedict)
+				continue;
 		 	if (touch->r.owner == clip->passedict)
 				continue;	// don't clip against own missiles
 			if (clip->passedict->r.owner == touch)
 				continue;	// don't clip against owner
 		}
 
-		if ( !(clip->contentmask & CONTENTS_CORPSE)
-		&& (touch->s.effects & EF_CORPSE) )
-				continue;
+		if( (touch->r.svflags & SVF_CORPSE) && !(clip->contentmask & CONTENTS_CORPSE) )
+			continue;
 
 		// might intersect, so do an exact clip
 		cmodel = SV_CollisionModelForEntity (touch);
@@ -603,7 +573,6 @@ SV_Trace
 Moves the given mins/maxs volume through the world from start to end.
 
 Passedict and edicts owned by passedict are explicitly not checked.
-
 ==================
 */
 void SV_Trace (trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, edict_t *passedict, int contentmask)

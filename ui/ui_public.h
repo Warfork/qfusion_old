@@ -1,7 +1,7 @@
 
 #include "../cgame/ref.h"
 
-#define	UI_API_VERSION		2
+#define	UI_API_VERSION		3
 
 //
 // these are the functions exported by the refresh module
@@ -29,7 +29,7 @@ typedef struct
 
 	void		(*R_ClearScene)( void );
 	void		(*R_AddEntityToScene)( entity_t *ent );
-	void		(*R_AddLightToScene)( vec3_t org, float intensity, float r, float g, float b );
+	void		(*R_AddLightToScene)( vec3_t org, float intensity, float r, float g, float b, struct shader_s *shader );
 	void		(*R_AddPolyToScene)( poly_t *poly );
 	void		(*R_RenderScene)( refdef_t *fd );
 	void		(*R_EndFrame)( void );
@@ -38,8 +38,12 @@ typedef struct
 	struct shader_s *(*R_RegisterSkin)( char *name );
 	struct shader_s *(*R_RegisterPic)( char *name );
 	struct skinfile_s *(*R_RegisterSkinFile)( char *name );
-	qboolean 	(*R_LerpAttachment)( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name );
+	qboolean 	(*R_LerpTag)( orientation_t *orient, struct model_s *mod, int oldframe, int frame, float lerpfrac, char *name );
 	void		(*R_DrawStretchPic)( int x, int y, int w, int h, float s1, float t1, float s2, float t2, vec4_t color, struct shader_s *shader );
+	void		(*R_TransformVectorToScreen)( refdef_t *rd, vec3_t in, vec2_t out );
+	int			(*R_SkeletalGetNumBones)( struct model_s *mod, int *numFrames );
+	int			(*R_SkeletalGetBoneInfo)( struct model_s *mod, int bone, char *name, int size, int *flags );
+	void		(*R_SkeletalGetBonePose)( struct model_s *mod, int bone, int frame, bonepose_t *bonepose );
 
 	void		(*S_StartLocalSound)( char *s );
 	void		(*S_StartBackgroundTrack)( char *intro, char *loop );

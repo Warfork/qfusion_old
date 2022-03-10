@@ -195,6 +195,7 @@ void CL_GameModule_Init (void)
 	import.R_AddEntityToScene = R_AddEntityToScene;
 	import.R_AddLightToScene = R_AddLightToScene;
 	import.R_AddPolyToScene = R_AddPolyToScene;
+	import.R_AddLightStyleToScene = R_AddLightStyleToScene;
 	import.R_RenderScene = R_RenderScene;
 	import.R_RegisterWorldModel = R_RegisterWorldModel;
 	import.R_ModelBounds = R_ModelBounds;
@@ -202,8 +203,12 @@ void CL_GameModule_Init (void)
 	import.R_RegisterPic = R_RegisterPic;
 	import.R_RegisterSkin = R_RegisterSkin;
 	import.R_RegisterSkinFile = R_RegisterSkinFile;
-	import.R_LerpAttachment = R_LerpAttachment;
+	import.R_LerpTag = R_LerpTag;
 	import.R_DrawStretchPic = R_DrawStretchPic;
+	import.R_TransformVectorToScreen = R_TransformVectorToScreen;
+	import.R_SkeletalGetNumBones = R_SkeletalGetNumBones;
+	import.R_SkeletalGetBoneInfo = R_SkeletalGetBoneInfo;
+	import.R_SkeletalGetBonePose = R_SkeletalGetBonePose;
 
 	import.CM_NumInlineModels = CM_NumInlineModels;
 	import.CM_InlineModel = CM_InlineModel;
@@ -320,14 +325,25 @@ void CL_GameModule_EndFrameSequence( void )
 }
 
 /*
+===============
+CL_GameModule_GlobalSound
+===============
+*/
+void CL_GameModule_GlobalSound( vec3_t origin, int entNum, int entChannel, int soundNum, float fvol, float attenuation )
+{
+	if( cge )
+		cge->GlobalSound( origin, entNum, entChannel, soundNum, fvol, attenuation );
+}
+
+/*
 ==============
 CL_GameModule_GetEntitySoundOrigin
 ==============
 */
-void CL_GameModule_GetEntitySoundOrigin( int entnum, vec3_t origin )
+void CL_GameModule_GetEntitySoundOrigin( int entNum, vec3_t origin )
 {
 	if( cge )
-		cge->GetEntitySoundOrigin( entnum, origin );
+		cge->GetEntitySoundOrigin( entNum, origin );
 }
 
 /*

@@ -61,19 +61,8 @@ void RoQ_ReadChunk ( cinematics_t *cin )
 RoQ_SkipBlock
 ==================
 */
-static void RoQ_SkipBlock ( cinematics_t *cin, int size )
-{
-	qbyte compressed[0x20000];
-	int block, remaining = size;
-
-	if( !size )
-		return;
-
-	do {
-		block = min( sizeof(compressed), remaining );
-		remaining -= block;
-		FS_Read( compressed, block, cin->file );
-	} while( remaining );
+static void RoQ_SkipBlock ( cinematics_t *cin, int size ) {
+	FS_Seek( cin->file, size, FS_SEEK_CUR );
 }
 
 /*

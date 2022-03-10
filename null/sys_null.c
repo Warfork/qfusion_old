@@ -107,10 +107,6 @@ void	Sys_Init (void)
 {
 }
 
-void	Sys_PrintCPUInfo (void)
-{
-}
-
 //=============================================================================
 
 void main (int argc, char **argv)

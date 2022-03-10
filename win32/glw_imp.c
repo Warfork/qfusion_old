@@ -77,7 +77,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	wc.cbClsExtra	 = 0;
 	wc.cbWndExtra	 = 0;
 	wc.hInstance	 = glw_state.hInstance;
-	wc.hIcon		 = LoadIcon( glw_state.hInstance, MAKEINTRESOURCE( IDI_ICON1 ) );
+	wc.hIcon		 = LoadIcon( glw_state.hInstance, MAKEINTRESOURCE( IDI_QFUSION ) );
 	wc.hCursor		 = LoadCursor (NULL, IDC_ARROW);
 	wc.hbrBackground = (HBRUSH)GetStockObject(GRAY_BRUSH);
 	wc.lpszMenuName  = 0;
@@ -335,12 +335,6 @@ void GLimp_Shutdown( void )
 		ShowWindow ( glw_state.hWnd, SW_HIDE );
 		DestroyWindow (	glw_state.hWnd );
 		glw_state.hWnd = NULL;
-	}
-
-	if ( glw_state.log_fp )
-	{
-		fclose( glw_state.log_fp );
-		glw_state.log_fp = 0;
 	}
 
 	UnregisterClass (WINDOW_CLASS_NAME, glw_state.hInstance);

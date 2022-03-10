@@ -37,21 +37,22 @@ vec3_t			inVertsArray[MAX_ARRAY_VERTS];
 #endif
 
 vec3_t			inNormalsArray[MAX_ARRAY_VERTS];
+vec3_t			inSVectorsArray[MAX_ARRAY_VERTS];
+vec3_t			inTVectorsArray[MAX_ARRAY_VERTS];
 index_t			inIndexesArray[MAX_ARRAY_INDEXES];
 vec2_t			inCoordsArray[MAX_ARRAY_VERTS];
-vec2_t			inLightmapCoordsArray[MAX_ARRAY_VERTS];
-byte_vec4_t		inColorsArray[MAX_ARRAY_VERTS];
+vec2_t			inLightmapCoordsArray[MAX_LIGHTMAPS][MAX_ARRAY_VERTS];
+byte_vec4_t		inColorsArray[MAX_LIGHTMAPS][MAX_ARRAY_VERTS];
 
 vec2_t			tUnitCoordsArray[MAX_TEXTURE_UNITS][MAX_ARRAY_VERTS];
-
-vec3_t			tempVertexArray[MAX_ARRAY_VERTS];
-vec3_t			tempNormalsArray[MAX_ARRAY_VERTS];
 
 index_t			*indexesArray;
 vec3_t			*vertsArray;
 vec3_t			*normalsArray;
+vec3_t			*sVectorsArray;
+vec3_t			*tVectorsArray;
 vec2_t			*coordsArray;
-vec2_t			*lightmapCoordsArray;
+vec2_t			*lightmapCoordsArray[MAX_LIGHTMAPS];
 byte_vec4_t		colorArray[MAX_ARRAY_VERTS];
 
 #if SHADOW_VOLUMES
@@ -77,15 +78,19 @@ qboolean		r_enableNormals;
 
 int				r_features;
 
-static	int		r_lightmapNum;
-static	shader_t *r_currentShader;
+static	int		r_lightmapStyleNum[MAX_TEXTURE_UNITS];
+static	superLightStyle_t *r_superLightStyle;
+
+static	const meshbuffer_t	*r_currentMeshBuffer;
+static	const shader_t	*r_currentShader;
 static	float	r_currentShaderTime;
 static	unsigned int r_patchWidth, r_patchHeight;
-static	mfog_t	*r_texFog, *r_colorFog;
+static	const mfog_t *r_texFog, *r_colorFog;
 
-static	image_t	*r_texPointers[MAX_SHADER_PASSES];
+static	shaderpass_t r_dlightsPass, r_fogPass;
+static	shaderpass_t r_lightmapPasses[MAX_TEXTURE_UNITS+1];
 
-static	shaderpass_t	*r_accumPasses[MAX_TEXTURE_UNITS];
+static	const shaderpass_t *r_accumPasses[MAX_TEXTURE_UNITS];
 static	int		r_numAccumPasses;
 
 static	int		r_identityLighting;
@@ -94,12 +99,8 @@ unsigned int	r_numverts;
 unsigned int	r_numtris;
 unsigned int	r_numflushes;
 
-index_t			r_quad_indexes[6] = { 0, 1, 2, 0, 2, 3 };
-index_t			r_trifan_indexes[(MAX_ARRAY_VERTS-2)*3];
-
 void R_DrawTriangles( void );
 void R_DrawNormals( void );
-void R_RenderFogOnMesh( void );
 
 /*
 ==============
@@ -110,7 +111,6 @@ void R_BackendInit( void )
 {
 	int i;
 	double t;
-	index_t *index;
 
 	numVerts = 0;
 	numIndexes = 0;
@@ -119,8 +119,11 @@ void R_BackendInit( void )
 	indexesArray = inIndexesArray;
 	vertsArray = inVertsArray;
 	normalsArray = inNormalsArray;
+	sVectorsArray = inSVectorsArray;
+	tVectorsArray = inTVectorsArray;
 	coordsArray = inCoordsArray;
-	lightmapCoordsArray = inLightmapCoordsArray;
+	for( i = 0; i < MAX_LIGHTMAPS; i++ )
+		lightmapCoordsArray[i] = inLightmapCoordsArray[i];
 
 #if SHADOW_VOLUMES
 	neighborsArray = inNeighborsArray;
@@ -145,10 +148,7 @@ void R_BackendInit( void )
 		qglGenBuffersARB( r_numVertexBufferObjects, r_vertexBufferObjects );
 
 		for( i = 0; i < r_numVertexBufferObjects; i++ ) {
-			if( i == VBO_INDEXES )
-				qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, r_vertexBufferObjects[i] );
-			else
-				qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[i] );
+			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[i] );
 
 			if( i == VBO_VERTS ) {
 #if SHADOW_VOLUMES
@@ -163,8 +163,6 @@ void R_BackendInit( void )
 			} else if( i == VBO_COLORS ) {
 				qglBufferDataARB( GL_ARRAY_BUFFER_ARB, MAX_ARRAY_VERTS * sizeof( byte_vec4_t ), NULL, GL_STREAM_DRAW_ARB );
 				qglColorPointer( 4, GL_UNSIGNED_BYTE, 0, 0 );
-			} else if( i == VBO_INDEXES ){
-				qglBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, MAX_ARRAY_INDEXES * sizeof( int ), NULL, GL_STREAM_DRAW_ARB );
 			} else {
 				qglBufferDataARB( GL_ARRAY_BUFFER_ARB, MAX_ARRAY_VERTS * sizeof( vec2_t ), NULL, GL_STREAM_DRAW_ARB );
 
@@ -207,12 +205,35 @@ void R_BackendInit( void )
 		r_inversesawtoothtable[i] = 1.0 - t;
 	}
 
-	// build trifan indexes
-	index = r_trifan_indexes;
-	for ( i = 0; i < MAX_ARRAY_VERTS-2; i++, index += 3 ) {
-		index[0] = 0;
-		index[1] = i + 1;
-		index[2] = i + 2;
+	// init dynamic lights pass
+	memset( &r_dlightsPass, 0, sizeof( shaderpass_t ) );
+	r_dlightsPass.depthfunc = GL_EQUAL;
+	r_dlightsPass.blendsrc = GL_DST_COLOR;
+	r_dlightsPass.blenddst = GL_ONE;
+	r_dlightsPass.flags = SHADER_PASS_BLEND | SHADER_PASS_DLIGHT;
+
+	// init fog pass
+	memset( &r_fogPass, 0, sizeof( shaderpass_t ) );
+	r_fogPass.tcgen = TC_GEN_FOG;
+	r_fogPass.rgbgen.type = RGB_GEN_FOG;
+	r_fogPass.alphagen.type = ALPHA_GEN_FOG;
+	r_fogPass.blendsrc = GL_SRC_ALPHA;
+	r_fogPass.blenddst = GL_ONE_MINUS_SRC_ALPHA;
+	r_fogPass.blendmode = GL_DECAL;
+	r_fogPass.flags = SHADER_PASS_BLEND | SHADER_PASS_NOCOLORARRAY;
+
+	// the very first lightmap pass is reserved for GL_REPLACE or GL_MODULATE
+	memset( r_lightmapPasses, 0, sizeof( r_lightmapPasses ) );
+
+	// the rest are GL_ADD
+	for( i = 1; i < MAX_TEXTURE_UNITS+1; i++ ) {
+		r_lightmapPasses[i].flags = SHADER_PASS_BLEND|SHADER_PASS_LIGHTMAP|SHADER_PASS_NOCOLORARRAY;
+		r_lightmapPasses[i].tcgen = TC_GEN_LIGHTMAP;
+		r_lightmapPasses[i].depthfunc = GL_EQUAL;
+		r_lightmapPasses[i].blendsrc = GL_ONE;
+		r_lightmapPasses[i].blenddst = GL_ONE;
+		r_lightmapPasses[i].blendmode = GL_ADD;
+		r_lightmapPasses[i].alphagen.type = ALPHA_GEN_IDENTITY;
 	}
 }
 
@@ -234,12 +255,17 @@ R_ResetBackendPointers
 */
 inline void R_ResetBackendPointers( void )
 {
+	int i;
+
 	numColors = 0;
 
 	vertsArray = inVertsArray;
 	normalsArray = inNormalsArray;
+	sVectorsArray = inSVectorsArray;
+	tVectorsArray = inTVectorsArray;
 	coordsArray = inCoordsArray;
-	lightmapCoordsArray = inLightmapCoordsArray;
+	for( i = 0; i < MAX_LIGHTMAPS; i++ )
+		lightmapCoordsArray[i] = inLightmapCoordsArray[i];
 }
 
 /*
@@ -339,13 +365,20 @@ R_BackendEndFrame
 */
 void R_BackendEndFrame( void )
 {
-	if( r_speeds->integer && !(r_refdef.rdflags & RDF_NOWORLDMODEL) )
+	if( r_speeds->integer && !(r_refdef.rdflags & RDF_NOWORLDMODEL) ) {
 		Com_Printf( "%4i wpoly %4i leafs %4i verts %4i tris %4i flushes\n",
 			c_brush_polys, 
 			c_world_leafs,
 			r_numverts,
 			r_numtris,
-			r_numflushes ); 
+			r_numflushes );
+		Com_Printf( "lvs\\lts: %5i\\%i  node: %5i  farclip: %6.f\n",
+			r_mark_leaves, r_mark_lights,
+			r_world_node, r_farclip );
+		Com_Printf( "polys\\ents: %5i  sort\\draw: %5i\\%i\n",
+			r_add_polys, r_add_entities,
+			r_sort_meshes, r_draw_meshes );
+	}
 }
 
 /*
@@ -368,12 +401,12 @@ void R_LockArrays( int numverts )
 R_UnlockArrays
 ==============
 */
-void R_UnlockArrays (void)
+void R_UnlockArrays( void )
 {
 	if( !r_arraysLocked )
 		return;
 
-	qglUnlockArraysEXT();
+	qglUnlockArraysEXT ();
 	r_arraysLocked = qfalse;
 }
 
@@ -412,157 +445,73 @@ void R_FlushArrays( void )
 	if( !numVerts || !numIndexes )
 		return;
 
-	if( glConfig.vertexBufferObject ) {
-		if( r_enableNormals ) {
-			qglEnableClientState( GL_NORMAL_ARRAY );
+	if( r_enableNormals ) {
+		qglEnableClientState( GL_NORMAL_ARRAY );
+		if( glConfig.vertexBufferObject ) {
 			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_NORMALS] );
 			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec3_t ), normalsArray, GL_STREAM_DRAW_ARB );
 			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-		}
-
-		qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-
-		if( numColors > 1 ) {
-			qglEnableClientState( GL_COLOR_ARRAY );
-			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_COLORS] );
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( byte_vec4_t ), colorArray, GL_STREAM_DRAW_ARB );
-			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-		} else if( numColors == 1 ) {
-			qglColor4ubv( colorArray[0] );
-		}
-
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_INDEXES] );
-		if( glConfig.drawRangeElements )
-			qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts, numIndexes, GL_UNSIGNED_INT, 0 );
-		else
-			qglDrawElements( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT,	0 );
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
-	} else {
-		if( r_enableNormals ) {
-			qglEnableClientState( GL_NORMAL_ARRAY );
+		} else {
 			qglNormalPointer( GL_FLOAT, 12, normalsArray );
 		}
-
-		qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-
-		if( numColors > 1 ) {
-			qglEnableClientState( GL_COLOR_ARRAY );
-			qglColorPointer( 4, GL_UNSIGNED_BYTE, 0, colorArray );
-		} else if( numColors == 1 ) {
-			qglColor4ubv( colorArray[0] );
-		}
-
-		if( glConfig.drawRangeElements )
-			qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts, numIndexes, GL_UNSIGNED_INT, indexesArray );
-		else
-			qglDrawElements( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT,	indexesArray );
 	}
 
-	r_numtris += numIndexes / 3;
+	if( numColors ) {
+		if( numColors == 1 ) {
+			qglColor4ubv( colorArray[0] );
+		} else {
+			qglEnableClientState( GL_COLOR_ARRAY );
+			if( glConfig.vertexBufferObject ) {
+				qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_COLORS] );
+				qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( byte_vec4_t ), colorArray, GL_STREAM_DRAW_ARB );
+				qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
+			} else {
+				qglColorPointer( 4, GL_UNSIGNED_BYTE, 0, colorArray );
+			}
+		}
+	}
 
-	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+	if( glConfig.drawRangeElements )
+		qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts, numIndexes, GL_UNSIGNED_INT, indexesArray );
+	else
+		qglDrawElements( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT,	indexesArray );
+
 	if( numColors > 1 )
 		qglDisableClientState( GL_COLOR_ARRAY );
-
 	if( r_enableNormals ) {
 		qglDisableClientState( GL_NORMAL_ARRAY );
 		r_enableNormals = qfalse;
 	}
 
+	r_numtris += numIndexes / 3;
 	r_numflushes++;
 }
 
 /*
 ==============
-R_FlushArraysMtex
+R_CleanUpTextureUnits
 ==============
 */
-void R_FlushArraysMtex( void )
+static void R_CleanUpTextureUnits( void )
 {
 	int i;
-
-	if( !numVerts || !numIndexes )
-		return;
-
-	if( glConfig.vertexBufferObject ) {
-		if( r_enableNormals ) {
-			qglEnableClientState( GL_NORMAL_ARRAY );
-			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_NORMALS] );
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec3_t ), normalsArray, GL_STREAM_DRAW_ARB );
-			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-		}
-
-		GL_Bind( 0, r_texPointers[0] );
-		qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-
-		if( numColors > 1 ) {
-			qglEnableClientState( GL_COLOR_ARRAY );
-			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_COLORS] );
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( byte_vec4_t ), colorArray, GL_STREAM_DRAW_ARB );
-			qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-		} else if( numColors == 1 ) {
-			qglColor4ubv( colorArray[0] );
-		}
-
-		for( i = 1; i < r_numAccumPasses; i++ ) {
-			GL_Bind( i, r_texPointers[i] );
-			qglEnable( GL_TEXTURE_2D );
-			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-		}
-
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_INDEXES] );
-		if( glConfig.drawRangeElements )
-			qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts, numIndexes, GL_UNSIGNED_INT, 0 );
-		else
-			qglDrawElements( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT,	0 );
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
-	} else {
-		if( r_enableNormals ) {
-			qglEnableClientState( GL_NORMAL_ARRAY );
-			qglNormalPointer( GL_FLOAT, 12, normalsArray );
-		}
-
-		GL_Bind( 0, r_texPointers[0] );
-		qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-
-		if( numColors > 1 ) {
-			qglEnableClientState( GL_COLOR_ARRAY );
-			qglColorPointer( 4, GL_UNSIGNED_BYTE, 0, colorArray );
-		} else if( numColors == 1 ) {
-			qglColor4ubv( colorArray[0] );
-		}
-
-		for( i = 1; i < r_numAccumPasses; i++ ) {
-			GL_Bind( i, r_texPointers[i] );
-			qglEnable( GL_TEXTURE_2D );
-			qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
-		}
-
-		if( glConfig.drawRangeElements )
-			qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts, numIndexes, GL_UNSIGNED_INT, indexesArray );
-		else
-			qglDrawElements( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT,	indexesArray );
-	}
-
-	r_numtris += numIndexes / 3;
 
 	for( i = r_numAccumPasses - 1; i > 0; i-- ) {
 		GL_SelectTexture( i );
 		qglDisable( GL_TEXTURE_2D );
+		qglDisable( GL_TEXTURE_GEN_S );
+		qglDisable( GL_TEXTURE_GEN_T );
+		qglDisable( GL_TEXTURE_GEN_R );
+		qglDisable( GL_TEXTURE_CUBE_MAP_ARB );
 		qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
 	}
 
 	GL_SelectTexture( 0 );
+	qglDisable( GL_TEXTURE_GEN_S );
+	qglDisable( GL_TEXTURE_GEN_T );
+	qglDisable( GL_TEXTURE_GEN_R );
+	qglDisable( GL_TEXTURE_CUBE_MAP_ARB );
 	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
-	if( numColors > 1 )
-		qglDisableClientState( GL_COLOR_ARRAY );
-
-	if( r_enableNormals ) {
-		qglDisableClientState( GL_NORMAL_ARRAY );
-		r_enableNormals = qfalse;
-	}
-
-	r_numflushes++;
 }
 
 /*
@@ -849,98 +798,270 @@ void R_DeformVertices( void )
 R_VertexTCBase
 ==============
 */
-void R_VertexTCBase( shaderpass_t *pass, int unit )
+static qboolean R_VertexTCBase( const shaderpass_t *pass, int unit, mat4x4_t matrix )
 {
 	int	i;
-	float *outCoords, depth;
-	vec3_t transform;
-	vec3_t n, projection;
-	vec3_t inverse_axis[3];
+	float *outCoords;
+	qboolean identityMatrix;
 
-	if( pass->tcgen == TC_GEN_REFLECTION ) {
-		r_enableNormals = qtrue;
-		qglEnable( GL_TEXTURE_GEN_S );
-		qglEnable( GL_TEXTURE_GEN_T );
-		qglEnable( GL_TEXTURE_GEN_R );
-		qglTexGeni( GL_S, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP_ARB );
-		qglTexGeni( GL_T, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP_ARB );
-		qglTexGeni( GL_R, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP_ARB );
-		return;
-	}
+	Matrix4_Identity( matrix );
 
-	qglDisable( GL_TEXTURE_GEN_S );
-	qglDisable( GL_TEXTURE_GEN_T );
-	qglDisable( GL_TEXTURE_GEN_R );
-
-	if( glConfig.vertexBufferObject )
-		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_TC0+unit] );
-
-	if( pass->tcgen == TC_GEN_BASE ) {
-		if( glConfig.vertexBufferObject )
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec2_t ), coordsArray, GL_STREAM_DRAW_ARB );
-		else
-			qglTexCoordPointer( 2, GL_FLOAT, 0, coordsArray );
-	} else if( pass->tcgen == TC_GEN_LIGHTMAP ) {
-		if( glConfig.vertexBufferObject )
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec2_t ), lightmapCoordsArray, GL_STREAM_DRAW_ARB );
-		else
-			qglTexCoordPointer( 2, GL_FLOAT, 0, lightmapCoordsArray );
-	} else if( pass->tcgen == TC_GEN_ENVIRONMENT ) {
-		outCoords = tUnitCoordsArray[unit][0];
-
-		if( currentmodel ) {
-			if( currentmodel == r_worldmodel ) {
-				VectorSubtract( vec3_origin, r_origin, transform );
-			} else if( currentmodel->type == mod_brush ) {
-				VectorSubtract( currententity->origin, r_origin, transform );
-				Matrix_Transpose( currententity->axis, inverse_axis );
+	switch( pass->tcgen ) {
+		case TC_GEN_BASE:
+			if( glConfig.vertexBufferObject ) {
+				identityMatrix = qtrue;
+				outCoords = coordsArray[0];
+				break;
 			} else {
-				VectorSubtract( currententity->origin, r_origin, transform );
-				Matrix_Transpose( currententity->axis, inverse_axis );
+				qglTexCoordPointer( 2, GL_FLOAT, 0, coordsArray );
+				return qtrue;
 			}
-		} else {
-			VectorClear( transform );
-			Matrix_Transpose( axis_identity, inverse_axis );
+		case TC_GEN_LIGHTMAP:
+			if( glConfig.vertexBufferObject ) {
+				identityMatrix = qtrue;
+				outCoords = lightmapCoordsArray[r_lightmapStyleNum[unit]][0];
+				break;
+			} else {
+				qglTexCoordPointer( 2, GL_FLOAT, 0, lightmapCoordsArray[r_lightmapStyleNum[unit]] );
+				return qtrue;
+			}
+		case TC_GEN_ENVIRONMENT:
+		{
+			float depth;
+			vec3_t projection, n;
+
+			if( glState.in2DMode )
+				return qtrue;
+
+			matrix[0] = matrix[12] = -0.5;
+			matrix[5] = matrix[13] =  0.5;
+
+			outCoords = tUnitCoordsArray[unit][0];
+			if( currentmodel == r_worldmodel ) {
+				for( i = 0; i < numVerts; i++, outCoords += 2 ) {
+					VectorSubtract( vertsArray[i], r_origin, projection );
+					VectorNormalizeFast( projection );
+
+					// project vector
+					VectorCopy( normalsArray[i], n );
+					depth = -DotProduct( n, projection ); depth += depth;
+					VectorMA( projection, depth, n, projection );
+					depth = Q_RSqrt( DotProduct( projection, projection ) );
+
+					outCoords[0] = projection[1] * depth;
+					outCoords[1] = projection[2] * depth;
+				}
+			} else {
+				vec3_t transform, inverse_axis[3];
+
+				VectorSubtract( r_origin, currententity->origin, transform );
+				Matrix_Transpose( currententity->axis, inverse_axis );
+
+				for( i = 0; i < numVerts; i++, outCoords += 2 ) {
+					VectorSubtract( vertsArray[i], transform, projection );
+					VectorNormalizeFast( projection );
+
+					// project vector
+					Matrix_TransformVector( inverse_axis, normalsArray[i], n );
+					depth = -DotProduct( n, projection ); depth += depth;
+					VectorMA( projection, depth, n, projection );
+					depth = Q_RSqrt( DotProduct( projection, projection ) );
+
+					outCoords[0] = projection[1] * depth;
+					outCoords[1] = projection[2] * depth;
+				}
+			}
+
+			if( glConfig.vertexBufferObject ) {
+				identityMatrix = qfalse;
+				outCoords = tUnitCoordsArray[unit][0];
+				break;
+			} else {
+				qglTexCoordPointer( 2, GL_FLOAT, 0, tUnitCoordsArray[unit] );
+				return qfalse;
+			}
 		}
+		case TC_GEN_VECTOR:
+		{
+			GLfloat genVector[2][4];
 
-		for( i = 0; i < numVerts; i++, outCoords += 2 ) {
-			VectorAdd( vertsArray[i], transform, projection );
-			VectorNormalize( projection );
+			for( i = 0; i < 3; i++ ) {
+				genVector[0][i] = pass->tcgenVec[0][i];
+				genVector[1][i] = pass->tcgenVec[1][i];
+				genVector[0][3] = genVector[1][3] = 0;
+			}
+			matrix[12] = pass->tcgenVec[0][3];
+			matrix[13] = pass->tcgenVec[1][3];
 
-			// project vector
-			if( currentmodel == r_worldmodel )
-				VectorCopy( normalsArray[i], n );
-			else
-				Matrix_TransformVector( inverse_axis, normalsArray[i], n );
-
-			depth = -2.0f * DotProduct( n, projection );
-			VectorMA( projection, depth, n, projection );
-			depth = Q_RSqrt( DotProduct(projection, projection) * 4 );
-
-			outCoords[0] = -((projection[1] * depth) + 0.5f);
-			outCoords[1] =  ((projection[2] * depth) + 0.5f);
+			qglEnable( GL_TEXTURE_GEN_S );
+			qglEnable( GL_TEXTURE_GEN_T );
+			qglTexGeni( GL_S, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR );
+			qglTexGeni( GL_T, GL_TEXTURE_GEN_MODE, GL_OBJECT_LINEAR );
+			qglTexGenfv( GL_S, GL_OBJECT_PLANE, genVector[0] );
+			qglTexGenfv( GL_T, GL_OBJECT_PLANE, genVector[1] );
+			return qfalse;
 		}
+		case TC_GEN_REFLECTION:
+			r_enableNormals = qtrue;
+			qglEnable( GL_TEXTURE_GEN_S );
+			qglEnable( GL_TEXTURE_GEN_T );
+			qglEnable( GL_TEXTURE_GEN_R );
+			qglTexGeni( GL_S, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP_ARB );
+			qglTexGeni( GL_T, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP_ARB );
+			qglTexGeni( GL_R, GL_TEXTURE_GEN_MODE, GL_REFLECTION_MAP_ARB );
+			return qtrue;
+		case TC_GEN_FOG:
+		{
+			int		fogPtype;
+			cplane_t *fogPlane, globalFogPlane;
+			shader_t *fogShader;
+			vec3_t	viewtofog;
+			double	fogNormal[3], vpnNormal[3];
+			double	dist, vdist, fogDist, vpnDist;
 
-		if( glConfig.vertexBufferObject )
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec2_t ), tUnitCoordsArray[unit][0], GL_STREAM_DRAW_ARB );
-		else
-			qglTexCoordPointer( 2, GL_FLOAT, 0, tUnitCoordsArray[unit][0] );
-	} else if( pass->tcgen == TC_GEN_VECTOR ) {
-		outCoords = tUnitCoordsArray[unit][0];
+			fogPlane = r_texFog->visibleplane;
+			if( !fogPlane ) {
+				VectorSet( globalFogPlane.normal, 0, 0, 1 );
+				globalFogPlane.dist = r_worldmodel->nodes[0].maxs[2] + 1;
+				globalFogPlane.type = PLANE_Z;
+				fogPlane = &globalFogPlane;
+			}
+			fogShader = r_texFog->shader;
 
-		for( i = 0; i < numVerts; i++, outCoords += 2 ) {
-			outCoords[0] = DotProduct( pass->tcgenVec[0], vertsArray[i] ) + pass->tcgenVec[0][3];
-			outCoords[1] = DotProduct( pass->tcgenVec[1], vertsArray[i] ) + pass->tcgenVec[1][3];
+			matrix[0] = matrix[5] = fogShader->fog_dist;
+			matrix[13] = 1.5/(float)FOG_TEXTURE_HEIGHT;
+
+			// distance to fog
+			dist = PlaneDiff( r_origin, fogPlane );
+
+			if( r_currentShader->flags & SHADER_SKY ) {
+				if( dist > 0 )
+					VectorMA( r_origin, -dist, fogPlane->normal, viewtofog );
+				else
+					VectorCopy( r_origin, viewtofog );
+			} else {
+				VectorCopy( currententity->origin, viewtofog );
+			}
+
+			// some math tricks to take entity's rotation matrix into consideration
+			// for fog texture coordinates calculations:
+			// M is a rotation matrix, v is a vertex, t is a transform vector
+			// n is a plane's normal, d is a plane's dist, r is a view origin
+			// (M*v + t)*n - d = (M*n)*v - ((d - t*n))
+			// (M*v + t - r)*n = (M*n)*v - ((r - t)*n)
+			fogNormal[0] = DotProduct( currententity->axis[0], fogPlane->normal ) * currententity->scale;
+			fogNormal[1] = DotProduct( currententity->axis[1], fogPlane->normal ) * currententity->scale;
+			fogNormal[2] = DotProduct( currententity->axis[2], fogPlane->normal ) * currententity->scale;
+			fogPtype = ( fogNormal[0] == 1.0 ? PLANE_X : (fogNormal[1] == 1.0 ? PLANE_Y : (fogNormal[2] == 1.0 ? PLANE_Z : PLANE_NONAXIAL) ) );
+			fogDist = (fogPlane->dist - DotProduct( viewtofog, fogPlane->normal ));
+
+			vpnNormal[0] = DotProduct( currententity->axis[0], vpn ) * currententity->scale;
+			vpnNormal[1] = DotProduct( currententity->axis[1], vpn ) * currententity->scale;
+			vpnNormal[2] = DotProduct( currententity->axis[2], vpn ) * currententity->scale;
+			vpnDist = ((r_origin[0] - viewtofog[0]) * vpn[0] + (r_origin[1] - viewtofog[1]) * vpn[1] + (r_origin[2] - viewtofog[2]) * vpn[2]);
+
+			outCoords = tUnitCoordsArray[unit][0];
+			if( dist < 0 )	{ 	// camera is inside the fog brush
+				if( fogPtype < 3 ) {
+					for( i = 0; i < numVerts; i++, outCoords += 2 ) {
+						outCoords[0] = DotProduct( vertsArray[i], vpnNormal ) - vpnDist;
+						outCoords[1] = -( vertsArray[i][fogPtype] - fogDist );
+					}
+				} else {
+					for( i = 0; i < numVerts; i++, outCoords += 2 ) {
+						outCoords[0] = DotProduct( vertsArray[i], vpnNormal ) - vpnDist;
+						outCoords[1] = -( DotProduct( vertsArray[i], fogNormal ) - fogDist );
+					}
+				}
+			} else {
+				if( fogPtype < 3 ) {
+					for( i = 0; i < numVerts; i++, outCoords += 2 ) {
+						vdist = vertsArray[i][fogPtype] - fogDist;
+						outCoords[0] = (( vdist < 0 ) ? ( DotProduct( vertsArray[i], vpnNormal ) - vpnDist ) * vdist / ( vdist - dist ) : 0.0f);
+						outCoords[1] = -vdist;
+					}
+				} else {
+					for( i = 0; i < numVerts; i++, outCoords += 2 ) {
+						vdist = DotProduct( vertsArray[i], fogNormal ) - fogDist;
+						outCoords[0] = (( vdist < 0 ) ? ( DotProduct( vertsArray[i], vpnNormal ) - vpnDist ) * vdist / ( vdist - dist ) : 0.0f);
+						outCoords[1] = -vdist;
+					}
+				}
+			}
+			if( glConfig.vertexBufferObject ) {
+				identityMatrix = qfalse;
+				outCoords = tUnitCoordsArray[unit][0];
+				break;
+			} else {
+				qglTexCoordPointer( 2, GL_FLOAT, 0, tUnitCoordsArray[unit] );
+				return qfalse;
+			}
 		}
-
-		if( glConfig.vertexBufferObject )
-			qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec2_t ), tUnitCoordsArray[unit][0], GL_STREAM_DRAW_ARB );
-		else
-			qglTexCoordPointer( 2, GL_FLOAT, 0, tUnitCoordsArray[unit][0] );
 	}
 
-	if( glConfig.vertexBufferObject )
-		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
+	// note that non-VBO path never gets to this point
+	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_TC0+unit] );
+	qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec2_t ), outCoords, GL_STREAM_DRAW_ARB );
+	qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
+
+	return identityMatrix;
+}
+
+/*
+================
+R_ApplyTCMods
+================
+*/
+void R_ApplyTCMods( const shaderpass_t *pass, mat4x4_t result )
+{
+	int i;
+	float *table;
+	float t1, t2, sint, cost;
+	mat4x4_t m1, m2;
+	tcmod_t	*tcmod;
+
+	for( i = 0, tcmod = pass->tcmods; i < pass->numtcmods; i++, tcmod++ ) {
+		switch( tcmod->type ) {
+			case TC_MOD_ROTATE:
+				cost = tcmod->args[0] * r_currentShaderTime;
+				sint = R_FastSin( cost );
+				cost = R_FastSin( cost + 0.25 );
+				m2[0] =  cost, m2[1] = sint, m2[12] =  0.5f * (sint - cost + 1);
+				m2[4] = -sint, m2[5] = cost, m2[13] = -0.5f * (sint + cost - 1);
+				Matrix4_Copy2D( result, m1 );
+				Matrix4_Multiply2D( m2, m1, result );
+				break;
+			case TC_MOD_SCALE:
+				Matrix4_Scale2D( result, tcmod->args[0], tcmod->args[1] );
+				break;
+			case TC_MOD_TURB:
+				t1 = (1.0 / 4.0);
+				t2 = tcmod->args[2] + r_currentShaderTime * tcmod->args[3];
+				Matrix4_Scale2D( result, 1 + (tcmod->args[1] * R_FastSin( t2 ) + tcmod->args[0]) * t1, 1 + (tcmod->args[1] * R_FastSin( t2 + 0.25 ) + tcmod->args[0]) * t1 );
+				break;
+			case TC_MOD_STRETCH:
+				table = R_TableForFunc( tcmod->args[0] );
+				t2 = tcmod->args[3] + r_currentShaderTime * tcmod->args[4];
+				t1 = FTABLE_EVALUATE( table, t2 ) * tcmod->args[2] + tcmod->args[1];
+				t1 = t1 ? 1.0f / t1 : 1.0f;
+				t2 = 0.5f - 0.5f * t1;
+				Matrix4_Stretch2D( result, t1, t2 );
+				break;
+			case TC_MOD_SCROLL:
+				t1 = tcmod->args[0] * r_currentShaderTime;
+				t2 = tcmod->args[1] * r_currentShaderTime;
+				Matrix4_Translate2D( result, t1 - floor( t1 ), t2 - floor( t2 ) );
+				break;
+			case TC_MOD_TRANSFORM:
+				m2[0] = tcmod->args[0], m2[1] = tcmod->args[2], m2[12] = tcmod->args[4],
+				m2[5] = tcmod->args[1], m2[4] = tcmod->args[3], m2[13] = tcmod->args[5]; 
+				Matrix4_Copy2D( result, m1 );
+				Matrix4_Multiply2D( m2, m1, result );
+				break;
+			default:
+				break;
+		}
+	}
 }
 
 /*
@@ -948,114 +1069,56 @@ void R_VertexTCBase( shaderpass_t *pass, int unit )
 R_ShaderpassTex
 ==============
 */
-static image_t *R_ShaderpassTex( shaderpass_t *pass )
+image_t *R_ShaderpassTex( const shaderpass_t *pass, int unit )
 {
 	if( pass->flags & SHADER_PASS_ANIMMAP )
 		return pass->anim_frames[(int)(pass->anim_fps * r_currentShaderTime) % pass->anim_numframes];
 	else if( pass->flags & SHADER_PASS_LIGHTMAP )
-		return r_lightmapTextures[r_lightmapNum];
+		return r_lightmapTextures[r_superLightStyle->lightmapNum[r_lightmapStyleNum[unit]]];
 	return ( pass->anim_frames[0] ? pass->anim_frames[0] : r_notexture );
 }
 
 /*
 ================
-R_ModifyTextureCoords
+R_BindShaderpass
 ================
 */
-void R_ModifyTextureCoords( shaderpass_t *pass, int unit )
+static void R_BindShaderpass( const shaderpass_t *pass, image_t *tex, int unit )
 {
-	int i;
-	float *table;
-	float t1, t2, sint, cost;
 	mat4x4_t m1, m2, result;
-	tcmod_t	*tcmod;
+	qboolean identityMatrix;
 
-	r_texPointers[unit] = R_ShaderpassTex ( pass );
+	if( !tex )
+		tex = R_ShaderpassTex( pass, unit );
 
-	R_VertexTCBase( pass, unit );
+	GL_Bind( unit, tex );
+	qglEnable( GL_TEXTURE_2D );
+	if( tex->flags & IT_CUBEMAP )
+		qglEnable( GL_TEXTURE_CUBE_MAP_ARB );
+	else
+		qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+
+	identityMatrix = R_VertexTCBase( pass, unit, result );
 
 	qglMatrixMode( GL_TEXTURE );
 
-	Matrix4_Identity( result );
-
 	if( pass->numtcmods ) {
-		Matrix4_Identity( m2 );
-
-		for( i = 0, tcmod = pass->tcmods; i < pass->numtcmods; i++, tcmod++ ) {
-			switch( tcmod->type ) {
-				case TC_MOD_ROTATE:
-					cost = tcmod->args[0] * r_currentShaderTime;
-					sint = R_FastSin( cost );
-					cost = R_FastSin( cost + 0.25 );
-					m2[0] = 1, m2[1] = 0, m2[4] = 0, m2[5] = 1, m2[12] = -0.5f, m2[13] = -0.5f;
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					m2[0] = cost, m2[1] = sint, m2[4] = -sint, m2[5] = cost, m2[12] = 0, m2[13] = 0;
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					m2[0] = 1, m2[1] = 0, m2[4] = 0, m2[5] = 1, m2[12] = 0.5f, m2[13] = 0.5f;
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					break;
-				case TC_MOD_SCALE:
-					m2[0] = tcmod->args[0], m2[1] = 0, m2[4] = 0, m2[5] = tcmod->args[1], m2[12] = 0, m2[13] = 0;
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					break;
-				case TC_MOD_TURB:
-					t1 = (1.0 / 4.0);
-					t2 = tcmod->args[2] + r_currentShaderTime * tcmod->args[3];
-					m2[0] = 1 + (tcmod->args[1] * R_FastSin( t2 ) + tcmod->args[0]) * t1, m2[1] = 0, m2[4] = 0, 
-						m2[5] = 1 + (tcmod->args[1] * R_FastSin( t2 + 0.25 ) + tcmod->args[0]) * t1, m2[12] = 0, m2[13] = 0;
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					break;
-				case TC_MOD_STRETCH:
-					table = R_TableForFunc( tcmod->args[0] );
-					t2 = tcmod->args[3] + r_currentShaderTime * tcmod->args[4];
-					t1 = FTABLE_EVALUATE( table, t2 ) * tcmod->args[2] + tcmod->args[1];
-					t1 = t1 ? 1.0f / t1 : 1.0f;
-					t2 = 0.5f - 0.5f * t1;
-					m2[0] = t1, m2[1] = 0, m2[4] = 0, m2[5] = t1, m2[12] = t2, m2[13] = t2;
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					break;
-				case TC_MOD_SCROLL:
-					t1 = tcmod->args[0] * r_currentShaderTime;
-					t2 = tcmod->args[1] * r_currentShaderTime;
-					m2[0] = 1, m2[1] = 0, m2[4] = 0, m2[5] = 1, m2[12] = t1 - floor ( t1 ), m2[13] = t2 - floor ( t2 );
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					break;
-				case TC_MOD_TRANSFORM:
-					m2[0] = tcmod->args[0], m2[1] = tcmod->args[3], m2[4] = tcmod->args[2], 
-						m2[5] = tcmod->args[1], m2[12] = tcmod->args[4], m2[13] = tcmod->args[5];
-					Matrix4_Copy( result, m1 );
-					Matrix4_MultiplyFast2( m2, m1, result );
-					break;
-				default:
-					break;
-			}
-		}
+		identityMatrix = qfalse;
+		R_ApplyTCMods( pass, result );
 	}
-
-	if( pass->flags & SHADER_PASS_CUBEMAP )
-		qglEnable( GL_TEXTURE_CUBE_MAP_ARB );
-	else
-		qglDisable( GL_TEXTURE_CUBE_MAP_ARB );
 
 	if( pass->tcgen == TC_GEN_REFLECTION ) {
 		Matrix4_Transpose( r_modelview_matrix, m1 );
 		Matrix4_Copy( result, m2 );
 		Matrix4_Multiply( m2, m1, result );
-		qglLoadMatrixf( result );
+		GL_LoadTexMatrix( result );
 		return;
 	}
 
-	if( pass->numtcmods )
-		qglLoadMatrixf( result );
+	if( identityMatrix )
+		GL_LoadIdentityTexMatrix ();
 	else
-		qglLoadIdentity ();
+		GL_LoadTexMatrix( result );
 }
 
 /*
@@ -1063,15 +1126,15 @@ void R_ModifyTextureCoords( shaderpass_t *pass, int unit )
 R_ModifyColor
 ================
 */
-void R_ModifyColor( shaderpass_t *pass )
+void R_ModifyColor( const shaderpass_t *pass )
 {
 	int i;
 	float *table, c, a;
 	int r, g, b;
 	vec3_t t, v;
 	qbyte *bArray, *inArray;
-	qboolean noArray;
-	shaderfunc_t *rgbgenfunc, *alphagenfunc;
+	qboolean noArray, identityAlpha;
+	const shaderfunc_t *rgbgenfunc, *alphagenfunc;
 
 	noArray = ( pass->flags & SHADER_PASS_NOCOLORARRAY ) && !r_colorFog;
 	rgbgenfunc = &pass->rgbgen.func;
@@ -1083,94 +1146,181 @@ void R_ModifyColor( shaderpass_t *pass )
 		numColors = numVerts;
 
 	bArray = colorArray[0];
-	inArray = inColorsArray[0];
+	inArray = inColorsArray[0][0];
 
-	switch( pass->rgbgen.type ) {
-		case RGB_GEN_IDENTITY:
-			memset( bArray, 255, sizeof( byte_vec4_t ) * numColors );
-			break;
-		case RGB_GEN_IDENTITY_LIGHTING:
-			memset( bArray, r_identityLighting, sizeof( byte_vec4_t ) * numColors );
-			break;
-		case RGB_GEN_CONST:
-			r = R_FloatToByte( pass->rgbgen.args[0] );
-			g = R_FloatToByte( pass->rgbgen.args[1] );
-			b = R_FloatToByte( pass->rgbgen.args[2] );
+	if( pass->rgbgen.type == RGB_GEN_IDENTITY_LIGHTING ) {
+		identityAlpha = qfalse;
+		memset( bArray, r_identityLighting, sizeof( byte_vec4_t ) * numColors );
+	} else if( pass->rgbgen.type == RGB_GEN_EXACT_VERTEX ) {
+		identityAlpha = qfalse;
+		memcpy( bArray, inArray, sizeof( byte_vec4_t ) * numColors );
+	} else {
+		identityAlpha = qtrue;
+		memset( bArray, 255, sizeof( byte_vec4_t ) * numColors );
 
-			for( i = 0; i < numColors; i++, bArray += 4 ) {
-				bArray[0] = r;
-				bArray[1] = g;
-				bArray[2] = b;
-			}
-			break;
-		case RGB_GEN_COLORWAVE:
-			table = R_TableForFunc( rgbgenfunc->type );
-			c = r_currentShaderTime * rgbgenfunc->args[3] + rgbgenfunc->args[2];
-			c = FTABLE_EVALUATE( table, c ) * rgbgenfunc->args[1] + rgbgenfunc->args[0];
-			a = pass->rgbgen.args[0] * c; r = R_FloatToByte( bound( 0, a, 1 ) );
-			a = pass->rgbgen.args[1] * c; g = R_FloatToByte( bound( 0, a, 1 ) );
-			a = pass->rgbgen.args[2] * c; b = R_FloatToByte( bound( 0, a, 1 ) );
+		switch( pass->rgbgen.type ) {
+			case RGB_GEN_IDENTITY:
+				break;
+			case RGB_GEN_CONST:
+				r = R_FloatToByte( pass->rgbgen.args[0] );
+				g = R_FloatToByte( pass->rgbgen.args[1] );
+				b = R_FloatToByte( pass->rgbgen.args[2] );
 
-			for( i = 0; i < numColors; i++, bArray += 4 ) {
-				bArray[0] = r;
-				bArray[1] = g;
-				bArray[2] = b;
-			}
-			break;
-		case RGB_GEN_ENTITY:
-			r = *(int *)currententity->color;
-			for( i = 0; i < numColors; i++, bArray += 4 )
-				*(int *)bArray = r;
-			break;
-		case RGB_GEN_ONE_MINUS_ENTITY:
-			for( i = 0; i < numColors; i++, bArray += 4 ) {
-				bArray[0] = 255 - currententity->color[0];
-				bArray[1] = 255 - currententity->color[1];
-				bArray[2] = 255 - currententity->color[2];
-			}
-			break;
-		case RGB_GEN_VERTEX:
-			if( (r_overbrightbits->integer > 0) && !(r_ignorehwgamma->integer) ) {
-				for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 ) {
-					bArray[0] = inArray[0] >> r_overbrightbits->integer;
-					bArray[1] = inArray[1] >> r_overbrightbits->integer;
-					bArray[2] = inArray[2] >> r_overbrightbits->integer;
+				for( i = 0; i < numColors; i++, bArray += 4 ) {
+					bArray[0] = r;
+					bArray[1] = g;
+					bArray[2] = b;
 				}
 				break;
-			}
-		case RGB_GEN_EXACT_VERTEX:
-			memcpy( bArray, inArray, sizeof( byte_vec4_t ) * numColors );
-			break;
-		case RGB_GEN_ONE_MINUS_VERTEX:
-			if( (r_overbrightbits->integer > 0) && !(r_ignorehwgamma->integer) ) {
-				for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 ) {
-					bArray[0] = 255 - (inArray[0] >> r_overbrightbits->integer);
-					bArray[1] = 255 - (inArray[1] >> r_overbrightbits->integer);
-					bArray[2] = 255 - (inArray[2] >> r_overbrightbits->integer);
+			case RGB_GEN_COLORWAVE:
+				table = R_TableForFunc( rgbgenfunc->type );
+				c = r_currentShaderTime * rgbgenfunc->args[3] + rgbgenfunc->args[2];
+				c = FTABLE_EVALUATE( table, c ) * rgbgenfunc->args[1] + rgbgenfunc->args[0];
+				a = pass->rgbgen.args[0] * c; r = R_FloatToByte( bound( 0, a, 1 ) );
+				a = pass->rgbgen.args[1] * c; g = R_FloatToByte( bound( 0, a, 1 ) );
+				a = pass->rgbgen.args[2] * c; b = R_FloatToByte( bound( 0, a, 1 ) );
+
+				for( i = 0; i < numColors; i++, bArray += 4 ) {
+					bArray[0] = r;
+					bArray[1] = g;
+					bArray[2] = b;
 				}
-			} else {
-				for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 ) {
-					bArray[0] = 255 - inArray[0];
-					bArray[1] = 255 - inArray[1];
-					bArray[2] = 255 - inArray[2];
+				break;
+			case RGB_GEN_ENTITY:
+				r = *(int *)currententity->color;
+				identityAlpha = (currententity->color[3] == 255);
+				for( i = 0; i < numColors; i++, bArray += 4 )
+					*(int *)bArray = r;
+				break;
+			case RGB_GEN_ONE_MINUS_ENTITY:
+				for( i = 0; i < numColors; i++, bArray += 4 ) {
+					bArray[0] = 255 - currententity->color[0];
+					bArray[1] = 255 - currententity->color[1];
+					bArray[2] = 255 - currententity->color[2];
 				}
-			}
-			break;
-		case RGB_GEN_LIGHTING_DIFFUSE:
-			if( !currententity )
-				memset( bArray, 255, sizeof( byte_vec4_t ) * numColors );
-			else
-				R_LightForEntity( currententity, bArray );
-			break;
-		default:
-			break;
+				break;
+			case RGB_GEN_VERTEX:
+				if( !r_superLightStyle ) {
+					if( (r_overbrightbits->integer > 0) && !(r_ignorehwgamma->integer) ) {
+						for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 ) {
+							bArray[0] = inArray[0] >> r_overbrightbits->integer;
+							bArray[1] = inArray[1] >> r_overbrightbits->integer;
+							bArray[2] = inArray[2] >> r_overbrightbits->integer;
+						}
+					} else {
+						identityAlpha = qfalse;
+						for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 )
+							*(int *)bArray = *(int *)inArray;
+					}
+				} else {
+					int j;
+					vec3_t temp[MAX_ARRAY_VERTS];
+					float *rgb, *c;
+
+					memset( temp, 0, sizeof( vec3_t ) * numColors );
+
+					if( (r_overbrightbits->integer > 0) && !(r_ignorehwgamma->integer) ) {
+						for( j = 0; j < MAX_LIGHTMAPS && r_superLightStyle->vertexStyles[j] != 255; j++ ) {
+							rgb = r_lightStyles[r_superLightStyle->vertexStyles[j]].rgb;
+							if( VectorCompare( rgb, vec3_origin ) )
+								continue;
+
+							inArray = inColorsArray[j][0];
+							for( i = 0, c = temp[0]; i < numColors; i++, c += 3, inArray += 4 ) {
+								c[0] += (inArray[0] >> r_overbrightbits->integer) * rgb[0];
+								c[1] += (inArray[1] >> r_overbrightbits->integer) * rgb[1];
+								c[2] += (inArray[2] >> r_overbrightbits->integer) * rgb[2];
+							}
+						}
+					} else {
+						for( j = 0; j < MAX_LIGHTMAPS && r_superLightStyle->vertexStyles[j] != 255; j++ ) {
+							rgb = r_lightStyles[r_superLightStyle->vertexStyles[j]].rgb;
+							if( VectorCompare( rgb, vec3_origin ) )
+								continue;
+
+							inArray = inColorsArray[j][0];
+							for( i = 0, c = temp[0]; i < numColors; i++, c += 3, inArray += 4 ) {
+								c[0] += inArray[0] * rgb[0];
+								c[1] += inArray[1] * rgb[1];
+								c[2] += inArray[2] * rgb[2];
+							}
+						}
+					}
+
+					for( i = 0, c = temp[0]; i < numColors; i++, c += 3, bArray += 4 ) {
+						bArray[0] = bound( 0, c[0], 255 );
+						bArray[1] = bound( 0, c[1], 255 );
+						bArray[2] = bound( 0, c[2], 255 );
+					}
+				}
+				break;
+			case RGB_GEN_ONE_MINUS_VERTEX:
+				if( (r_overbrightbits->integer > 0) && !(r_ignorehwgamma->integer) ) {
+					for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 ) {
+						bArray[0] = 255 - (inArray[0] >> r_overbrightbits->integer);
+						bArray[1] = 255 - (inArray[1] >> r_overbrightbits->integer);
+						bArray[2] = 255 - (inArray[2] >> r_overbrightbits->integer);
+					}
+				} else {
+					for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 ) {
+						bArray[0] = 255 - inArray[0];
+						bArray[1] = 255 - inArray[1];
+						bArray[2] = 255 - inArray[2];
+					}
+				}
+				break;
+			case RGB_GEN_LIGHTING_DIFFUSE:
+				if( currententity )
+					R_LightForEntity( currententity, bArray );
+				break;
+			case RGB_GEN_LIGHTING_DIFFUSE_ONLY:
+				if( currententity ) {
+					vec4_t diffuse;
+
+					if( currententity->flags & RF_FULLBRIGHT )
+						VectorSet( diffuse, 1, 1, 1 );
+					else
+						R_LightForOrigin( currententity->lightingOrigin, t, NULL, diffuse, currentmodel->radius * currententity->scale );
+					for( i = 0; i < numColors; i++, bArray += 4 ) {
+						bArray[0] = R_FloatToByte( diffuse[0] );
+						bArray[1] = R_FloatToByte( diffuse[1] );
+						bArray[2] = R_FloatToByte( diffuse[2] );
+					}
+				}
+				break;
+			case RGB_GEN_LIGHTING_AMBIENT_ONLY:
+				if( currententity ) {
+					vec4_t ambient;
+
+					if( currententity->flags & RF_FULLBRIGHT )
+						VectorSet( ambient, 1, 1, 1 );
+					else
+						R_LightForOrigin( currententity->lightingOrigin, t, ambient, NULL, currentmodel->radius * currententity->scale );
+					for( i = 0; i < numColors; i++, bArray += 4 ) {
+						bArray[0] = R_FloatToByte( ambient[0] );
+						bArray[1] = R_FloatToByte( ambient[1] );
+						bArray[2] = R_FloatToByte( ambient[2] );
+					}
+				}
+				break;
+			case RGB_GEN_FOG:
+				for( i = 0; i < numColors; i++, bArray += 4 ) {
+					bArray[0] = r_texFog->shader->fog_color[0];
+					bArray[1] = r_texFog->shader->fog_color[1];
+					bArray[2] = r_texFog->shader->fog_color[2];
+				}
+			default:
+				break;
+		}
 	}
 
 	bArray = colorArray[0];
-	inArray = inColorsArray[0];
+	inArray = inColorsArray[0][0];
 
 	switch( pass->alphagen.type ) {
 		case ALPHA_GEN_IDENTITY:
+			if( identityAlpha )
+				break;
 			for( i = 0; i < numColors; i++, bArray += 4 )
 				bArray[3] = 255;
 			break;
@@ -1193,13 +1343,16 @@ void R_ModifyColor( shaderpass_t *pass )
 			a = VectorLength( t ) * pass->alphagen.args[0];
 			clamp ( a, 0.0f, 1.0f );
 			b = R_FloatToByte( a );
-
 			for( i = 0; i < numColors; i++, bArray += 4 )
 				bArray[3] = b;
 			break;
 		case ALPHA_GEN_VERTEX:
 			for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 )
 				bArray[3] = inArray[3];
+			break;
+		case ALPHA_GEN_ONE_MINUS_VERTEX:
+			for( i = 0; i < numColors; i++, bArray += 4, inArray += 4 )
+				bArray[3] = 255 - inArray[3];
 			break;
 		case ALPHA_GEN_ENTITY:
 			for( i = 0; i < numColors; i++, bArray += 4 )
@@ -1211,11 +1364,11 @@ void R_ModifyColor( shaderpass_t *pass )
 				Matrix_TransformVector( currententity->axis, t, v );
 			else
 				VectorCopy( t, v );
-
 			for( i = 0; i < numColors; i++, bArray += 4 ) {
 				VectorSubtract( v, vertsArray[i], t );
-				a = DotProduct( t, normalsArray[i] ) * Q_RSqrt( DotProduct( t, t ) );
-				a = a * a * a * a * a;
+				c = VectorLength( t );
+				a = DotProduct( t, normalsArray[i] ) / max( 0.1, c );
+				a = pow( a, pass->alphagen.args[0] );
 				bArray[3] = R_FloatToByte( bound( 0.0f, a, 1.0f ) );
 			}
 			break;
@@ -1224,7 +1377,6 @@ void R_ModifyColor( shaderpass_t *pass )
 				Matrix_TransformVector( currententity->axis, vpn, v );
 			else
 				VectorCopy ( vpn, v );
-
 			for( i = 0; i < numColors; i++, bArray += 4 ) {
 				a = DotProduct( v, inNormalsArray[i] ); if ( a < 0 ) a = -a;
 				bArray[3] = R_FloatToByte( bound( pass->alphagen.args[0], a, pass->alphagen.args[1] ) );
@@ -1235,52 +1387,55 @@ void R_ModifyColor( shaderpass_t *pass )
 				Matrix_TransformVector( currententity->axis, vpn, v );
 			else
 				VectorCopy( vpn, v );
-
 			for( i = 0; i < numColors; i++, bArray += 4 ) {
 				a = DotProduct( v, inNormalsArray[i] ); if ( a < 0 ) a = -a; a = 1.0f - a;
 				bArray[3] = R_FloatToByte( bound( pass->alphagen.args[0], a, pass->alphagen.args[1] ) );
 			}
+		case ALPHA_GEN_FOG:
+			for( i = 0; i < numColors; i++, bArray += 4 )
+				bArray[3] = r_texFog->shader->fog_color[3];
+			break;
+		default:
 			break;
 	}
 
-	if ( r_colorFog ) {
+	if( r_colorFog ) {
 		double	dist, vdist;
-		cplane_t *fogplane;
+		cplane_t *fogPlane, globalFogPlane;
 		vec3_t	viewtofog;
-		double	fognormal[3], vpnnormal[3];
-		double	fogdist, vpndist, fogShaderDist;
+		double	fogNormal[3], vpnNormal[3];
+		double	fogDist, vpnDist, fogShaderDist;
 		int		fogptype;
 
-		fogplane = r_colorFog->visibleplane;
+		fogPlane = r_colorFog->visibleplane;
+		if( !fogPlane ) {
+			VectorSet( globalFogPlane.normal, 0, 0, 1 );
+			globalFogPlane.dist = r_worldmodel->nodes[0].maxs[2] + 1;
+			globalFogPlane.type = PLANE_Z;
+			fogPlane = &globalFogPlane;
+		}
+
 		fogShaderDist = r_colorFog->shader->fog_dist;
-		dist = PlaneDiff( r_origin, fogplane );
+		dist = PlaneDiff( r_origin, fogPlane );
 
 		if( r_currentShader->flags & SHADER_SKY ) {
 			if( dist > 0 )
-				VectorScale( fogplane->normal, -dist, viewtofog );
+				VectorScale( fogPlane->normal, -dist, viewtofog );
 			else
 				VectorClear( viewtofog );
 		} else {
 			VectorCopy( currententity->origin, viewtofog );
 		}
 
-		fognormal[0] = DotProduct( currententity->axis[0], fogplane->normal ) * currententity->scale;
-		fognormal[1] = DotProduct( currententity->axis[1], fogplane->normal ) * currententity->scale;
-		fognormal[2] = DotProduct( currententity->axis[2], fogplane->normal ) * currententity->scale;
-		fogptype = ( fognormal[0] == 1.0 ? PLANE_X : (fognormal[1] == 1.0 ? PLANE_Y : (fognormal[2] == 1.0 ? PLANE_Z : PLANE_NONAXIAL) ) );
-		if( fogptype > 2 )
-			VectorScale( fognormal, fogShaderDist, fognormal );
-		fogdist = (fogplane->dist - DotProduct( viewtofog, fogplane->normal )) * fogShaderDist;
-
-		vpnnormal[0] = DotProduct( currententity->axis[0], vpn ) * fogShaderDist * currententity->scale;
-		vpnnormal[1] = DotProduct( currententity->axis[1], vpn ) * fogShaderDist * currententity->scale;
-		vpnnormal[2] = DotProduct( currententity->axis[2], vpn ) * fogShaderDist * currententity->scale;
-		vpndist = ((r_origin[0] - viewtofog[0]) * vpn[0] + (r_origin[1] - viewtofog[1]) * vpn[1] + (r_origin[2] - viewtofog[2]) * vpn[2]) * fogShaderDist;
+		vpnNormal[0] = DotProduct( currententity->axis[0], vpn ) * fogShaderDist * currententity->scale;
+		vpnNormal[1] = DotProduct( currententity->axis[1], vpn ) * fogShaderDist * currententity->scale;
+		vpnNormal[2] = DotProduct( currententity->axis[2], vpn ) * fogShaderDist * currententity->scale;
+		vpnDist = ((r_origin[0] - viewtofog[0]) * vpn[0] + (r_origin[1] - viewtofog[1]) * vpn[1] + (r_origin[2] - viewtofog[2]) * vpn[2]) * fogShaderDist;
 
 		bArray = colorArray[0];
 		if( dist < 0 ) { // camera is inside the fog
 			for( i = 0; i < numColors; i++, bArray += 4 ) {
-				c = DotProduct( vertsArray[i], vpnnormal ) - vpndist;
+				c = DotProduct( vertsArray[i], vpnNormal ) - vpnDist;
 				a = (1.0f - bound ( 0, c, 1.0f )) * (1.0 / 255.0);
 
 				if( pass->blendmode == GL_ADD || 
@@ -1293,14 +1448,21 @@ void R_ModifyColor( shaderpass_t *pass )
 				}
 			}
 		} else {
+			fogNormal[0] = DotProduct( currententity->axis[0], fogPlane->normal ) * currententity->scale;
+			fogNormal[1] = DotProduct( currententity->axis[1], fogPlane->normal ) * currententity->scale;
+			fogNormal[2] = DotProduct( currententity->axis[2], fogPlane->normal ) * currententity->scale;
+			fogptype = ( fogNormal[0] == 1.0 ? PLANE_X : (fogNormal[1] == 1.0 ? PLANE_Y : (fogNormal[2] == 1.0 ? PLANE_Z : PLANE_NONAXIAL) ) );
+			if( fogptype > 2 )
+				VectorScale( fogNormal, fogShaderDist, fogNormal );
+			fogDist = (fogPlane->dist - DotProduct( viewtofog, fogPlane->normal )) * fogShaderDist;
 			dist *= fogShaderDist;
 
 			if( fogptype < 3 ) {
 				for( i = 0; i < numColors; i++, bArray += 4 ) {
-					vdist = vertsArray[i][fogptype] * fogShaderDist - fogdist;
+					vdist = vertsArray[i][fogptype] * fogShaderDist - fogDist;
 
 					if( vdist < 0 ) {
-						c = ( DotProduct( vertsArray[i], vpnnormal ) - vpndist ) * vdist / ( vdist - dist );
+						c = ( DotProduct( vertsArray[i], vpnNormal ) - vpnDist ) * vdist / ( vdist - dist );
 						a = (1.0f - bound( 0, c, 1.0f )) * (1.0 / 255.0);
 					} else {
 						a = 1.0 / 255.0;
@@ -1317,10 +1479,10 @@ void R_ModifyColor( shaderpass_t *pass )
 				}
 			} else {
 				for( i = 0; i < numColors; i++, bArray += 4 ) {
-					vdist = DotProduct( vertsArray[i], fognormal ) - fogdist;
+					vdist = DotProduct( vertsArray[i], fogNormal ) - fogDist;
 
 					if( vdist < 0 ) {
-						c = ( DotProduct( vertsArray[i], vpnnormal ) - vpndist ) * vdist / ( vdist - dist );
+						c = ( DotProduct( vertsArray[i], vpnNormal ) - vpnDist ) * vdist / ( vdist - dist );
 						a = (1.0f - bound( 0, c, 1.0f )) * (1.0 / 255.0);
 					} else {
 						a = 1.0 / 255.0;
@@ -1342,10 +1504,10 @@ void R_ModifyColor( shaderpass_t *pass )
 
 /*
 ================
-R_SetCurrentShaderState
+R_SetShaderState
 ================
 */
-void R_SetCurrentShaderState( void )
+static void R_SetShaderState( void )
 {
 // Face culling
 	if( !gl_cull->integer || (r_features & MF_NOCULL) ) {
@@ -1366,6 +1528,11 @@ void R_SetCurrentShaderState( void )
 		qglEnable( GL_POLYGON_OFFSET_FILL );
 	else
 		qglDisable( GL_POLYGON_OFFSET_FILL );
+
+	if( r_currentShader->flags & SHADER_FLARE )
+		qglDisable( GL_DEPTH_TEST );
+	else if( !glState.in2DMode )
+		qglEnable( GL_DEPTH_TEST );
 }
 
 /*
@@ -1373,13 +1540,15 @@ void R_SetCurrentShaderState( void )
 R_SetShaderpassState
 ================
 */
-void R_SetShaderpassState( shaderpass_t *pass, qboolean mtex )
+static void R_SetShaderpassState( const shaderpass_t *pass, qboolean mtex )
 {
-	if( ( mtex && ( pass->blendmode != GL_REPLACE ) ) || ( pass->flags & SHADER_PASS_BLEND ) ) {
+	if( pass->flags & SHADER_PASS_BLEND ) {
 		qglEnable( GL_BLEND );
 		qglBlendFunc( pass->blendsrc, pass->blenddst );
 	} else {
 		qglDisable( GL_BLEND );
+		if( mtex && (pass->blendmode != GL_REPLACE) && (pass->blendmode != GL_DOT3_RGB_ARB) )
+			qglBlendFunc( pass->blendsrc, pass->blenddst );
 	}
 
 	if( pass->flags & SHADER_PASS_ALPHAFUNC ) {
@@ -1411,19 +1580,18 @@ R_RenderMeshGeneric
 */
 void R_RenderMeshGeneric( void )
 {
-	shaderpass_t *pass = r_accumPasses[0];
+	const shaderpass_t *pass = r_accumPasses[0];
 
-	R_SetShaderpassState( pass, qfalse );
-	R_ModifyTextureCoords( pass, 0 );
+	R_BindShaderpass( pass, NULL, 0 );
 	R_ModifyColor( pass );
-
-	if ( pass->blendmode == GL_REPLACE )
+	R_SetShaderpassState( pass, qfalse );
+	if( pass->blendmode == GL_REPLACE )
 		GL_TexEnv( GL_REPLACE );
 	else
 		GL_TexEnv( GL_MODULATE );
-	GL_Bind( 0, r_texPointers[0] );
 
 	R_FlushArrays ();
+	R_CleanUpTextureUnits ();
 }
 
 /*
@@ -1434,24 +1602,21 @@ R_RenderMeshMultitextured
 void R_RenderMeshMultitextured( void )
 {
 	int	i;
-	shaderpass_t *pass = r_accumPasses[0];
+	const shaderpass_t *pass = r_accumPasses[0];
 
-	GL_SelectTexture( 0 );
-	GL_TexEnv( GL_MODULATE );
-
-	R_SetShaderpassState( pass, qtrue );
+	R_BindShaderpass( pass, NULL, 0 );
 	R_ModifyColor( pass );
-	R_ModifyTextureCoords( pass, 0 );
+	R_SetShaderpassState( pass, qtrue );
+	GL_TexEnv( GL_MODULATE );
 
 	for( i = 1; i < r_numAccumPasses; i++ ) {
 		pass = r_accumPasses[i];
-
-		GL_SelectTexture( i );
+		R_BindShaderpass( pass, NULL, i );
 		GL_TexEnv( pass->blendmode );
-		R_ModifyTextureCoords( pass, i );
 	}
 
-	R_FlushArraysMtex ();
+	R_FlushArrays ();
+	R_CleanUpTextureUnits ();
 }
 
 /*
@@ -1462,19 +1627,16 @@ R_RenderMeshCombined
 void R_RenderMeshCombined( void )
 {
 	int	i;
-	shaderpass_t *pass = r_accumPasses[0];
+	const shaderpass_t *pass = r_accumPasses[0];
 
-	GL_SelectTexture( 0 );
-	GL_TexEnv( GL_MODULATE );
-
-	R_SetShaderpassState( pass, qtrue );
+	R_BindShaderpass( pass, NULL, 0 );
 	R_ModifyColor( pass );
-	R_ModifyTextureCoords( pass, 0 );
+	R_SetShaderpassState( pass, qtrue );
+	GL_TexEnv( GL_MODULATE );
 
 	for( i = 1; i < r_numAccumPasses; i++ ) {
 		pass = r_accumPasses[i];
-
-		GL_SelectTexture( i );
+		R_BindShaderpass( pass, NULL, i );
 
 		switch ( pass->blendmode ) {
 		case GL_REPLACE:
@@ -1624,11 +1786,116 @@ void R_RenderMeshCombined( void )
 				break;
 			}
 		}
-
-		R_ModifyTextureCoords ( pass, i );
 	}
 
-	R_FlushArraysMtex ();
+	R_FlushArrays ();
+	R_CleanUpTextureUnits ();
+}
+
+/*
+================
+R_RenderMeshDot3Combined
+================
+*/
+void R_RenderMeshDot3Combined( void )
+{
+	vec4_t ambient, diffuse;
+	qboolean doAdd, doModulate;
+	const shaderpass_t *pass = r_accumPasses[0];
+	vec4_t colorBlackNoAlpha = { 0, 0, 0, 0 };
+
+	if( !currententity )
+		return;
+
+	doAdd = qtrue;
+	doModulate = qtrue;
+	numColors = numVerts;
+
+	R_BindShaderpass( pass, pass->anim_frames[0], 0 );
+	R_LightForEntityDot3( currententity, colorArray[0], ambient, diffuse );
+	R_SetShaderpassState( pass, qtrue );
+
+	GL_TexEnv( GL_COMBINE_ARB );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_DOT3_RGB_ARB );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_RGB_ARB, GL_PREVIOUS_ARB );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_OPERAND0_RGB_ARB, GL_SRC_COLOR );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE1_RGB_ARB, GL_TEXTURE );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_OPERAND1_RGB_ARB, GL_SRC_COLOR );
+	qglEnableClientState( GL_TEXTURE_COORD_ARRAY );
+
+	if( !pass->anim_frames[1] ) {
+		R_FlushArrays ();
+		qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
+		return;
+	}
+
+	GL_SelectTexture( 1 );
+	qglEnable( GL_TEXTURE_2D );
+	GL_TexEnv( GL_COMBINE_ARB );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_MODULATE );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_RGB_ARB, GL_PREVIOUS_ARB );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_OPERAND0_RGB_ARB, GL_SRC_COLOR );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE1_RGB_ARB, GL_CONSTANT_ARB );
+	qglTexEnvi( GL_TEXTURE_ENV, GL_OPERAND1_RGB_ARB, GL_SRC_COLOR );
+	qglTexEnvfv( GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, diffuse );
+
+	if( glConfig.maxTextureUnits > 2 ) {
+		doAdd = qfalse;
+		GL_SelectTexture( 2 );
+		qglEnable( GL_TEXTURE_2D );
+		GL_TexEnv( GL_COMBINE_ARB );
+		qglTexEnvi( GL_TEXTURE_ENV, GL_COMBINE_RGB_ARB, GL_ADD );
+		qglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE0_RGB_ARB, GL_PREVIOUS_ARB );
+		qglTexEnvi( GL_TEXTURE_ENV, GL_OPERAND0_RGB_ARB, GL_SRC_COLOR );
+		qglTexEnvi( GL_TEXTURE_ENV, GL_SOURCE1_RGB_ARB, GL_CONSTANT_ARB );
+		qglTexEnvi( GL_TEXTURE_ENV, GL_OPERAND1_RGB_ARB, GL_SRC_COLOR );
+		qglTexEnvfv( GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, ambient );
+
+		if( glConfig.maxTextureUnits > 3 ) {
+			doModulate = qfalse;
+			R_BindShaderpass( pass, pass->anim_frames[1], 3 );
+			GL_TexEnv( GL_MODULATE );
+			qglBlendFunc( GL_ZERO, GL_SRC_COLOR );
+		}
+	}
+	R_FlushArrays ();
+
+	if( glConfig.maxTextureUnits > 2 ) {
+		if( glConfig.maxTextureUnits > 3 ) {
+			qglDisable( GL_TEXTURE_2D );
+			qglDisable( GL_TEXTURE_COORD_ARRAY );
+		}
+		GL_SelectTexture( 2 );
+		GL_TexEnv( GL_MODULATE );
+		qglTexEnvfv( GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, colorBlackNoAlpha );
+		qglDisable( GL_TEXTURE_2D );
+	}
+	GL_SelectTexture( 1 );
+	GL_TexEnv( GL_MODULATE );
+	qglTexEnvfv( GL_TEXTURE_ENV, GL_TEXTURE_ENV_COLOR, colorBlackNoAlpha );
+	qglDisable( GL_TEXTURE_2D );
+
+	GL_SelectTexture( 0 );
+
+	if( doAdd || doModulate ) {
+		numColors = 0;
+		GL_Bind( 0, pass->anim_frames[1] );
+		GL_TexEnv( GL_MODULATE );
+		qglEnable( GL_BLEND );
+
+		if( doModulate ) {
+			qglBlendFunc( GL_ZERO, GL_SRC_COLOR );
+			qglColor4fv( colorWhite );
+			R_FlushArrays ();
+		}
+		if( doAdd ) {
+			qglBlendFunc( GL_ONE, GL_ONE );
+			qglColor4fv( ambient );
+			R_FlushArrays ();
+		}
+		qglDisable( GL_BLEND );
+	}
+	qglDisableClientState( GL_TEXTURE_COORD_ARRAY );
 }
 
 /*
@@ -1636,9 +1903,11 @@ void R_RenderMeshCombined( void )
 R_RenderAccumulatedPasses
 ================
 */
-void R_RenderAccumulatedPasses( void )
+static void R_RenderAccumulatedPasses( void )
 {
-	if( r_numAccumPasses == 1 )
+	if( r_accumPasses[0]->blendmode == GL_DOT3_RGB_ARB )
+		R_RenderMeshDot3Combined ();
+	else if( r_numAccumPasses == 1 )
 		R_RenderMeshGeneric ();
 	else if( glConfig.textureEnvCombine )
 		R_RenderMeshCombined ();
@@ -1652,10 +1921,10 @@ void R_RenderAccumulatedPasses( void )
 R_AccumulatePass
 ================
 */
-void R_AccumulatePass( shaderpass_t *pass )
+static void R_AccumulatePass( const shaderpass_t *pass )
 {
 	qboolean accumulate;
-	shaderpass_t *prevPass;
+	const shaderpass_t *prevPass;
 
 	if( !r_numAccumPasses ) {
 		r_accumPasses[r_numAccumPasses++] = pass;
@@ -1663,16 +1932,14 @@ void R_AccumulatePass( shaderpass_t *pass )
 	}
 
 	// see if there are any free texture units
-	accumulate = ( r_numAccumPasses < glConfig.maxTextureUnits );
+	accumulate = ( r_numAccumPasses < glConfig.maxTextureUnits ) && !( pass->flags & SHADER_PASS_DLIGHT );
 
 	if( accumulate ) {
 		// ok, we've got several passes, diff against the previous
 		prevPass = r_accumPasses[r_numAccumPasses-1];
 
 		// see if depthfuncs and colors are good
-		if ( 
-			(prevPass->flags & SHADER_PASS_VIDEOMAP) ||
-			(pass->flags & SHADER_PASS_VIDEOMAP) ||
+		if(
 			(prevPass->depthfunc != pass->depthfunc) ||
 			(pass->flags & SHADER_PASS_ALPHAFUNC) ||
 			(pass->rgbgen.type != RGB_GEN_IDENTITY) ||
@@ -1710,7 +1977,28 @@ void R_AccumulatePass( shaderpass_t *pass )
 	// no, failed to accumulate
 	if( !accumulate )
 		R_RenderAccumulatedPasses ();
-	r_accumPasses[r_numAccumPasses++] = pass;
+
+	if( pass->flags & SHADER_PASS_DLIGHT )
+		R_AddDynamicLights( r_currentMeshBuffer->dlightbits, pass->depthfunc, pass->blendsrc, pass->blenddst );
+	else
+		r_accumPasses[r_numAccumPasses++] = pass;
+}
+
+/*
+================
+R_SetupLightmapMode
+================
+*/
+void R_SetupLightmapMode( void )
+{
+	r_lightmapPasses[0].rgbgen.type = RGB_GEN_IDENTITY;
+	r_lightmapPasses[0].alphagen.type = ALPHA_GEN_IDENTITY;
+	r_lightmapPasses[0].blendmode = GL_REPLACE;
+	r_lightmapPasses[0].depthfunc = GL_LEQUAL;
+	r_lightmapPasses[0].blendsrc = GL_ZERO;
+	r_lightmapPasses[0].blenddst = GL_ONE;
+	r_lightmapPasses[0].flags &= ~(SHADER_PASS_ALPHAFUNC|SHADER_PASS_BLEND);
+	r_lightmapPasses[0].flags |= SHADER_PASS_DEPTHWRITE;
 }
 
 /*
@@ -1718,7 +2006,7 @@ void R_AccumulatePass( shaderpass_t *pass )
 R_RenderMeshBuffer
 ================
 */
-void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass )
+void R_RenderMeshBuffer( const meshbuffer_t *mb, qboolean shadowpass )
 {
 	int	i;
 	msurface_t *surf;
@@ -1732,13 +2020,14 @@ void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass )
 	if( surf ) {
 		r_patchWidth = surf->patchWidth;
 		r_patchHeight = surf->patchHeight;
-		r_lightmapNum = surf->lightmapnum;
+		r_superLightStyle = &r_superLightStyles[surf->superLightStyle];
 	} else {
 		r_patchWidth = 0;
 		r_patchHeight = 0;
-		r_lightmapNum = -1;
+		r_superLightStyle = NULL;
 	}
 
+	r_currentMeshBuffer = mb;
 	r_currentShader = mb->shader;
 
 	if( glState.in2DMode ) {
@@ -1754,7 +2043,7 @@ void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass )
 	}
 
 	if( !r_triangleOutlines )
-		R_SetCurrentShaderState ();
+		R_SetShaderState ();
 
 	if( r_currentShader->numdeforms )
 		R_DeformVertices ();
@@ -1770,18 +2059,12 @@ void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass )
 	if( !numIndexes || shadowpass )
 		return;
 
-	if( glConfig.vertexBufferObject ) {
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_INDEXES] );
-		qglBufferDataARB( GL_ELEMENT_ARRAY_BUFFER_ARB, numIndexes * sizeof( int ), indexesArray, GL_STREAM_DRAW_ARB );
-		qglBindBufferARB( GL_ELEMENT_ARRAY_BUFFER_ARB, 0 );
-	}
-
 	if( r_triangleOutlines ) {
 		R_LockArrays( numVerts );
 
-		if ( r_showtris->integer )
+		if( r_showtris->integer )
 			R_DrawTriangles ();
-		if ( r_shownormals->integer )
+		if( r_shownormals->integer )
 			R_DrawNormals ();
 
 		R_UnlockArrays ();
@@ -1791,178 +2074,113 @@ void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass )
 	}
 
 	// can we fog the geometry with alpha texture?
-	r_texFog = (mb->fog && ((r_currentShader->sort <= (SHADER_SORT_OPAQUE+1) && 
+	r_texFog = (mb->fog && mb->fog->shader && ((r_currentShader->sort <= (SHADER_SORT_OPAQUE+1) && 
 		(r_currentShader->flags & (SHADER_DEPTHWRITE|SHADER_SKY))) || r_currentShader->fog_dist)) ? mb->fog : NULL;
 
 	// check if the fog volume is present but we can't use alpha texture
-	r_colorFog = (mb->fog && !r_texFog) ? mb->fog : NULL;
+	r_colorFog = (mb->fog && mb->fog->shader && !r_texFog) ? mb->fog : NULL;
+
+	if( r_currentShader->flags & SHADER_FLARE )
+		dlightBits = 0;
+	else
+		dlightBits = mb->dlightbits;
 
 	R_LockArrays( numVerts );
 	pass = r_currentShader->passes;
 
 	// accumulate passes for dynamic merging
 	for ( i = 0; i < r_currentShader->numpasses; i++, pass++ ) {
+		if( pass->flags & SHADER_PASS_LIGHTMAP ) {
+			int j, k, l, u;
+
+			// no valid lightmaps, goodbye
+			if( !r_superLightStyle || r_superLightStyle->lightmapNum[0] < 0 || r_superLightStyle->lightmapStyles[0] == 255 )
+				continue;
+
+			// try to apply lightstyles
+			if( (!(pass->flags & SHADER_PASS_BLEND) || (pass->blendmode == GL_MODULATE)) && (pass->rgbgen.type == RGB_GEN_IDENTITY) && (pass->alphagen.type == ALPHA_GEN_IDENTITY) ) {
+				vec3_t colorSum, color;
+
+				// the first pass is always GL_MODULATE or GL_REPLACE
+				// other passes are GL_ADD
+				r_lightmapPasses[0] = *pass;
+
+				for( j = 0, l = 0, u = 0; j < MAX_LIGHTMAPS && r_superLightStyle->lightmapStyles[j] != 255; j++ ) {
+					VectorCopy( r_lightStyles[r_superLightStyle->lightmapStyles[j]].rgb, colorSum );
+					VectorClear( color );
+
+					for( ; ; l++ ) {
+						for( k = 0; k < 3; k++ ) {
+							colorSum[k] -= color[k];
+							color[k] = bound( 0, colorSum[k], 1 );
+						}
+
+						if( l ) {
+							if( !color[0] && !color[1] && !color[2] )
+								break;
+							if( l == MAX_TEXTURE_UNITS+1 )
+								r_lightmapPasses[0] = r_lightmapPasses[1];
+							u = l % (MAX_TEXTURE_UNITS+1);
+						}
+
+						if( VectorCompare( color, colorWhite ) ) {
+							r_lightmapPasses[u].rgbgen.type = RGB_GEN_IDENTITY;
+						} else {
+							if( !l )
+								r_lightmapPasses[0].blendmode = GL_MODULATE;
+							r_lightmapPasses[u].rgbgen.type = RGB_GEN_CONST;
+							VectorCopy( color, r_lightmapPasses[u].rgbgen.args );
+						}
+
+						if( r_lightmap->integer && !l )
+							R_SetupLightmapMode ();
+						R_AccumulatePass( &r_lightmapPasses[u] );
+						r_lightmapStyleNum[r_numAccumPasses - 1] = j;
+					}
+				}
+			} else {
+				if( r_lightmap->integer ) {
+					R_SetupLightmapMode ();
+					pass = r_lightmapPasses;
+				}
+				R_AccumulatePass( pass );
+				r_lightmapStyleNum[r_numAccumPasses - 1] = 0;
+			}
+			continue;
+		} else if( r_lightmap->integer && (r_currentShader->flags & SHADER_LIGHTMAP) )
+			continue;
 		if( (pass->flags & SHADER_PASS_DETAIL) && !r_detailtextures->integer )
 			continue;
-		if( (pass->flags & SHADER_PASS_LIGHTMAP) && (r_lightmapNum < 0) )
+		if( (pass->flags & SHADER_PASS_DLIGHT) && !dlightBits )
 			continue;
 		R_AccumulatePass( pass );
+	}
+
+	// accumulate dynamic lights pass and fog pass if any
+	if( !r_lightmap->integer || !(r_currentShader->flags & SHADER_LIGHTMAP) ) {
+		if( dlightBits && !(r_currentShader->flags & SHADER_NO_MODULATIVE_DLIGHTS) )
+			R_AccumulatePass( &r_dlightsPass );
+
+		if( r_texFog && r_texFog->shader/* && r_texFog->numplanes && r_texFog->visibleplane*/ ) {
+			r_fogPass.anim_frames[0] = r_fogtexture;
+			if( !r_currentShader->numpasses || r_currentShader->fog_dist || (r_currentShader->flags & SHADER_SKY) )
+				r_fogPass.depthfunc = GL_LEQUAL;
+			else
+				r_fogPass.depthfunc = GL_EQUAL;
+			R_AccumulatePass( &r_fogPass );
+		}
 	}
 
 	// flush any remaining passes
 	if( r_numAccumPasses )
 		R_RenderAccumulatedPasses ();
 
-	// render dynamic lights, fog, triangle outlines, normals and clear arrays
-	dlightBits = mb->dlightbits;
-	if( r_currentShader->flags & SHADER_FLARE )
-		dlightBits = 0;
-
-	qglDisable( GL_TEXTURE_GEN_S );
-	qglDisable( GL_TEXTURE_GEN_T );
-	qglDisable( GL_TEXTURE_GEN_R );
-	if( glConfig.textureCubeMap )
-		qglDisable( GL_TEXTURE_CUBE_MAP_ARB );
-	qglMatrixMode( GL_TEXTURE );
-
-	if( dlightBits || r_texFog ) {
-		qglEnable( GL_BLEND );
-		qglDisable( GL_ALPHA_TEST );
-		qglDepthMask( GL_FALSE );
-
-		if( dlightBits )
-			R_AddDynamicLights( dlightBits );
-		if( r_texFog )
-			R_RenderFogOnMesh ();
-	}
-
-	qglLoadIdentity ();
+	GL_LoadIdentityTexMatrix ();
 	qglMatrixMode( GL_MODELVIEW );
 
 	R_UnlockArrays ();
 	R_ClearArrays ();
 	R_ResetBackendPointers ();
-}
-
-/*
-================
-R_RenderFogOnMesh
-================
-*/
-void R_RenderFogOnMesh( void )
-{
-	int		i;
-	vec3_t	viewtofog;
-	float	*coords;
-	double	dist, vdist;
-	shader_t *fogshader;
-	double	fognormal[3], vpnnormal[3];
-	double	fogdist, vpndist;
-	int		fogptype;
-	cplane_t *fogplane;
-	mat4x4_t m = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 1.5/(float)FOG_TEXTURE_HEIGHT, 0, 1 };
-
-	if ( !r_texFog->numplanes || !r_texFog->shader || !r_texFog->visibleplane )
-		return;
-
-	numColors = 0;
-	coords = inCoordsArray[0];
-
-	fogshader = r_texFog->shader;
-	fogplane = r_texFog->visibleplane;
-
-	GL_Bind( 0, r_fogtexture );
-	if( !glConfig.vertexBufferObject )
-		qglTexCoordPointer( 2, GL_FLOAT, 0, inCoordsArray[0] );
-	else
-		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_TC0] );
-
-	m[0] = m[5] = fogshader->fog_dist;
-	qglLoadMatrixf( m );
-
-	qglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	qglColor4ubv( fogshader->fog_color );
-
-	if( !r_currentShader->numpasses || r_currentShader->fog_dist || (r_currentShader->flags & SHADER_SKY) )
-		qglDepthFunc( GL_LEQUAL );
-	else
-		qglDepthFunc( GL_EQUAL );
-
-	// distance to fog
-	dist = PlaneDiff ( r_origin, fogplane );
-
-	if( r_currentShader->flags & SHADER_SKY ) {
-		if ( dist > 0 )
-			VectorMA( r_origin, -dist, fogplane->normal, viewtofog );
-		else
-			VectorCopy( r_origin, viewtofog );
-	} else {
-		VectorCopy( currententity->origin, viewtofog );
-	}
-
-	// some math tricks to take entity's rotation matrix into consideration
-	// for fog texture coordinates calculations:
-	// M is a rotation matrix, v is a vertex, t is a transform vector
-	// n is a plane's normal, d is a plane's dist, r is a view origin
-	// (M*v + t)*n - d = (M*n)*v - ((d - t*n))
-	// (M*v + t - r)*n = (M*n)*v - ((r - t)*n)
-
-	fognormal[0] = DotProduct( currententity->axis[0], fogplane->normal ) * currententity->scale;
-	fognormal[1] = DotProduct( currententity->axis[1], fogplane->normal ) * currententity->scale;
-	fognormal[2] = DotProduct( currententity->axis[2], fogplane->normal ) * currententity->scale;
-	fogptype = ( fognormal[0] == 1.0 ? PLANE_X : (fognormal[1] == 1.0 ? PLANE_Y : (fognormal[2] == 1.0 ? PLANE_Z : PLANE_NONAXIAL) ) );
-	fogdist = (fogplane->dist - DotProduct( viewtofog, fogplane->normal ));
-
-	vpnnormal[0] = DotProduct( currententity->axis[0], vpn ) * currententity->scale;
-	vpnnormal[1] = DotProduct( currententity->axis[1], vpn ) * currententity->scale;
-	vpnnormal[2] = DotProduct( currententity->axis[2], vpn ) * currententity->scale;
-	vpndist = ((r_origin[0] - viewtofog[0]) * vpn[0] + (r_origin[1] - viewtofog[1]) * vpn[1] + (r_origin[2] - viewtofog[2]) * vpn[2]);
-
-	if( dist < 0 )	{ 	// camera is inside the fog brush
-		if( fogptype < 3 ) {
-			for( i = 0; i < numVerts; i++, coords += 2 ) {
-				coords[0] = DotProduct( vertsArray[i], vpnnormal ) - vpndist;
-				coords[1] = -( vertsArray[i][fogptype] - fogdist );
-			}
-		} else {
-			for( i = 0; i < numVerts; i++, coords += 2 ) {
-				coords[0] = DotProduct( vertsArray[i], vpnnormal ) - vpndist;
-				coords[1] = -( DotProduct( vertsArray[i], fognormal ) - fogdist );
-			}
-		}
-	} else {
-		if( fogptype < 3 ) {
-			for( i = 0; i < numVerts; i++, coords += 2 ) {
-				vdist = vertsArray[i][fogptype] - fogdist;
-
-				if( vdist < 0 )
-					coords[0] = ( DotProduct( vertsArray[i], vpnnormal ) - vpndist ) * vdist / ( vdist - dist );
-				else
-					coords[0] = 0.0f;
-				coords[1] = -vdist;
-			}
-		} else {
-			for( i = 0; i < numVerts; i++, coords += 2 ) {
-				vdist = DotProduct( vertsArray[i], fognormal ) - fogdist;
-
-				if( vdist < 0 )
-					coords[0] = ( DotProduct( vertsArray[i], vpnnormal ) - vpndist ) * vdist / ( vdist - dist );
-				else
-					coords[0] = 0.0f;
-				coords[1] = -vdist;
-			}
-		}
-	}
-
-	if( glConfig.vertexBufferObject ) {
-		qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * sizeof( vec2_t ), inCoordsArray[0], GL_STREAM_DRAW_ARB );
-		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-	}
-
-	if ( !r_currentShader->numpasses )
-		R_LockArrays( numVerts );
-
-	R_FlushArrays ();
 }
 
 /*
@@ -1973,11 +2191,11 @@ R_BackendBeginTriangleOutlines
 void R_BackendBeginTriangleOutlines( void )
 {
 	r_triangleOutlines = qtrue;
+	qglColor4fv( colorWhite );
 	qglDisable( GL_TEXTURE_2D );
 	qglDisable( GL_DEPTH_TEST );
 	qglDisable( GL_BLEND );
 	qglDisable( GL_CULL_FACE );
-	qglColor4f( 1, 1, 1, 1 );
 }
 
 /*
@@ -1988,8 +2206,34 @@ R_BackendEndTriangleOutlines
 void R_BackendEndTriangleOutlines( void )
 {
 	r_triangleOutlines = qfalse;
+	qglColor4fv( colorWhite );
 	qglEnable( GL_DEPTH_TEST );
 	qglEnable( GL_TEXTURE_2D );
+}
+
+/*
+================
+R_SetColorForOutlines
+================
+*/
+static inline void R_SetColorForOutlines( void )
+{
+	int type = r_currentMeshBuffer->sortkey & 3;
+
+	switch( type ) {
+		case MB_MODEL:
+			if( r_currentMeshBuffer->infokey < 0 )
+				qglColor4fv( colorRed );
+			else
+				qglColor4fv( colorWhite );
+			break;
+		case MB_SPRITE:
+			qglColor4fv( colorBlue );
+			break;
+		case MB_POLY:
+			qglColor4fv( colorGreen );
+			break;
+	}
 }
 
 /*
@@ -2000,6 +2244,9 @@ R_DrawTriangles
 void R_DrawTriangles( void )
 {
 	int i;
+
+	if( r_showtris->integer == 2 )
+		R_SetColorForOutlines ();
 
 	for( i = 0; i < numIndexes; i += 3 ) {
 		qglBegin( GL_LINE_STRIP );
@@ -2019,6 +2266,9 @@ R_DrawNormals
 void R_DrawNormals( void )
 {
 	int i;
+
+	if( r_shownormals->integer == 2 )
+		R_SetColorForOutlines ();
 
 	qglBegin( GL_LINES );
 	for( i = 0; i < numVerts; i++ ) {

@@ -28,7 +28,7 @@ enum
 	VBO_VERTS,
 	VBO_NORMALS,
 	VBO_COLORS,
-	VBO_INDEXES,
+//	VBO_INDEXES,
 	VBO_TC0,
 
 	VBO_ENDMARKER
@@ -43,19 +43,20 @@ extern vec3_t		inVertsArray[MAX_ARRAY_VERTS];
 #endif
 
 extern vec3_t		inNormalsArray[MAX_ARRAY_VERTS];
+extern vec3_t		inSVectorsArray[MAX_ARRAY_VERTS];
+extern vec3_t		inTVectorsArray[MAX_ARRAY_VERTS];
 extern index_t		inIndexesArray[MAX_ARRAY_INDEXES];
 extern vec2_t		inCoordsArray[MAX_ARRAY_VERTS];
-extern vec2_t		inLightmapCoordsArray[MAX_ARRAY_VERTS];
-extern byte_vec4_t	inColorsArray[MAX_ARRAY_VERTS];
-
-extern vec3_t		tempVertexArray[MAX_ARRAY_VERTS];
-extern vec3_t		tempNormalsArray[MAX_ARRAY_VERTS];
+extern vec2_t		inLightmapCoordsArray[MAX_LIGHTMAPS][MAX_ARRAY_VERTS];
+extern byte_vec4_t	inColorsArray[MAX_LIGHTMAPS][MAX_ARRAY_VERTS];
 
 extern index_t		*indexesArray;
 extern vec3_t		*vertsArray;
 extern vec3_t		*normalsArray;
+extern vec3_t		*sVectorsArray;
+extern vec3_t		*tVectorsArray;
 extern vec2_t		*coordsArray;
-extern vec2_t		*lightmapCoordsArray;
+extern vec2_t		*lightmapCoordsArray[MAX_LIGHTMAPS];
 extern byte_vec4_t	colorArray[MAX_ARRAY_VERTS];
 
 #if SHADOW_VOLUMES
@@ -82,9 +83,6 @@ extern qboolean		r_arraysLocked;
 
 extern int			r_features;
 
-extern index_t		r_quad_indexes[];
-extern index_t		r_trifan_indexes[];
-
 void R_BackendInit( void );
 void R_BackendShutdown( void );
 void R_BackendStartFrame( void );
@@ -100,20 +98,21 @@ void R_FlushArrays( void );
 void R_FlushArraysMtex( void );
 void R_ClearArrays( void );
 
-static inline void R_PushIndexes( index_t *indexes, int *neighbors, vec3_t *trnormals, int numindexes, int features )
+image_t *R_ShaderpassTex( const shaderpass_t *pass, int unit );
+void R_ApplyTCMods( const shaderpass_t *pass, mat4x4_t result );
+
+static inline void R_PushIndexes( index_t *indexes, int *neighbors, vec3_t *trnormals, int count, int features )
 {
-	int i;
+#if SHADOW_VOLUMES
 	int numTris;
+#endif
 	index_t	*currentIndex;
 
 	// this is a fast path for non-batched geometry, use carefully 
 	// used on pics, sprites, .dpm, .md3 and .md2 models
 	if( features & MF_NONBATCHED ) {
-		if( numindexes > MAX_ARRAY_INDEXES )
-			numindexes = MAX_ARRAY_INDEXES;
-
 		// simply change indexesArray to point at indexes
-		numIndexes = numindexes;
+		numIndexes = count;
 		indexesArray = indexes;
 
 #if SHADOW_VOLUMES
@@ -129,16 +128,14 @@ static inline void R_PushIndexes( index_t *indexes, int *neighbors, vec3_t *trno
 		}
 #endif
 	} else {
-		// clamp
-		if( numIndexes + numindexes > MAX_ARRAY_INDEXES )
-			numindexes = MAX_ARRAY_INDEXES - numIndexes;
-
-		numTris = numindexes / 3;
+#if SHADOW_VOLUMES
+		numTris = numIndexes / 3;
+#endif
 		currentIndex = indexesArray + numIndexes;
-		numIndexes += numindexes;
+		numIndexes += count;
 
 		// the following code assumes that R_PushIndexes is fed with triangles...
-		for( i = 0; i < numTris; i++, indexes += 3, currentIndex += 3 ) {
+		for( ; count > 0; count -= 3, indexes += 3, currentIndex += 3 ) {
 			currentIndex[0] = numVerts + indexes[0];
 			currentIndex[1] = numVerts + indexes[1];
 			currentIndex[2] = numVerts + indexes[2];
@@ -154,7 +151,8 @@ static inline void R_PushIndexes( index_t *indexes, int *neighbors, vec3_t *trno
 			}
 
 			if( (features & MF_TRNORMALS) && trnormals ) {
-				VectorCopy ( trnormals[i], currentTrNormal );
+				VectorCopy( *trnormals, currentTrNormal );
+				trnormals++;
 				currentTrNormal += 3;
 			}
 #endif
@@ -162,29 +160,48 @@ static inline void R_PushIndexes( index_t *indexes, int *neighbors, vec3_t *trno
 	}
 }
 
-static inline void R_PushMesh( mesh_t *mesh, int features )
+static inline void R_PushTrifanIndexes( int numverts )
+{
+	int count;
+	index_t	*currentIndex;
+
+	currentIndex = indexesArray + numIndexes;
+	numIndexes += numverts + numverts + numverts - 6;
+
+	for( count = 2; count < numverts; count++, currentIndex += 3 ) {
+		currentIndex[0] = numVerts;
+		currentIndex[1] = numVerts + count - 1;
+		currentIndex[2] = numVerts + count;
+	}
+}
+
+static inline void R_PushMesh( const mesh_t *mesh, int features )
 {
 	int numverts;
 
-	if( !mesh->indexes || !mesh->xyzArray )
+	if( !(mesh->indexes || (features && MF_TRIFAN)) || !mesh->xyzArray )
 		return;
 
 	r_features = features;
 
+	if( features & MF_TRIFAN )
+		R_PushTrifanIndexes( mesh->numVertexes );
+	else
 #if SHADOW_VOLUMES
-	R_PushIndexes( mesh->indexes, mesh->trneighbors, mesh->trnormals, mesh->numIndexes, features );
+		R_PushIndexes( mesh->indexes, mesh->trneighbors, mesh->trnormals, mesh->numIndexes, features );
 #else
-	R_PushIndexes( mesh->indexes, NULL, NULL, mesh->numIndexes, features );
+		R_PushIndexes( mesh->indexes, NULL, NULL, mesh->numIndexes, features );
 #endif
 
 	numverts = mesh->numVertexes;
 
 	if( features & MF_NONBATCHED ) {
 		if( features & MF_DEFORMVS ) {
-			memcpy( inVertsArray[numVerts], mesh->xyzArray, numverts * sizeof(vec3_t) );
+			if( mesh->xyzArray != inVertsArray )
+				memcpy( inVertsArray, mesh->xyzArray, numverts * sizeof(vec3_t) );
 
-			if( (features & MF_NORMALS) && mesh->normalsArray )
-				memcpy( inNormalsArray[numVerts], mesh->normalsArray, numverts * sizeof(vec3_t) );
+			if( (features & MF_NORMALS) && mesh->normalsArray && (mesh->normalsArray != inNormalsArray ) )
+				memcpy( inNormalsArray, mesh->normalsArray, numverts * sizeof(vec3_t) );
 		} else {
 			vertsArray = mesh->xyzArray;
 
@@ -195,8 +212,23 @@ static inline void R_PushMesh( mesh_t *mesh, int features )
 		if( (features & MF_STCOORDS) && mesh->stArray )
 			coordsArray = mesh->stArray;
 
-		if( (features & MF_LMCOORDS) && mesh->lmstArray )
-			lightmapCoordsArray = mesh->lmstArray;
+		if( (features & MF_LMCOORDS) && mesh->lmstArray[0] ) {
+			lightmapCoordsArray[0] = mesh->lmstArray[0];
+			if( features & MF_LMCOORDS1 ) {
+				lightmapCoordsArray[1] = mesh->lmstArray[1];
+				if( features & MF_LMCOORDS2 ) {
+					lightmapCoordsArray[2] = mesh->lmstArray[2];
+					if( features & MF_LMCOORDS3 )
+						lightmapCoordsArray[3] = mesh->lmstArray[3];
+				}
+			}
+		}
+		if( features & MF_STVECTORS ) {
+			if( mesh->sVectorsArray )
+				sVectorsArray = mesh->sVectorsArray;
+			if( mesh->tVectorsArray )
+				tVectorsArray = mesh->tVectorsArray;
+		}
 	} else {
 		memcpy( inVertsArray[numVerts], mesh->xyzArray, numverts * sizeof(vec3_t) );
 
@@ -206,27 +238,52 @@ static inline void R_PushMesh( mesh_t *mesh, int features )
 		if( (features & MF_STCOORDS) && mesh->stArray )
 			memcpy( inCoordsArray[numVerts], mesh->stArray, numverts * sizeof(vec2_t) );
 
-		if( (features & MF_LMCOORDS) && mesh->lmstArray )
-			memcpy( inLightmapCoordsArray[numVerts], mesh->lmstArray, numverts * sizeof(vec2_t) );
+		if( (features & MF_LMCOORDS) && mesh->lmstArray[0] ) {
+			memcpy( inLightmapCoordsArray[0][numVerts], mesh->lmstArray[0], numverts * sizeof(vec2_t) );
+			if( features & MF_LMCOORDS1 ) {
+				memcpy( inLightmapCoordsArray[1][numVerts], mesh->lmstArray[1], numverts * sizeof(vec2_t) );
+				if( features & MF_LMCOORDS2 ) {
+					memcpy( inLightmapCoordsArray[2][numVerts], mesh->lmstArray[2], numverts * sizeof(vec2_t) );
+					if( features & MF_LMCOORDS3 )
+						memcpy( inLightmapCoordsArray[3][numVerts], mesh->lmstArray[3], numverts * sizeof(vec2_t) );
+				}
+			}
+		}
+
+		if( features & MF_STVECTORS ) {
+			if( mesh->sVectorsArray )
+				memcpy( inSVectorsArray[numVerts], mesh->sVectorsArray, numverts * sizeof(vec3_t) );
+			if( mesh->tVectorsArray )
+				memcpy( inTVectorsArray[numVerts], mesh->tVectorsArray, numverts * sizeof(vec3_t) );
+		}
 	}
 
-	if( (features & MF_COLORS) && mesh->colorsArray )
-		memcpy( inColorsArray[numVerts], mesh->colorsArray, numverts * sizeof(byte_vec4_t) );
+	if( (features & MF_COLORS) && mesh->colorsArray[0] ) {
+		memcpy( inColorsArray[0][numVerts], mesh->colorsArray[0], numverts * sizeof(byte_vec4_t) );
+		if( features & MF_COLORS1 ) {
+			memcpy( inColorsArray[1][numVerts], mesh->colorsArray[1], numverts * sizeof(byte_vec4_t) );
+			if( features & MF_COLORS2 ) {
+				memcpy( inColorsArray[2][numVerts], mesh->colorsArray[2], numverts * sizeof(byte_vec4_t) );
+				if( features & MF_COLORS3 )
+					memcpy( inColorsArray[3][numVerts], mesh->colorsArray[3], numverts * sizeof(byte_vec4_t) );
+			}
+		}
+	}
 
 	numVerts += numverts;
 	r_numverts += numverts;
 }
 
-static inline qboolean R_BackendOverflow( mesh_t *mesh )
+static inline qboolean R_MeshOverflow( const mesh_t *mesh )
 {
 	return ( numVerts + mesh->numVertexes > MAX_ARRAY_VERTS || 
 		numIndexes + mesh->numIndexes > MAX_ARRAY_INDEXES );
 }
 
-static inline qboolean R_InvalidMesh( mesh_t *mesh )
+static inline qboolean R_InvalidMesh( const mesh_t *mesh )
 {
 	return ( !mesh->numVertexes || !mesh->numIndexes || 
 		mesh->numVertexes > MAX_ARRAY_VERTS || mesh->numIndexes > MAX_ARRAY_INDEXES );
 }
 
-void R_RenderMeshBuffer( meshbuffer_t *mb, qboolean shadowpass );
+void R_RenderMeshBuffer( const meshbuffer_t *mb, qboolean shadowpass );

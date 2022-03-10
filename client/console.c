@@ -68,24 +68,24 @@ void Con_ToggleConsole_f (void)
 	}
 #endif
 
+	if (cls.state == ca_connecting || cls.state == ca_connected)
+		return;
+
 	Key_ClearTyping ();
 	Con_ClearNotify ();
 
-	if ( cls.key_dest == key_console ) {
-		CL_SetKeyDest (cls.old_key_dest);
+	if( cls.key_dest == key_console ) {
+		CL_SetKeyDest( cls.old_key_dest );
 		Key_ClearStates ();
-		Cvar_Set ("paused", "0");
-	}
-	else
-	{
+		Cvar_Set( "paused", "0" );
+	} else {
 		Key_ClearStates ();
 
-		CL_SetOldKeyDest (cls.key_dest);
-		CL_SetKeyDest (key_console);
+		CL_SetOldKeyDest( cls.key_dest );
+		CL_SetKeyDest( key_console );
 
-		if (Cvar_VariableValue ("sv_maxclients") == 1 
-			&& Com_ServerState ())
-			Cvar_Set ("paused", "1");
+		if( Cvar_VariableValue( "sv_maxclients" ) == 1 && Com_ServerState () )
+			Cvar_Set( "paused", "1" );
 	}
 }
 
@@ -301,7 +301,7 @@ Con_Linefeed
 void Con_Linefeed (void)
 {
 	con.x = 0;
-	if (con.display == con.current)
+	if (con.display/* == con.current*/)
 		con.display++;
 	con.current++;
 	memset (&con.text[(con.current%con.totallines)*con.linewidth]

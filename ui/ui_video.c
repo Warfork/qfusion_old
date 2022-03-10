@@ -50,7 +50,6 @@ static menulist_s		s_colordepth_box;
 static menulist_s		s_texturebits_box;
 static menuslider_s		s_screensize_slider;
 static menuslider_s		s_brightness_slider;
-static menulist_s		s_lighting_box;
 static menulist_s  		s_fs_box;
 
 static menuaction_s		s_apply_action;
@@ -85,7 +84,6 @@ static void ApplyChanges( void *unused )
 {
 	trap_Cvar_SetValue( "r_picmip", 3 - s_tq_slider.curvalue );
 	trap_Cvar_SetValue( "r_skymip", 3 - s_sq_slider.curvalue );
-	trap_Cvar_SetValue( "r_vertexlight", s_lighting_box.curvalue );
 	trap_Cvar_SetValue( "vid_fullscreen", s_fs_box.curvalue );
 	trap_Cvar_SetValue( "r_mode", s_mode_list.curvalue );
 	trap_Cvar_SetValue( "r_colorbits", 16 * (int)s_colordepth_box.curvalue );
@@ -291,12 +289,6 @@ static void Video_MenuInit( void )
 	else
 		s_tf_box.curvalue		= 1;
 
-	s_lighting_box.generic.type = MTYPE_SPINCONTROL;
-	s_lighting_box.generic.x	= 0;
-	s_lighting_box.generic.y	= y+=y_offset;
-	s_lighting_box.generic.name	= "lighting";
-	s_lighting_box.curvalue		= trap_Cvar_VariableValue( "r_vertexlight" );
-	s_lighting_box.itemnames	= lighting_names;
 	y+=y_offset;
 
 	s_defaults_action.generic.type = MTYPE_ACTION;
@@ -325,7 +317,6 @@ static void Video_MenuInit( void )
 	Menu_AddItem( &s_video_menu, ( void * ) &s_tq_slider );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_sq_slider );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_tf_box );
-	Menu_AddItem( &s_video_menu, ( void * ) &s_lighting_box );
 
 	Menu_AddItem( &s_video_menu, ( void * ) &s_defaults_action );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_apply_action );

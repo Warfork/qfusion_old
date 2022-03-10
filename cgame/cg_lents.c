@@ -835,7 +835,7 @@ void CG_AddLocalEntities( void )
 		ent = &le->ent;
 
 		if( le->light && scale )
-			trap_R_AddLightToScene( ent->origin, le->light * scale, le->lightcolor[0], le->lightcolor[1], le->lightcolor[2]);
+			trap_R_AddLightToScene( ent->origin, le->light * scale, le->lightcolor[0], le->lightcolor[1], le->lightcolor[2], NULL );
 
 		if( le->type == LE_LASER ) {
 			CG_AddLaser( ent->origin, ent->oldorigin, ent->radius, ent->skinnum, ent->customShader );

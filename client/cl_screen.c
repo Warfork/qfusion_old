@@ -48,7 +48,6 @@ cvar_t		*scr_debuggraph;
 cvar_t		*scr_graphheight;
 cvar_t		*scr_graphscale;
 cvar_t		*scr_graphshift;
-cvar_t		*scr_debugloading;
 
 void		SCR_TimeRefresh_f (void);
 
@@ -270,10 +269,10 @@ void SCR_DrawDebugGraph (void)
 
 /*
 ==================
-SCR_Init
+SCR_InitScreen
 ==================
 */
-void SCR_Init (void)
+void SCR_InitScreen (void)
 {
 	scr_conspeed = Cvar_Get ("scr_conspeed", "3", 0);
 	scr_netgraph = Cvar_Get ("netgraph", "0", 0);

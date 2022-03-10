@@ -163,7 +163,6 @@ static void PF_error (char *msg)
 /*
 ===============
 PF_StuffCmd
-
 ===============
 */
 static void PF_StuffCmd (edict_t *ent, char *string)
@@ -211,6 +210,14 @@ static void PF_SetBrushModel (edict_t *ent, char *name)
 		return;
 	}
 
+	if (!strcmp (name, "*0"))
+	{
+		ent->s.modelindex = 1;
+		cmodel = CM_InlineModel (0);
+		CM_InlineModelBounds (cmodel, ent->r.mins, ent->r.maxs);
+		return;
+	}
+
 	ent->s.modelindex = atoi (name+1);
 	cmodel = CM_InlineModel (ent->s.modelindex);
 	CM_InlineModelBounds (cmodel, ent->r.mins, ent->r.maxs);
@@ -220,7 +227,6 @@ static void PF_SetBrushModel (edict_t *ent, char *name)
 /*
 ===============
 PF_EntityContact
-
 ===============
 */
 static qboolean PF_EntityContact( vec3_t mins, vec3_t maxs, edict_t *ent )
@@ -255,7 +261,6 @@ static qboolean PF_EntityContact( vec3_t mins, vec3_t maxs, edict_t *ent )
 /*
 ===============
 PF_Configstring
-
 ===============
 */
 static void PF_Configstring (int index, char *val)

@@ -3632,7 +3632,7 @@ void CTFWarp(edict_t *ent)
 	if (token == NULL) {
 		G_PrintMsg (ent, PRINT_HIGH, "Unknown CTF level.\n");
 		G_PrintMsg (ent, PRINT_HIGH, "Available levels are: %s\n", warp_list->string);
-		free(mlist);
+		G_Free(mlist);
 		return;
 	}
 

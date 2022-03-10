@@ -50,62 +50,51 @@ void Mod_LoadSkeletalPose( char *name, model_t *mod, void *buffer )
 	dskpframe_t		*pinframe;
 	mskframe_t		*poutframe;
 	dskpbonepose_t	*pinbonepose;
-	mskbonepose_t	*poutbonepose, temppose;
+	bonepose_t		*poutbonepose;
 
-	if( strncmp ((const char *)buffer, SKMHEADER, 4) )
+	if( strncmp( (const char *)buffer, SKMHEADER, 4 ) )
 		Com_Error( ERR_DROP, "uknown fileid for %s", name );
 
 	pinmodel = ( dskpheader_t * )buffer;
 	poutmodel = mod->skmodel;
 
-	if( LittleLong (pinmodel->type) != SKM_MODELTYPE )
-		Com_Error ( ERR_DROP, "%s has wrong type number (%i should be %i)",
+	if( LittleLong( pinmodel->type ) != SKM_MODELTYPE )
+		Com_Error( ERR_DROP, "%s has wrong type number (%i should be %i)",
 				 name, LittleLong (pinmodel->type), SKM_MODELTYPE );
-	if( LittleLong (pinmodel->filesize) > SKM_MAX_FILESIZE )
-		Com_Error ( ERR_DROP, "%s has has wrong filesize (%i should be less than %i)",
+	if( LittleLong( pinmodel->filesize ) > SKM_MAX_FILESIZE )
+		Com_Error( ERR_DROP, "%s has has wrong filesize (%i should be less than %i)",
 				 name, LittleLong (pinmodel->filesize), SKM_MAX_FILESIZE );
-	if( LittleLong (pinmodel->num_bones) != poutmodel->numbones )
-		Com_Error ( ERR_DROP, "%s has has wrong number of bones (%i should be less than %i)",
+	if( LittleLong( pinmodel->num_bones ) != poutmodel->numbones )
+		Com_Error( ERR_DROP, "%s has has wrong number of bones (%i should be less than %i)",
 				 name, LittleLong (pinmodel->num_bones), poutmodel->numbones );
 
 	poutmodel->numframes = LittleLong ( pinmodel->num_frames );
 	if( poutmodel->numframes <= 0 )
-		Com_Error ( ERR_DROP, "%s has no frames", name );
+		Com_Error( ERR_DROP, "%s has no frames", name );
 	else if ( poutmodel->numframes > SKM_MAX_FRAMES )
-		Com_Error ( ERR_DROP, "%s has too many frames", name );
+		Com_Error( ERR_DROP, "%s has too many frames", name );
 
-	pinbone = ( dskpbone_t * )( ( qbyte * )pinmodel + LittleLong ( pinmodel->ofs_bones ) );
-	poutbone = poutmodel->bones = Mod_Malloc ( mod, sizeof(mskbone_t) * poutmodel->numbones );
+	pinbone = ( dskpbone_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_bones ) );
+	poutbone = poutmodel->bones = Mod_Malloc ( mod, sizeof( mskbone_t ) * poutmodel->numbones );
 
 	for( i = 0; i < poutmodel->numbones; i++, pinbone++, poutbone++ ) {
 		Q_strncpyz ( poutbone->name, pinbone->name, SKM_MAX_NAME );
-		poutbone->flags = LittleLong ( pinbone->flags );
-		poutbone->parent = LittleLong ( pinbone->parent );
+		poutbone->flags = LittleLong( pinbone->flags );
+		poutbone->parent = LittleLong( pinbone->parent );
 	}
 
-	pinframe = ( dskpframe_t * )( ( qbyte * )pinmodel + LittleLong ( pinmodel->ofs_frames ) );
-	poutframe = poutmodel->frames = Mod_Malloc ( mod, sizeof(mskframe_t) * poutmodel->numframes );
+	pinframe = ( dskpframe_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_frames ) );
+	poutframe = poutmodel->frames = Mod_Malloc( mod, sizeof( mskframe_t ) * poutmodel->numframes );
 
 	for( i = 0; i < poutmodel->numframes; i++, pinframe++, poutframe++ ) {
-		poutbone = poutmodel->bones;
+		pinbonepose = ( dskpbonepose_t * )( ( qbyte * )pinmodel + LittleLong( pinframe->ofs_bonepositions ) );
+		poutbonepose = poutframe->boneposes = Mod_Malloc ( mod, sizeof( bonepose_t ) * poutmodel->numbones );
 
-		pinbonepose = ( dskpbonepose_t * )( ( qbyte * )pinmodel + LittleLong (pinframe->ofs_bonepositions) );
-		poutbonepose = poutframe->boneposes = Mod_Malloc ( mod, sizeof(mskbonepose_t) * poutmodel->numbones );
-
-		for( j = 0; j < poutmodel->numbones; j++, poutbone++, pinbonepose++, poutbonepose++ ) {
-			if( poutbone->parent >= 0 )
-			{
-				for( k = 0; k < 4; k++ )
-					temppose.quat[k] = LittleFloat ( pinbonepose->quat[k] );
-				for( k = 0; k < 3; k++ )
-					temppose.origin[k] = LittleFloat ( pinbonepose->origin[k] );
-				Quat_ConcatTransforms ( poutframe->boneposes[poutbone->parent].quat, poutframe->boneposes[poutbone->parent].origin, temppose.quat, temppose.origin, poutbonepose->quat, poutbonepose->origin );
-			} else {
-				for( k = 0; k < 4; k++ )
-					poutbonepose->quat[k] = LittleFloat ( pinbonepose->quat[k] );
-				for( k = 0; k < 3; k++ )
-					poutbonepose->origin[k] = LittleFloat ( pinbonepose->origin[k] );
-			}
+		for( j = 0; j < poutmodel->numbones; j++, pinbonepose++, poutbonepose++ ) {
+			for( k = 0; k < 4; k++ )
+				poutbonepose->quat[k] = LittleFloat( pinbonepose->quat[k] );
+			for( k = 0; k < 3; k++ )
+				poutbonepose->origin[k] = LittleFloat( pinbonepose->origin[k] );
 		}
 	}
 }
@@ -134,14 +123,14 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 
 	pinmodel = ( dskmheader_t * )buffer;
 
-	if( LittleLong (pinmodel->type) != SKM_MODELTYPE )
-		Com_Error ( ERR_DROP, "%s has wrong type number (%i should be %i)",
+	if( LittleLong( pinmodel->type ) != SKM_MODELTYPE )
+		Com_Error( ERR_DROP, "%s has wrong type number (%i should be %i)",
 				 mod->name, LittleLong (pinmodel->type), SKM_MODELTYPE );
-	if( LittleLong (pinmodel->filesize) > SKM_MAX_FILESIZE )
-		Com_Error ( ERR_DROP, "%s has has wrong filesize (%i should be less than %i)",
+	if( LittleLong( pinmodel->filesize ) > SKM_MAX_FILESIZE )
+		Com_Error( ERR_DROP, "%s has has wrong filesize (%i should be less than %i)",
 				 mod->name, LittleLong (pinmodel->filesize), SKM_MAX_FILESIZE );
 
-	poutmodel = mod->skmodel = Mod_Malloc( mod, sizeof(mskmodel_t) );
+	poutmodel = mod->skmodel = Mod_Malloc( mod, sizeof( mskmodel_t ) );
 	poutmodel->nummeshes = LittleLong( pinmodel->num_meshes );
 	if( poutmodel->nummeshes <= 0 )
 		Com_Error( ERR_DROP, "%s has no meshes", mod->name );
@@ -154,41 +143,41 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 	else if( poutmodel->numbones > SKM_MAX_BONES )
 		Com_Error( ERR_DROP, "%s has too many bones", mod->name );
 
-	pinmesh = ( dskmmesh_t * )( ( qbyte * )pinmodel + LittleLong ( pinmodel->ofs_meshes ) );
-	poutmesh = poutmodel->meshes = Mod_Malloc ( mod, sizeof(mskmesh_t) * poutmodel->nummeshes );
+	pinmesh = ( dskmmesh_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_meshes ) );
+	poutmesh = poutmodel->meshes = Mod_Malloc( mod, sizeof( mskmesh_t ) * poutmodel->nummeshes );
 
 	for( i = 0; i < poutmodel->nummeshes; i++, pinmesh++, poutmesh++ ) {
-		poutmesh->numverts = LittleLong ( pinmesh->num_verts );
+		poutmesh->numverts = LittleLong( pinmesh->num_verts );
 		if( poutmesh->numverts <= 0 )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has no vertexes", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has no vertexes", i, mod->name );
 		else if( poutmesh->numverts > SKM_MAX_VERTS )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has too many vertexes", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has too many vertexes", i, mod->name );
 
-		poutmesh->numtris = LittleLong ( pinmesh->num_tris );
+		poutmesh->numtris = LittleLong( pinmesh->num_tris );
 		if( poutmesh->numtris <= 0 )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has no indices", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has no indices", i, mod->name );
 		else if( poutmesh->numtris > SKM_MAX_TRIS )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has too many indices", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has too many indices", i, mod->name );
 
-		poutmesh->numreferences = LittleLong ( pinmesh->num_references );
+		poutmesh->numreferences = LittleLong( pinmesh->num_references );
 		if( poutmesh->numreferences <= 0 )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has no bone references", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has no bone references", i, mod->name );
 		else if( poutmesh->numreferences > SKM_MAX_BONES )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has too many bone references", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has too many bone references", i, mod->name );
 
-		Q_strncpyz( poutmesh->name, pinmesh->meshname, sizeof(poutmesh->name) );
+		Q_strncpyz( poutmesh->name, pinmesh->meshname, sizeof( poutmesh->name ) );
 		Mod_StripLODSuffix( poutmesh->name );
 
 		poutmesh->skin.shader = R_RegisterSkin( pinmesh->shadername );
 
 		pinskmvert = ( dskmvertex_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_verts ) );
-		poutskmvert = poutmesh->vertexes = Mod_Malloc( mod, sizeof(mskvertex_t) * poutmesh->numverts );
+		poutskmvert = poutmesh->vertexes = Mod_Malloc( mod, sizeof( mskvertex_t ) * poutmesh->numverts );
 
 		for( j = 0; j < poutmesh->numverts; j++, poutskmvert++ ) {
 			poutskmvert->numbones = LittleLong( pinskmvert->numbones );
 
-			pinbonevert = ( dskmbonevert_t * )( ( qbyte * )pinskmvert + sizeof(poutskmvert->numbones) );
-			poutbonevert = poutskmvert->verts = Mod_Malloc( mod, sizeof(mskbonevert_t) * poutskmvert->numbones );
+			pinbonevert = ( dskmbonevert_t * )( ( qbyte * )pinskmvert + sizeof( poutskmvert->numbones ) );
+			poutbonevert = poutskmvert->verts = Mod_Malloc( mod, sizeof( mskbonevert_t ) * poutskmvert->numbones );
 
 			for( l = 0; l < poutskmvert->numbones; l++, pinbonevert++, poutbonevert++ ) {
 				for( k = 0; k < 3; k++ ) {
@@ -203,16 +192,16 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 			pinskmvert = ( dskmvertex_t * )( ( qbyte * )pinbonevert );
 		}
 
-		pinstcoord = ( dskmcoord_t * )( ( qbyte * )pinmodel + LittleLong (pinmesh->ofs_texcoords) );
+		pinstcoord = ( dskmcoord_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_texcoords ) );
 		poutstcoord = poutmesh->stcoords = Mod_Malloc( mod, poutmesh->numverts * sizeof(vec2_t) );
 
-		for( j = 0; j < poutmesh->numverts; j++, pinstcoord++, poutstcoord++ ) {
+		for( j = 0; j < poutmesh->numverts; j++, pinstcoord++ ) {
 			poutstcoord[j][0] = LittleFloat( pinstcoord->st[0] );
 			poutstcoord[j][1] = LittleFloat( pinstcoord->st[1] );
 		}
 
-		pintris = ( index_t * )( ( qbyte * )pinmodel + LittleLong (pinmesh->ofs_indices) );
-		pouttris = poutmesh->indexes = Mod_Malloc( mod, sizeof(index_t) * poutmesh->numtris * 3 );
+		pintris = ( index_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_indices ) );
+		pouttris = poutmesh->indexes = Mod_Malloc( mod, sizeof( index_t ) * poutmesh->numtris * 3 );
 
 		for( j = 0; j < poutmesh->numtris; j++, pintris += 3, pouttris += 3 ) {
 			pouttris[0] = (index_t)LittleLong( pintris[0] );
@@ -220,8 +209,8 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 			pouttris[2] = (index_t)LittleLong( pintris[2] );
 		}
 
-		pinreferences = ( index_t *)( ( qbyte * )pinmodel + LittleLong (pinmesh->ofs_references) );
-		poutreferences = poutmesh->references = Mod_Malloc( mod, sizeof(unsigned int) * poutmesh->numreferences );
+		pinreferences = ( index_t *)( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_references ) );
+		poutreferences = poutmesh->references = Mod_Malloc( mod, sizeof( unsigned int ) * poutmesh->numreferences );
 
 		for( j = 0; j < poutmesh->numreferences; j++, pinreferences++, poutreferences++ )
 			*poutreferences = LittleLong( *pinreferences );
@@ -292,8 +281,8 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 
 	poutframe = poutmodel->frames;
 	for( i = 0; i < poutmodel->numframes; i++, poutframe++ ) {
-		vec3_t			v, vtemp;
-		mskbonepose_t	*poutbonepose;
+		vec3_t		v, vtemp;
+		bonepose_t	*poutbonepose;
 
 		ClearBounds( poutframe->mins, poutframe->maxs );
 
@@ -316,6 +305,13 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 			}
 		}
 
+		// enlarge the bounding box a bit so it can be rendered
+		// with external boneposes
+		for( j = 0; j < 3; j++ ) {
+			poutframe->mins[j] *= 1.5;
+			poutframe->maxs[j] *= 1.5;
+		}
+
 		poutframe->radius = RadiusFromBounds( poutframe->mins, poutframe->maxs );
 		VectorAdd( poutframe->mins, mod->mins, mod->maxs );
 		VectorAdd( poutframe->maxs, mod->mins, mod->maxs );
@@ -323,6 +319,61 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 	}
 
 	mod->type = mod_skeletal;
+}
+
+/*
+================
+R_SkeletalGetNumBones
+================
+*/
+int R_SkeletalGetNumBones( model_t *mod, int *numFrames )
+{
+	if( !mod || mod->type != mod_skeletal )
+		return 0;
+
+	if( numFrames )
+		*numFrames = mod->skmodel->numframes;
+	return mod->skmodel->numbones;
+}
+
+/*
+================
+R_SkeletalGetBoneInfo
+================
+*/
+int R_SkeletalGetBoneInfo( model_t *mod, int bonenum, char *name, int size, int *flags )
+{
+	mskbone_t *bone;
+
+	if( !mod || mod->type != mod_skeletal )
+		return 0;
+	if( bonenum < 0 || bonenum >= mod->skmodel->numbones )
+		Com_Error( ERR_DROP, "R_SkeletalGetBone: bad bone number" );
+
+	bone = &mod->skmodel->bones[bonenum];
+	if( name && size )
+		Q_strncpyz( name, bone->name, size );
+	if( flags )
+		*flags = bone->flags;
+	return bone->parent;
+}
+
+/*
+================
+R_SkeletalGetBonePose
+================
+*/
+void R_SkeletalGetBonePose( model_t *mod, int bonenum, int frame, bonepose_t *bonepose )
+{
+	if( !mod || mod->type != mod_skeletal )
+		return;
+	if( bonenum < 0 || bonenum >= mod->skmodel->numbones )
+		Com_Error( ERR_DROP, "R_SkeletalGetBonePose: bad bone number" );
+	if( frame < 0 || frame >= mod->skmodel->numframes )
+		Com_Error( ERR_DROP, "R_SkeletalGetBonePose: bad frame number" );
+
+	if( bonepose )
+		*bonepose = mod->skmodel->frames[frame].boneposes[bonenum];
 }
 
 /*
@@ -406,7 +457,7 @@ void R_SkeletalModelBBox( entity_t *e, model_t *mod )
 R_CullSkeletalModel
 ================
 */
-qboolean R_CullSkeletalModel( entity_t *e, model_t *mod )
+qboolean R_CullSkeletalModel( entity_t *e )
 {
 	int i;
 
@@ -438,7 +489,7 @@ qboolean R_CullSkeletalModel( entity_t *e, model_t *mod )
 
 			for( p = 0; p < 8; p++ ) {
 				int mask = 0;
-				
+
 				for( f = 0; f < 4; f++ ) {
 					if ( DotProduct( frustum[f].normal, bbox[p] ) < frustum[f].dist )
 						mask |= ( 1 << f );
@@ -464,63 +515,10 @@ qboolean R_CullSkeletalModel( entity_t *e, model_t *mod )
 
 /*
 ================
-R_SkeletalModelLerpAttachment
-================
-*/
-qboolean R_SkeletalModelLerpAttachment( orientation_t *orient, mskmodel_t *skmodel, int oldframenum, int framenum, float lerpfrac, char *name )
-{
-	int				i;
-	quat_t			quat;
-	mskbone_t		*bone;
-	mskframe_t		*frame, *oldframe;
-	mskbonepose_t	*bonepose, *oldbonepose;
-
-	// find the appropriate attachment bone
-	bone = skmodel->bones;
-	for( i = 0; i < skmodel->numbones; i++, bone++ ) {
-		if( !(bone->flags & SKM_BONEFLAG_ATTACH) )
-			continue;
-		if( !Q_stricmp( bone->name, name ) )
-			break;
-	}
-
-	if( i == skmodel->numbones ) {
-		Com_DPrintf( "R_SkeletalModelLerpAttachment: no such bone %s\n", name );
-		return qfalse;
-	}
-
-	// ignore invalid frames
-	if( ( framenum >= skmodel->numframes ) || ( framenum < 0 ) ) {
-		Com_DPrintf( "R_SkeletalModelLerpAttachment %s: no such oldframe %i\n", name, framenum );
-		framenum = 0;
-	}
-	if( ( oldframenum >= skmodel->numframes ) || ( oldframenum < 0 ) ) {
-		Com_DPrintf( "R_SkeletalModelLerpAttachment %s: no such oldframe %i\n", name, oldframenum );
-		oldframenum = 0;
-	}
-
-	frame = skmodel->frames + framenum;
-	oldframe = skmodel->frames + oldframenum;
-
-	bonepose = frame->boneposes + i;
-	oldbonepose = oldframe->boneposes + i;
-
-	// interpolate quaternions and origin
-	Quat_Lerp( oldbonepose->quat, bonepose->quat, lerpfrac, quat );
-	Quat_Matrix( quat, orient->axis );
-	orient->origin[0] = oldbonepose->origin[0] + (bonepose->origin[0] - oldbonepose->origin[0]) * lerpfrac;
-	orient->origin[1] = oldbonepose->origin[1] + (bonepose->origin[1] - oldbonepose->origin[1]) * lerpfrac;
-	orient->origin[2] = oldbonepose->origin[2] + (bonepose->origin[2] - oldbonepose->origin[2]) * lerpfrac;
-
-	return qtrue;
-}
-
-/*
-================
 R_DrawBonesFrameLerp
 ================
 */
-void R_DrawBonesFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
+void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
 {
 	int				i, meshnum;
 	int				j, k, l;
@@ -529,13 +527,12 @@ void R_DrawBonesFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 	float			frontlerp = 1.0 - backlerp;
 	vec3_t			move, delta;
 	mskmesh_t		*mesh;
-	mskframe_t		*frame, *oldframe;
-	mskbonepose_t	*bonepose, *oldbonepose;
+	bonepose_t		*bonepose, *oldbonepose, *bp, *oldbp;
 	mskvertex_t		*skmverts;
 	mskbonevert_t	*boneverts;
 	entity_t		*e = mb->entity;
 	mskmodel_t		*skmodel = mod->skmodel;
-	struct { vec3_t axis[3], origin; } skmbonepose[SKM_MAX_BONES], *pose;
+	struct { vec3_t axis[3], origin; } skmbonepose[SKM_MAX_BONES], *pose, *out;
 
 	if( !shadow && (e->flags & RF_VIEWERMODEL) && !r_mirrorview && !r_portalview )
 		return;
@@ -556,66 +553,31 @@ void R_DrawBonesFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 	Matrix_TransformVector( e->axis, delta, move );
 	VectorScale( move, e->scale * backlerp, move );
 
-	frame = skmodel->frames + e->frame;
-	oldframe = skmodel->frames + e->oldframe;
+	if( e->boneposes )
+		bp = e->boneposes;
+	else
+		bp = skmodel->frames[e->frame].boneposes;
+
+	if( e->oldboneposes )
+		oldbp = e->oldboneposes;
+	else
+		oldbp = skmodel->frames[e->oldframe].boneposes;
+
 	for( i = 0; i < mesh->numreferences; i++ ) {
-		pose = skmbonepose + mesh->references[i];
-		bonepose = frame->boneposes + mesh->references[i];
-		oldbonepose = oldframe->boneposes + mesh->references[i];
+		out = skmbonepose + mesh->references[i];
+		bonepose = bp + mesh->references[i];
+		oldbonepose = oldbp + mesh->references[i];
 
 		// interpolate quaternions and origins
 		Quat_Lerp( oldbonepose->quat, bonepose->quat, frontlerp, quaternion );
-		Quat_Matrix( quaternion, pose->axis );
-		pose->axis[0][0] *= e->scale; pose->axis[0][1] *= e->scale; pose->axis[0][2] *= e->scale;
-		pose->axis[1][0] *= e->scale; pose->axis[1][1] *= e->scale; pose->axis[1][2] *= e->scale;
-		pose->axis[2][0] *= e->scale; pose->axis[2][1] *= e->scale; pose->axis[2][2] *= e->scale;
-		pose->origin[0] = oldbonepose->origin[0] + (bonepose->origin[0] - oldbonepose->origin[0]) * frontlerp;
-		pose->origin[1] = oldbonepose->origin[1] + (bonepose->origin[1] - oldbonepose->origin[1]) * frontlerp;
-		pose->origin[2] = oldbonepose->origin[2] + (bonepose->origin[2] - oldbonepose->origin[2]) * frontlerp;
+		Quat_Matrix( quaternion, out->axis );
+		out->axis[0][0] *= e->scale; out->axis[0][1] *= e->scale; out->axis[0][2] *= e->scale;
+		out->axis[1][0] *= e->scale; out->axis[1][1] *= e->scale; out->axis[1][2] *= e->scale;
+		out->axis[2][0] *= e->scale; out->axis[2][1] *= e->scale; out->axis[2][2] *= e->scale;
+		out->origin[0] = oldbonepose->origin[0] + (bonepose->origin[0] - oldbonepose->origin[0]) * frontlerp;
+		out->origin[1] = oldbonepose->origin[1] + (bonepose->origin[1] - oldbonepose->origin[1]) * frontlerp;
+		out->origin[2] = oldbonepose->origin[2] + (bonepose->origin[2] - oldbonepose->origin[2]) * frontlerp;
 	}
-
-	skmverts = mesh->vertexes;
-	for( j = 0; j < mesh->numverts; j++, skmverts++ ) {
-		VectorCopy( move, tempVertexArray[j] );
-		VectorClear( tempNormalsArray[j] );
-
-		for( l = 0, boneverts = skmverts->verts; l < skmverts->numbones; l++, boneverts++ ) {
-			pose = skmbonepose + boneverts->bonenum;
-
-			for( k = 0; k < 3; k++ ) {
-				tempVertexArray[j][k] += boneverts->origin[0] * pose->axis[k][0] +
-					boneverts->origin[1] * pose->axis[k][1] +
-					boneverts->origin[2] * pose->axis[k][2] +
-					boneverts->influence * pose->origin[k];
-				tempNormalsArray[j][k] += boneverts->normal[0] * pose->axis[k][0] +
-					boneverts->normal[1] * pose->axis[k][1] +
-					boneverts->normal[2] * pose->axis[k][2];
-			}
-		}
-
-		VectorNormalizeFast( tempNormalsArray[j] );
-	}
-
-	if( shadow ) {
-		skm_mesh.stArray = NULL;
-#if SHADOW_VOLUMES
-		skm_mesh.trneighbors = mesh->trneighbors;
-#endif
-	} else {
-		skm_mesh.stArray = mesh->stcoords;
-#if SHADOW_VOLUMES
-		skm_mesh.trneighbors = NULL;
-#endif
-	}
-
-	skm_mesh.indexes = mesh->indexes;
-	skm_mesh.numIndexes = mesh->numtris * 3;
-	skm_mesh.numVertexes = mesh->numverts;
-	skm_mesh.xyzArray = tempVertexArray;
-	skm_mesh.normalsArray = tempNormalsArray;
-#if SHADOW_VOLUMES
-	skm_mesh.trnormals = NULL;
-#endif
 
 	features = MF_NONBATCHED | mb->shader->features;
 	if( r_shownormals->integer && !shadow )
@@ -624,6 +586,60 @@ void R_DrawBonesFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 		features |= MF_NOCULL;
 	if( shadow )
 		features |= MF_DEFORMVS;
+
+	if( (features & MF_NORMALS) && !shadow ) {
+		for( j = 0, skmverts = mesh->vertexes; j < mesh->numverts; j++, skmverts++ ) {
+			VectorCopy( move, inVertsArray[j] );
+			VectorClear( inNormalsArray[j] );
+
+			for( l = 0, boneverts = skmverts->verts; l < skmverts->numbones; l++, boneverts++ ) {
+				pose = skmbonepose + boneverts->bonenum;
+
+				for( k = 0; k < 3; k++ ) {
+					inVertsArray[j][k] += boneverts->origin[0] * pose->axis[k][0] +
+						boneverts->origin[1] * pose->axis[k][1] +
+						boneverts->origin[2] * pose->axis[k][2] +
+						boneverts->influence * pose->origin[k];
+					inNormalsArray[j][k] += boneverts->normal[0] * pose->axis[k][0] +
+						boneverts->normal[1] * pose->axis[k][1] +
+						boneverts->normal[2] * pose->axis[k][2];
+				}
+			}
+
+			VectorNormalizeFast( inNormalsArray[j] );
+		}
+	} else {
+		for( j = 0, skmverts = mesh->vertexes; j < mesh->numverts; j++, skmverts++ ) {
+			VectorCopy( move, inVertsArray[j] );
+
+			for( l = 0, boneverts = skmverts->verts; l < skmverts->numbones; l++, boneverts++ ) {
+				pose = skmbonepose + boneverts->bonenum;
+
+				for( k = 0; k < 3; k++ ) {
+					inVertsArray[j][k] += boneverts->origin[0] * pose->axis[k][0] +
+						boneverts->origin[1] * pose->axis[k][1] +
+						boneverts->origin[2] * pose->axis[k][2] +
+						boneverts->influence * pose->origin[k];
+				}
+			}
+		}
+	}
+
+	if( (features & MF_STVECTORS) && !shadow )
+		R_BuildTangentVectors( mesh->numverts, inVertsArray, mesh->stcoords, mesh->numtris, mesh->indexes, inSVectorsArray, inTVectorsArray );
+
+	skm_mesh.indexes = mesh->indexes;
+	skm_mesh.numIndexes = mesh->numtris * 3;
+	skm_mesh.numVertexes = mesh->numverts;
+	skm_mesh.xyzArray = inVertsArray;
+	skm_mesh.stArray = mesh->stcoords;
+	skm_mesh.normalsArray = inNormalsArray;
+	skm_mesh.sVectorsArray = inSVectorsArray;
+	skm_mesh.tVectorsArray = inTVectorsArray;
+#if SHADOW_VOLUMES
+	skm_mesh.trneighbors = mesh->trneighbors;
+	skm_mesh.trnormals = NULL;
+#endif
 
 	R_RotateForEntity( e );
 
@@ -636,7 +652,7 @@ void R_DrawBonesFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 		} else {
 #if SHADOW_VOLUMES
 			R_SkeletalModelBBox( e, mod );
-			R_DrawShadowVolumes( &skm_mesh, skm_mins, skm_maxs, skm_radius );
+			R_DrawShadowVolumes( &skm_mesh, e->lightingOrigin, skm_mins, skm_maxs, skm_radius );
 #endif
 		}
 	}
@@ -647,7 +663,7 @@ void R_DrawBonesFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 R_DrawSkeletalModel
 =================
 */
-void R_DrawSkeletalModel( meshbuffer_t *mb, qboolean shadow )
+void R_DrawSkeletalModel( const meshbuffer_t *mb, qboolean shadow )
 {
 	entity_t *e = mb->entity;
 
@@ -662,7 +678,7 @@ void R_DrawSkeletalModel( meshbuffer_t *mb, qboolean shadow )
 	if( !r_lerpmodels->integer )
 		e->backlerp = 0;
 
-	R_DrawBonesFrameLerp ( mb, R_SkeletalModelLODForDistance( e ), e->backlerp, shadow );
+	R_DrawBonesFrameLerp( mb, R_SkeletalModelLODForDistance( e ), e->backlerp, shadow );
 
 	if( e->flags & RF_WEAPONMODEL )
 		qglDepthRange( gldepthmin, gldepthmax );
@@ -690,7 +706,7 @@ void R_AddSkeletalModelToList( entity_t *e )
 		return;
 
 	R_SkeletalModelBBox ( e, mod );
-	if( !r_shadows->integer && R_CullSkeletalModel( e, mod ) )
+	if( !r_shadows->integer && R_CullSkeletalModel( e ) )
 		return;
 
 	mesh = skmodel->meshes;

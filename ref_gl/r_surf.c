@@ -36,6 +36,20 @@ static vec3_t	modelmaxs;
 
 /*
 =================
+R_SurfPotentiallyVisible
+=================
+*/
+qboolean R_SurfPotentiallyVisible( msurface_t *surf )
+{
+	if( surf->shaderref->flags & SURF_NODRAW )
+		return qfalse;
+	if( !surf->mesh || R_InvalidMesh( surf->mesh ) )
+		return qfalse;
+	return qtrue;
+}
+
+/*
+=================
 R_AddSurfaceToList
 =================
 */
@@ -46,22 +60,35 @@ void R_AddSurfaceToList( msurface_t *surf, int clipflags )
 	meshbuffer_t *mb;
 
 	surf->visframe = r_framecount;
-
-	if( surf->shaderref->flags & SURF_NODRAW )
-		return;
-
 	shader = surf->shaderref->shader;
 
 	// flare
 	if( surf->facetype == FACETYPE_FLARE ) {
-		if ( r_flares->integer )
+		if( r_flares->integer && r_flarefade->value ) {
+		if( !r_nocull->integer ) {
+				vec3_t origin;
+
+				if( currentmodel != r_worldmodel ) {
+					Matrix_TransformVector( currententity->axis, surf->origin, origin );
+					VectorAdd( origin, currententity->origin, origin );
+				} else {
+					VectorCopy( surf->origin, origin );
+				}
+
+				// cull it because we don't want to sort unneeded things
+				if( ( origin[0] - r_origin[0] ) * vpn[0] +
+					( origin[1] - r_origin[1] ) * vpn[1] + 
+					( origin[2] - r_origin[2] ) * vpn[2] < 0 )
+					return;
+				if( R_CullSphere( origin, 1, clipflags ) )
+					return;
+			}
 			R_AddMeshToList( MB_MODEL, surf->fog, shader, surf - currentmodel->surfaces + 1 );
+		}
 		return;
 	}
 
-	if( !(mesh = surf->mesh) || R_InvalidMesh( mesh ) )
-		return;
-
+	mesh = surf->mesh;
 	if( !r_nocull->integer ) {
 		if ( surf->facetype == FACETYPE_PLANAR && r_faceplanecull->integer && !VectorCompare(surf->origin, vec3_origin) && (shader->flags & (SHADER_CULL_FRONT|SHADER_CULL_BACK)) ) {
 			float dot;
@@ -148,28 +175,13 @@ void R_AddBrushModelToList( entity_t *e )
 		Matrix_TransformVector( e->axis, temp, modelorg );
 	}
 
-	if( r_dynamiclight->integer && r_numDlights && !(r_vertexlight->integer || r_fullbright->integer) ) {
-		int			k, bit;
-		dlight_t	*lt;
+	R_MarkLightsBmodel( e, modelmins, modelmaxs );
 
-		lt = r_dlights;
-		for( k = 0; k < r_numDlights; k++, lt++ ) {
-			if( !BoundsAndSphereIntersect( modelmins, modelmaxs, lt->origin, lt->intensity ) )
-				continue;
-
-			bit = 1<<k;
-			psurf = model->firstmodelsurface;
-			for( i = 0; i < model->nummodelsurfaces; i++, psurf++ ) {
-				if( psurf->mesh && (psurf->facetype != FACETYPE_FLARE) )
-					R_SurfMarkLight( bit, psurf );
-			}
+	for( i = 0, psurf = model->firstmodelsurface; i < model->nummodelsurfaces; i++, psurf++ ) {
+		if( R_SurfPotentiallyVisible( psurf ) ) {
+			if( psurf->visframe != r_framecount )
+				R_AddSurfaceToList( psurf, 0 );
 		}
-	}
-
-	psurf = model->firstmodelsurface;
-	for( i = 0; i < model->nummodelsurfaces; i++, psurf++ ) {
-		if( psurf->visframe != r_framecount )
-			R_AddSurfaceToList( psurf, 0 );
 	}
 }
 
@@ -223,15 +235,15 @@ void R_RecursiveWorldNode( mnode_t *node, int clipflags )
 			return;		// not visible
 	}
 
-	if( !(i = pleaf->nummarksurfaces) )
+	if( !pleaf->firstVisSurface )
 		return;
 
-	mark = pleaf->firstmarksurface;
+	mark = pleaf->firstVisSurface;
 	do {
 		surf = *mark++;
 		if( surf->visframe != r_framecount )
 			R_AddSurfaceToList( surf, clipflags );
-	} while( --i );
+	} while( *mark );
 
 	c_world_leafs++;
 }
@@ -256,12 +268,18 @@ void R_DrawWorld( void )
 	currentmodel = currententity->model;
 
 	R_ClearSkyBox ();
-	R_MarkLights ();
 
-	if( r_nocull->integer )
-		R_RecursiveWorldNode( currentmodel->nodes, 0 );
-	else
-		R_RecursiveWorldNode( currentmodel->nodes, 15 );
+	if( r_speeds->integer )
+		r_mark_lights = Sys_Milliseconds ();
+	R_MarkLightsWorldNode ();
+	if( r_speeds->integer )
+		r_mark_lights = Sys_Milliseconds () - r_mark_lights;
+
+	if( r_speeds->integer )
+		r_world_node = Sys_Milliseconds ();
+	R_RecursiveWorldNode( currentmodel->nodes, (r_nocull->integer ? 0 : 15) );
+	if( r_speeds->integer )
+		r_world_node = Sys_Milliseconds () - r_world_node;
 }
 
 

@@ -289,18 +289,16 @@ trigger_push
 
 void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, int surfFlags)
 {
+	edict_t *event;
 	float time, dist, f;
 	vec3_t origin, velocity;
 
-	if ( self->wait >= level.time ) {
+	if( self->wait >= level.time )
 		return;
-	}
-	if ( !other->r.client ) {
+	if( !other->r.client )
 		return;
-	}
-	if ( other->r.client->ps.pmove.pm_type != PM_NORMAL ) {
+	if( other->r.client->ps.pmove.pm_type != PM_NORMAL )
 		return;
-	}
 
 	VectorAdd( self->r.absmin, self->r.absmax, origin );
 	VectorScale ( origin, 0.5, origin );
@@ -315,7 +313,7 @@ void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, int sur
 	f = dist / time;
 	VectorScale (velocity, f, velocity);
 	velocity[2] = time * sv_gravity->value;
-	
+
 	CTFPlayerResetGrapple ( other );
 
 	other->r.client->jumppad_time = level.time;
@@ -325,7 +323,10 @@ void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, int sur
 	VectorCopy ( other->velocity, other->r.client->oldvelocity );
 
 	// add an event
-	G_AddEvent ( other, EV_JUMP_PAD, self - game.edicts, qtrue );
+	event = G_SpawnEvent( EV_JUMP_PAD, 0, other->s.origin );
+	event->r.svflags = SVF_NOOLDORIGIN;
+	event->s.ownerNum = other - game.edicts;
+	event->s.targetNum = self - game.edicts;
 
 	if ( !(self->spawnflags & PUSH_ONCE) )
 	{
@@ -503,7 +504,7 @@ void trigger_monsterjump_touch (edict_t *self, edict_t *other, cplane_t *plane, 
 {
 	if (other->flags & (FL_FLY | FL_SWIM) )
 		return;
-	if (other->s.effects & EF_CORPSE)
+	if (other->r.svflags & SVF_CORPSE)
 		return;
 	if ( !(other->r.svflags & SVF_MONSTER))
 		return;
@@ -589,14 +590,15 @@ static void old_teleporter_touch (edict_t *self, edict_t *other, cplane_t *plane
 	event->s.ownerNum = other - game.edicts;
 
 	// set angles
-	for (i=0 ; i<3 ; i++)
-		other->r.client->ps.pmove.delta_angles[i] = ANGLE2SHORT(dest->s.angles[i] - other->r.client->resp.cmd_angles[i]);
-
 	other->s.angles[PITCH] = 0;
 	other->s.angles[YAW] = dest->s.angles[YAW];
 	other->s.angles[ROLL] = 0;
 	VectorCopy (dest->s.angles, other->r.client->ps.viewangles);
 	VectorCopy (dest->s.angles, other->r.client->v_angle);
+
+	// set the delta angle
+	for (i=0 ; i<3 ; i++)
+		other->r.client->ps.pmove.delta_angles[i] = ANGLE2SHORT(other->s.angles[i] - other->r.client->resp.cmd_angles[i]);
 
 	// give a little forward velocity
 	AngleVectors (other->r.client->v_angle, forward, NULL, NULL);

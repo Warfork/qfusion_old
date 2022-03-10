@@ -77,6 +77,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #  define CPUSTRING	"AXP"
 # endif
 
+// doh, some compilers need a _ prefix for variables so they can be 
+// used in asm code
+# ifdef __GNUC__	// mingw
+#  define VAR(x)	"_"#x
+# else
+#  define VAR(x)	#x
+# endif
+
 #endif
 
 //==============================================
@@ -87,7 +95,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 # define HAVE_STRCASECMP
 
-# define GL_FORCEFINISH
+//# define GL_FORCEFINISH
 # define GL_DRIVERNAME	"libGL.so.1"
 
 # define VORBISFILE_LIBNAME	"libvorbisfile.so"
@@ -101,6 +109,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # else
 #  define CPUSTRING "Unknown"
 # endif
+
+# define VAR(x)	#x
 
 #endif
 
@@ -146,7 +156,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # endif
 #endif
 
-#if (defined(_M_IX86) || defined(__i386__)) && !defined(C_ONLY)
+#if (defined(_M_IX86) || defined(__i386__) || defined(__ia64__)) && !defined(C_ONLY)
 # define id386
 #else
 # ifdef id386
@@ -193,6 +203,7 @@ typedef enum {qfalse, qtrue}	qboolean;
 //
 #define	MAX_CLIENTS			256		// absolute limit
 #define	MAX_EDICTS			1024	// must change protocol to increase more
+#define	MAX_LIGHTSTYLES		256
 #define	MAX_MODELS			256		// these are sent over the net as bytes
 #define	MAX_SOUNDS			256		// so they cannot be blindly increased
 #define	MAX_IMAGES			256
@@ -226,12 +237,15 @@ typedef vec_t vec3_t[3];
 typedef vec_t vec4_t[4];
 typedef vec_t vec5_t[5];
 
+typedef vec_t quat_t[4];
+
 typedef qbyte byte_vec4_t[4];
 
 struct cplane_s;
 
 extern vec3_t vec3_origin;
 extern vec3_t axis_identity[3];
+extern quat_t quat_identity;
 
 #define	nanmask (255<<23)
 
@@ -376,6 +390,20 @@ void Matrix_EulerAngles( vec3_t m[3], vec3_t angles );
 void Matrix_Rotate( vec3_t m[3], vec_t angle, vec_t x, vec_t y, vec_t z );
 void Matrix_FromPoints( const vec3_t v1, const vec3_t v2, const vec3_t v3, vec3_t m[3] );
 
+void Quat_Identity( quat_t q );
+void Quat_Copy( const quat_t q1, quat_t q2 );
+qboolean Quat_Compare( const quat_t q1, const quat_t q2 );
+void Quat_Conjugate( const quat_t q1, quat_t q2 );
+vec_t Quat_Normalize( quat_t q );
+vec_t Quat_Inverse( const quat_t q1, quat_t q2 );
+void Quat_Multiply( const quat_t q1, const quat_t q2, quat_t out );
+void Quat_Lerp( const quat_t q1, const quat_t q2, vec_t t, quat_t out );
+void Quat_Vectors( const quat_t q, vec3_t f, vec3_t r, vec3_t u );
+void Quat_Matrix( const quat_t q, vec3_t m[3] );
+void Matrix_Quat( vec3_t m[3], quat_t q );
+void Quat_TransformVector( const quat_t q, const vec3_t v, vec3_t out );
+void Quat_ConcatTransforms( const quat_t q1, const vec3_t v1, const quat_t q2, const vec3_t v2, quat_t q, vec3_t v );
+
 //=============================================
 
 char *COM_SkipPath (char *pathname);
@@ -440,6 +468,7 @@ void Q_strncpyz( char *dest, const char *src, size_t size );
 void Q_strncatz( char *dest, const char *src, size_t size );
 void Q_snprintfz( char *dest, size_t size, const char *fmt, ... );
 char *Q_strlwr( char *s );
+qboolean Q_WildCmp( const char *pattern, const char *text );
 
 //=============================================
 #if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
@@ -695,7 +724,7 @@ typedef struct
 	int			pm_flags;		// ducked, jump_held, etc
 	int			pm_time;		// each unit = 8 ms
 	int			gravity;
-	int			delta_angles[3];	// add to command angles to get view direction
+	short		delta_angles[3];	// add to command angles to get view direction
 									// changed by spawns, rotating objects, and teleporters
 } pmove_state_t;
 
@@ -756,7 +785,7 @@ typedef struct
 // even if it has a zero index model.
 #define	EF_ROTATE_AND_BOB	1		// rotate and bob (bonus items)
 #define EF_POWERSCREEN		2
-#define EF_CORPSE			4		// treat as CONTENTS_CORPSE for collision
+#define EF_CORPSE			4		// treat as CONTENTS_CORPSE for collision (for clients)
 #define	EF_QUAD				8
 #define	EF_PENT				16
 #define EF_FLAG1			32
@@ -812,10 +841,13 @@ typedef enum
 ==========================================================
 */
 
-#define	ANGLE2SHORT(x)	(Q_rint((x)*65536/360) & 65535)
+// note that Q_rint was causing problems here
+// (spawn looking straight up\down at delta_angles wrapping)
+
+#define	ANGLE2SHORT(x)	((int)((x)*65536/360) & 65535)
 #define	SHORT2ANGLE(x)	((x)*(360.0/65536))
 
-#define	ANGLE2BYTE(x)	(Q_rint((x)*256/360) & 255)
+#define	ANGLE2BYTE(x)	((int)((x)*256/360) & 255)
 #define	BYTE2ANGLE(x)	((x)*(360.0/256))
 
 //
@@ -836,7 +868,8 @@ typedef enum
 #define	CS_MODELS			32
 #define	CS_SOUNDS			(CS_MODELS+MAX_MODELS)
 #define	CS_IMAGES			(CS_SOUNDS+MAX_SOUNDS)
-#define	CS_ITEMS			(CS_IMAGES+MAX_IMAGES)
+#define	CS_LIGHTS			(CS_IMAGES+MAX_IMAGES)
+#define	CS_ITEMS			(CS_LIGHTS+MAX_LIGHTSTYLES)
 #define	CS_PLAYERSKINS		(CS_ITEMS+MAX_ITEMS)
 #define CS_GENERAL			(CS_PLAYERSKINS+MAX_CLIENTS)
 #define	MAX_CONFIGSTRINGS	(CS_GENERAL+MAX_GENERAL)

@@ -32,14 +32,14 @@ packet header
 
 The remote connection never knows if it missed a reliable message, the
 local side detects that it has been dropped by seeing a sequence acknowledge
-higher thatn the last reliable sequence, but without the correct evon/odd
+higher than the last reliable sequence, but without the correct even/odd
 bit for the reliable set.
 
 If the sender notices that a reliable message has been dropped, it will be
-retransmitted.  It will not be retransmitted again until a message after
+retransmitted. It will not be retransmitted again until a message after
 the retransmit has been acknowledged and the reliable still failed to get there.
 
-if the sequence number is -1, the packet should be handled without a netcon
+If the sequence number is -1, the packet should be handled without a netcon.
 
 The reliable message can be added to at any time by doing
 MSG_Write* (&netchan->message, <data>).
@@ -55,7 +55,7 @@ To the receiver, there is no distinction between the reliable and unreliable
 parts of the message, they are just processed out as a single larger message.
 
 Illogical packet sequence numbers cause the packet to be dropped, but do
-not kill the connection.  This, combined with the tight window of valid
+not kill the connection. This, combined with the tight window of valid
 reliable acknowledgement numbers provides protection against malicious
 address spoofing.
 
@@ -64,7 +64,7 @@ The qport field is a workaround for bad address translating routers that
 sometimes remap the client's source port on a packet during gameplay.
 
 If the base part of the net address matches and the qport matches, then the
-channel matches even if the IP port differs.  The IP port should be updated
+channel matches even if the IP port differs. The IP port should be updated
 to the new value before sending out any replies.
 
 

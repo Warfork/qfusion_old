@@ -537,7 +537,7 @@ void CG_DrawModel ( int x, int y, int w, int h, struct model_s *model, struct sh
 CG_DrawHUDModel
 ================
 */
-void CG_DrawHUDModel ( int x, int y, int w, int h, struct model_s *model, struct shader_s *shader, float yawspeed )
+void CG_DrawHUDModel( int x, int y, int w, int h, struct model_s *model, struct shader_s *shader, float yawspeed )
 {
 	vec3_t mins, maxs;
 	vec3_t origin, angles;

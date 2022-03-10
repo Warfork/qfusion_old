@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "r_local.h"
 
-#define		QSORT_MAX_STACKDEPTH	4096
+#define		QSORT_MAX_STACKDEPTH	2048
 
 float		r_flarescale;
 
@@ -47,10 +47,8 @@ R_CopyMeshBuffer
 
 #define R_MBCmp(mb1,mb2) \
 	(\
-		(mb1).shader->sort > (mb2).shader->sort ? qtrue : \
-		(mb1).shader->sort < (mb2).shader->sort ? qfalse : \
-		(mb1).shader > (mb2).shader ? qtrue : \
-		(mb1).shader < (mb2).shader ? qfalse : \
+		(mb1).shader->sortkey > (mb2).shader->sortkey ? qtrue : \
+		(mb1).shader->sortkey < (mb2).shader->sortkey ? qfalse : \
 		(mb1).sortkey > (mb2).sortkey ? qtrue : \
 		(mb1).sortkey < (mb2).sortkey ? qfalse : \
 		(mb1).dlightbits > (mb2).dlightbits \
@@ -67,23 +65,23 @@ static void R_QSortMeshBuffers( meshbuffer_t *meshes, int Li, int Ri )
 {
 	int li, ri, stackdepth = 0, total = Ri + 1;
 	meshbuffer_t median, tempbuf;
-	int localstack[QSORT_MAX_STACKDEPTH];
+	int lstack[QSORT_MAX_STACKDEPTH], rstack[QSORT_MAX_STACKDEPTH];
 
 mark0:
-	if( Ri - Li < 48 ) {
+	if( Ri - Li > 8 ) {
 		li = Li;
 		ri = Ri;
 
 		R_MBCopy( meshes[(Li+Ri) >> 1], median );
 
 		if( R_MBCmp( meshes[Li], median ) ) {
-			if( R_MBCmp(meshes[Ri], meshes[Li]) ) 
+			if( R_MBCmp( meshes[Ri], meshes[Li] ) ) 
 				R_MBCopy( meshes[Li], median );
-		} else if( R_MBCmp(median, meshes[Ri]) ) {
+		} else if( R_MBCmp( median, meshes[Ri] ) ) {
 			R_MBCopy( meshes[Ri], median );
 		}
 
-		while( li < ri ) {
+		do {
 			while( R_MBCmp( median, meshes[li] ) ) li++;
 			while( R_MBCmp( meshes[ri], median ) ) ri--;
 
@@ -95,11 +93,12 @@ mark0:
 				li++;
 				ri--;
 			}
-		}
+		} while( li < ri );
 
 		if( (Li < ri) && (stackdepth < QSORT_MAX_STACKDEPTH) ) {
-			localstack[stackdepth++] = li;
-			localstack[stackdepth++] = Ri;
+			lstack[stackdepth] = li;
+			rstack[stackdepth] = Ri;
+			stackdepth++;
 			li = Li;
 			Ri = ri;
 			goto mark0;
@@ -111,8 +110,9 @@ mark0:
 		}
 	}
 	if( stackdepth ) {
-		Ri = ri = localstack[--stackdepth];
-		Li = li = localstack[--stackdepth];
+		--stackdepth;
+		Ri = ri = rstack[stackdepth];
+		Li = li = lstack[stackdepth];
 		goto mark0;
 	}
 
@@ -197,23 +197,27 @@ meshbuffer_t *R_AddMeshToList( int type, mfog_t *fog, shader_t *shader, int info
 	if( infokey > 0 ) {
 		msurface_t *surf = &currentmodel->surfaces[infokey-1];
 
-		if( surf->lightmapnum > -1 )
-			meshbuf->sortkey |= ((surf->lightmapnum+1) << 11);
+		meshbuf->sortkey |= ((surf->superLightStyle+1) << 9);
 		if( surf->dlightbits && (surf->dlightframe == r_framecount) )
 			meshbuf->dlightbits = surf->dlightbits;
 	}
+
+#if (defined(ENDIAN_BIG) || !defined(ENDIAN_LITTLE))
+	meshbuf->sortkey = LittleLong( meshbuf->sortkey );
+	meshbuf->dlightbits = LittleLong( meshbuf->dlightbits );
+#endif
 
 	return meshbuf;
 }
 
 /*
 ================
-R_DrawMeshBuffer
+R_BatchMeshBuffer
 
 Draw the mesh or batch it.
 ================
 */
-inline void R_DrawMeshBuffer( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean shadow )
+static inline void R_BatchMeshBuffer( const meshbuffer_t *mb, const meshbuffer_t *nextmb, qboolean shadow )
 {
 	int type, features;
 	qboolean nextFlare, deformvBulge;
@@ -235,7 +239,7 @@ inline void R_DrawMeshBuffer( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean s
 				case mod_brush:
 					if( shadow )
 						break;
-					surf = mb->infokey > 0 ? &currentmodel->surfaces[mb->infokey-1] : NULL;
+					surf = &currentmodel->surfaces[mb->infokey-1];
 					nextSurf = ( (nextmb && nextmb->infokey > 0) ? &nextmb->entity->model->surfaces[nextmb->infokey-1] : NULL );
 
 					deformvBulge = ( (shader->flags & SHADER_DEFORMV_BULGE) != 0 );
@@ -246,6 +250,7 @@ inline void R_DrawMeshBuffer( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean s
 						features |= MF_NORMALS;
 					if( shader->flags & SHADER_AUTOSPRITE )
 						features |= MF_NOCULL;
+					features |= r_superLightStyles[surf->superLightStyle].features;
 
 					if( shader->flags & SHADER_FLARE )
 						R_PushFlareSurf( mb );
@@ -260,11 +265,9 @@ inline void R_DrawMeshBuffer( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean s
 						|| nextmb->shader != mb->shader
 						|| nextmb->dlightbits != mb->dlightbits
 						|| deformvBulge || (nextmb->shader->flags & SHADER_DEFORMV_BULGE)
-						|| (nextFlare ? R_SpriteOverflow () : R_BackendOverflow (nextSurf->mesh)) ) {
+						|| (nextFlare ? R_SpriteOverflow () : R_MeshOverflow( nextSurf->mesh )) ) {
 
-						if( shader->flags & SHADER_FLARE )
-							R_TranslateForEntity( currententity );
-						else if( currentmodel != r_worldmodel )
+						if( (currentmodel != r_worldmodel) && !(shader->flags & SHADER_FLARE) )
 							R_RotateForEntity( currententity );
 						else
 							R_LoadIdentity ();
@@ -365,7 +368,7 @@ void R_DrawMeshes( qboolean triangleOutlines )
 					if( !triangleOutlines )
 						R_DrawPortalSurface( meshbuf );
 				}
-				R_DrawMeshBuffer( meshbuf, meshbuf+1, qfalse );
+				R_BatchMeshBuffer( meshbuf, meshbuf+1, qfalse );
 			}
 		}
 
@@ -380,7 +383,7 @@ void R_DrawMeshes( qboolean triangleOutlines )
 				if( !triangleOutlines )
 					R_DrawPortalSurface( meshbuf );
 			}
-			R_DrawMeshBuffer( meshbuf, NULL, qfalse );
+			R_BatchMeshBuffer( meshbuf, NULL, qfalse );
 		}
 	}
 
@@ -429,8 +432,8 @@ void R_DrawMeshes( qboolean triangleOutlines )
 
 		meshbuf = r_currentlist->meshbuffer;
 		for( i = 0; i < r_currentlist->num_meshes - 1; i++, meshbuf++ )
-			R_DrawMeshBuffer( meshbuf, meshbuf+1, qtrue );
-		R_DrawMeshBuffer( meshbuf, NULL, qtrue );
+			R_BatchMeshBuffer( meshbuf, meshbuf+1, qtrue );
+		R_BatchMeshBuffer( meshbuf, NULL, qtrue );
 
 		if( !triangleOutlines ) {
 			if( r_shadows->integer == 1 ) {
@@ -454,8 +457,8 @@ void R_DrawMeshes( qboolean triangleOutlines )
 	if( r_currentlist->num_additive_meshes ) {
 		meshbuf = r_currentlist->meshbuffer_additives;
 		for( i = 0; i < r_currentlist->num_additive_meshes - 1; i++, meshbuf++ )
-			R_DrawMeshBuffer( meshbuf, meshbuf + 1, qfalse );
-		R_DrawMeshBuffer( meshbuf, NULL, qfalse );
+			R_BatchMeshBuffer( meshbuf, meshbuf + 1, qfalse );
+		R_BatchMeshBuffer( meshbuf, NULL, qfalse );
 	}
 
 	R_LoadIdentity ();
@@ -498,7 +501,7 @@ qboolean R_ScissorForPortal( entity_t *ent, msurface_t *surf )
 	x1 = y1 = 999999;
 	x2 = y2 = -999999;
 	for( i = 0; i < 8; i++ ) {	// compute and rotate a full bounding box
-		vec2_t v;
+		vec3_t v;
 		vec3_t tmp, corner;
 
 		tmp[0] = ( ( i & 1 ) ? surf->mins[0] : surf->maxs[0] );
@@ -507,7 +510,7 @@ qboolean R_ScissorForPortal( entity_t *ent, msurface_t *surf )
 
 		Matrix_TransformVector( ent->axis, tmp, corner );
 		VectorMA( ent->origin, ent->scale, corner, corner );
-		R_TransformToScreen_Vec2( corner, v );
+		R_TransformToScreen_Vec3( corner, v );
 
 		x1 = min( x1, v[0] ); y1 = min( y1, v[1] );
 		x2 = max( x2, v[0] ); y2 = max( y2, v[1] );
@@ -576,7 +579,7 @@ void R_DrawPortalSurface( meshbuffer_t *mb )
 	if( ( dist = PlaneDiff( r_origin, portal_plane ) ) <= BACKFACE_EPSILON )
 		return;
 
-	for( i = 0, ent = r_entities; i < r_numEntities; i++, ent++ ) {
+	for( i = 1, ent = r_entities; i < r_numEntities; i++, ent++ ) {
 		if( ent->rtype == RT_PORTALSURFACE ) {
 			d = PlaneDiff( ent->origin, &original_plane );
 			if( (d >= -64) && (d <= 64) ) {
@@ -770,4 +773,66 @@ void R_DrawCubemapView( vec3_t origin, vec3_t angles, int size )
 	R_RenderScene( &r_refdef );
 
 	r_oldviewcluster = r_viewcluster = -1;	// force markleafs next frame
+}
+
+/*
+===============
+R_BuildTangentVectors
+===============
+*/
+void R_BuildTangentVectors( int numVertexes, vec3_t *xyzArray, vec2_t *stArray, int numTris, index_t *indexes, vec3_t *sVectorsArray, vec3_t *tVectorsArray )
+{
+	int i, j;
+	float d, *v[3], *tc[3];
+	vec3_t stvec[3], normal;
+
+	// assuming arrays have already been allocated
+	// this also does some nice precaching
+	memset( sVectorsArray, 0, numVertexes * sizeof( *sVectorsArray ) );
+	memset( tVectorsArray, 0, numVertexes * sizeof( *tVectorsArray ) );
+
+	for( i = 0; i < numTris; i++, indexes += 3 ) {
+		for( j = 0; j < 3; j++ ) {
+			v[j] = ( float * )( xyzArray + indexes[j] );
+			tc[j] = ( float * )( stArray + indexes[j] );
+		}
+
+		// calculate two mostly perpendicular edge directions
+		VectorSubtract( v[0], v[1], stvec[0] );
+		VectorSubtract( v[2], v[1], stvec[1] );
+
+		// we have two edge directions, we can calculate the normal then
+		CrossProduct( stvec[0], stvec[1], normal );
+		VectorNormalize( normal );
+
+		for( j = 0; j < 3; j++ ) {
+			stvec[0][j] = ((tc[1][1] - tc[0][1]) * (v[2][j] - v[0][j]) - (tc[2][1] - tc[0][1]) * (v[1][j] - v[0][j]));
+			stvec[1][j] = ((tc[1][0] - tc[0][0]) * (v[2][j] - v[0][j]) - (tc[2][0] - tc[0][0]) * (v[1][j] - v[0][j]));
+		}
+
+		// keep s\t vectors orthogonal
+		for( j = 0; j < 2; j++ ) {
+			d = -DotProduct( stvec[j], normal );
+			VectorMA( stvec[j], d, normal, stvec[j] );
+			VectorNormalize( stvec[j] );
+		}
+
+		// inverse tangent vectors if needed
+		CrossProduct( stvec[1], stvec[0], stvec[2] );
+		if( DotProduct( stvec[2], normal ) < 0 ) {
+			VectorInverse( stvec[0] );
+			VectorInverse( stvec[1] );
+		}
+
+		for( j = 0; j < 3; j++ ) {
+			VectorAdd( sVectorsArray[indexes[j]], stvec[0], sVectorsArray[indexes[j]] );
+			VectorAdd( tVectorsArray[indexes[j]], stvec[1], tVectorsArray[indexes[j]] );
+		}
+	}
+
+	// normalize
+	for( i = 0; i < numVertexes; i++ ) {
+		VectorNormalize( sVectorsArray[i] );
+		VectorNormalize( tVectorsArray[i] );
+	}
 }

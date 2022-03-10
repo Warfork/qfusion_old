@@ -1,0 +1,949 @@
+[Project]
+FileName=qfusion.dev
+Name=qfusion
+Ver=1
+IsCpp=0
+Type=0
+Compiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WINDOWS -Wno-sign-compare_@@_
+CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WINDOWS -Wno-sign-compare_@@_
+Includes=qcommon;.\win32/include
+Linker=-lwinmm -lwsock32 -lkernel32 -luser32 -lgdi32 -ldxguid -lzstat -ljpegstat_@@_
+Libs=.\win32/lib/mingw
+UnitCount=89
+Folders="Source Files","Header Files","Resource Files"
+ObjFiles=
+PrivateResource=qfusion_private.rc
+ResourceIncludes=
+MakeIncludes=
+Icon=.\win32\qfusion.ico
+ExeOutput=.\release
+ObjectOutput=.\release
+OverrideOutput=0
+OverrideOutputName=qfusion.exe
+HostApplication=
+CommandLine=+set fs_basepath d:\quake3 +set logfile 2 +set deathmatch 1 +set ctf 0 +set vid_fullscreen 0 +set r_ignorehwgamma 1 +set developer 0 +set developerMemory 0
+IncludeVersionInfo=0
+SupportXPThemes=0
+CompilerSet=0
+CompilerSettings=0000000000010000000100
+UseCustomMakefile=0
+CustomMakefile=
+
+[Unit1]
+FileName=client\cin.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit2]
+FileName=client\cl_cin.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit3]
+FileName=client\cl_demo.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit4]
+FileName=client\cl_ents.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit5]
+FileName=client\cl_game.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit6]
+FileName=client\cl_input.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit7]
+FileName=client\cl_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit8]
+FileName=client\cl_parse.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit9]
+FileName=client\cl_screen.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit10]
+FileName=client\cl_ui.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit11]
+FileName=qcommon\cm_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit12]
+FileName=qcommon\cm_trace.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit13]
+FileName=qcommon\cmd.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit14]
+FileName=qcommon\common.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit15]
+FileName=win32\conproc.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit16]
+FileName=client\console.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit17]
+FileName=qcommon\cvar.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit18]
+FileName=qcommon\files.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit19]
+FileName=win32\glw_imp.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit20]
+FileName=qcommon\huff.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit21]
+FileName=win32\in_win.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit22]
+FileName=client\keys.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit23]
+FileName=qcommon\mdfour.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit24]
+FileName=qcommon\mem.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit25]
+FileName=qcommon\net_chan.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit26]
+FileName=win32\net_wins.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit27]
+FileName=qcommon\patch.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit28]
+FileName=game\q_math.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit29]
+FileName=game\q_shared.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit30]
+FileName=win32\qgl_win.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit31]
+FileName=ref_gl\r_alias.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit32]
+FileName=ref_gl\r_backend.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit33]
+FileName=ref_gl\r_cin.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit34]
+FileName=ref_gl\r_image.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit35]
+FileName=ref_gl\r_light.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit36]
+FileName=ref_gl\r_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit37]
+FileName=ref_gl\r_math.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit38]
+FileName=ref_gl\r_mesh.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit39]
+FileName=ref_gl\r_model.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit40]
+FileName=ref_gl\r_poly.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit41]
+FileName=ref_gl\r_shader.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit42]
+FileName=ref_gl\r_shadow.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit44]
+FileName=ref_gl\r_sky.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit45]
+FileName=ref_gl\r_surf.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit46]
+FileName=client\snd_dma.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit47]
+FileName=client\snd_mem.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit48]
+FileName=client\snd_mix.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit49]
+FileName=client\snd_ogg.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit50]
+FileName=win32\snd_win.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit51]
+FileName=server\sv_ccmds.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit52]
+FileName=server\sv_ents.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit53]
+FileName=server\sv_game.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit54]
+FileName=server\sv_init.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit55]
+FileName=server\sv_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit56]
+FileName=server\sv_send.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit57]
+FileName=server\sv_user.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit58]
+FileName=server\sv_world.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit59]
+FileName=win32\sys_win.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit60]
+FileName=win32\vid_win.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit61]
+FileName=client\cin.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit62]
+FileName=client\client.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit63]
+FileName=qcommon\cm_local.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit64]
+FileName=qcommon\cmodel.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit65]
+FileName=win32\conproc.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit66]
+FileName=client\console.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit67]
+FileName=client\input.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit68]
+FileName=client\keys.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit69]
+FileName=qcommon\mdfour.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit70]
+FileName=win32\net_wins.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit71]
+FileName=game\q_shared.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit72]
+FileName=qcommon\qcommon.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit73]
+FileName=qcommon\qfiles.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit74]
+FileName=ref_gl\qgl.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit75]
+FileName=ref_gl\r_backend.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit76]
+FileName=ref_gl\r_local.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit77]
+FileName=ref_gl\r_math.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit78]
+FileName=ref_gl\r_mesh.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit79]
+FileName=ref_gl\r_model.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit80]
+FileName=ref_gl\r_shader.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit81]
+FileName=ref_gl\r_shadow.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit83]
+FileName=server\server.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit84]
+FileName=client\snd_loc.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit85]
+FileName=client\sound.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit86]
+FileName=client\vid.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit87]
+FileName=win32\winquake.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit88]
+FileName=win32\qfusion.ico
+Folder="Resource Files"
+Compile=0
+CompileCpp=1
+Link=0
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit89]
+FileName=ref_gl\r_skin.c
+Folder=Source Files
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=$(CC) -c r_skin.c -o ./release/r_skin.o $(CFLAGS)
+
+[Unit90]
+FileName=ref_gl\r_skin.c
+Folder=Source Files
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=$(CC) -c r_skin.c -o ./release/r_skin.o $(CFLAGS)
+
+[VersionInfo]
+Major=0
+Minor=1
+Release=1
+Build=1
+LanguageID=1033
+CharsetID=1252
+CompanyName=
+FileVersion=0.1
+FileDescription=Developed using the Dev-C++ IDE
+InternalName=
+LegalCopyright=
+LegalTrademarks=
+OriginalFilename=qfusion.exe
+ProductName=qfusion
+ProductVersion=0.1
+AutoIncBuildNr=0
+
+[Unit43]
+FileName=ref_gl\r_skm.c
+CompileCpp=0
+Folder="Source Files"
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit82]
+FileName=ref_gl\render.h
+CompileCpp=1
+Folder="Header Files"
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+

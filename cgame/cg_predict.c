@@ -28,34 +28,30 @@ entity_state_t *cg_solidList[MAX_PARSE_ENTITIES];
 CG_CheckPredictionError
 ===================
 */
-void CG_CheckPredictionError (void)
+void CG_CheckPredictionError( void )
 {
 	int		frame;
 	int		delta[3];
-	int		incomingAcknowledged, outgoingSequence;
 
-	if ( !cg_predict->integer || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
+	if( !cg_predict->integer || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) )
 		return;
-	}
 
-	trap_NET_GetCurrentState ( &incomingAcknowledged, &outgoingSequence );
+	trap_NET_GetCurrentState( &frame, NULL );
 
 	// calculate the last usercmd_t we sent that the server has processed
-	frame = incomingAcknowledged & CMD_MASK;
+	frame = frame & CMD_MASK;
 
 	// compare what the server returned with what we had predicted it to be
-	VectorSubtract ( cg.frame.playerState.pmove.origin, cg.predictedOrigins[frame], delta );
+	VectorSubtract( cg.frame.playerState.pmove.origin, cg.predictedOrigins[frame], delta );
 
 	// save the prediction error for interpolation
-	if ( abs(delta[0]) > 128*16 || abs(delta[1]) > 128*16 || abs(delta[2]) > 128*16 ) {
-		VectorClear ( cg.predictionError );					// a teleport or something
+	if( abs(delta[0]) > 128*16 || abs(delta[1]) > 128*16 || abs(delta[2]) > 128*16 ) {
+		VectorClear( cg.predictionError );					// a teleport or something
 	} else {
-		if ( cg_showMiss->integer && (delta[0] || delta[1] || delta[2]) ) {
-			Com_Printf ("prediction miss on %i: %i\n", cg.frame.serverFrame, delta[0] + delta[1] + delta[2]);
-		}
-
-		VectorCopy ( cg.frame.playerState.pmove.origin, cg.predictedOrigins[frame] );
-		VectorScale ( delta, (1.0/16.0), cg.predictionError );	// save for error interpolation
+		if( cg_showMiss->integer && (delta[0] || delta[1] || delta[2]) )
+			CG_Printf( "prediction miss on %i: %i\n", cg.frame.serverFrame, delta[0] + delta[1] + delta[2] );
+		VectorCopy( cg.frame.playerState.pmove.origin, cg.predictedOrigins[frame] );
+		VectorScale( delta, (1.0/16.0), cg.predictionError );	// save for error interpolation
 	}
 }
 
@@ -64,20 +60,17 @@ void CG_CheckPredictionError (void)
 CG_BuildSolidList
 ====================
 */
-void CG_BuildSolidList (void)
+void CG_BuildSolidList( void )
 {
 	int	i, num;
 	entity_state_t *ent;
 
 	cg_numSolids = 0;
-	for ( i = 0; i < cg.frame.numEntities; i++ )
-	{
+	for( i = 0; i < cg.frame.numEntities; i++ ) {
 		num = (cg.frame.parseEntities + i) & (MAX_PARSE_ENTITIES-1);
 		ent = &cg_parseEntities[num];
-		if( !ent->solid )
-			continue;
-
-		cg_solidList[cg_numSolids++] = ent;
+		if( ent->solid )
+			cg_solidList[cg_numSolids++] = ent;
 	}
 }
 
@@ -86,7 +79,7 @@ void CG_BuildSolidList (void)
 CG_ClipMoveToEntities
 ====================
 */
-void CG_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask, trace_t *tr )
+void CG_ClipMoveToEntities( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask, trace_t *tr )
 {
 	int			i, x, zd, zu;
 	trace_t		trace;
@@ -95,8 +88,7 @@ void CG_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 	struct cmodel_s	*cmodel;
 	vec3_t		bmins, bmaxs;
 
-	for ( i = 0; i < cg_numSolids; i++ )
-	{
+	for( i = 0; i < cg_numSolids; i++ ) {
 		ent = cg_solidList[i];
 
 		if( ent->number == ignore )
@@ -105,13 +97,12 @@ void CG_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 			continue;
 
 		if ( ent->solid == SOLID_BMODEL ) {	// special value for bmodel
-			cmodel = trap_CM_InlineModel ( ent->modelindex );
-			if ( !cmodel ) {
+			cmodel = trap_CM_InlineModel( ent->modelindex );
+			if( !cmodel )
 				continue;
-			}
 
-			VectorCopy ( ent->origin, origin );
-			VectorCopy ( ent->angles, angles );
+			VectorCopy( ent->origin, origin );
+			VectorCopy( ent->angles, angles );
 		} else {							// encoded bbox
 			x = 8 * (ent->solid & 31);
 			zd = 8 * ((ent->solid>>5) & 31);
@@ -122,21 +113,20 @@ void CG_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 			bmins[2] = -zd;
 			bmaxs[2] = zu;
 
-			cmodel = trap_CM_ModelForBBox ( bmins, bmaxs );
-			VectorCopy ( ent->origin, origin );
-			VectorClear ( angles );	// boxes don't rotate
+			cmodel = trap_CM_ModelForBBox( bmins, bmaxs );
+			VectorCopy( ent->origin, origin );
+			VectorClear( angles );	// boxes don't rotate
 		}
 
-		trap_CM_TransformedBoxTrace ( &trace, start, end, mins, maxs, cmodel, contentmask, origin, angles );
-		if ( trace.allsolid || trace.fraction < tr->fraction ) {
+		trap_CM_TransformedBoxTrace( &trace, start, end, mins, maxs, cmodel, contentmask, origin, angles );
+		if( trace.allsolid || trace.fraction < tr->fraction ) {
 			trace.ent = ent->number;
 			*tr = trace;
-		} else if ( trace.startsolid ) {
+		} else if( trace.startsolid ) {
 			tr->startsolid = qtrue;
 		}
-		if ( tr->allsolid ) {
+		if( tr->allsolid )
 			return;
-		}
 	}
 }
 
@@ -146,17 +136,16 @@ void CG_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 CG_Trace
 ================
 */
-void CG_Trace ( trace_t *t, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask )
+void CG_Trace( trace_t *t, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask )
 {
 	// check against world
-	trap_CM_BoxTrace ( t, start, end, mins, maxs, NULL, contentmask );
+	trap_CM_BoxTrace( t, start, end, mins, maxs, NULL, contentmask );
 	t->ent = 0;
-	if ( t->fraction == 0 ) {
+	if( t->fraction == 0 )
 		return;			// blocked by the world
-	}
 
 	// check all other solid models
-	CG_ClipMoveToEntities ( start, mins, maxs, end, ignore, contentmask, t );
+	CG_ClipMoveToEntities( start, mins, maxs, end, ignore, contentmask, t );
 }
 
 
@@ -165,8 +154,8 @@ void CG_Trace ( trace_t *t, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, 
 CG_PMTrace
 ================
 */
-void CG_PMTrace ( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end ) {
-	CG_Trace ( tr, start, mins, maxs, end, cgs.playerNum+1, MASK_PLAYERSOLID );
+void CG_PMTrace( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end ) {
+	CG_Trace( tr, start, mins, maxs, end, cgs.playerNum+1, MASK_PLAYERSOLID );
 }
 
 /*
@@ -174,29 +163,23 @@ void CG_PMTrace ( trace_t *tr, vec3_t start, vec3_t mins, vec3_t maxs, vec3_t en
 CG_PointContents
 ================
 */
-int	CG_PointContents ( vec3_t point )
+int	CG_PointContents( vec3_t point )
 {
 	int			i;
 	entity_state_t	*ent;
 	struct cmodel_s	*cmodel;
 	int			contents;
 
-	contents = trap_CM_PointContents ( point, NULL );
+	contents = trap_CM_PointContents( point, NULL );
 
-	for ( i = 0; i < cg_numSolids; i++ )
-	{
+	for( i = 0; i < cg_numSolids; i++ ) {
 		ent = cg_solidList[i];
-
-		if ( ent->solid != SOLID_BMODEL ) { // special value for bmodel
+		if( ent->solid != SOLID_BMODEL )	// special value for bmodel
 			continue;
-		}
 
-		cmodel = trap_CM_InlineModel ( ent->modelindex );
-		if ( !cmodel ) {
-			continue;
-		}
-
-		contents |= trap_CM_TransformedPointContents ( point, cmodel, ent->origin, ent->angles );
+		cmodel = trap_CM_InlineModel( ent->modelindex );
+		if( cmodel )
+			contents |= trap_CM_TransformedPointContents ( point, cmodel, ent->origin, ent->angles );
 	}
 
 	return contents;
@@ -210,7 +193,7 @@ CG_PredictMovement
 Sets cg.predictedVelocty, cg.predictedOrigin and cg.predictedAngles
 =================
 */
-void CG_PredictMovement (void)
+void CG_PredictMovement( void )
 {
 	int			ack, current;
 	int			frame;
@@ -225,16 +208,16 @@ void CG_PredictMovement (void)
 	if( cg_paused->integer )
 		return;
 
-	if ( !cg_predict->integer || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
+	if( !cg_predict->integer || (cg.frame.playerState.pmove.pm_flags & PMF_NO_PREDICTION) ) {
 		// just set angles
 		current = trap_NET_GetCurrentUserCmdNum ();
-		trap_NET_GetUserCmd ( current, &cmd );
+		trap_NET_GetUserCmd( current, &cmd );
 
-		VectorScale ( cg.frame.playerState.pmove.velocity, (1.0/16.0), cg.predictedVelocity );
-		VectorScale ( cg.frame.playerState.pmove.origin, (1.0/16.0), cg.predictedOrigin );
+		VectorScale( cg.frame.playerState.pmove.velocity, (1.0/16.0), cg.predictedVelocity );
+		VectorScale( cg.frame.playerState.pmove.origin, (1.0/16.0), cg.predictedOrigin );
 
 		for( i = 0; i < 3; i++ )
-			cg.predictedAngles[i] = SHORT2ANGLE (cmd.angles[i]) + SHORT2ANGLE(cg.frame.playerState.pmove.delta_angles[i]);
+			cg.predictedAngles[i] = SHORT2ANGLE( cmd.angles[i] ) + SHORT2ANGLE( cg.frame.playerState.pmove.delta_angles[i] );
 		return;
 	}
 
@@ -243,41 +226,39 @@ void CG_PredictMovement (void)
 	// if we are too far out of date, just freeze
 	if( current - ack >= CMD_BACKUP ) {
 		if( cg_showMiss->integer )
-			CG_Printf ( "exceeded CMD_BACKUP\n" );
+			CG_Printf( "exceeded CMD_BACKUP\n" );
 		return;	
 	}
 
 	// copy current state to pmove
-	memset ( &pm, 0, sizeof(pm) );
+	memset( &pm, 0, sizeof(pm) );
 	pm.trace = CG_PMTrace;
 	pm.pointcontents = CG_PointContents;
 	pm.airaccelerate = atof( cgs.configStrings[CS_AIRACCEL] );
 	pm.s = cg.frame.playerState.pmove;
-	if (cgs.attractLoop)
+	if( cgs.attractLoop )
 		pm.s.pm_type = PM_FREEZE;		// demo playback
 
 	// run frames
-	while ( ++ack < current )
-	{
+	while( ++ack < current ) {
 		frame = ack & CMD_MASK;
-		trap_NET_GetUserCmd ( frame, &pm.cmd );
+		trap_NET_GetUserCmd( frame, &pm.cmd );
 
-		Pmove ( &pm );
+		Pmove( &pm );
 
 		// save for debug checking
-		VectorCopy ( pm.s.origin, cg.predictedOrigins[frame] );
+		VectorCopy( pm.s.origin, cg.predictedOrigins[frame] );
 	}
 
 	oldframe = (ack-2) & CMD_MASK;
 	oldz = cg.predictedOrigins[oldframe][2];
 	step = pm.s.origin[2] - oldz;
 
-	if ( pm.step && step > 0 && step < 320 ) {
-		if ( cg.realTime - cg.predictedStepTime < 150 ) {
+	if( pm.step && step > 0 && step < 320 ) {
+		if( cg.realTime - cg.predictedStepTime < 150 )
 			oldstep = cg.predictedStep * (150 - (cg.realTime - cg.predictedStepTime)) * (1.0 / 150.0);
-		} else {
+		else
 			oldstep = 0;
-		}
 
 		cg.predictedStep = oldstep + step * (1.0/16.0);
 		cg.predictedStepTime = cg.realTime - cg.frameTime * 500;
@@ -285,8 +266,7 @@ void CG_PredictMovement (void)
 
 	// copy results out for rendering
 	cg.groundEntity = pm.groundentity;
-	VectorScale ( pm.s.velocity, (1.0/16.0), cg.predictedVelocity );
-	VectorScale ( pm.s.origin, (1.0/16.0), cg.predictedOrigin );
-	VectorCopy ( pm.viewangles, cg.predictedAngles );
+	VectorScale( pm.s.velocity, (1.0/16.0), cg.predictedVelocity );
+	VectorScale( pm.s.origin, (1.0/16.0), cg.predictedOrigin );
+	VectorCopy( pm.viewangles, cg.predictedAngles );
 }
-

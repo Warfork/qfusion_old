@@ -1,0 +1,329 @@
+[Project]
+FileName=ui.dev
+Name=ui
+Ver=1
+IsCpp=0
+Type=3
+Compiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -fexceptions -DWIN32 -DNDEBUG -D_WINDOWS -Wno-sign-compare_@@_
+CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -fexceptions -DWIN32 -DNDEBUG -D_WINDOWS -Wno-sign-compare_@@_
+Includes=
+Linker=-lkernel32 -luser32 -lwinmm --def ui.def_@@_
+Libs=
+UnitCount=28
+Folders="Source Files","Header Files","Resource Files"
+ObjFiles=
+PrivateResource=
+ResourceIncludes=
+MakeIncludes=
+Icon=
+ExeOutput=..\release
+ObjectOutput=.\release
+OverrideOutput=1
+OverrideOutputName=ui_x86.dll
+HostApplication=
+CommandLine=
+IncludeVersionInfo=0
+SupportXPThemes=0
+CompilerSet=0
+CompilerSettings=0000000000000000010100
+UseCustomMakefile=0
+CustomMakefile=
+
+[Unit1]
+FileName=..\game\q_math.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit2]
+FileName=..\game\q_shared.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit3]
+FileName=ui_atoms.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit4]
+FileName=ui_connect.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit5]
+FileName=ui_credits.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit6]
+FileName=ui_dloptions.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit7]
+FileName=ui_dmoptions.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit8]
+FileName=ui_gfx.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit9]
+FileName=ui_glext.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit10]
+FileName=ui_keys.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit11]
+FileName=ui_main.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit12]
+FileName=ui_menu.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit13]
+FileName=ui_mplayer.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit14]
+FileName=ui_options.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit15]
+FileName=ui_playerconfig.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit16]
+FileName=ui_quit.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit17]
+FileName=ui_sound.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit18]
+FileName=ui_splayer.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit19]
+FileName=ui_startserver.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit20]
+FileName=ui_syscalls.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit21]
+FileName=ui_video.c
+Folder="Source Files"
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit22]
+FileName=..\game\q_shared.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit23]
+FileName=ui_atoms.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit24]
+FileName=ui_keycodes.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit25]
+FileName=ui_local.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit26]
+FileName=ui_public.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit27]
+FileName=ui_syscalls.h
+Folder="Header Files"
+Compile=1
+CompileCpp=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit28]
+FileName=ui.def
+Folder="Resource Files"
+Compile=0
+CompileCpp=0
+Link=0
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[VersionInfo]
+Major=0
+Minor=1
+Release=1
+Build=1
+LanguageID=1033
+CharsetID=1252
+CompanyName=
+FileVersion=0.1
+FileDescription=Developed using the Dev-C++ IDE
+InternalName=
+LegalCopyright=
+LegalTrademarks=
+OriginalFilename=ui.exe
+ProductName=ui
+ProductVersion=0.1
+AutoIncBuildNr=0
+

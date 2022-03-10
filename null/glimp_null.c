@@ -42,12 +42,3 @@ int     	GLimp_SetMode( int mode, qboolean fullscreen )
 void		GLimp_AppActivate( qboolean active )
 {
 }
-
-void		GLimp_EnableLogging( qboolean enable )
-{
-}
-
-void		GLimp_LogNewFrame( void )
-{
-}
-

@@ -29,11 +29,13 @@ ResampleSfx
 */
 void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 {
-	int i, outcount, srcsample, srclength, samplefrac, fracstep;
+	int i, srclength, outcount, fracstep, chancount;
+	int	samplefrac, srcsample, srcnextsample;
 
 	// this is usually 0.5 (128), 1 (256), or 2 (512)
 	fracstep = ((double) sc->speed / (double) dma.speed) * 256.0;
 
+	chancount = sc->channels - 1;
 	srclength = sc->length / sc->channels;
 	outcount = (double) sc->length * (double) dma.speed / (double) sc->speed;
 
@@ -46,157 +48,56 @@ void ResampleSfx (sfxcache_t *sc, qbyte *data, char *name)
 // resample / decimate to the current source rate
 	if (fracstep == 256)
 	{
-		if (sc->width == 1) // 8bit
-			for (i = 0;i < srclength;i++)
-				((signed char *)sc->data)[i] = ((unsigned char *)data)[i] - 128;
-		else
-			for (i = 0;i < srclength;i++)
+		if (sc->width == 2)
+			for (i = 0; i < srclength; i++)
 				((short *)sc->data)[i] = LittleShort (((short *)data)[i]);
+		else // 8bit
+			for (i = 0; i < srclength; i++)
+				((signed char *)sc->data)[i] = ((unsigned char *)data)[i] - 128;
 	}
 	else
 	{
+		int j, a, b, sample;
+
 // general case
 		Com_DPrintf("ResampleSfx: resampling sound %s\n", name);
 		samplefrac = 0;
+		srcsample = 0;
+		srcnextsample = sc->channels;
+		outcount *= sc->channels;
 
-		if ((fracstep & 255) == 0) // skipping points on perfect multiple
+#define RESAMPLE_AND_ADVANCE	\
+				sample = (((b - a) * (samplefrac & 255)) >> 8) + a; \
+				if (j == chancount) \
+				{ \
+					samplefrac += fracstep; \
+					srcsample = (samplefrac >> 8) << chancount; \
+					srcnextsample = srcsample + sc->channels; \
+				}
+
+		if (sc->width == 2)
 		{
-			srcsample = 0;
-			fracstep >>= 8;
-			if (sc->width == 2)
-			{
-				short *out = (void *)sc->data, *in = (void *)data;
-				if (sc->channels == 2)
-				{
-					fracstep <<= 1;
-					for (i=0 ; i<outcount ; i++)
-					{
-						*out++ = LittleShort (in[srcsample  ]);
-						*out++ = LittleShort (in[srcsample+1]);
-						srcsample += fracstep;
-					}
-				}
-				else
-				{
-					for (i=0 ; i<outcount ; i++)
-					{
-						*out++ = LittleShort (in[srcsample  ]);
-						srcsample += fracstep;
-					}
-				}
-			}
-			else
-			{
-				signed char *out = (void *)sc->data;
-				unsigned char *in = (void *)data;
+			short *out = (void *)sc->data, *in = (void *)data;
 
-				if (sc->channels == 2)
-				{
-					fracstep <<= 1;
-					for (i=0 ; i<outcount ; i++)
-					{
-						*out++ = in[srcsample  ] - 128;
-						*out++ = in[srcsample+1] - 128;
-						srcsample += fracstep;
-					}
-				}
-				else
-				{
-					for (i=0 ; i<outcount ; i++)
-					{
-						*out++ = in[srcsample  ] - 128;
-						srcsample += fracstep;
-					}
-				}
+			for (i = 0, j = 0; i < outcount; i++, j = i & chancount)
+			{
+				a = LittleShort (in[srcsample + j]);
+				b = ((srcnextsample < srclength) ? LittleShort (in[srcnextsample + j]) : 0);
+				RESAMPLE_AND_ADVANCE;
+				*out++ = (short)sample;
 			}
 		}
 		else
 		{
-			int sample;
-			int a, b;
-			if (sc->width == 2)
-			{
-				short *out = (void *)sc->data, *in = (void *)data;
+			signed char *out = (void *)sc->data;
+			unsigned char *in = (void *)data;
 
-				if (sc->channels == 2)
-				{
-					for (i=0 ; i<outcount ; i++)
-					{
-						srcsample = (samplefrac >> 8) << 1;
-						a = in[srcsample  ];
-						if (srcsample+2 >= srclength)
-							b = 0;
-						else
-							b = in[srcsample+2];
-						sample = (((b - a) * (samplefrac & 255)) >> 8) + a;
-						*out++ = (short) sample;
-						a = in[srcsample+1];
-						if (srcsample+2 >= srclength)
-							b = 0;
-						else
-							b = in[srcsample+3];
-						sample = (((b - a) * (samplefrac & 255)) >> 8) + a;
-						*out++ = (short) sample;
-						samplefrac += fracstep;
-					}
-				}
-				else
-				{
-					for (i=0 ; i<outcount ; i++)
-					{
-						srcsample = samplefrac >> 8;
-						a = in[srcsample  ];
-						if (srcsample+1 >= srclength)
-							b = 0;
-						else
-							b = in[srcsample+1];
-						sample = (((b - a) * (samplefrac & 255)) >> 8) + a;
-						*out++ = (short) sample;
-						samplefrac += fracstep;
-					}
-				}
-			}
-			else
+			for (i = 0, j = 0; i < outcount; i++, j = i & chancount)
 			{
-				signed char *out = (void *)sc->data;
-				unsigned char *in = (void *)data;
-				if (sc->channels == 2)
-				{
-					for (i=0 ; i<outcount ; i++)
-					{
-						srcsample = (samplefrac >> 8) << 1;
-						a = (int) in[srcsample  ] - 128;
-						if (srcsample+2 >= srclength)
-							b = 0;
-						else
-							b = (int) in[srcsample+2] - 128;
-						sample = (((b - a) * (samplefrac & 255)) >> 8) + a;
-						*out++ = (signed char) sample;
-						a = (int) in[srcsample+1] - 128;
-						if (srcsample+2 >= srclength)
-							b = 0;
-						else
-							b = (int) in[srcsample+3] - 128;
-						sample = (((b - a) * (samplefrac & 255)) >> 8) + a;
-						*out++ = (signed char) sample;
-						samplefrac += fracstep;
-					}
-				}
-				else
-				{
-					for (i=0 ; i<outcount ; i++)
-					{
-						srcsample = samplefrac >> 8;
-						a = (int) in[srcsample  ] - 128;
-						if (srcsample+1 >= srclength)
-							b = 0;
-						else
-							b = (int) in[srcsample+1] - 128;
-						sample = (((b - a) * (samplefrac & 255)) >> 8) + a;
-						*out++ = (signed char) sample;
-						samplefrac += fracstep;
-					}
-				}
+				a = (int)in[srcsample + j] - 128;
+				b = ((srcnextsample < srclength) ? (int)in[srcnextsample + j] - 128 : 0);
+				RESAMPLE_AND_ADVANCE;
+				*out++ = (signed char)sample;
 			}
 		}
 	}

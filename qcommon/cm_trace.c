@@ -189,10 +189,10 @@ inline int CM_BrushContents( cbrush_t *brush, vec3_t p )
 	int				i;
 	cbrushside_t	*brushside;
 
-	brushside = brush->brushsides;
-	for( i = 0; i < brush->numsides; i++, brushside++ )
-		if( PlaneDiff (p, brushside->plane) > 0 )
+	for( i = 0, brushside = brush->brushsides; i < brush->numsides; i++, brushside++ )
+		if( PlaneDiff( p, brushside->plane ) > 0 )
 			return 0;
+
 	return brush->contents;
 }
 
@@ -206,10 +206,10 @@ inline int CM_PatchContents( cface_t *patch, vec3_t p )
 	int			i, c;
 	cfacet_t	*facet;
 
-	facet = patch->facets;
-	for( i = 0; i < patch->numfacets; i++, patch++ )
+	for( i = 0, facet = patch->facets; i < patch->numfacets; i++, patch++ )
 		if( (c = CM_BrushContents( &facet->brush, p )) )
 			return c;
+
 	return 0;
 }
 
@@ -220,7 +220,7 @@ CM_PointContents
 */
 int CM_PointContents( vec3_t p, cmodel_t *cmodel )
 {
-	int				i, contents;
+	int				i, superContents, contents;
 	int				nummarkfaces, nummarkbrushes;
 	cface_t			*patch, **markface;
 	cbrush_t		*brush, **markbrush;
@@ -232,9 +232,9 @@ int CM_PointContents( vec3_t p, cmodel_t *cmodel )
 
 	if( !cmodel || cmodel == map_cmodels ) {
 		cleaf_t	*leaf;
-		
-		leaf = &map_leafs[CM_PointLeafnum(p)];
-		contents = ( leaf->contents & CONTENTS_NODROP );
+
+		leaf = &map_leafs[CM_PointLeafnum( p )];
+		superContents = leaf->contents;
 
 		markbrush = leaf->markbrushes;
 		nummarkbrushes = leaf->nummarkbrushes;
@@ -242,7 +242,7 @@ int CM_PointContents( vec3_t p, cmodel_t *cmodel )
 		markface = leaf->markfaces;
 		nummarkfaces = leaf->nummarkfaces;
 	} else {
-		contents = 0;
+		superContents = ~0;
 
 		markbrush = cmodel->markbrushes;
 		nummarkbrushes = cmodel->nummarkbrushes;
@@ -251,28 +251,34 @@ int CM_PointContents( vec3_t p, cmodel_t *cmodel )
 		nummarkfaces = cmodel->nummarkfaces;
 	}
 
+	contents = superContents;
+
 	for( i = 0; i < nummarkbrushes; i++ ) {
 		brush = markbrush[i];
 
 		// check if brush adds something to contents
-		if( (contents & brush->contents) != brush->contents )
-			contents |= CM_BrushContents ( brush, p );
+		if( contents & brush->contents ) {
+			if( !(contents &= ~CM_BrushContents( brush, p )) )
+				return superContents;
+		}
 	}
 
 	if( cm_noCurves->integer || !nummarkfaces )
-		return contents;
+		return ~contents & superContents;
 
 	for( i = 0; i < nummarkfaces; i++ ) {
 		patch = markface[i];
 
 		// check if patch adds something to contents
-		if( patch->numfacets && ((contents & patch->contents) != patch->contents) ) {
-			if( BoundsIntersect( p, p, patch->mins, patch->maxs ) )
-				contents |= CM_PatchContents ( patch, p );
+		if( patch->numfacets && (contents & patch->contents) ) {
+			if( BoundsIntersect( p, p, patch->mins, patch->maxs ) ) {
+				if( !(contents &= ~CM_PatchContents( patch, p )) )
+					return superContents;
+			}
 		}
 	}
 
-	return contents;
+	return ~contents & superContents;
 }
 
 /*

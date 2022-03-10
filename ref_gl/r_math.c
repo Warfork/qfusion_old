@@ -100,26 +100,6 @@ void Matrix4_MultiplyFast( const mat4x4_t m1, const mat4x4_t m2, mat4x4_t out )
 	out[15] = 1.0f;
 }
 
-void Matrix4_MultiplyFast2( const mat4x4_t m1, const mat4x4_t m2, mat4x4_t out )
-{
-	out[0]  = m1[0] * m2[0] + m1[4] * m2[1] + m1[12] * m2[3];
-	out[1]  = m1[1] * m2[0] + m1[5] * m2[1] + m1[13] * m2[3];
-	out[2]  = m2[2];
-	out[3]  = m2[3];
-	out[4]  = m1[0] * m2[4] + m1[4] * m2[5] + m1[12] * m2[7];
-	out[5]  = m1[1] * m2[4] + m1[5] * m2[5] + m1[13] * m2[7];
-	out[6]  = m2[6];
-	out[7]  = m2[7];
-	out[8]  = m1[0] * m2[8] + m1[4] * m2[9] + m1[12] * m2[11];
-	out[9]  = m1[1] * m2[8] + m1[5] * m2[9] + m1[13] * m2[11];
-	out[10] = m2[10];
-	out[11] = m2[11];
-	out[12] = m1[0] * m2[12] + m1[4] * m2[13] + m1[12] * m2[15];
-	out[13] = m1[1] * m2[12] + m1[5] * m2[13] + m1[13] * m2[15];
-	out[14] = m2[14];
-	out[15] = m2[15];
-}
-
 void Matrix4_Rotate( mat4x4_t m, vec_t angle, vec_t x, vec_t y, vec_t z )
 {
 	mat4x4_t t, b;
@@ -202,154 +182,46 @@ void Matrix4_Multiply_Vector( const mat4x4_t m, const vec4_t v, vec4_t out )
 
 //============================================================================
 
-void Quat_Identity( quat_t q )
+void Matrix4_Copy2D( const mat4x4_t m1, mat4x4_t m2 )
 {
-	q[0] = 0;
-	q[1] = 0;
-	q[2] = 0;
-	q[3] = 1;
+	m2[0] = m1[0];
+	m2[1] = m1[1];
+	m2[4] = m1[4];
+	m2[5] = m1[5];
+	m2[12] = m1[12];
+	m2[13] = m1[13];
 }
 
-void Quat_Copy( const quat_t q1, quat_t q2 )
+void Matrix4_Multiply2D( const mat4x4_t m1, const mat4x4_t m2, mat4x4_t out )
 {
-	q2[0] = q1[0];
-	q2[1] = q1[1];
-	q2[2] = q1[2];
-	q2[3] = q1[3];
+	out[0]  = m1[0] * m2[0] + m1[4] * m2[1];
+	out[1]  = m1[1] * m2[0] + m1[5] * m2[1];
+	out[4]  = m1[0] * m2[4] + m1[4] * m2[5];
+	out[5]  = m1[1] * m2[4] + m1[5] * m2[5];
+	out[12] = m1[0] * m2[12] + m1[4] * m2[13] + m1[12];
+	out[13] = m1[1] * m2[12] + m1[5] * m2[13] + m1[13];
 }
 
-void Quat_Conjugate( const quat_t q1, quat_t q2 )
+void Matrix4_Scale2D( mat4x4_t m, vec_t x, vec_t y )
 {
-	q2[0] = -q1[0];
-	q2[1] = -q1[1];
-	q2[2] = -q1[2];
-	q2[3] = q1[3];
+	m[0] *= x;
+	m[1] *= x;
+	m[4] *= y;
+	m[5] *= y;
 }
 
-vec_t Quat_Normalize( quat_t q )
+void Matrix4_Translate2D( mat4x4_t m, vec_t x, vec_t y )
 {
-	vec_t length;
-
-	length = q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3];
-	if( length != 0 ) {
-		vec_t ilength = 1.0 / sqrt( length );
-		q[0] *= ilength;
-		q[1] *= ilength;
-		q[2] *= ilength;
-		q[3] *= ilength;
-	}
-
-	return length;
+	m[12] += x;
+	m[13] += y;
 }
 
-vec_t Quat_Inverse( const quat_t q1, quat_t q2 )
+void Matrix4_Stretch2D( mat4x4_t m, vec_t s, vec_t t )
 {
-	Quat_Conjugate( q1, q2 );
-
-	return Quat_Normalize( q2 );
-}
-
-void Matrix_Quat( vec3_t m[3], quat_t q )
-{
-	vec_t tr, s;
-
-	tr = m[0][0] + m[1][1] + m[2][2];
-	if( tr > 0.00001 ) {
-		s = sqrt( tr + 1.0 );
-		q[3] = s * 0.5; s = 0.5 / s;
-		q[0] = (m[2][1] - m[1][2]) * s;
-		q[1] = (m[0][2] - m[2][0]) * s;
-		q[2] = (m[1][0] - m[0][1]) * s;
-	} else {
-		int i, j, k;
-
-		i = 0;
-		if (m[1][1] > m[0][0]) i = 1;
-		if (m[2][2] > m[i][i]) i = 2;
-		j = (i + 1) % 3;
-		k = (i + 2) % 3;
-
-		s = sqrt( m[i][i] - (m[j][j] + m[k][k]) + 1.0 );
-
-		q[i] = s * 0.5; if( s != 0.0 ) s = 0.5 / s;
-		q[j] = (m[j][i] + m[i][j]) * s;
-		q[k] = (m[k][i] + m[i][k]) * s;
-		q[3] = (m[k][j] - m[j][k]) * s;
-	}
-
-	Quat_Normalize( q );
-}
-
-void Quat_Multiply( const quat_t q1, const quat_t q2, quat_t out )
-{
-	out[0] = q1[3] * q2[0] + q1[0] * q2[3] + q1[1] * q2[2] - q1[2] * q2[1];
-	out[1] = q1[3] * q2[1] + q1[1] * q2[3] + q1[2] * q2[0] - q1[0] * q2[2];
-	out[2] = q1[3] * q2[2] + q1[2] * q2[3] + q1[0] * q2[1] - q1[1] * q2[0];
-	out[3] = q1[3] * q2[3] - q1[0] * q2[0] - q1[1] * q2[1] - q1[2] * q2[2];
-}
-
-void Quat_Lerp( const quat_t q1, const quat_t q2, vec_t t, quat_t out )
-{
-	quat_t p1;
-	vec_t omega, cosom, sinom, scale0, scale1;
-
-	cosom = q1[0] * q2[0] + q1[1] * q2[1] + q1[2] * q2[2] + q1[3] * q2[3];
-	if( cosom < 0.0 ) { 
-		cosom = -cosom;
-		p1[0] = -q1[0]; p1[1] = -q1[1];
-		p1[2] = -q1[2]; p1[3] = -q1[3];
-	} else {
-		p1[0] = q1[0]; p1[1] = q1[1];
-		p1[2] = q1[2]; p1[3] = q1[3];
-	}
-
-	if( cosom < 1.0 - 0.001 ) {
-		omega = acos( cosom );
-		sinom = 1.0 / sin( omega );
-		scale0 = sin( (1.0 - t) * omega ) * sinom;
-		scale1 = sin( t * omega ) * sinom;
-	} else { 
-		scale0 = 1.0 - t;
-		scale1 = t;
-	}
-
-	out[0] = scale0 * p1[0] + scale1 * q2[0];
-	out[1] = scale0 * p1[1] + scale1 * q2[1];
-	out[2] = scale0 * p1[2] + scale1 * q2[2];
-	out[3] = scale0 * p1[3] + scale1 * q2[3];
-}
-
-void Quat_Matrix( const quat_t q, vec3_t m[3] )
-{
-	vec_t wx, wy, wz, xx, yy, yz, xy, xz, zz, x2, y2, z2;
-
-	x2 = q[0] + q[0]; y2 = q[1] + q[1]; z2 = q[2] + q[2];
-	xx = q[0] * x2; xy = q[0] * y2; xz = q[0] * z2;
-	yy = q[1] * y2; yz = q[1] * z2; zz = q[2] * z2;
-	wx = q[3] * x2; wy = q[3] * y2; wz = q[3] * z2;
-
-	m[0][0] = 1.0f - yy - zz; m[0][1] = xy - wz; m[0][2] = xz + wy;
-	m[1][0] = xy + wz; m[1][1] = 1.0f - xx - zz; m[1][2] = yz - wx;
-	m[2][0] = xz - wy; m[2][1] = yz + wx; m[2][2] = 1.0f - xx - yy;
-}
-
-void Quat_TransformVector( const quat_t q, const vec3_t v, vec3_t out )
-{
-	vec_t wx, wy, wz, xx, yy, yz, xy, xz, zz, x2, y2, z2;
-
-	x2 = q[0] + q[0]; y2 = q[1] + q[1]; z2 = q[2] + q[2];
-	xx = q[0] * x2; xy = q[0] * y2; xz = q[0] * z2;
-	yy = q[1] * y2; yz = q[1] * z2; zz = q[2] * z2;
-	wx = q[3] * x2; wy = q[3] * y2; wz = q[3] * z2;
-
-	out[0] = (1.0f - yy - zz) * v[0] + (xy - wz) * v[1] + (xz + wy) * v[2];
-	out[1] = (xy + wz) * v[0] + (1.0f - xx - zz) * v[1] + (yz - wx) * v[2];
-	out[2] = (xz - wy) * v[0] + (yz + wx) * v[1] + (1.0f - xx - yy) * v[2];
-}
-
-void Quat_ConcatTransforms( const quat_t q1, const vec3_t v1, const quat_t q2, const vec3_t v2, quat_t q, vec3_t v )
-{
-	Quat_Multiply( q1, q2, q );
-	Quat_TransformVector( q1, v2, v );
-	v[0] += v1[0]; v[1] += v1[1]; v[2] += v1[2];
+	m[0] *= s;
+	m[1] *= s;
+	m[4] *= s;
+	m[5] *= s;
+	m[12] = s * m[12] + t;
+	m[13] = s * m[13] + t;
 }

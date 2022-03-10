@@ -97,7 +97,7 @@ void Killed (edict_t *targ, edict_t *inflictor, edict_t *attacker, int damage, v
 
 	if ((targ->r.svflags & SVF_MONSTER) && (targ->deadflag != DEAD_DEAD))
 	{
-//		targ->effects |= EF_CORPSE;		// now treat as a different content type
+//		targ->r.svflags |= SVF_CORPSE;		// now treat as a different content type
 		if (!(targ->monsterinfo.aiflags & AI_GOOD_GUY))
 		{
 			level.killed_monsters++;

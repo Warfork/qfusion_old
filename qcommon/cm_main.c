@@ -26,6 +26,8 @@ int				checkcount;
 
 mempool_t		*cmap_mempool = NULL;
 
+static bspFormatDesc_t *cmap_bspFormat;
+
 char			map_name[MAX_QPATH];
 qboolean		map_clientload;
 
@@ -51,6 +53,7 @@ cbrush_t		**map_markbrushes;
 int				numcmodels;
 static cmodel_t	map_cmodel_empty;
 cmodel_t		*map_cmodels = &map_cmodel_empty;
+vec3_t			world_mins, world_maxs;
 
 int				numbrushes;
 cbrush_t		*map_brushes;
@@ -409,17 +412,72 @@ static void CMod_LoadVertexes( lump_t *l )
 
 /*
 =================
+CMod_LoadVertexes_RBSP
+=================
+*/
+static void CMod_LoadVertexes_RBSP( lump_t *l )
+{
+	int			i;
+	int			count;
+	rdvertex_t	*in;
+	vec3_t		*out;
+
+	in = ( void * )(cmod_base + l->fileofs);
+	if( l->filelen % sizeof( *in ) )
+		Com_Error( ERR_DROP, "CMod_LoadVertexes_RBSP: funny lump size" );
+	count = l->filelen / sizeof( *in );
+	if( count < 1 )
+		Com_Error( ERR_DROP, "Map with no vertexes" );
+
+	out = map_verts = Mem_Alloc( cmap_mempool, count * sizeof( *out ) );
+	numvertexes = count;
+
+	for( i = 0; i < count; i++, in++ ) {
+		out[i][0] = LittleFloat( in->point[0] );
+		out[i][1] = LittleFloat( in->point[1] );
+		out[i][2] = LittleFloat( in->point[2] );
+	}
+}
+
+/*
+=================
+CMod_LoadFace
+=================
+*/
+static inline void CMod_LoadFace( cface_t *out, int shadernum, int firstvert, int numverts, int *patch_cp )
+{
+	cshaderref_t	*shaderref;
+
+	shadernum = LittleLong( shadernum );
+	if( shadernum < 0 || shadernum >= numshaderrefs )
+		return;
+
+	shaderref = &map_shaderrefs[shadernum];
+	if( !shaderref->contents || (shaderref->flags & SURF_NONSOLID) )
+		return;
+
+	patch_cp[0] = LittleLong( patch_cp[0] );
+	patch_cp[1] = LittleLong( patch_cp[1] );
+	if( patch_cp[0] <= 0 || patch_cp[1] <= 0 )
+		return;
+
+	firstvert = LittleLong( firstvert );
+	if( numverts <= 0 || firstvert < 0 || firstvert >= numvertexes )
+		return;
+
+	CM_CreatePatch( out, shaderref, map_verts + firstvert, patch_cp );
+}
+
+/*
+=================
 CMod_LoadFaces
 =================
 */
 static void CMod_LoadFaces( lump_t *l )
 {
-	int				i;
-	int				count, shadernum;
+	int				i, count;
 	dface_t			*in;
 	cface_t			*out;
-	cshaderref_t	*shaderref;
-	int				firstvert, patch_cp[2];
 
 	in = ( void * )(cmod_base + l->fileofs);
 	if( l->filelen % sizeof( *in ) )
@@ -435,28 +493,40 @@ static void CMod_LoadFaces( lump_t *l )
 		out->contents = 0;
 		out->numfacets = 0;
 		out->facets = NULL;
-
 		if( LittleLong( in->facetype ) != FACETYPE_PATCH )
 			continue;
+		CMod_LoadFace( out, in->shadernum, in->firstvert, in->numverts, in->patch_cp );
+	}
+}
 
-		shadernum = LittleLong( in->shadernum );
-		if( shadernum < 0 || shadernum >= numshaderrefs )
+/*
+=================
+CMod_LoadFaces_RBSP
+=================
+*/
+static void CMod_LoadFaces_RBSP( lump_t *l )
+{
+	int				i, count;
+	rdface_t		*in;
+	cface_t			*out;
+
+	in = ( void * )(cmod_base + l->fileofs);
+	if( l->filelen % sizeof( *in ) )
+		Com_Error( ERR_DROP, "CMod_LoadFaces_RBSP: funny lump size" );
+	count = l->filelen / sizeof( *in );
+	if( count < 1 )
+		Com_Error( ERR_DROP, "Map with no faces" );
+
+	out = map_faces = Mem_Alloc( cmap_mempool, count * sizeof( *out ) );
+	numfaces = count;
+
+	for( i = 0; i < count; i++, in++, out++ ) {
+		out->contents = 0;
+		out->numfacets = 0;
+		out->facets = NULL;
+		if( LittleLong( in->facetype ) != FACETYPE_PATCH )
 			continue;
-
-		shaderref = &map_shaderrefs[shadernum];
-		if( !shaderref->contents || (shaderref->flags & SURF_NONSOLID) )
-			continue;
-
-		patch_cp[0] = LittleLong( in->patch_cp[0] );
-		patch_cp[1] = LittleLong( in->patch_cp[1] );
-		if( patch_cp[0] <= 0 || patch_cp[1] <= 0 )
-			continue;
-
-		firstvert = LittleLong( in->firstvert );
-		if( LittleLong( in->numverts ) <= 0 || firstvert < 0 || firstvert >= numvertexes )
-			continue;
-
-		CM_CreatePatch( out, shaderref, map_verts + firstvert, patch_cp );
+		CMod_LoadFace( out, in->shadernum, in->firstvert, in->numverts, in->patch_cp );
 	}
 }
 
@@ -522,6 +592,11 @@ static void CMod_LoadNodes( lump_t *l )
 
 	out = map_nodes = Mem_Alloc( cmap_mempool, count * sizeof( *out ) );
 	numnodes = count;
+
+	for( i = 0; i < 3; i++ ) {
+		world_mins[i] = LittleFloat( in->mins[i] );
+		world_maxs[i] = LittleFloat( in->maxs[i] );
+	}
 
 	for( i = 0; i < count; i++, out++, in++ ) {
 		out->plane = map_planes + LittleLong( in->planenum );
@@ -703,6 +778,37 @@ static void CMod_LoadBrushSides( lump_t *l )
 
 /*
 =================
+CMod_LoadBrushSides_RBSP
+=================
+*/
+static void CMod_LoadBrushSides_RBSP( lump_t *l )
+{
+	int				i, j;
+	int				count;
+	cbrushside_t	*out;
+	rdbrushside_t 	*in;
+
+	in = ( void * )(cmod_base + l->fileofs);
+	if( l->filelen % sizeof( *in ) )
+		Com_Error( ERR_DROP, "CMod_LoadBrushSides_RBSP: funny lump size" );
+	count = l->filelen / sizeof( *in );
+	if( count < 1 )
+		Com_Error( ERR_DROP, "Map with no brushsides" );
+
+	out = map_brushsides = Mem_Alloc( cmap_mempool, count * sizeof( *out ) );
+	numbrushsides = count;
+
+	for( i = 0; i < count; i++, in++, out++ ) {
+		out->plane = map_planes + LittleLong( in->planenum );
+		j = LittleLong( in->shadernum );
+		if( j >= numshaderrefs )
+			Com_Error( ERR_DROP, "Bad brushside texinfo" );
+		out->surfFlags = map_shaderrefs[j].flags;
+	}
+}
+
+/*
+=================
 CMod_LoadBrushes
 =================
 */
@@ -780,7 +886,7 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	unsigned		*buf;
 	int				i;
 	dheader_t		header;
-	int				length;
+	int				length, version;
 	static unsigned	last_checksum;
 
 	map_clientload = clientload;
@@ -820,6 +926,8 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	map_areas = &map_area_empty;
 	map_entitystring = &map_entitystring_empty;
 
+	ClearBounds( world_mins, world_maxs );
+
 	if( !name || !name[0] ) {
 		numleafs = 1;
 		numcmodels = 2;
@@ -838,22 +946,34 @@ cmodel_t *CM_LoadMap( char *name, qboolean clientload, unsigned *checksum )
 	*checksum = last_checksum;
 
 	header = *(dheader_t *)buf;
+	version = LittleLong( header.version );
+	for( i = 0, cmap_bspFormat = bspFormats; i < numBspFormats; i++, cmap_bspFormat++ ) {
+		if( !strncmp( (unsigned char *)buf, cmap_bspFormat->header, 4 ) && (version == cmap_bspFormat->version) )
+			break;
+	}
+	if( i == numBspFormats )
+		Com_Error( ERR_DROP, "CM_LoadMap: %s: unknown bsp format, version %i", name, version );
+
 	for( i = 0; i < sizeof(dheader_t) / 4; i++ )
 		((int *)&header)[i] = LittleLong( ((int *)&header)[i]);
-
-	if( (header.version != Q3BSPVERSION) && (header.version != RTCWBSPVERSION) )
-		Com_Error( ERR_DROP, "CMod_LoadBrushModel: %s has wrong version number (%i should be %i or %i)", name, header.version, Q3BSPVERSION, RTCWBSPVERSION );
-
 	cmod_base = ( qbyte * )buf;
 
 	// load into heap
 	CMod_LoadSurfaces( &header.lumps[LUMP_SHADERREFS] );
 	CMod_LoadPlanes( &header.lumps[LUMP_PLANES] );
-	CMod_LoadBrushSides( &header.lumps[LUMP_BRUSHSIDES] );
+	if( cmap_bspFormat->flags & BSP_RAVEN )
+		CMod_LoadBrushSides_RBSP( &header.lumps[LUMP_BRUSHSIDES] );
+	else
+		CMod_LoadBrushSides( &header.lumps[LUMP_BRUSHSIDES] );
 	CMod_LoadBrushes( &header.lumps[LUMP_BRUSHES] );
 	CMod_LoadMarkBrushes( &header.lumps[LUMP_LEAFBRUSHES] );
-	CMod_LoadVertexes( &header.lumps[LUMP_VERTEXES] );
-	CMod_LoadFaces( &header.lumps[LUMP_FACES] );
+	if( cmap_bspFormat->flags & BSP_RAVEN ) {
+		CMod_LoadVertexes_RBSP( &header.lumps[LUMP_VERTEXES] );
+		CMod_LoadFaces_RBSP( &header.lumps[LUMP_FACES] );
+	} else {
+		CMod_LoadVertexes( &header.lumps[LUMP_VERTEXES] );
+		CMod_LoadFaces( &header.lumps[LUMP_FACES] );
+	}
 	CMod_LoadMarkFaces( &header.lumps[LUMP_LEAFFACES] );
 	CMod_LoadLeafs( &header.lumps[LUMP_LEAFS] );
 	CMod_LoadNodes( &header.lumps[LUMP_NODES] );
@@ -899,7 +1019,7 @@ CM_InlineModel
 cmodel_t *CM_InlineModel( int num )
 {
 	if( num < 0 || num >= numcmodels )
-		Com_Error( ERR_DROP, "CM_InlineModel: bad number %i", num );
+		Com_Error( ERR_DROP, "CM_InlineModel: bad number %i (%i)", num, numcmodels );
 	return &map_cmodels[num];
 }
 
@@ -919,7 +1039,10 @@ CM_InlineModelBounds
 */
 void CM_InlineModelBounds( cmodel_t *cmodel, vec3_t mins, vec3_t maxs )
 {
-	if( cmodel ) {
+	if( cmodel == map_cmodels ) {
+		VectorCopy( world_mins, mins );
+		VectorCopy( world_maxs, maxs );
+	} else {
 		VectorCopy( cmodel->mins, mins );
 		VectorCopy( cmodel->maxs, maxs );
 	}

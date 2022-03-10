@@ -30,11 +30,20 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define	RDF_UNDERWATER		1		// warp the screen as apropriate
 #define RDF_NOWORLDMODEL	2		// used for player configuration screen
 
+// skm flags
+#define SKM_ATTACHMENT_BONE	1
+
 typedef struct 
 {
+	vec3_t				axis[3];
 	vec3_t				origin;
-	float				axis[3][3];
 } orientation_t;
+
+typedef struct
+{
+	quat_t				quat;
+	vec3_t				origin;
+} bonepose_t;
 
 typedef struct
 {
@@ -50,6 +59,11 @@ typedef struct
 	byte_vec4_t			*colors;
 	struct shader_s		*shader;
 } poly_t;
+
+typedef struct
+{
+	float				rgb[3];			// 0.0 - 2.0
+} lightstyle_t;
 
 typedef enum
 {
@@ -71,44 +85,33 @@ typedef struct entity_s
 	float				shaderTime;
 	byte_vec4_t			color;
 
+	int					flags;
+	float				backlerp;		// 0.0 = current, 1.0 = old
+
 	/*
 	** most recent data
 	*/
-	vec3_t				origin;
-	vec3_t				lightingOrigin;
 	vec3_t				axis[3];
+	vec3_t				origin;
+	int					frame;
+	bonepose_t			*boneposes;		// pretransformed boneposes for current frame
 
 	/*
 	** previous data for lerping
 	*/
-	float				oldorigin[3];
+	vec3_t				oldorigin;
 	int					oldframe;
+	bonepose_t			*oldboneposes;	// pretransformed boneposes for old frame
 
 	/*
 	** misc
 	*/
-	float				backlerp;		// 0.0 = current, 1.0 = old
 	int					skinnum;
-	int					flags;
 	float				scale;
 	float				radius;			// used as RT_SPRITE's radius
 	float				rotation;
-	int					frame;
+	vec3_t				lightingOrigin;
 } entity_t;
-
-typedef struct
-{
-	vec3_t				origin;
-	vec3_t				color;
-	float				intensity;
-} dlight_t;
-
-typedef struct
-{
-	vec3_t				origin;
-	qbyte				color[4];
-	float				scale;
-} particle_t;
 
 typedef struct
 {

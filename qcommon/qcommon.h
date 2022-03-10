@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //define	PARANOID			// speed sapping error checking
 
 #ifndef VERSION
-# define VERSION		3.06
+# define VERSION		3.07
 #endif
 
 #ifndef APPLICATION
@@ -67,7 +67,7 @@ void MSG_WriteInt3 (sizebuf_t *sb, int c);
 void MSG_WriteLong (sizebuf_t *sb, int c);
 void MSG_WriteFloat (sizebuf_t *sb, float f);
 void MSG_WriteString (sizebuf_t *sb, char *s);
-#define MSG_WriteCoord(sb,f) (MSG_WriteInt3((sb), Q_rint((f))))
+#define MSG_WriteCoord(sb,f) (MSG_WriteInt3((sb), Q_rint((f*16))))
 #define MSG_WritePos(sb,pos) (MSG_WriteCoord((sb),(pos)[0]), MSG_WriteCoord(sb,(pos)[1]), MSG_WriteCoord(sb,(pos)[2]))
 #define MSG_WriteAngle(sb,f) (MSG_WriteByte((sb), ANGLE2BYTE((f))))
 #define MSG_WriteAngle16(sb,f) (MSG_WriteShort((sb), ANGLE2SHORT((f))))
@@ -87,7 +87,7 @@ int	MSG_ReadLong (sizebuf_t *sb);
 float MSG_ReadFloat (sizebuf_t *sb);
 char *MSG_ReadString (sizebuf_t *sb);
 char *MSG_ReadStringLine (sizebuf_t *sb);
-#define MSG_ReadCoord(sb) ((float)MSG_ReadInt3((sb)))
+#define MSG_ReadCoord(sb) ((float)MSG_ReadInt3((sb))*(1.0/16.0))
 #define MSG_ReadPos(sb,pos) ((pos)[0]=MSG_ReadCoord((sb)),(pos)[1]=MSG_ReadCoord((sb)),(pos)[2]=MSG_ReadCoord((sb)))
 #define MSG_ReadAngle(sb) (BYTE2ANGLE(MSG_ReadByte((sb))))
 #define MSG_ReadAngle16(sb) (SHORT2ANGLE(MSG_ReadShort((sb))))
@@ -109,10 +109,9 @@ void COM_InitArgv (int argc, char **argv);
 
 char *CopyString (char *in);
 
-//============================================================================
-
 void Info_Print (char *s);
 
+//============================================================================
 
 /* crc.h */
 void CRC_Init(unsigned short *crcvalue);
@@ -133,6 +132,29 @@ unsigned Huff_EncodeStatic ( unsigned char *in, unsigned inSize, unsigned char *
 /*
 ==============================================================
 
+BSP FORMATS
+
+==============================================================
+*/
+
+typedef struct
+{ 
+	char *header;
+	int version;
+	int lightmapWidth;
+	int lightmapHeight;
+	int flags;
+} bspFormatDesc_t;
+
+#define BSP_NONE	0
+#define BSP_RAVEN	1
+
+extern	int numBspFormats;
+extern	bspFormatDesc_t bspFormats[];
+
+/*
+==============================================================
+
 PROTOCOL
 
 ==============================================================
@@ -140,13 +162,13 @@ PROTOCOL
 
 // protocol.h -- communications protocols
 
-#define	PROTOCOL_VERSION	41
+#define	PROTOCOL_VERSION	42
 
 //=========================================
 
-#define	PORT_MASTER			27900
-#define	PORT_CLIENT			(rand()%11000)+5000
-#define	PORT_SERVER			27910
+#define	PORT_MASTER			27950
+#define	PORT_CLIENT			22950+(rand()%5000)
+#define	PORT_SERVER			27911
 
 //=========================================
 
@@ -685,12 +707,12 @@ extern	int		time_before_ref;
 extern	int		time_after_ref;
 
 
-// LordHavoc: this is pointless with a good C library
-//#define MEMCLUMPING 1
+//#define MEMCLUMPING
+//#define MEMTRASH
 
 #define POOLNAMESIZE 128
 
-#if MEMCLUMPING
+#ifdef MEMCLUMPING
 
 // give malloc padding so we can't waste most of a page at the end
 # define MEMCLUMPSIZE (65536 - 1536)
@@ -715,7 +737,7 @@ typedef struct memheader_s
 	// pool this memheader belongs to
 	struct mempool_s *pool;
 
-#if MEMCLUMPING
+#ifdef MEMCLUMPING
 	// clump this memheader lives in, NULL if not in a clump
 	struct memclump_s *clump;
 #endif
@@ -732,7 +754,7 @@ typedef struct memheader_s
 	// immediately followed by data, which is followed by a MEMHEADER_SENTINEL2 byte
 } memheader_t;
 
-#if MEMCLUMPING
+#ifdef MEMCLUMPING
 
 typedef struct memclump_s
 {
@@ -775,7 +797,7 @@ typedef struct mempool_s
 	// chain of individual memory allocations
 	struct memheader_s *chain;
 
-#if MEMCLUMPING
+#ifdef MEMCLUMPING
 	// chain of clumps (if any)
 	struct memclump_s *clumpchain;
 #endif
@@ -901,8 +923,6 @@ void	Sys_Quit (void);
 char	*Sys_GetClipboardData( void );
 
 char	*Sys_GetHomeDirectory (void);
-
-void	Sys_PrintCPUInfo (void);
 
 /*
 ** pass in an attribute mask of things you wish to REJECT

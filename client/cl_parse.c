@@ -421,8 +421,7 @@ void CL_ParseStartSoundPacket (void)
 	else
 		attenuation = DEFAULT_SOUND_PACKET_ATTENUATION;	
 
-	if (cl.configstrings[CS_SOUNDS+sound_num][0])
-		S_StartSound (pos, ent, channel, S_RegisterSound (cl.configstrings[CS_SOUNDS+sound_num]), volume, attenuation, 0.0);
+	CL_GameModule_GlobalSound( pos, ent, channel, sound_num, volume, attenuation );
 }
 
 
@@ -448,7 +447,7 @@ svcmd_t svcmds[] =
 	{"changing", CL_Changing_f},
 	{"precache", CL_Precache_f},
 	{"cmd", CL_ForwardToServer_f},
-	{NULL}
+	{NULL, NULL}
 };
 
 /*

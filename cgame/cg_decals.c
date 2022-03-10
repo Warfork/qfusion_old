@@ -25,22 +25,26 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 typedef struct cdecal_s
 {
-	struct cdecal_s *prev, *next;
-	int			die;				// stop lighting after this time
-	int			fadetime;
-	float		fadefreq;
-	qboolean	fadealpha;
-	float		color[4];
-	struct shader_s *shader;
+	struct cdecal_s		*prev, *next;
 
-	poly_t			poly;
-	vec3_t			verts[MAX_POLY_VERTS];
-	vec2_t			stcoords[MAX_POLY_VERTS];
-	byte_vec4_t		colors[MAX_POLY_VERTS];
+	int					die;				// remove after this time
+	int					fadetime;
+	float				fadefreq;
+	qboolean			fadealpha;
+
+	float				color[4];
+	struct shader_s		*shader;
+
+	poly_t				*poly;
 } cdecal_t;
 
-cdecal_t	cg_decals[MAX_DECALS];
-cdecal_t	cg_decals_headnode, *cg_free_decals;
+static	cdecal_t		cg_decals[MAX_DECALS];
+static	cdecal_t		cg_decals_headnode, *cg_free_decals;
+
+static	poly_t			cg_decal_polys[MAX_DECALS];
+static	vec3_t			cg_decal_verts[MAX_DECALS][MAX_DECAL_VERTS];
+static	vec2_t			cg_decal_stcoords[MAX_DECALS][MAX_DECAL_VERTS];
+static	byte_vec4_t		cg_decal_colors[MAX_DECALS][MAX_DECAL_VERTS];
 
 /*
 =================
@@ -57,8 +61,15 @@ void CG_ClearDecals( void )
 	cg_free_decals = cg_decals;
 	cg_decals_headnode.prev = &cg_decals_headnode;
 	cg_decals_headnode.next = &cg_decals_headnode;
-	for( i = 0; i < MAX_DECALS - 1; i++ )
-		cg_decals[i].next = &cg_decals[i+1];
+	for( i = 0; i < MAX_DECALS; i++ ) {
+		if( i < MAX_DECALS - 1 )
+			cg_decals[i].next = &cg_decals[i+1];
+
+		cg_decals[i].poly = &cg_decal_polys[i];
+		cg_decals[i].poly->verts = cg_decal_verts[i];
+		cg_decals[i].poly->stcoords = cg_decal_stcoords[i];
+		cg_decals[i].poly->colors = cg_decal_colors[i];
+	}
 }
 
 /*
@@ -115,12 +126,14 @@ void CG_SpawnDecal( vec3_t origin, vec3_t dir, float orient, float radius,
 				 float r, float g, float b, float a, float die, float fadetime, qboolean fadealpha, struct shader_s *shader )
 {
 	int i, j;
+	cdecal_t *dl;
+	poly_t *poly;
 	vec3_t axis[3];
 	vec3_t verts[MAX_DECAL_VERTS];
 	byte_vec4_t color;
 	fragment_t *fr, fragments[MAX_DECAL_FRAGMENTS];
 	int numfragments;
-	cdecal_t *dl;
+	float dietime, fadefreq;
 
 	if( !cg_addDecals->integer )
 		return;
@@ -142,45 +155,56 @@ void CG_SpawnDecal( vec3_t origin, vec3_t dir, float orient, float radius,
 	if( !numfragments )
 		return;
 
-	color[0] = (qbyte)( r*255 );
-	color[1] = (qbyte)( g*255 );
-	color[2] = (qbyte)( b*255 );
-	color[3] = (qbyte)( a*255 );
+	// clamp and scale colors
+	if( r < 0 ) r = 0; else if( r > 1 ) r = 255; else r *= 255;
+	if( g < 0 ) g = 0; else if( g > 1 ) g = 255; else g *= 255;
+	if( b < 0 ) b = 0; else if( b > 1 ) b = 255; else b *= 255;
+	if( a < 0 ) a = 0; else if( a > 1 ) a = 255; else a *= 255;
 
-	VectorScale( axis[1], 0.5f / radius, axis[1] );
-	VectorScale( axis[2], 0.5f / radius, axis[2] );
+	color[0] = ( qbyte )( r );
+	color[1] = ( qbyte )( g );
+	color[2] = ( qbyte )( b );
+	color[3] = ( qbyte )( a );
+
+	radius = 0.5f / radius;
+	VectorScale( axis[1], radius, axis[1] );
+	VectorScale( axis[2], radius, axis[2] );
+
+	dietime = cg.time + die * 1000;
+	fadefreq = 0.001f / min( fadetime, die );
+	fadetime = cg.time + (die - min( fadetime, die )) * 1000;
 
 	for( i = 0, fr = fragments; i < numfragments; i++, fr++ ) {
-		if( fr->numverts > MAX_POLY_VERTS )
-			fr->numverts = MAX_POLY_VERTS;
+		if( fr->numverts > MAX_DECAL_VERTS )
+			return;
 		else if( fr->numverts <= 0 )
 			continue;
 
 		// allocate decal
 		dl = CG_AllocDecal ();
-		dl->die = cg.time + die * 1000;
-		dl->fadetime = cg.time + (die - min( fadetime, die )) * 1000;
-		dl->fadefreq = 0.001f / min( fadetime, die );
+		dl->die = dietime;
+		dl->fadetime = fadetime;
+		dl->fadefreq = fadefreq;
 		dl->fadealpha = fadealpha;
 		dl->shader = shader;
 		dl->color[0] = r; 
 		dl->color[1] = g;
 		dl->color[2] = b;
 		dl->color[3] = a;
-		dl->poly.numverts = fr->numverts;
-		dl->poly.colors = dl->colors;
-		dl->poly.verts = dl->verts;
-		dl->poly.stcoords = dl->stcoords;
-		dl->poly.shader = dl->shader;
+
+		// setup polygon for drawing
+		poly = dl->poly;
+		poly->shader = shader;
+		poly->numverts = fr->numverts;
 
 		for( j = 0; j < fr->numverts; j++ ) {
 			vec3_t v;
 
-			VectorCopy( verts[fr->firstvert+j], dl->verts[j] );
-			VectorSubtract( dl->verts[j], origin, v );
-			dl->stcoords[j][0] = DotProduct( v, axis[1] ) + 0.5f;
-			dl->stcoords[j][1] = DotProduct( v, axis[2] ) + 0.5f;
-			*(int *)dl->colors[j] = *(int *)color;
+			VectorCopy( verts[fr->firstvert+j], poly->verts[j] );
+			VectorSubtract( poly->verts[j], origin, v );
+			poly->stcoords[j][0] = DotProduct( v, axis[1] ) + 0.5f;
+			poly->stcoords[j][1] = DotProduct( v, axis[2] ) + 0.5f;
+			*( int * )poly->colors[j] = *( int * )color;
 		}
 	}
 }
@@ -195,6 +219,7 @@ void CG_AddDecals( void )
 	int			i;
 	float		fade;
 	cdecal_t	*dl, *next, *hnode;
+	poly_t		*poly;
 	byte_vec4_t color;
 
 	// add decals in first-spawed - first-drawn order
@@ -207,28 +232,28 @@ void CG_AddDecals( void )
 			CG_FreeDecal( dl );
 			continue;
 		}
+		poly = dl->poly;
 
 		// fade out
 		if( dl->fadetime < cg.time ) {
 			fade = (dl->die - cg.time) * dl->fadefreq;
 
 			if( dl->fadealpha ) {
-				color[0] = (qbyte)( dl->color[0]*255 );
-				color[1] = (qbyte)( dl->color[1]*255 );
-				color[2] = (qbyte)( dl->color[2]*255 );
-				color[3] = (qbyte)( dl->color[3]*255*fade );
+				color[0] = ( qbyte )( dl->color[0] );
+				color[1] = ( qbyte )( dl->color[1] );
+				color[2] = ( qbyte )( dl->color[2] );
+				color[3] = ( qbyte )( dl->color[3]*fade );
 			} else {
-				color[0] = (qbyte)( dl->color[0]*255*fade );
-				color[1] = (qbyte)( dl->color[1]*255*fade );
-				color[2] = (qbyte)( dl->color[2]*255*fade );
-				color[3] = (qbyte)( dl->color[3]*255 );
+				color[0] = ( qbyte )( dl->color[0]*fade );
+				color[1] = ( qbyte )( dl->color[1]*fade );
+				color[2] = ( qbyte )( dl->color[2]*fade );
+				color[3] = ( qbyte )( dl->color[3] );
 			}
 
-			for( i = 0; i < dl->poly.numverts; i++ )
-				*(int *)dl->colors[i] = *(int *)color;
+			for( i = 0; i < poly->numverts; i++ )
+				*( int * )poly->colors[i] = *( int * )color;
 		}
 
-		trap_R_AddPolyToScene( &dl->poly );
+		trap_R_AddPolyToScene( poly );
 	}
 }
-

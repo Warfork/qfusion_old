@@ -32,31 +32,25 @@ static	float			alias_radius;
 Mod_AliasCalculateVertexNormals
 =================
 */
-void Mod_AliasCalculateVertexNormals ( int numIndexes, index_t *indexes, int numVerts, maliasvertex_t *v, qboolean flat )
+void Mod_AliasCalculateVertexNormals( int numIndexes, index_t *indexes, int numVerts, maliasvertex_t *v )
 {
 	int i, j, k, vertRemap[MD2_MAX_VERTS];
 	vec3_t dir1, dir2, normal, trnormals[MD2_MAX_TRIANGLES];
 	int numUniqueVerts, uniqueVerts[MD2_MAX_VERTS];
 	qbyte latlongs[MD2_MAX_VERTS][2];
 
-	if( flat ) {
-		for( i = 0, numUniqueVerts = 0; i < numVerts; i++ ) {
+	// count unique verts
+	for( i = 0, numUniqueVerts = 0; i < numVerts; i++ ) {
+		for( j = 0; j < numUniqueVerts; j++ ) {
+			if( VectorCompare( v[uniqueVerts[j]].point, v[i].point ) ) {
+				vertRemap[i] = j;
+				break;
+			}
+		}
+
+		if( j == numUniqueVerts ) {
 			vertRemap[i] = numUniqueVerts;
 			uniqueVerts[numUniqueVerts++] = i;
-		}
-	} else {	// count unique verts
-		for( i = 0, numUniqueVerts = 0; i < numVerts; i++ ) {
-			for( j = 0; j < numUniqueVerts; j++ ) {
-				if( VectorCompare (v[uniqueVerts[j]].point, v[i].point) ) {
-					vertRemap[i] = j;
-					break;
-				}
-			}
-
-			if( j == numUniqueVerts ) {
-				vertRemap[i] = numUniqueVerts;
-				uniqueVerts[numUniqueVerts++] = i;
-			}
 		}
 	}
 
@@ -76,9 +70,7 @@ void Mod_AliasCalculateVertexNormals ( int numIndexes, index_t *indexes, int num
 		VectorClear( normal );
 
 		for( j = 0, k = 0; j < numIndexes; j += 3, k++ ) {
-			if( vertRemap[indexes[j+0]] == i 
-				|| vertRemap[indexes[j+1]] == i
-				|| vertRemap[indexes[j+2]] == i )
+			if( vertRemap[indexes[j+0]] == i || vertRemap[indexes[j+1]] == i || vertRemap[indexes[j+2]] == i )
 				VectorAdd( normal, trnormals[k], normal );
 		}
 
@@ -104,13 +96,12 @@ MD2 MODELS
 Mod_LoadAliasMD2Model
 =================
 */
-void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
+void Mod_LoadAliasMD2Model( model_t *mod, model_t *parent, void *buffer )
 {
-	int					i, j;
+	int					i, j, k;
 	int					version, framesize;
-	int					skinwidth, skinheight;
+	float				skinwidth, skinheight;
 	int					numverts, numindexes;
-	double				isw, ish;
 	int					indremap[MD2_MAX_TRIANGLES*3];
 	index_t				ptempindex[MD2_MAX_TRIANGLES*3], ptempstindex[MD2_MAX_TRIANGLES*3];
 	dmd2_t				*pinmodel;
@@ -125,7 +116,7 @@ void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
 	maliasvertex_t		*poutvertex;
 	maliasskin_t		*poutskin;
 
-	pinmodel = (dmd2_t *)buffer;
+	pinmodel = ( dmd2_t * )buffer;
 	version = LittleLong( pinmodel->version );
 	framesize = LittleLong( pinmodel->framesize );
 
@@ -147,9 +138,6 @@ void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
 	if( skinheight <= 0 )
 		Com_Error( ERR_DROP, "model %s has invalid skin height", mod->name );
 
-	isw = 1.0 / (double)skinwidth;
-	ish = 1.0 / (double)skinheight;
-
 	poutmodel->numframes = LittleLong( pinmodel->num_frames );
 	poutmodel->numskins = LittleLong( pinmodel->num_skins );
 
@@ -159,7 +147,7 @@ void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
 		Com_Error( ERR_DROP, "model %s has no frames", mod->name );
 	if( poutmodel->numskins > MD2_MAX_SKINS )
 		Com_Error( ERR_DROP, "model %s has too many skins", mod->name );
-	else if ( poutmodel->numskins < 0 )
+	else if( poutmodel->numskins < 0 )
 		Com_Error( ERR_DROP, "model %s has invalid number of skins", mod->name );
 
 	poutmodel->numtags = 0;
@@ -178,18 +166,22 @@ void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
 		Com_Error( ERR_DROP, "model %s has too many vertices", mod->name );
 	if( poutmesh->numtris > MD2_MAX_TRIANGLES )
 		Com_Error( ERR_DROP, "model %s has too many triangles", mod->name );
-	else if ( poutmesh->numtris <= 0 )
+	else if( poutmesh->numtris <= 0 )
 		Com_Error( ERR_DROP, "model %s has no triangles", mod->name );
+
+	numindexes = poutmesh->numtris * 3;
+	poutindex = poutmesh->indexes = Mod_Malloc( mod, numindexes * sizeof(index_t) );
 
 //
 // load triangle lists
 //
 	pintri = ( dtriangle_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_tris ) );
+	pinst = ( dstvert_t * ) ( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_st ) );
 
-	for( i = 0; i < poutmesh->numtris; i++, pintri++ ) {
+	for( i = 0, k = 0; i < poutmesh->numtris; i++, k += 3 ) {
 		for( j = 0; j < 3; j++ ) {
-			ptempindex[i*3+j] = ( index_t )LittleShort( pintri->index_xyz[j] );
-			ptempstindex[i*3+j] = ( index_t )LittleShort( pintri->index_st[j] );
+			ptempindex[k+j] = ( index_t )LittleShort( pintri[i].index_xyz[j] );
+			ptempstindex[k+j] = ( index_t )LittleShort( pintri[i].index_st[j] );
 		}
 	}
 
@@ -197,58 +189,48 @@ void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
 // build list of unique vertexes
 //
 	numverts = 0;
-	numindexes = poutmesh->numtris * 3;
-	poutindex = poutmesh->indexes = Mod_Malloc ( mod, numindexes * sizeof(index_t) );
-	memset( indremap, -1, MD2_MAX_TRIANGLES*3 * sizeof(int) );
+	memset( indremap, -1, MD2_MAX_TRIANGLES * 3 * sizeof(int) );
 
 	for( i = 0; i < numindexes; i++ ) {
 		if( indremap[i] != -1 )
 			continue;
 
-		for( j = 0; j < numindexes; j++ ) {
-			if( j == i )
-				continue;
-
-			if( (ptempindex[i] == ptempindex[j]) && (ptempstindex[i] == ptempstindex[j]) )
+		// remap duplicates
+		for( j = i + 1; j < numindexes; j++ ) {
+			if( (ptempindex[j] == ptempindex[i])
+				&& (pinst[ptempstindex[j]].s == pinst[ptempstindex[i]].s)
+				&& (pinst[ptempstindex[j]].t == pinst[ptempstindex[i]].t) ) {
 				indremap[j] = i;
+				poutindex[j] = numverts;
+			}
 		}
-	}
 
-	// count unique vertexes
-	for( i = 0; i < numindexes; i++ ) {
-		if( indremap[i] != -1 )
-			continue;
-
-		poutindex[i] = numverts++;
+		// add unique vertex
 		indremap[i] = i;
+		poutindex[i] = numverts++;
 	}
 
-	Com_DPrintf ( "%s: remapped %i verts to %i\n", mod->name, poutmesh->numverts, numverts );
+	Com_DPrintf( "%s: remapped %i verts to %i (%i tris)\n", mod->name, poutmesh->numverts, numverts, poutmesh->numtris );
 
 	poutmesh->numverts = numverts;
-
-	// remap remaining indexes
-	for( i = 0; i < numindexes; i++ ) {
-		if( indremap[i] != i )
-			poutindex[i] = poutindex[indremap[i]];
-	}
 
 //
 // load base s and t vertices
 //
-	pinst = ( dstvert_t * ) ( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_st ) );
 	poutcoord = poutmesh->stcoords = Mod_Malloc( mod, numverts * sizeof(vec2_t) );
 
-	for( j = 0; j < numindexes; j++ ) {
-		poutcoord[poutindex[j]][0] = (float)(((double)LittleShort (pinst[ptempstindex[indremap[j]]].s) + 0.5) * isw);
-		poutcoord[poutindex[j]][1] = (float)(((double)LittleShort (pinst[ptempstindex[indremap[j]]].t) + 0.5) * ish);
+	for( i = 0; i < numindexes; i++ ) {
+		if( indremap[i] == i ) {
+			poutcoord[poutindex[i]][0] = ((float)LittleShort( pinst[ptempstindex[i]].s ) + 0.5) / skinwidth;
+			poutcoord[poutindex[i]][1] = ((float)LittleShort( pinst[ptempstindex[i]].t ) + 0.5) / skinheight;
+		}
 	}
 
 //
 // load the frames
 //
-	poutframe = poutmodel->frames = Mod_Malloc( mod, poutmodel->numframes * sizeof(maliasframe_t) );
-	poutvertex = poutmesh->vertexes = Mod_Malloc( mod, poutmodel->numframes * numverts * sizeof(maliasvertex_t) );
+	poutframe = poutmodel->frames = Mod_Malloc( mod, poutmodel->numframes * (sizeof(maliasframe_t) + numverts * sizeof(maliasvertex_t)) );
+	poutvertex = poutmesh->vertexes = ( maliasvertex_t *)(( qbyte * )poutframe + poutmodel->numframes * sizeof(maliasframe_t));
 
 	for( i = 0; i < poutmodel->numframes; i++, poutframe++, poutvertex += numverts ) {
 		pinframe = ( daliasframe_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_frames ) + i * framesize );
@@ -258,13 +240,15 @@ void Mod_LoadAliasMD2Model (model_t *mod, model_t *parent, void *buffer)
 			poutframe->translate[j] = LittleFloat( pinframe->translate[j] );
 		}
 
-		for( j = 0; j < numindexes; j++ ) {	// verts are all 8 bit, so no swapping needed
-			poutvertex[poutindex[j]].point[0] = (short)pinframe->verts[ptempindex[indremap[j]]].v[0];
-			poutvertex[poutindex[j]].point[1] = (short)pinframe->verts[ptempindex[indremap[j]]].v[1];
-			poutvertex[poutindex[j]].point[2] = (short)pinframe->verts[ptempindex[indremap[j]]].v[2];
+		for( j = 0; j < numindexes; j++ ) {		// verts are all 8 bit, so no swapping needed
+			if( indremap[j] == j ) {
+				poutvertex[poutindex[j]].point[0] = (short)pinframe->verts[ptempindex[j]].v[0];
+				poutvertex[poutindex[j]].point[1] = (short)pinframe->verts[ptempindex[j]].v[1];
+				poutvertex[poutindex[j]].point[2] = (short)pinframe->verts[ptempindex[j]].v[2];
+			}
 		}
 
-		Mod_AliasCalculateVertexNormals( numindexes, poutindex, numverts, poutvertex, qfalse );
+		Mod_AliasCalculateVertexNormals( numindexes, poutindex, numverts, poutvertex );
 
 		VectorCopy( poutframe->translate, poutframe->mins );
 		VectorMA( poutframe->translate, 255, poutframe->scale, poutframe->maxs );
@@ -306,9 +290,11 @@ MD3 MODELS
 Mod_LoadAliasMD3Model
 =================
 */
-void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
+void Mod_LoadAliasMD3Model( model_t *mod, model_t *parent, void *buffer )
 {
 	int					version, i, j, l;
+	int					bufsize, numverts;
+	qbyte				*buf;
 	dmd3header_t		*pinmodel;
 	dmd3frame_t			*pinframe;
 	dmd3tag_t			*pintag;
@@ -345,8 +331,8 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 
 	if( poutmodel->numframes <= 0 )
 		Com_Error( ERR_DROP, "model %s has no frames", mod->name );
-	else if( poutmodel->numframes > MD3_MAX_FRAMES )
-		Com_Error( ERR_DROP, "model %s has too many frames", mod->name );
+//	else if( poutmodel->numframes > MD3_MAX_FRAMES )
+//		Com_Error( ERR_DROP, "model %s has too many frames", mod->name );
 
 	if( poutmodel->numtags > MD3_MAX_TAGS )
 		Com_Error( ERR_DROP, "model %s has too many tags", mod->name );
@@ -357,15 +343,18 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 		Com_Error( ERR_DROP, "model %s has invalid number of meshes", mod->name );
 	else if( !poutmodel->nummeshes && !poutmodel->numtags )
 		Com_Error( ERR_DROP, "model %s has no meshes and no tags", mod->name );
-	else if( poutmodel->nummeshes > MD3_MAX_MESHES )
-		Com_Error( ERR_DROP, "model %s has too many meshes", mod->name );
+//	else if( poutmodel->nummeshes > MD3_MAX_MESHES )
+//		Com_Error( ERR_DROP, "model %s has too many meshes", mod->name );
+
+	bufsize = poutmodel->numframes * (sizeof( maliasframe_t ) + sizeof( maliastag_t ) * poutmodel->numtags) + 
+		poutmodel->nummeshes * sizeof( maliasmesh_t );
+	buf = Mod_Malloc( mod, bufsize );
 
 //
 // load the frames
 //
-	pinframe = ( dmd3frame_t * )( ( qbyte * )pinmodel + LittleLong (pinmodel->ofs_frames) );
-	poutframe = poutmodel->frames = Mod_Malloc ( mod, sizeof(maliasframe_t) * poutmodel->numframes );
-
+	pinframe = ( dmd3frame_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_frames ) );
+	poutframe = poutmodel->frames = ( maliasframe_t * )buf; buf += sizeof( maliasframe_t ) * poutmodel->numframes;
 	for( i = 0; i < poutmodel->numframes; i++, pinframe++, poutframe++ ) {
 		for( j = 0; j < 3; j++ ) {
 			poutframe->scale[j] = MD3_XYZ_SCALE;
@@ -379,9 +368,8 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 //
 // load the tags
 //
-	pintag = ( dmd3tag_t * )( ( qbyte * )pinmodel + LittleLong (pinmodel->ofs_tags) );
-	pouttag = poutmodel->tags = Mod_Malloc( mod, sizeof(maliastag_t) * poutmodel->numframes * poutmodel->numtags );
-
+	pintag = ( dmd3tag_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_tags ) );
+	pouttag = poutmodel->tags = ( maliastag_t * )buf; buf += sizeof( maliastag_t ) * poutmodel->numframes * poutmodel->numtags;
 	for( i = 0; i < poutmodel->numframes; i++ ) {
 		for( l = 0; l < poutmodel->numtags; l++, pintag++, pouttag++ ) {
 			for ( j = 0; j < 3; j++ ) {
@@ -402,13 +390,12 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 //
 // load the meshes
 //
-	pinmesh = ( dmd3mesh_t * )( ( qbyte * )pinmodel + LittleLong (pinmodel->ofs_meshes) );
-	poutmesh = poutmodel->meshes = Mod_Malloc ( mod, sizeof(maliasmesh_t)*poutmodel->nummeshes );
-
+	pinmesh = ( dmd3mesh_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_meshes ) );
+	poutmesh = poutmodel->meshes = ( maliasmesh_t * )buf;
 	for( i = 0; i < poutmodel->nummeshes; i++, poutmesh++ ) {
 		if( strncmp( (const char *)pinmesh->id, IDMD3HEADER, 4) )
-			Com_Error( ERR_DROP, "mesh %s in model %s has wrong id (%i should be %i)",
-					 pinmesh->name, mod->name, LittleLong (pinmesh->id), IDMD3HEADER );
+			Com_Error( ERR_DROP, "mesh %s in model %s has wrong id (%s should be %s)",
+					 pinmesh->name, mod->name, LittleLong( pinmesh->id ), IDMD3HEADER );
 
 		Q_strncpyz( poutmesh->name, pinmesh->name, MD3_MAX_PATH );
 
@@ -416,36 +403,43 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 
 		poutmesh->numtris = LittleLong( pinmesh->num_tris );
 		poutmesh->numskins = LittleLong( pinmesh->num_skins );
-		poutmesh->numverts = LittleLong( pinmesh->num_verts );
+		poutmesh->numverts = numverts = LittleLong( pinmesh->num_verts );
 
 		if( poutmesh->numskins <= 0 )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has no skins", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has no skins", i, mod->name );
 		else if( poutmesh->numskins > MD3_MAX_SHADERS )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has too many skins", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has too many skins", i, mod->name );
 		if( poutmesh->numtris <= 0 )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has no elements", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has no elements", i, mod->name );
 		else if( poutmesh->numtris > MD3_MAX_TRIANGLES )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has too many triangles", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has too many triangles", i, mod->name );
 		if( poutmesh->numverts <= 0 )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has no vertices", i, mod->name );
-		else if ( poutmesh->numverts > MD3_MAX_VERTS )
-			Com_Error ( ERR_DROP, "mesh %i in model %s has too many vertices", i, mod->name );
+			Com_Error( ERR_DROP, "mesh %i in model %s has no vertices", i, mod->name );
+		else if( poutmesh->numverts > MD3_MAX_VERTS )
+			Com_Error( ERR_DROP, "mesh %i in model %s has too many vertices", i, mod->name );
+
+		bufsize = sizeof(maliasskin_t) * poutmesh->numskins + poutmesh->numtris * sizeof(index_t) * 3 +
+			numverts * (sizeof(vec2_t) + sizeof(maliasvertex_t) * poutmodel->numframes) +
+#if SHADOW_VOLUMES
+			sizeof(int) * poutmesh->numtris * 3;
+#else
+			0;
+#endif
+		buf = Mod_Malloc( mod, bufsize );
 
 	//
 	// load the skins
 	//
-		pinskin = ( dmd3skin_t * )( ( qbyte * )pinmesh + LittleLong (pinmesh->ofs_skins) );
-		poutskin = poutmesh->skins = Mod_Malloc ( mod, sizeof(maliasskin_t) * poutmesh->numskins );
-
+		pinskin = ( dmd3skin_t * )( ( qbyte * )pinmesh + LittleLong( pinmesh->ofs_skins ) );
+		poutskin = poutmesh->skins = ( maliasskin_t * )buf; buf += sizeof(maliasskin_t) * poutmesh->numskins;
 		for( j = 0; j < poutmesh->numskins; j++, pinskin++, poutskin++ )
 			poutskin->shader = R_RegisterSkin( pinskin->name );
 
 	//
 	// load the indexes
 	//
-		pinindex = ( index_t * )( ( qbyte * )pinmesh + LittleLong (pinmesh->ofs_indexes) );
-		poutindex = poutmesh->indexes = Mod_Malloc ( mod, poutmesh->numtris * sizeof(index_t) * 3 );
-
+		pinindex = ( index_t * )( ( qbyte * )pinmesh + LittleLong( pinmesh->ofs_indexes ) );
+		poutindex = poutmesh->indexes = ( index_t * )buf; buf += poutmesh->numtris * sizeof(index_t) * 3;
 		for( j = 0; j < poutmesh->numtris; j++, pinindex += 3, poutindex += 3 ) {
 			poutindex[0] = (index_t)LittleLong( pinindex[0] );
 			poutindex[1] = (index_t)LittleLong( pinindex[1] );
@@ -455,9 +449,8 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 	//
 	// load the texture coordinates
 	//
-		pincoord = ( dmd3coord_t * )( ( qbyte * )pinmesh + LittleLong (pinmesh->ofs_tcs) );
-		poutcoord = poutmesh->stcoords = Mod_Malloc ( mod, poutmesh->numverts * sizeof(vec2_t) );
-
+		pincoord = ( dmd3coord_t * )( ( qbyte * )pinmesh + LittleLong( pinmesh->ofs_tcs ) );
+		poutcoord = poutmesh->stcoords = ( vec2_t * )buf; buf += poutmesh->numverts * sizeof(vec2_t);
 		for( j = 0; j < poutmesh->numverts; j++, pincoord++ ) {
 			poutcoord[j][0] = LittleFloat( pincoord->st[0] );
 			poutcoord[j][1] = LittleFloat( pincoord->st[1] );
@@ -466,23 +459,21 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 	//
 	// load the vertexes and normals
 	//
-		pinvert = ( dmd3vertex_t * )( ( qbyte * )pinmesh + LittleLong (pinmesh->ofs_verts) );
-		poutvert = poutmesh->vertexes = Mod_Malloc ( mod, sizeof(maliasvertex_t) * poutmodel->numframes * poutmesh->numverts );
-		poutframe = poutmodel->frames;
-
-		for( l = 0; l < poutmodel->numframes; l++, poutframe++ ) {
+		pinvert = ( dmd3vertex_t * )( ( qbyte * )pinmesh + LittleLong( pinmesh->ofs_verts ) );
+		poutvert = poutmesh->vertexes = ( maliasvertex_t * )buf;
+		for( l = 0, poutframe = poutmodel->frames; l < poutmodel->numframes; l++, poutframe++, pinvert += poutmesh->numverts, poutvert += poutmesh->numverts ) {
 			vec3_t v;
 
-			for( j = 0; j < poutmesh->numverts; j++, pinvert++, poutvert++ ) {
-				poutvert->point[0] = LittleShort( pinvert->point[0] );
-				poutvert->point[1] = LittleShort( pinvert->point[1] );
-				poutvert->point[2] = LittleShort( pinvert->point[2] );
+			for( j = 0; j < poutmesh->numverts; j++ ) {
+				poutvert[j].point[0] = LittleShort( pinvert[j].point[0] );
+				poutvert[j].point[1] = LittleShort( pinvert[j].point[1] );
+				poutvert[j].point[2] = LittleShort( pinvert[j].point[2] );
 
-				VectorCopy( poutvert->point, v );
+				poutvert[j].latlong[0] = pinvert[j].norm[0];
+				poutvert[j].latlong[1] = pinvert[j].norm[1];
+
+				VectorCopy( poutvert[j].point, v );
 				AddPointToBounds( v, poutframe->mins, poutframe->maxs );
-
-				poutvert->latlong[0] = pinvert->norm[0];
-				poutvert->latlong[1] = pinvert->norm[1];
 			}
 		}
 
@@ -490,11 +481,12 @@ void Mod_LoadAliasMD3Model ( model_t *mod, model_t *parent, void *buffer )
 	// build triangle neighbors
 	//
 #if SHADOW_VOLUMES
-		poutmesh->trneighbors = Mod_Malloc( mod, sizeof(int) * poutmesh->numtris * 3 );
-		R_BuildTriangleNeighbors ( poutmesh->trneighbors, poutmesh->indexes, poutmesh->numtris );
+		buf += sizeof(maliasvertex_t) * poutmodel->numframes * numverts;
+		poutmesh->trneighbors = ( int * )buf;
+		R_BuildTriangleNeighbors( poutmesh->trneighbors, poutmesh->indexes, poutmesh->numtris );
 #endif
 
-		pinmesh = ( dmd3mesh_t * )( ( qbyte * )pinmesh + LittleLong (pinmesh->meshsize) );
+		pinmesh = ( dmd3mesh_t * )( ( qbyte * )pinmesh + LittleLong( pinmesh->meshsize ) );
 	}
 
 //
@@ -543,7 +535,7 @@ static model_t *R_AliasLODForDistance( entity_t *e )
 R_AliasModelBBox
 =============
 */
-void R_AliasModelBBox ( entity_t *e, model_t *mod )
+void R_AliasModelBBox( entity_t *e, model_t *mod )
 {
 	int				i;
 	maliasmodel_t	*aliasmodel = mod->aliasmodel;
@@ -595,7 +587,7 @@ void R_AliasModelBBox ( entity_t *e, model_t *mod )
 R_CullAliasModel
 =============
 */
-qboolean R_CullAliasModel( entity_t *e, model_t *mod )
+qboolean R_CullAliasModel( entity_t *e )
 {
 	int i;
 	vec3_t bbox[8];
@@ -628,7 +620,7 @@ qboolean R_CullAliasModel( entity_t *e, model_t *mod )
 
 			for( p = 0; p < 8; p++ ) {
 				int mask = 0;
-				
+
 				for( f = 0; f < 4; f++ ) {
 					if ( DotProduct( frustum[f].normal, bbox[p] ) < frustum[f].dist )
 						mask |= ( 1 << f );
@@ -706,11 +698,13 @@ R_DrawAliasFrameLerp
 Interpolates between two frames and origins
 =============
 */
-void R_DrawAliasFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
+void R_DrawAliasFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
 {
 	int				i, meshnum;
 	int				features;
 	float			backv[3], frontv[3];
+	vec3_t			normal, oldnormal;
+	qboolean		calcNormals, calcSTVectors;
 	vec3_t			move, delta;
 	maliasframe_t	*frame, *oldframe;
 	maliasmesh_t	*mesh;
@@ -744,59 +738,7 @@ void R_DrawAliasFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 	{
 		move[i] = frame->translate[i] + (move[i] - frame->translate[i]) * backlerp;
 		move[i] *= e->scale;
-		backv[i] = backlerp * oldframe->scale[i] * e->scale;
-		frontv[i] = (1.0f - backlerp) * frame->scale[i] * e->scale;
 	}
-
-	v = mesh->vertexes + e->frame*mesh->numverts;
-	ov = mesh->vertexes + e->oldframe*mesh->numverts;
-
-	if( !shadow ) {
-		vec3_t normal, oldnormal;
-
-		for( i = 0; i < mesh->numverts; i++, v++, ov++ ) {
-			VectorSet( tempVertexArray[i], 
-				move[0] + v->point[0]*frontv[0] + ov->point[0]*backv[0],
-				move[1] + v->point[1]*frontv[1] + ov->point[1]*backv[1],
-				move[2] + v->point[2]*frontv[2] + ov->point[2]*backv[2] );
-
-			R_LatLongToNorm( v->latlong, normal );
-			R_LatLongToNorm( ov->latlong, oldnormal );
-
-			VectorSet( tempNormalsArray[i], 
-				normal[0] + (oldnormal[0] - normal[0])*backlerp, 
-				normal[1] + (oldnormal[1] - normal[1])*backlerp, 
-				normal[2] + (oldnormal[2] - normal[2])*backlerp );
-		}
-	} else {
-		for( i = 0; i < mesh->numverts; i++, v++, ov++ ) {
-			VectorSet( tempVertexArray[i], 
-				move[0] + v->point[0]*frontv[0] + ov->point[0]*backv[0],
-				move[1] + v->point[1]*frontv[1] + ov->point[1]*backv[1],
-				move[2] + v->point[2]*frontv[2] + ov->point[2]*backv[2] );
-		}
-	}
-
-	if( shadow ) {
-		alias_mesh.stArray = NULL;
-#if SHADOW_VOLUMES
-		alias_mesh.trneighbors = mesh->trneighbors;
-#endif
-	} else {
-		alias_mesh.stArray = mesh->stcoords;
-#if SHADOW_VOLUMES
-		alias_mesh.trneighbors = NULL;
-#endif
-	}
-
-	alias_mesh.indexes = mesh->indexes;
-	alias_mesh.numIndexes = mesh->numtris * 3;
-	alias_mesh.numVertexes = mesh->numverts;
-	alias_mesh.xyzArray = tempVertexArray;
-	alias_mesh.normalsArray = tempNormalsArray;
-#if SHADOW_VOLUMES
-	alias_mesh.trnormals = NULL;
-#endif
 
 	features = MF_NONBATCHED | mb->shader->features;
 	if( r_shownormals->integer && !shadow )
@@ -805,6 +747,66 @@ void R_DrawAliasFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 		features |= MF_NOCULL;
 	if( shadow )
 		features |= MF_DEFORMVS;
+
+	calcNormals = (( features & MF_NORMALS ) != 0) && !shadow;
+	calcSTVectors = (( features & MF_STVECTORS ) != 0) && !shadow;
+
+	if( e->frame == e->oldframe ) {
+		for (i=0 ; i<3 ; i++)
+			frontv[i] = frame->scale[i] * e->scale;
+
+		v = mesh->vertexes + e->frame * mesh->numverts;
+		for( i = 0; i < mesh->numverts; i++, v++ ) {
+			VectorSet( inVertsArray[i], 
+				move[0] + v->point[0]*frontv[0],
+				move[1] + v->point[1]*frontv[1],
+				move[2] + v->point[2]*frontv[2] );
+
+			if( calcNormals )
+				R_LatLongToNorm( v->latlong, inNormalsArray[i] );
+		}
+	} else {
+		for (i=0 ; i<3 ; i++)
+		{
+			backv[i] = backlerp * oldframe->scale[i] * e->scale;
+			frontv[i] = (1.0f - backlerp) * frame->scale[i] * e->scale;
+		}
+
+		v = mesh->vertexes + e->frame * mesh->numverts;
+		ov = mesh->vertexes + e->oldframe * mesh->numverts;
+		for( i = 0; i < mesh->numverts; i++, v++, ov++ ) {
+			VectorSet( inVertsArray[i], 
+				move[0] + v->point[0]*frontv[0] + ov->point[0]*backv[0],
+				move[1] + v->point[1]*frontv[1] + ov->point[1]*backv[1],
+				move[2] + v->point[2]*frontv[2] + ov->point[2]*backv[2] );
+
+			if( calcNormals ) {
+				R_LatLongToNorm( v->latlong, normal );
+				R_LatLongToNorm( ov->latlong, oldnormal );
+
+				VectorSet( inNormalsArray[i], 
+					normal[0] + (oldnormal[0] - normal[0]) * backlerp, 
+					normal[1] + (oldnormal[1] - normal[1]) * backlerp, 
+					normal[2] + (oldnormal[2] - normal[2]) * backlerp );
+			}
+		}
+	}
+
+	if( calcSTVectors )
+		R_BuildTangentVectors( mesh->numverts, inVertsArray, mesh->stcoords, mesh->numtris, mesh->indexes, inSVectorsArray, inTVectorsArray );
+
+	alias_mesh.indexes = mesh->indexes;
+	alias_mesh.numIndexes = mesh->numtris * 3;
+	alias_mesh.numVertexes = mesh->numverts;
+	alias_mesh.xyzArray = inVertsArray;
+	alias_mesh.stArray = mesh->stcoords;
+	alias_mesh.normalsArray = inNormalsArray;
+	alias_mesh.sVectorsArray = inSVectorsArray;
+	alias_mesh.tVectorsArray = inTVectorsArray;
+#if SHADOW_VOLUMES
+	alias_mesh.trnormals = NULL;
+	alias_mesh.trneighbors = mesh->trneighbors;
+#endif
 
 	R_RotateForEntity( e );
 
@@ -817,7 +819,7 @@ void R_DrawAliasFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 		} else {
 #if SHADOW_VOLUMES
 			R_AliasModelBBox( e, mod );
-			R_DrawShadowVolumes( &alias_mesh, alias_mins, alias_maxs, alias_radius );
+			R_DrawShadowVolumes( &alias_mesh, e->lightingOrigin, alias_mins, alias_maxs, alias_radius );
 #endif
 		}
 	}
@@ -828,7 +830,7 @@ void R_DrawAliasFrameLerp( meshbuffer_t *mb, model_t *mod, float backlerp, qbool
 R_DrawAliasModel
 =================
 */
-void R_DrawAliasModel( meshbuffer_t *mb, qboolean shadow )
+void R_DrawAliasModel( const meshbuffer_t *mb, qboolean shadow )
 {
 	entity_t *e = mb->entity;
 
@@ -871,7 +873,7 @@ void R_AddAliasModelToList( entity_t *e )
 		return;
 
 	R_AliasModelBBox( e, mod );
-	if( !r_shadows->integer && R_CullAliasModel( e, mod ) )
+	if( !r_shadows->integer && R_CullAliasModel( e ) )
 		return;
 
 	fog = R_FogForSphere( e->origin, alias_radius );

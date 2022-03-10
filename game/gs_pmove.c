@@ -872,9 +872,17 @@ void PM_CheckDuck (void)
 	pm->maxs[0] = 15;
 	pm->maxs[1] = 15;
 
+	if (pm->s.pm_type == PM_GIB)
+	{
+		pm->mins[0] = 0;
+		pm->maxs[2] = 16;
+		pm->viewheight = 8;
+		return;
+	}
+
 	pm->mins[2] = -24;
 
-	if (pm->s.pm_type == PM_GIB || pm->s.pm_type == PM_DEAD)
+	if (pm->s.pm_type == PM_DEAD)
 	{
 		pm->maxs[2] = -8;
 		pm->viewheight = 8;
@@ -1048,10 +1056,12 @@ PM_ClampAngles
 void PM_ClampAngles (void)
 {
 	int		i;
+	short	temp;
 
 	if (pm->s.pm_flags & PMF_TIME_TELEPORT)
 	{
-		pm->viewangles[YAW] = SHORT2ANGLE(pm->cmd.angles[YAW] + pm->s.delta_angles[YAW]);
+		temp = pm->cmd.angles[YAW] + pm->s.delta_angles[YAW];
+		pm->viewangles[YAW] = SHORT2ANGLE (temp);
 		pm->viewangles[PITCH] = 0;
 		pm->viewangles[ROLL] = 0;
 	}
@@ -1059,7 +1069,10 @@ void PM_ClampAngles (void)
 	{
 		// circularly clamp the angles with deltas
 		for (i=0 ; i<3 ; i++)
-			pm->viewangles[i] = SHORT2ANGLE(pm->cmd.angles[i] + pm->s.delta_angles[i]);
+		{
+			temp = pm->cmd.angles[i] + pm->s.delta_angles[i];
+			pm->viewangles[i] = SHORT2ANGLE (temp);
+		}
 
 		// don't let the player look up or down more than 90 degrees
 		if (pm->viewangles[PITCH] > 89 && pm->viewangles[PITCH] < 180)

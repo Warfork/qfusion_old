@@ -272,9 +272,10 @@ Sys_ConsoleInput
 */
 char *Sys_ConsoleInput (void)
 {
-	INPUT_RECORD	recs[1024];
-	int		dummy;
-	int		ch, numread, numevents;
+	INPUT_RECORD	rec;
+	int		ch;
+	DWORD	dummy;
+	DWORD	numread, numevents;
 
 	if (!dedicated || !dedicated->integer)
 		return NULL;
@@ -287,17 +288,17 @@ char *Sys_ConsoleInput (void)
 		if (numevents <= 0)
 			break;
 
-		if (!ReadConsoleInput(hinput, recs, 1, &numread))
+		if (!ReadConsoleInput(hinput, &rec, 1, &numread))
 			Sys_Error ("Error reading console input");
 
 		if (numread != 1)
 			Sys_Error ("Couldn't read console input");
 
-		if (recs[0].EventType == KEY_EVENT)
+		if (rec.EventType == KEY_EVENT)
 		{
-			if (!recs[0].Event.KeyEvent.bKeyDown)
+			if (!rec.Event.KeyEvent.bKeyDown)
 			{
-				ch = recs[0].Event.KeyEvent.uChar.AsciiChar;
+				ch = rec.Event.KeyEvent.uChar.AsciiChar;
 
 				switch (ch)
 				{
@@ -330,9 +331,7 @@ char *Sys_ConsoleInput (void)
 								console_textlen++;
 							}
 						}
-
 						break;
-
 				}
 			}
 		}
@@ -351,7 +350,7 @@ Print text to the dedicated console
 */
 void Sys_ConsoleOutput (char *string)
 {
-	int		dummy;
+	DWORD	dummy;
 	char	text[256];
 
 	if (!dedicated || !dedicated->integer)
@@ -494,7 +493,7 @@ void *Sys_LoadLibrary( char *name, dllfunc_t *funcs )
 		*(func->funcPointer) = ( void * )GetProcAddress( lib, func->name );
 
 		if( !(*(func->funcPointer)) ) {
-			Sys_UnloadLibrary( &lib );
+			Sys_UnloadLibrary( ( void ** )&lib );
 			Com_Error( ERR_FATAL, "%s: GetProcAddress failed for %s", name, func->name );
 		}
 	}
@@ -510,7 +509,15 @@ GAME DLL
 ========================================================================
 */
 
-static HINSTANCE	game_library, cgame_library, ui_library;
+static HINSTANCE	game_library = NULL;
+static HINSTANCE	cgame_library = NULL;
+static HINSTANCE	ui_library = NULL;
+
+#ifdef __cplusplus
+# define EXTERN_API_FUNC	extern "C"
+#else
+# define EXTERN_API_FUNC	extern
+#endif
 
 /*
 =================
@@ -521,16 +528,33 @@ void Sys_UnloadGameLibrary( gamelib_t gamelib )
 {
 	HINSTANCE *lib;
 
-	switch ( gamelib ) {
-		case LIB_GAME: lib = &game_library; break;
-		case LIB_CGAME: lib = &cgame_library; break;
-		case LIB_UI: lib = &ui_library; break;
+	switch( gamelib ) {
+		case LIB_GAME:
+			lib = &game_library;
+#ifdef GAME_HARD_LINKED
+			*lib = NULL;
+#endif
+			break;
+		case LIB_CGAME:
+			lib = &cgame_library;
+#ifdef CGAME_HARD_LINKED
+			*lib = NULL;
+#endif
+			break;
+		case LIB_UI:
+			lib = &ui_library;
+#ifdef UI_HARD_LINKED
+			*lib = NULL;
+#endif
+			break;
 		default: assert( qfalse );
 	}
 
-	if (!FreeLibrary (*lib))
-		Com_Error (ERR_FATAL, "FreeLibrary failed");
-	*lib = NULL;
+	if( *lib ) {
+		if( !FreeLibrary( *lib ) )
+			Com_Error( ERR_FATAL, "FreeLibrary failed" );
+		*lib = NULL;
+	}
 }
 
 /*
@@ -566,27 +590,52 @@ void *Sys_LoadGameLibrary( gamelib_t gamelib, void *parms )
 #endif
 #endif
 
-	switch ( gamelib ) {
+	APIfunc = NULL;
+	switch( gamelib ) {
 		case LIB_GAME:
+		{
+#ifdef GAME_HARD_LINKED
+			EXTERN_API_FUNC void *GetGameAPI( void * );
+			APIfunc = GetGameAPI;
+#endif
 			lib = &game_library;
 			libname = "game_" ARCH ".dll";
 			apifuncname = "GetGameAPI";
 			break;
+		}
 		case LIB_CGAME:
+		{
+#ifdef CGAME_HARD_LINKED
+			EXTERN_API_FUNC void *GetCGameAPI( void * );
+			APIfunc = GetCGameAPI;
+#endif
 			lib = &cgame_library;
 			libname = "cgame_" ARCH ".dll";
 			apifuncname = "GetCGameAPI";
 			break;
+		}
 		case LIB_UI:
+		{
+#ifdef UI_HARD_LINKED
+			EXTERN_API_FUNC void *GetUIAPI( void * );
+			APIfunc = GetUIAPI;
+#endif
 			lib = &ui_library;
 			libname = "ui_" ARCH ".dll";
 			apifuncname = "GetUIAPI";
 			break;
+		}
 		default: assert( qfalse );
 	}
 
 	if (*lib)
 		Com_Error (ERR_FATAL, "Sys_LoadGameLibrary without Sys_UnloadGameLibrary");
+
+	if (APIfunc)
+	{
+		*lib = ( HINSTANCE )1;
+		return APIfunc (parms);
+	}
 
 	// check the current debug directory first for development purposes
 	_getcwd (cwd, sizeof(cwd));
@@ -638,220 +687,11 @@ void *Sys_LoadGameLibrary( gamelib_t gamelib, void *parms )
 	return APIfunc (parms);
 }
 
-//===============================================================================
-
-int MHz, CPUfamily, Mem, InstCache, DataCache, L2Cache;
-char VendorID[16];
-unsigned char SupportCMOVs, Support3DNow, Support3DNowExt, SupportMMX, SupportMMXext, SupportSSE;
-
-#ifdef id386
-#pragma warning(disable: 4035)
-#if _MSC_VER || __BORLANDC__
-inline __int64 GetCycleNumber()
-#else
-inline long long GetCycleNumber()
-#endif
-{
-	__asm 
-	{
-		RDTSC
-	}
-}
-
-static void GetMHz (void)
-{
-	LARGE_INTEGER t1, t2, tf;
-#if _MSC_VER || __BORLANDC__
-	__int64     c1, c2;
-#else
-	long long   c1, c2;
-#endif
-
-	QueryPerformanceFrequency (&tf);
-	QueryPerformanceCounter (&t1);
-	c1 = GetCycleNumber ();
-
-	_asm {
-		MOV  EBX, 5000000
-		WaitAlittle:
-			DEC		EBX
-		JNZ	WaitAlittle
-	}
-
-	QueryPerformanceCounter (&t2);
-	c2 = GetCycleNumber ();
-	
-	Com_Printf ("Detecting CPU Speed: %d MHz\n", (int) ((c2 - c1) * tf.QuadPart / (t2.QuadPart - t1.QuadPart) / 1000000));
-}
-
-static void GetSysInfo (void)
-{
-	MEMORYSTATUS ms;
-
-	ms.dwLength = sizeof(MEMORYSTATUS);
-	GlobalMemoryStatus(&ms);
-	Mem = ms.dwTotalPhys >> 10;
-
-	__asm {
-		PUSHFD
-		POP		EAX
-		MOV		EBX, EAX
-		XOR		EAX, 00200000h
-		PUSH	EAX
-		POPFD
-		PUSHFD
-		POP		EAX
-		CMP		EAX, EBX
-		JZ		ExitCpuTest
-
-			XOR		EAX, EAX
-			CPUID
-
-			MOV		DWORD PTR [VendorID],		EBX
-			MOV		DWORD PTR [VendorID + 4],	EDX
-			MOV		DWORD PTR [VendorID + 8],	ECX
-			MOV		DWORD PTR [VendorID + 12],	0
-
-			MOV		EAX, 1
-			CPUID
-			TEST	EDX, 0x00008000
-			SETNZ	AL
-			MOV		SupportCMOVs, AL
-			TEST	EDX, 0x00800000
-			SETNZ	AL
-			MOV		SupportMMX, AL
-	
-			TEST	EDX, 0x02000000
-			SETNZ	AL
-			MOV		SupportSSE, AL
-
-			SHR		EAX, 8
-			AND		EAX, 0x0000000F
-			MOV		CPUfamily, EAX
-	
-			MOV		MHz, 0
-			TEST	EDX, 0x00000008
-			JZ		NoTimeStampCounter
-				CALL	GetMHz
-				MOV		MHz, EAX
-			NoTimeStampCounter:
-
-			MOV		Support3DNow, 0
-			MOV		EAX, 80000000h
-			CPUID
-			CMP		EAX, 80000000h
-			JBE		NoExtendedFunction
-				MOV		EAX, 80000001h
-				CPUID
-				TEST	EDX, 80000000h
-				SETNZ	AL
-				MOV		Support3DNow, AL
-
-				TEST	EDX, 40000000h
-				SETNZ	AL
-				MOV		Support3DNowExt, AL
-
-				TEST	EDX, 0x00400000
-				SETNZ	AL
-				MOV		SupportMMXext, AL
-
-				MOV		EAX, 80000005h
-				CPUID
-				SHR		ECX, 24
-				MOV		DataCache, ECX
-				SHR		EDX, 24
-				MOV		InstCache, EDX
-				
-				MOV		EAX, 80000006h
-				CPUID
-				SHR		ECX, 16
-				MOV		L2Cache, ECX
-
-				
-			JMP		ExitCpuTest
-
-			NoExtendedFunction:
-			MOV		EAX, 2
-			CPUID
-
-			MOV		ESI, 4
-			TestCache:
-				CMP		DL, 0x40
-				JNA		NotL2
-					MOV		CL, DL
-					SUB		CL, 0x40
-					SETZ	CH
-					DEC		CH
-					AND		CL, CH
-					MOV		EBX, 64
-					SHL		EBX, CL
-					MOV		L2Cache, EBX
-				NotL2:
-				CMP		DL, 0x06
-				JNE		Next1
-					MOV		InstCache, 8
-				Next1:
-				CMP		DL, 0x08
-				JNE		Next2
-					MOV		InstCache, 16
-				Next2:
-				CMP		DL, 0x0A
-				JNE		Next3
-					MOV		DataCache, 8
-				Next3:
-				CMP		DL, 0x0C
-				JNE		Next4
-					MOV		DataCache, 16
-				Next4:
-				SHR		EDX, 8
-				DEC		ESI
-			JNZ	TestCache
-
-		ExitCpuTest:
-	}
-}
-
-void Sys_PrintCPUInfo (void)
-{
-	GetSysInfo ();
-
-	Com_Printf ( "CPU Vendor: %s\n", VendorID );
-	Com_Printf ( "CPU Family: %i\n", CPUfamily );
-	Com_Printf ( "Detecting CPU extensions:\n" );
-
-	if ( Support3DNow ) {
-		Com_Printf ( "3DNow!" );
-		if ( Support3DNowExt ) {
-			Com_Printf ( "(extended)" );
-		}
-		Com_Printf ( " " );
-	}
-	if ( SupportMMX ) {
-		Com_Printf ( "MMX" );
-		if ( SupportMMXext ) {
-			Com_Printf ( "(extended)" );
-		}
-		Com_Printf ( " " );
-	}
-	if ( SupportSSE ) {
-		Com_Printf ( "SSE " );
-	}
-
-	Com_Printf ( "\n" );
-}
-#else
-void Sys_PrintCPUInfo (void)
-{
-}
-#endif
-
 //=======================================================================
-
 
 /*
 ==================
 ParseCommandLine
-
 ==================
 */
 void ParseCommandLine (LPSTR lpCmdLine)

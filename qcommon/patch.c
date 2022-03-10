@@ -24,12 +24,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 Patch_FlatnessTest
 ===============
 */
-static int Patch_FlatnessTest( float maxflat2, vec_t *point0, vec_t *point1, vec_t *point2 )
+static int Patch_FlatnessTest( float maxflat2, vec3_t point0, vec3_t point1, vec3_t point2 )
 {
-	vec3_t v1, v2, v3;
-	vec3_t t, n;
 	float d;
 	int ft0, ft1;
+	vec3_t t, n;
+	vec3_t v1, v2, v3;
 
 	VectorSubtract( point2, point0, n );
 	if( !VectorNormalize( n ) )
@@ -48,7 +48,7 @@ static int Patch_FlatnessTest( float maxflat2, vec_t *point0, vec_t *point1, vec
 	ft0 = Patch_FlatnessTest( maxflat2, point0, v1, v3 );
 	ft1 = Patch_FlatnessTest( maxflat2, v3, v2, point2 );
 
-	return 1 + (int)( floor( max ( ft0, ft1 ) ) + 0.5f );
+	return 1 + (int)( floor( max( ft0, ft1 ) ) + 0.5f );
 }
 
 /*
@@ -112,7 +112,8 @@ void Patch_Evaluate( vec_t *p, int *numcp, int *tess, vec_t *dest, int comp )
 	int index[3], dstpitch, i, u, v, x, y;
 	float s, t, step[2];
 	vec_t *tvec, *tvec2;
-	vec4_t pv[3][3], v1, v2, v3;
+	vec_t *pv[3][3];
+	vec4_t v1, v2, v3;
 
 	num_patches[0] = numcp[0] / 2;
 	num_patches[1] = numcp[1] / 2;
@@ -141,9 +142,9 @@ void Patch_Evaluate( vec_t *p, int *numcp, int *tess, vec_t *dest, int comp )
 
 			// current 3x3 patch control points
 			for( i = 0; i < 3; i++ ) {
-				Vector4Copy( &p[(index[0]+i) * comp], pv[i][0] );
-				Vector4Copy( &p[(index[1]+i) * comp], pv[i][1] );
-				Vector4Copy( &p[(index[2]+i) * comp], pv[i][2] );
+				pv[i][0] = &p[(index[0]+i) * comp];
+				pv[i][1] = &p[(index[1]+i) * comp];
+				pv[i][2] = &p[(index[2]+i) * comp];
 			}
 
 			tvec = dest + v * tess[1] * dstpitch + u * tess[0] * comp;

@@ -30,6 +30,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define	SVF_MONSTER			0x00000010	// treat as CONTENTS_MONSTER for collision
 #define SVF_FAKECLIENT		0x00000020	// do not try to send anything to this client
 #define SVF_BROADCAST		0x00000040	// always transmit
+#define SVF_CORPSE			0x00000080	// treat as CONTENTS_CORPSE for collision
+#define SVF_PROJECTILE		0x00000100	// sets s.solid to SOLID_NOT for prediction
 
 // edict->solid values
 typedef enum

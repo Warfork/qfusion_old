@@ -58,6 +58,94 @@ void S_WriteSwappedLinearBlastStereo16 (void)
 		snd_out[i+1] = bound ((short)0x8000, val, 0x7fff);
 	}
 }
+#elif defined(__GNUC__)
+void S_WriteLinearBlastStereo16 (void)
+{
+	__asm__ __volatile__ (
+"		# preserve register variables\n"
+"		pushl	%edi\n"
+"		pushl	%ebx\n"
+"		movl	" VAR(snd_linear_count) ",%ecx\n"
+"		movl	" VAR(snd_p) ",%ebx\n"
+"		movl	" VAR(snd_out) ",%edi\n"
+"	LWLBLoopTop:\n"
+"		movl	-8(%ebx,%ecx,4),%eax\n"
+"		sarl	$8,%eax\n"
+"		cmpl	$0x7FFF,%eax\n"
+"		jg	LClampHigh\n"
+"		cmpl	$0xFFFF8000,%eax\n"
+"		jnl	LClampDone\n"
+"		movl	$0xFFFF8000,%eax\n"
+"		jmp	LClampDone\n"
+"	LClampHigh:\n"
+"		movl	$0x7FFF,%eax\n"
+"	LClampDone:\n"
+"		movl	-4(%ebx,%ecx,4),%edx\n"
+"		sarl	$8,%edx\n"
+"		cmpl	$0x7FFF,%edx\n"
+"		jg	LClampHigh2\n"
+"		cmpl	$0xFFFF8000,%edx\n"
+"		jnl	LClampDone2\n"
+"		movl	$0xFFFF8000,%edx\n"
+"		jmp	LClampDone2\n"
+"	LClampHigh2:\n"
+"		movl	$0x7FFF,%edx\n"
+"	LClampDone2:\n"
+"		shll	$16,%edx\n"
+"		andl	$0xFFFF,%eax\n"
+"		orl		%eax,%edx\n"
+"		movl	%edx,-4(%edi,%ecx,2)\n"
+"		subl	$2,%ecx\n"
+"		jnz	LWLBLoopTop\n"
+"		popl	%ebx\n"
+"		popl	%edi\n"
+"#		ret\n"
+    );
+}
+
+void S_WriteSwappedLinearBlastStereo16 (void)
+{
+	__asm__ __volatile__ (
+"		# preserve register variables\n"
+"		pushl	%edi\n"
+"		pushl	%ebx\n"
+"		movl	" VAR(snd_linear_count) ",%ecx\n"
+"		movl	" VAR(snd_p) ",%ebx\n"
+"		movl	" VAR(snd_out) ",%edi\n"
+"	LWLBLoopTopS:\n"
+"		movl	-4(%ebx,%ecx,4),%eax\n"
+"		sarl	$8,%eax\n"
+"		cmpl	$0x7FFF,%eax\n"
+"		jg	LClampHighS\n"
+"		cmpl	$0xFFFF8000,%eax\n"
+"		jnl	LClampDoneS\n"
+"		movl	$0xFFFF8000,%eax\n"
+"		jmp	LClampDoneS\n"
+"	LClampHighS:\n"
+"		movl	$0x7FFF,%eax\n"
+"	LClampDoneS:\n"
+"		movl	-8(%ebx,%ecx,4),%edx\n"
+"		sarl	$8,%edx\n"
+"		cmpl	$0x7FFF,%edx\n"
+"		jg	LClampHigh2S\n"
+"		cmpl	$0xFFFF8000,%edx\n"
+"		jnl	LClampDone2S\n"
+"		movl	$0xFFFF8000,%edx\n"
+"		jmp	LClampDone2S\n"
+"	LClampHigh2S:\n"
+"		movl	$0x7FFF,%edx\n"
+"	LClampDone2S:\n"
+"		shll	$16,%edx\n"
+"		andl	$0xFFFF,%eax\n"
+"		orl	%eax,%edx\n"
+"		movl	%edx,-4(%edi,%ecx,2)\n"
+"		subl	$2,%ecx\n"
+"		jnz	LWLBLoopTopS\n"
+"		popl	%ebx\n"
+"		popl	%edi\n"
+"#		ret\n"
+	);
+}
 #elif defined(_WIN32)
 __declspec( naked ) void S_WriteLinearBlastStereo16 (void)
 {
@@ -67,6 +155,7 @@ __declspec( naked ) void S_WriteLinearBlastStereo16 (void)
 		 mov ecx,ds:dword ptr[snd_linear_count]
 		 mov ebx,ds:dword ptr[snd_p]
 		 mov edi,ds:dword ptr[snd_out]
+
 		LWLBLoopTop:
 		 mov eax,ds:dword ptr[-8+ebx+ecx*4]
 		 sar eax,8
@@ -76,8 +165,10 @@ __declspec( naked ) void S_WriteLinearBlastStereo16 (void)
 		 jnl LClampDone
 		 mov eax,0FFFF8000h
 		 jmp LClampDone
+
 		LClampHigh:
 		 mov eax,07FFFh
+
 		LClampDone:
 		 mov edx,ds:dword ptr[-4+ebx+ecx*4]
 		 sar edx,8
@@ -87,8 +178,10 @@ __declspec( naked ) void S_WriteLinearBlastStereo16 (void)
 		 jnl LClampDone2
 		 mov edx,0FFFF8000h
 		 jmp LClampDone2
+
 		LClampHigh2:
 		 mov edx,07FFFh
+
 		LClampDone2:
 		 shl edx,16
 		 and eax,0FFFFh
@@ -110,6 +203,7 @@ __declspec( naked ) void S_WriteSwappedLinearBlastStereo16 (void)
 		 mov ecx,ds:dword ptr[snd_linear_count]
 		 mov ebx,ds:dword ptr[snd_p]
 		 mov edi,ds:dword ptr[snd_out]
+
 		LWLBLoopTop:
 		 mov eax,ds:dword ptr[-4+ebx+ecx*4]
 		 sar eax,8
@@ -119,8 +213,10 @@ __declspec( naked ) void S_WriteSwappedLinearBlastStereo16 (void)
 		 jnl LClampDone
 		 mov eax,0FFFF8000h
 		 jmp LClampDone
+
 		LClampHigh:
 		 mov eax,07FFFh
+
 		LClampDone:
 		 mov edx,ds:dword ptr[-8+ebx+ecx*4]
 		 sar edx,8
@@ -130,8 +226,10 @@ __declspec( naked ) void S_WriteSwappedLinearBlastStereo16 (void)
 		 jnl LClampDone2
 		 mov edx,0FFFF8000h
 		 jmp LClampDone2
+
 		LClampHigh2:
 		 mov edx,07FFFh
+
 		LClampDone2:
 		 shl edx,16
 		 and eax,0FFFFh

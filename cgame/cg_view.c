@@ -73,13 +73,13 @@ void CG_TestLights( void )
 	float		f, r;
 	vec3_t		origin;
 
-	for( i = 0; i < 32; i++ ) {
+	for( i = 0; i < min( cg_testLights->integer, 32 ); i++ ) {
 		r = 64 * ((i%4) - 1.5);
 		f = 64 * (i/4) + 128;
 
 		for ( j = 0; j < 3; j++ )
-			origin[j] = cg.refdef.vieworg[j] + cg.v_forward[j]*f + cg.v_right[j]*r;
-		trap_R_AddLightToScene( origin, 200, ((i%6)+1) & 1, (((i%6)+1) & 2)>>1, (((i%6)+1) & 4)>>2 );
+			origin[j] = cg.refdef.vieworg[j]/* + cg.v_forward[j]*f + cg.v_right[j]*r*/;
+		trap_R_AddLightToScene( origin, 200, ((i%6)+1) & 1, (((i%6)+1) & 2)>>1, (((i%6)+1) & 4)>>2, NULL );
 	}
 }
 
@@ -160,6 +160,11 @@ void CG_CalcViewBob( void )
 
 	if( cg.thirdPerson )
 		return;
+	if( cg_paused->integer ) {
+		cg.bobCycle = 0;
+		cg.bobFracSin = 0;
+		return;
+	}
 
 	//
 	// calculate speed and cycle to be used for
@@ -188,14 +193,14 @@ void CG_CalcViewBob( void )
 CG_RenderFlags
 ==================
 */
-int CG_RenderFlags (void)
+int CG_RenderFlags( void )
 {
 	int rdflags, contents;
 
 	rdflags = 0;
 
-	contents = CG_PointContents ( cg.refdef.vieworg );
-	if ( contents & MASK_WATER )
+	contents = CG_PointContents( cg.refdef.vieworg );
+	if( contents & MASK_WATER )
 		rdflags |= RDF_UNDERWATER;
 	else
 		rdflags &= ~RDF_UNDERWATER;
@@ -227,14 +232,16 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 	// clear any dirty part of the background
 	SCR_TileClear ();
 
-	// update time
-	cg.realTime = realTime;
-	cg.frameTime = frameTime;
-	cg.frameCount++;
-	cg.time += frameTime * 1000;
+	if( !cg_paused->value ) {
+		// update time
+		cg.realTime = realTime;
+		cg.frameTime = frameTime;
+		cg.frameCount++;
+		cg.time += frameTime * 1000;
 
-	// clamp time 
-	clamp( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
+		// clamp time
+		clamp( cg.time, cg.frame.serverTime - 100, cg.frame.serverTime );
+	}
 
 	if( cg.frameTime > (1.0 / 5.0) )
 		cg.frameTime = (1.0 / 5.0);
@@ -242,75 +249,65 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 	// predict all unacknowledged movements
 	CG_PredictMovement ();
 
+	// run lightstyles
+	CG_RunLightStyles ();
+
 	CG_FixUpGender ();
 
-	if( !cg_paused->integer || forceRefresh ) {
-		trap_R_ClearScene ();
+	trap_R_ClearScene ();
 
-		CG_CalcViewBob ();
+	CG_CalcViewBob ();
 
-		// build a refresh entity list
-		// this also calls CG_CalcViewValues which loads
-		// v_forward, etc.
-		CG_AddEntities ();
+	// build a refresh entity list
+	// this also calls CG_CalcViewValues which loads v_forward, etc.
+	CG_AddEntities ();
 
-		if( cg_testEntities->integer )
-			CG_TestEntities ();
-		if( cg_testLights->integer )
-			CG_TestLights ();
-		if( cg_testBlend->integer )
-			CG_TestBlend ();
+	CG_AddLightStyles ();
 
-		// offset vieworg appropriately if we're doing stereo separation
-		if( stereo_separation != 0 )
-			VectorMA( cg.refdef.vieworg, stereo_separation, cg.v_right, cg.refdef.vieworg );
+	if( cg_testEntities->integer )
+		CG_TestEntities ();
+	if( cg_testLights->integer )
+		CG_TestLights ();
+	if( cg_testBlend->integer )
+		CG_TestBlend ();
 
-		if( cg.thirdPerson )
-			CG_ThirdPerson_CameraUpdate ();
+	// offset vieworg appropriately if we're doing stereo separation
+	if( stereo_separation != 0 )
+		VectorMA( cg.refdef.vieworg, stereo_separation, cg.v_right, cg.refdef.vieworg );
 
-		// never let it sit exactly on a node line, because a water plane can
-		// dissapear when viewed with the eye exactly on it.
-		// the server protocol only specifies to 1/8 pixel, so add 1/16 in each axis
-		cg.refdef.vieworg[0] += 1.0/16;
-		cg.refdef.vieworg[1] += 1.0/16;
-		cg.refdef.vieworg[2] += 1.0/16;
+	if( cg.thirdPerson )
+		CG_ThirdPerson_CameraUpdate ();
 
-		cg.refdef.x = scr_vrect.x;
-		cg.refdef.y = scr_vrect.y;
-		cg.refdef.width = scr_vrect.width;
-		cg.refdef.height = scr_vrect.height;
-		cg.refdef.fov_y = CalcFov( cg.refdef.fov_x, cg.refdef.width, cg.refdef.height );
+	// never let it sit exactly on a node line, because a water plane can
+	// dissapear when viewed with the eye exactly on it.
+	// the server protocol only specifies to 1/8 pixel, so add 1/16 in each axis
+	cg.refdef.vieworg[0] += 1.0/16;
+	cg.refdef.vieworg[1] += 1.0/16;
+	cg.refdef.vieworg[2] += 1.0/16;
 
-		cg.refdef.time = cg.time * 0.001;
-		cg.refdef.areabits = cg.frame.areabits;
+	cg.refdef.x = scr_vrect.x;
+	cg.refdef.y = scr_vrect.y;
+	cg.refdef.width = scr_vrect.width;
+	cg.refdef.height = scr_vrect.height;
+	cg.refdef.fov_y = CalcFov( cg.refdef.fov_x, cg.refdef.width, cg.refdef.height );
 
-		cg.refdef.rdflags = CG_RenderFlags ();
+	cg.refdef.time = cg.time * 0.001;
+	cg.refdef.areabits = cg.frame.areabits;
 
-		// warp if underwater
-		if ( cg.refdef.rdflags & RDF_UNDERWATER ) {
-			float phase = cg.refdef.time * WAVE_FREQUENCY * M_TWOPI;
-			float v = WAVE_AMPLITUDE * (sin( phase ) - 1.0) + 1;
-			cg.refdef.fov_x *= v;
-			cg.refdef.fov_y *= v;
-		}
+	cg.refdef.rdflags = CG_RenderFlags ();
+
+	// warp if underwater
+	if( cg.refdef.rdflags & RDF_UNDERWATER ) {
+		float phase = cg.refdef.time * WAVE_FREQUENCY * M_TWOPI;
+		float v = WAVE_AMPLITUDE * (sin( phase ) - 1.0) + 1;
+		cg.refdef.fov_x *= v;
+		cg.refdef.fov_y *= v;
 	}
 
 	trap_R_RenderScene( &cg.refdef );
 
 	// update audio
 	trap_S_Update( cg.refdef.vieworg, cg.v_forward, cg.v_right, cg.v_up );
-
-	if ( 0 ) {		// mirror of back view
-		cg.refdef.x = scr_vrect.x;
-		cg.refdef.y = scr_vrect.y;
-		cg.refdef.width = scr_vrect.width / 5;
-		cg.refdef.height = scr_vrect.height / 5;
-		cg.refdef.y += scr_vrect.height / 2 - cg.refdef.height / 2;
-		cg.refdef.viewangles[PITCH] = anglemod( -cg.refdef.viewangles[PITCH] );
-		cg.refdef.viewangles[YAW] = anglemod( cg.refdef.viewangles[YAW] + 180 );
-
-		trap_R_RenderScene( &cg.refdef );
-	}
 
 	SCR_Draw2D ();
 }

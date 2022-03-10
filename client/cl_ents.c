@@ -387,18 +387,18 @@ void CL_ParsePlayerstate (frame_t *oldframe, frame_t *newframe)
 		state->pmove.pm_type = MSG_ReadByte (&net_message);
 
 	if (flags & PS_M_ORIGIN0)
-		state->pmove.origin[0] = MSG_ReadLong (&net_message);
+		state->pmove.origin[0] = MSG_ReadInt3 (&net_message);
 	if (flags & PS_M_ORIGIN1)
-		state->pmove.origin[1] = MSG_ReadLong (&net_message);
+		state->pmove.origin[1] = MSG_ReadInt3 (&net_message);
 	if (flags & PS_M_ORIGIN2)
-		state->pmove.origin[2] = MSG_ReadLong (&net_message);
+		state->pmove.origin[2] = MSG_ReadInt3 (&net_message);
 
 	if (flags & PS_M_VELOCITY0)
-		state->pmove.velocity[0] = MSG_ReadLong (&net_message);
+		state->pmove.velocity[0] = MSG_ReadInt3 (&net_message);
 	if (flags & PS_M_VELOCITY1)
-		state->pmove.velocity[1] = MSG_ReadLong (&net_message);
+		state->pmove.velocity[1] = MSG_ReadInt3 (&net_message);
 	if (flags & PS_M_VELOCITY2)
-		state->pmove.velocity[2] = MSG_ReadLong (&net_message);
+		state->pmove.velocity[2] = MSG_ReadInt3 (&net_message);
 
 	if (flags & PS_M_TIME)
 		state->pmove.pm_time = MSG_ReadByte (&net_message);
