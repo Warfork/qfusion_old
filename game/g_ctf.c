@@ -92,136 +92,7 @@ int imageindex_sbfctf2;
 int imageindex_ctfsb1;
 int imageindex_ctfsb2;
 
-char *ctf_statusbar =
-"yb	-24 "
-
-// health
-"xv	0 "
-"hnum "
-"xv	50 "
-"pic 0 "
-
-// ammo
-"if 2 "
-"	xv	100 "
-"	anum "
-"	xv	150 "
-"	pic 2 "
-"endif "
-
-// armor
-"if 4 "
-"	xv	200 "
-"	rnum "
-"	xv	250 "
-"	pic 4 "
-"endif "
-
-// selected item
-"if 6 "
-"	xv	296 "
-"	pic 6 "
-"endif "
-
-"yb	-50 "
-
-// picked up item
-"if 7 "
-"	xv	0 "
-"	pic 7 "
-"	xv	26 "
-"	yb	-42 "
-"	stat_string 8 "
-"	yb	-50 "
-"endif "
-
-// timer
-"if 9 "
-  "xv 246 "
-  "num 2 10 "
-  "xv 296 "
-  "pic 9 "
-"endif "
-
-//  help / weapon icon 
-"if 11 "
-  "xv 148 "
-  "pic 11 "
-"endif "
-
-//  frags
-"xr	-50 "
-"yt 2 "
-"num 3 14 "
-
-//tech
-"yb -129 "
-"if 26 "
-  "xr -26 "
-  "pic 26 "
-"endif "
-
-// red team
-"yb -102 "
-"if 17 "
-  "xr -26 "
-  "pic 17 "
-"endif "
-"xr -62 "
-"num 2 18 "
-//joined overlay
-"if 22 "
-  "yb -104 "
-  "xr -28 "
-  "pic 22 "
-"endif "
-
-// blue team
-"yb -75 "
-"if 19 "
-  "xr -26 "
-  "pic 19 "
-"endif "
-"xr -62 "
-"num 2 20 "
-"if 23 "
-  "yb -77 "
-  "xr -28 "
-  "pic 23 "
-"endif "
-
-// have flag graph
-"if 21 "
-  "yt 26 "
-  "xr -24 "
-  "pic 21 "
-"endif "
-
-// id view state
-"if 27 "
-  "xv 112 "
-  "yb -58 "
-  "stat_string 27 "
-"endif "
-
-"if 29 "
-  "xv 96 "
-  "yb -58 "
-  "pic 29 "
-"endif "
-
-"if 28 "
-  "xl 0 "
-  "yb -78 "
-  "stat_string 28 "
-"endif "
-
-"if 30 "
-  "xl 0 "
-  "yb -88 "
-  "stat_string 30 "
-"endif "
-;
+char *ctf_statusbar = "ctf";
 
 static char *tnames[] = {
 	"item_tech1", "item_tech2", "item_tech3", "item_tech4",
@@ -236,42 +107,6 @@ void stuffcmd(edict_t *ent, char *s)
 }
 
 /*--------------------------------------------------------------------------*/
-
-/*
-=================
-findradius
-
-Returns entities that have origins within a spherical area
-
-findradius (origin, radius)
-=================
-*/
-static edict_t *loc_findradius (edict_t *from, vec3_t org, float rad)
-{
-	vec3_t	eorg;
-	int		j;
-
-	if (!from)
-		from = g_edicts;
-	else
-		from++;
-	for ( ; from < &g_edicts[globals.num_edicts]; from++)
-	{
-		if (!from->inuse)
-			continue;
-#if 0
-		if (from->solid == SOLID_NOT)
-			continue;
-#endif
-		for (j=0 ; j<3 ; j++)
-			eorg[j] = org[j] - (from->s.origin[j] + (from->mins[j] + from->maxs[j])*0.5);
-		if (VectorLength(eorg) > rad)
-			continue;
-		return from;
-	}
-
-	return NULL;
-}
 
 static void loc_buildboxpoints(vec3_t p[8], vec3_t org, vec3_t mins, vec3_t maxs)
 {
@@ -340,7 +175,7 @@ void CTFSpawn(void)
 
 void CTFInit(void)
 {
-	ctf = gi.cvar("ctf", "1", CVAR_SERVERINFO);
+	ctf = gi.cvar("ctf", "0", CVAR_SERVERINFO);
 	ctf_forcejoin = gi.cvar("ctf_forcejoin", "", 0);
 	competition = gi.cvar("competition", "0", CVAR_SERVERINFO);
 	matchlock = gi.cvar("matchlock", "1", CVAR_SERVERINFO);
@@ -564,6 +399,11 @@ edict_t *SelectCTFSpawnPoint (edict_t *ent)
 	} while(selection--);
 
 	return spot;
+}
+
+void CTFGlobalSound(edict_t *ent, int soundindex)
+{
+	gi.sound (ent, CHAN_RELIABLE+CHAN_NO_PHS_ADD+CHAN_VOICE, soundindex, 1, ATTN_NONE, 0);
 }
 
 /*------------------------------------------------------------------------*/
@@ -816,7 +656,11 @@ qboolean CTFPickup_Flag(edict_t *ent, edict_t *other)
 				else
 					ctfgame.team2++;
 
-				gi.sound (ent, CHAN_RELIABLE+CHAN_NO_PHS_ADD+CHAN_VOICE, gi.soundindex("sound/ctf/flagcap.wav"), 1, ATTN_NONE, 0);
+				if (ctf_team == CTF_TEAM1) {
+					CTFGlobalSound (ent, gi.soundindex("sound/teamplay/flagcap_red.wav"));
+				} else {
+					CTFGlobalSound (ent, gi.soundindex("sound/teamplay/flagcap_blu.wav"));
+				}
 
 				// other gets another 10 frag bonus
 				other->client->resp.score += CTF_CAPTURE_BONUS;
@@ -856,7 +700,11 @@ qboolean CTFPickup_Flag(edict_t *ent, edict_t *other)
 			other->client->pers.netname, S_COLOR_WHITE, CTFTeamName(ctf_team));
 		other->client->resp.score += CTF_RECOVERY_BONUS;
 		other->client->resp.ctf_lastreturnedflag = level.time;
-		gi.sound (ent, CHAN_RELIABLE+CHAN_NO_PHS_ADD+CHAN_VOICE, gi.soundindex("sound/ctf/flagret.wav"), 1, ATTN_NONE, 0);
+		if (ctf_team == CTF_TEAM1) {
+			CTFGlobalSound (ent, gi.soundindex("sound/teamplay/flagret_red.wav"));
+		} else {
+			CTFGlobalSound (ent, gi.soundindex("sound/teamplay/flagret_blu.wav"));
+		}
 		//CTFResetFlag will remove this entity!  We must return false
 		CTFResetFlag(ctf_team);
 		return false;
@@ -870,8 +718,14 @@ qboolean CTFPickup_Flag(edict_t *ent, edict_t *other)
 	other->client->pers.inventory[ITEM_INDEX(flag_item)] = 1;
 	other->client->resp.ctf_flagsince = level.time;
 
+	if (ctf_team == CTF_TEAM1) {
+		CTFGlobalSound (ent, gi.soundindex("sound/teamplay/flagtk_red.wav"));
+	} else {
+		CTFGlobalSound (ent, gi.soundindex("sound/teamplay/flagtk_blu.wav"));
+	}
+
 	// pick up the flag
-	// if it's not a dropped flag, we just make is disappear
+	// if it's not a dropped flag, we just make it disappear
 	// if it's dropped, it will be removed by the pickup caller
 	if (!(ent->spawnflags & DROPPED_ITEM)) {
 		ent->flags |= FL_RESPAWN;
@@ -930,22 +784,13 @@ void CTFDeadDropFlag(edict_t *self)
 	}
 }
 
-qboolean CTFDrop_Flag(edict_t *ent, gitem_t *item)
+void CTFDrop_Flag(edict_t *ent, gitem_t *item)
 {
 	if (rand() & 1) 
 		gi.cprintf(ent, PRINT_HIGH, "Only lusers drop flags.\n");
 	else
 		gi.cprintf(ent, PRINT_HIGH, "Winners don't drop flags.\n");
-	return false;
 }
-
-static void CTFFlagThink(edict_t *ent)
-{
-	if (ent->solid != SOLID_NOT)
-		ent->s.frame = 173 + (((ent->s.frame - 173) + 1) % 16);
-	ent->nextthink = level.time + FRAMETIME;
-}
-
 
 void CTFFlagSetup (edict_t *ent)
 {
@@ -981,9 +826,6 @@ void CTFFlagSetup (edict_t *ent)
 	VectorCopy (tr.endpos, ent->s.origin);
 
 	gi.linkentity (ent);
-
-	ent->nextthink = level.time + FRAMETIME;
-	ent->think = CTFFlagThink;
 }
 
 void CTFEffects(edict_t *player)
@@ -1305,13 +1147,13 @@ void CTFGrappleTouch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t
 	if (self->owner->client->ctf_grapplestate != CTF_GRAPPLE_STATE_FLY)
 		return;
 
-	if (surf && (surf->flags & SURF_SKY))
+	if (surf && (surf->flags & SURF_NOIMPACT))
 	{
 		CTFResetGrapple(self);
 		return;
 	}
 
-	VectorCopy(vec3_origin, self->velocity);
+	VectorClear (self->velocity);
 
 	PlayerNoise(self->owner, self->s.origin, PNOISE_IMPACT);
 
@@ -2011,7 +1853,6 @@ static void SpawnTech(gitem_t *item, edict_t *spot)
 	ent->item = item;
 	ent->spawnflags = DROPPED_ITEM;
 	ent->s.effects = item->world_model_flags;
-	ent->s.renderfx = RF_GLOW;
 	VectorSet (ent->mins, -15, -15, -15);
 	VectorSet (ent->maxs, 15, 15, 15);
 
@@ -2050,6 +1891,10 @@ void CTFSpawnTechs(edict_t *ent)
 	gitem_t *tech;
 	edict_t *spot;
 	int i;
+
+	if ( !ctf->value ) {
+		return;
+	}
 
 	i = 0;
 	while (tnames[i]) {
@@ -2484,9 +2329,9 @@ static void SetLevelName(pmenu_t *p)
 	levelname[0] = '*';
 
 	if (g_edicts[0].message)
-		strncpy(levelname+1, g_edicts[0].message, sizeof(levelname) - 2);
+		Q_strncpyz (levelname+1, g_edicts[0].message, sizeof(levelname) - 1);
 	else
-		strncpy(levelname+1, level.mapname, sizeof(levelname) - 2);
+		Q_strncpyz (levelname+1, level.mapname, sizeof(levelname) - 1);
 
 	levelname[sizeof(levelname) - 1] = 0;
 
@@ -2535,7 +2380,7 @@ qboolean CTFBeginElection(edict_t *ent, elect_t type, char *msg)
 	ctfgame.evotes = 0;
 	ctfgame.needvotes = (count * electpercentage->value) / 100;
 	ctfgame.electtime = level.time + 20; // twenty seconds for election
-	strncpy(ctfgame.emsg, msg, sizeof(ctfgame.emsg) - 1);
+	Q_strncpyz (ctfgame.emsg, msg, sizeof(ctfgame.emsg));
 
 	// tell everyone
 	gi.bprintf(PRINT_CHAT, "%s\n", ctfgame.emsg);
@@ -2622,7 +2467,6 @@ void CTFStartMatch(void)
 {
 	int i;
 	edict_t *ent;
-	int ghost = 0;
 
 	ctfgame.match = MATCH_GAME;
 	ctfgame.matchtime = level.time + matchtime->value * 60;
@@ -2723,7 +2567,7 @@ void CTFWinElection(void)
 	case ELECT_MAP :
 		gi.bprintf(PRINT_HIGH, "%s%s is warping to level %s.\n", 
 			ctfgame.etarget->client->pers.netname, S_COLOR_WHITE, ctfgame.elevel);
-		strncpy(level.forcemap, ctfgame.elevel, sizeof(level.forcemap) - 1);
+		Q_strncpyz (level.forcemap, ctfgame.elevel, sizeof(level.forcemap));
 		EndDMLevel();
 		break;
 	}
@@ -2918,7 +2762,7 @@ void CTFReturnToMain(edict_t *ent, pmenuhnd_t *p);
 void CTFChaseCam(edict_t *ent, pmenuhnd_t *p);
 
 pmenu_t creditsmenu[] = {
-	{ "*Quake II",						PMENU_ALIGN_CENTER, NULL },
+	{ "*QFusion",						PMENU_ALIGN_CENTER, NULL },
 	{ "*ThreeWave Capture the Flag",	PMENU_ALIGN_CENTER, NULL },
 	{ NULL,								PMENU_ALIGN_CENTER, NULL },
 	{ "*Programming",					PMENU_ALIGN_CENTER, NULL }, 
@@ -2946,7 +2790,7 @@ static const int jmenu_chase = 9;
 static const int jmenu_reqmatch = 11;
 
 pmenu_t joinmenu[] = {
-	{ "*Quake II",			PMENU_ALIGN_CENTER, NULL },
+	{ "*QFusion",			PMENU_ALIGN_CENTER, NULL },
 	{ "*ThreeWave Capture the Flag",	PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
@@ -2967,7 +2811,7 @@ pmenu_t joinmenu[] = {
 };
 
 pmenu_t nochasemenu[] = {
-	{ "*Quake II",			PMENU_ALIGN_CENTER, NULL },
+	{ "*QFusion",			PMENU_ALIGN_CENTER, NULL },
 	{ "*ThreeWave Capture the Flag",	PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
@@ -3109,10 +2953,10 @@ int CTFUpdateJoinMenu(edict_t *ent)
 	}
 
 	if (ctf_forcejoin->string && *ctf_forcejoin->string) {
-		if (stricmp(ctf_forcejoin->string, "red") == 0) {
+		if (Q_stricmp(ctf_forcejoin->string, "red") == 0) {
 			joinmenu[jmenu_blue].text = NULL;
 			joinmenu[jmenu_blue].SelectFunc = NULL;
-		} else if (stricmp(ctf_forcejoin->string, "blue") == 0) {
+		} else if (Q_stricmp(ctf_forcejoin->string, "blue") == 0) {
 			joinmenu[jmenu_red].text = NULL;
 			joinmenu[jmenu_red].SelectFunc = NULL;
 		}
@@ -3508,8 +3352,6 @@ void CTFAdmin_SettingsApply(edict_t *ent, pmenuhnd_t *p)
 
 void CTFAdmin_SettingsCancel(edict_t *ent, pmenuhnd_t *p)
 {
-	admin_settings_t *settings = p->arg;
-
 	PMenu_Close(ent);
 	CTFOpenAdminMenu(ent);
 }
@@ -3651,7 +3493,7 @@ void CTFAdmin_Settings(edict_t *ent, pmenuhnd_t *p)
 
 	PMenu_Close(ent);
 
-	settings = Q_malloc(sizeof(*settings));
+	settings = G_malloc(sizeof(*settings));
 
 	settings->matchlen = matchtime->value;
 	settings->matchsetuplen = matchsetuptime->value;
@@ -3912,7 +3754,7 @@ void CTFWarp(edict_t *ent)
 	if (ent->client->resp.admin) {
 		gi.bprintf(PRINT_HIGH, "%s%s is warping to level %s.\n", 
 			ent->client->pers.netname, S_COLOR_WHITE, gi.argv(1));
-		strncpy(level.forcemap, gi.argv(1), sizeof(level.forcemap) - 1);
+		Q_strncpyz (level.forcemap, gi.argv(1), sizeof(level.forcemap));
 		EndDMLevel();
 		return;
 	}
@@ -3920,7 +3762,7 @@ void CTFWarp(edict_t *ent)
 	sprintf(text, "%s%s has requested warping to level %s.", 
 			ent->client->pers.netname, S_COLOR_WHITE, gi.argv(1));
 	if (CTFBeginElection(ent, ELECT_MAP, text))
-		strncpy(ctfgame.elevel, gi.argv(1), sizeof(ctfgame.elevel) - 1);
+		Q_strncpyz (ctfgame.elevel, gi.argv(1), sizeof(ctfgame.elevel));
 }
 
 void CTFBoot(edict_t *ent)

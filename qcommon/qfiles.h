@@ -31,48 +31,11 @@ The .pak files are just a linear collapse of a directory tree
 ========================================================================
 */
 
-#define IDPAKHEADER		(('K'<<24)+('C'<<16)+('A'<<8)+'P')
-
 typedef struct
 {
 	char	name[56];
 	int		filepos, filelen;
 } dpackfile_t;
-
-typedef struct
-{
-	int		ident;		// == IDPAKHEADER
-	int		dirofs;
-	int		dirlen;
-} dpackheader_t;
-
-#define	MAX_FILES_IN_PACK	4096
-
-
-/*
-========================================================================
-
-PCX files are used for as many images as possible
-
-========================================================================
-*/
-
-typedef struct
-{
-    char	manufacturer;
-    char	version;
-    char	encoding;
-    char	bits_per_pixel;
-    unsigned short	xmin,ymin,xmax,ymax;
-    unsigned short	hres,vres;
-    unsigned char	palette[48];
-    char	reserved;
-    char	color_planes;
-    unsigned short	bytes_per_line;
-    unsigned short	palette_type;
-    char	filler[58];
-    unsigned char	data;			// unbounded
-} pcx_t;
 
 
 /*
@@ -83,14 +46,15 @@ typedef struct
 ========================================================================
 */
 
-#define IDALIASHEADER		(('2'<<24)+('P'<<16)+('D'<<8)+'I')
-#define ALIAS_VERSION	8
+#define IDMD2HEADER			"IDP2"
 
-#define	MAX_TRIANGLES	4096
-#define MAX_VERTS		2048
-#define MAX_FRAMES		512
-#define MAX_MD2SKINS	32
-#define	MAX_SKINNAME	64
+#define MD2_ALIAS_VERSION	8
+
+#define	MD2_MAX_TRIANGLES	4096
+#define MD2_MAX_VERTS		2048
+#define MD2_MAX_FRAMES		512
+#define MD2_MAX_SKINS		32
+#define	MD2_MAX_SKINNAME	64
 
 typedef struct
 {
@@ -106,24 +70,17 @@ typedef struct
 
 typedef struct
 {
-	byte	v[3];			// scaled byte to fit in frame mins/maxs
+	byte	v[3];				// scaled byte to fit in frame mins/maxs
 	byte	lightnormalindex;
 } dtrivertx_t;
 
-#define DTRIVERTX_V0   0
-#define DTRIVERTX_V1   1
-#define DTRIVERTX_V2   2
-#define DTRIVERTX_LNI  3
-#define DTRIVERTX_SIZE 4
-
 typedef struct
 {
-	float		scale[3];	// multiply byte verts by this
+	float		scale[3];		// multiply byte verts by this
 	float		translate[3];	// then add this
-	char		name[16];	// frame name from grabbing
-	dtrivertx_t	verts[1];	// variable sized
+	char		name[16];		// frame name from grabbing
+	dtrivertx_t	verts[1];		// variable sized
 } daliasframe_t;
-
 
 // the glcmd format:
 // a positive integer starts a tristrip command, followed by that many
@@ -157,7 +114,7 @@ typedef struct
 	int			ofs_glcmds;	
 	int			ofs_end;		// end of file
 
-} dmdl_t;
+} dmd2_t;
 
 
 /*
@@ -168,28 +125,32 @@ typedef struct
 ========================================================================
 */
 
-#define MD3_ID_HEADER		(('3'<<24)+('P'<<16)+('D'<<8)+'I')
+#define IDMD3HEADER			"IDP3"
+
 #define MD3_ALIAS_VERSION	15
-#define MAX_MD3_MESHES      32
+
+#define MD3_MAX_LODS		4
+#define	MD3_MAX_TRIANGLES	8192	// per mesh
+#define MD3_MAX_VERTS		4096	// per mesh
+#define MD3_MAX_SHADERS		256		// per mesh
+#define MD3_MAX_FRAMES		1024	// per model
+#define	MD3_MAX_MESHES		32		// per model
+#define MD3_MAX_TAGS		16		// per frame
+#define MD3_MAX_PATH		64
 
 // vertex scales
 #define	MD3_XYZ_SCALE		(1.0/64)
 
 typedef struct
 {
-	float			tc[2];
-} md3coord_t;
-
-typedef struct
-{
-	int				index[3];
-} md3elem_t;
+	float			st[2];
+} dmd3coord_t;
 
 typedef struct
 {
 	short			point[3];
 	unsigned char	norm[2];
-} md3vertex_t;
+} dmd3vertex_t;
 
 typedef struct
 {
@@ -198,14 +159,53 @@ typedef struct
     vec3_t			translate;
     float			radius;
     char			creator[16];
-} md3frame_t;
+} dmd3frame_t;
+
+typedef struct 
+{
+	vec3_t			origin;
+	float			axis[3][3];
+} dorientation_t;
+
+typedef struct
+{
+	char			name[MD3_MAX_PATH];		// tag name
+	dorientation_t	orient;
+} dmd3tag_t;
+
+typedef struct 
+{
+	char			name[MD3_MAX_PATH];
+	int				unused;					// shader
+} dmd3skin_t;
+
+typedef struct
+{
+    char			id[4];
+
+    char			name[MD3_MAX_PATH];
+
+	int				flags;
+
+    int				num_frames;
+    int				num_skins;
+    int				num_verts;
+    int				num_tris;
+
+    int				ofs_indexes;
+    int				ofs_skins;
+    int				ofs_tcs;
+    int				ofs_verts;
+
+    int				meshsize;
+} dmd3mesh_t;
 
 typedef struct
 {
     int				id;
     int				version;
 
-    char			filename[64];
+    char			filename[MD3_MAX_PATH];
 
 	int				flags;
 
@@ -218,46 +218,105 @@ typedef struct
     int				ofs_tags;
     int				ofs_meshes;
     int				ofs_end;
-} md3header_t;
+} dmd3header_t;
 
-typedef struct 
-{
-	vec3_t			origin;
-	float			axis[3][3];
-} orientation_t;
+/*
+========================================================================
+
+.DPM model file format
+
+========================================================================
+*/
+
+#define DPMHEADER				"DARKPLACESMODEL\0"
+
+#define DPM_MAX_NAME			32
+#define DPM_MAX_MESHES			32
+#define DPM_MAX_FRAMES			65536
+#define DPM_MAX_TRIS			65536
+#define DPM_MAX_VERTS			(DPM_MAX_TRIS * 3)
+#define DPM_MAX_BONES			256
+#define DPM_MAX_SHADERS			256
+#define DPM_MAX_FILESIZE		16777216
+#define DPM_MAX_ATTACHMENTS		DPM_MAX_BONES
+
+// model format related flags
+#define DPM_BONEFLAG_ATTACH		1
+#define DPM_MODELTYPE			2
 
 typedef struct
 {
-	char			name[64];	// tag name
-	orientation_t	orient;
-} md3tag_t;
+	char id[16];			// "DARKPLACESMODEL\0", length 16
+	unsigned int type;		// 2 (hierarchical skeletal pose)
+	unsigned int filesize;	// size of entire model file
+	float mins[3], maxs[3], yawradius, allradius; // for clipping uses
+
+	// these offsets are relative to the file
+	unsigned int num_bones;
+	unsigned int num_meshes;
+	unsigned int num_frames;
+	unsigned int ofs_bones;
+	unsigned int ofs_meshes;
+	unsigned int ofs_frames;
+} ddpmheader_t;
+
+// there may be more than one of these
+typedef struct
+{
+	// these offsets are relative to the file
+	char shadername[32];		// name of the shader to use
+	unsigned int num_verts;
+	unsigned int num_tris;
+	unsigned int ofs_verts;	
+	unsigned int ofs_texcoords;
+	unsigned int ofs_indices;
+	unsigned int ofs_groupids;
+} ddpmmesh_t;
+
+// one per bone
+typedef struct
+{
+	// name examples: upperleftarm leftfinger1 leftfinger2 hand, etc
+	char name[DPM_MAX_NAME];
+	signed int parent;		// parent bone number
+	unsigned int flags;		// flags for the bone
+} ddpmbone_t;
 
 typedef struct
 {
-    int				id;
+	float matrix[3][4];
+} ddpmbonepose_t;
 
-    char			name[64];
-
-	int				flags;
-
-    int				num_frames;
-    int				num_skins;
-    int				num_verts;
-    int				num_tris;
-
-    int				ofs_elems;
-    int				ofs_skins;
-    int				ofs_tcs;
-    int				ofs_verts;
-
-    int				meshsize;
-} md3mesh_file_t;
-
-typedef struct 
+// immediately followed by bone positions for the frame
+typedef struct
 {
-	char			name[64];
-	int				unused;		// shader
-} md3mesh_skin_t;
+	// name examples: idle_1 idle_2 idle_3 shoot_1 shoot_2 shoot_3, etc
+	char name[DPM_MAX_NAME];
+	float mins[3], maxs[3], yawradius, allradius; // for clipping uses
+	unsigned int ofs_bonepositions;
+} ddpmframe_t;
+
+// one or more of these per vertex
+typedef struct
+{
+	float origin[3];		// vertex location (these blend)
+	float influence;		// influence fraction (these must add up to 1)
+	float normal[3];		// surface normal (these blend)
+	unsigned int bonenum;	// number of the bone
+} ddpmbonevert_t;
+
+// variable size, parsed sequentially
+typedef struct
+{
+	unsigned int numbones;
+	// immediately followed by 1 or more ddpmbonevert_t structures
+	ddpmbonevert_t verts[1];
+} ddpmvertex_t;
+
+typedef struct
+{
+	float			st[2];
+} ddpmcoord_t;
 
 /*
 ========================================================================
@@ -267,22 +326,25 @@ typedef struct
 ========================================================================
 */
 
-#define IDSPRITEHEADER	(('2'<<24)+('S'<<16)+('D'<<8)+'I')
-		// little-endian "IDS2"
-#define SPRITE_VERSION	2
+#define IDSP2HEADER			"IDS2"
+
+#define SPRITE_VERSION		2
+
+#define SPRITE_MAX_NAME		64
+#define SPRITE_MAX_FRAMES	32
 
 typedef struct
 {
 	int		width, height;
-	int		origin_x, origin_y;		// raster coordinates inside pic
-	char	name[MAX_SKINNAME];		// name of pcx file
+	int		origin_x, origin_y;			// raster coordinates inside pic
+	char	name[SPRITE_MAX_NAME];		// name of shader file
 } dsprframe_t;
 
 typedef struct {
 	int			ident;
 	int			version;
 	int			numframes;
-	dsprframe_t	frames[1];			// variable sized
+	dsprframe_t	frames[1];				// variable sized
 } dsprite_t;
 
 /*
@@ -293,28 +355,25 @@ typedef struct {
 ==============================================================================
 */
 
-#define IDBSPHEADER	(('P'<<24)+('S'<<16)+('B'<<8)+'I')
-		// little-endian "IBSP"
+#define IDBSPHEADER			"IBSP"
 
-#define BSPVERSION		46
+#define BSPVERSION			46
 
-
-// upper design bounds
-// leaffaces, leafbrushes, planes, and verts are still bounded by
-// 16 bit short limits
+// there shouldn't be any problem with increasing these values at the
+// expense of more memory allocation in the utilities
 #define	MAX_MAP_MODELS		0x400
 #define	MAX_MAP_BRUSHES		0x8000
 #define	MAX_MAP_ENTITIES	0x800
 #define	MAX_MAP_ENTSTRING	0x40000
 #define	MAX_MAP_SHADERS		0x400
 
-#define	MAX_MAP_AREAS		256
-#define	MAX_MAP_AREAPORTALS	1024
+#define	MAX_MAP_AREAS		0x100
+#define	MAX_MAP_FOGS		0x100
 #define	MAX_MAP_PLANES		0x20000
 #define	MAX_MAP_NODES		0x20000
-#define	MAX_MAP_BRUSHSIDES	0x20000
+#define	MAX_MAP_BRUSHSIDES	0x30000
 #define	MAX_MAP_LEAFS		0x20000
-#define	MAX_MAP_VERTS		0x80000
+#define	MAX_MAP_VERTEXES	0x80000
 #define	MAX_MAP_FACES		0x20000
 #define	MAX_MAP_LEAFFACES	0x20000
 #define	MAX_MAP_LEAFBRUSHES 0x40000
@@ -322,6 +381,14 @@ typedef struct {
 #define	MAX_MAP_INDICES		0x80000
 #define	MAX_MAP_LIGHTING	0x800000
 #define	MAX_MAP_VISIBILITY	0x200000
+
+// lightmaps
+#define LIGHTMAP_BYTES			3
+#define	LIGHTMAP_WIDTH			128
+#define	LIGHTMAP_HEIGHT			128
+#define LIGHTMAP_SIZE			(LIGHTMAP_WIDTH*LIGHTMAP_HEIGHT*LIGHTMAP_BYTES)
+
+#define	MAX_MAP_LIGHTMAPS		(MAX_MAP_LIGHTING / LIGHTMAP_SIZE)
 
 // key / value pair sizes
 
@@ -375,19 +442,8 @@ typedef struct
     float			tex_st[2];		// texture coords
 	float			lm_st[2];		// lightmap texture coords
     float			normal[3];		// normal
-    unsigned char	colour[4];		// colour used for vertex lighting?
+    unsigned char	color[4];		// color used for vertex lighting?
 } dvertex_t;
-
-
-// 0-2 are axial planes
-#define	PLANE_X			0
-#define	PLANE_Y			1
-#define	PLANE_Z			2
-
-// 3-5 are non-axial planes snapped to the nearest
-#define	PLANE_ANYX		3
-#define	PLANE_ANYY		4
-#define	PLANE_ANYZ		5
 
 // planes (x&~1) and (x&~1)+1 are always opposites
 
@@ -398,7 +454,7 @@ typedef struct
 } dplane_t;
 
 
-// contents flags are seperate bits
+// contents flags are separate bits
 // a given brush can contribute multiple content bits
 // multiple brushes can be in a single leaf
 
@@ -450,6 +506,7 @@ typedef struct
 #define SURF_LIGHTFILTER		0x8000	// act as a light filter during q3map -light
 #define	SURF_ALPHASHADOW		0x10000	// do per-pixel light shadow casting in q3map
 #define	SURF_NODLIGHT			0x20000	// never add dynamic lights
+#define SURF_DUST				0x40000 // leave a dust trail when walking on this surface
 
 
 typedef struct
@@ -461,12 +518,12 @@ typedef struct
 } dnode_t;
 
 
-typedef struct texinfo_s
+typedef struct shaderref_s
 {
-	char		shader[MAX_QPATH];
-	int			flags;
-	int			contents;
-} shaderref_t;
+	char			name[MAX_QPATH];
+	int				flags;
+	int				contents;
+} dshaderref_t;
 
 enum
 {
@@ -484,7 +541,7 @@ typedef struct
 
     int				firstvert;
 	int				numverts;
-	int				firstindex;
+	unsigned		firstindex;
 	int				numindexes;
 
     int				lm_texnum;		// lightmap info
@@ -534,9 +591,6 @@ typedef struct {
 	int				visibleside;
 } dfog_t;
 
-#define	ANGLE_UP	-1
-#define	ANGLE_DOWN	-2
-
 typedef struct
 {
 	int				numclusters;
@@ -546,7 +600,7 @@ typedef struct
 
 typedef struct
 {
-	unsigned char	lightAmbient[3];
-	unsigned char	lightDiffuse[3];
-	unsigned char	lightPosition[2];
-} dlightgrid_t;
+	unsigned char	ambient[3];
+	unsigned char	diffuse[3];
+	unsigned char	direction[2];
+} dgridlight_t;

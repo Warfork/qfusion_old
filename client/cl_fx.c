@@ -89,24 +89,6 @@ cdlight_t *CL_AllocDlight (int key)
 
 /*
 ===============
-CL_NewDlight
-===============
-*/
-void CL_NewDlight (int key, float x, float y, float z, float radius, float time)
-{
-	cdlight_t	*dl;
-
-	dl = CL_AllocDlight (key);
-	dl->origin[0] = x;
-	dl->origin[1] = y;
-	dl->origin[2] = z;
-	dl->radius = radius;
-	dl->die = cl.time + time;
-}
-
-
-/*
-===============
 CL_RunDLights
 
 ===============
@@ -126,12 +108,6 @@ void CL_RunDLights (void)
 			continue;
 		
 		if (dl->die < cl.time)
-		{
-			dl->radius = 0;
-			continue;
-		}
-		dl->radius -= cls.frametime*dl->decay;
-		if (dl->radius < 0)
 			dl->radius = 0;
 	}
 }
@@ -543,7 +519,6 @@ void CL_AddDLights (void)
 	cdlight_t	*dl;
 
 	dl = cl_dlights;
-	
 	for (i=0 ; i<MAX_DLIGHTS ; i++, dl++)
 	{
 		if (!dl->radius)
@@ -586,7 +561,7 @@ void CL_ClearParticles (void)
 	particles[cl_numparticles-1].next = NULL;
 }
 
-cparticle_t *new_particle (void)
+inline cparticle_t *new_particle (void)
 {
 	cparticle_t	*p;
 
@@ -1534,21 +1509,13 @@ void CL_AddParticles (void)
 	{
 		next = p->next;
 
-		// PMM - added INSTANT_PARTICLE handling for heat beam
-		if (p->alphavel != INSTANT_PARTICLE)
-		{
-			time = (cl.time - p->time)*0.001;
-			alpha = p->alpha + time*p->alphavel;
-			if (alpha <= 0)
-			{	// faded out
-				p->next = free_particles;
-				free_particles = p;
+		time = (cl.time - p->time)*0.001;
+		alpha = p->alpha + time*p->alphavel;
+		if (alpha <= 0)
+		{	// faded out
+			p->next = free_particles;
+			free_particles = p;
 				continue;
-			}
-		}
-		else
-		{
-			alpha = p->alpha;
 		}
 
 		p->next = NULL;
@@ -1571,12 +1538,6 @@ void CL_AddParticles (void)
 		org[2] = p->org[2] + p->vel[2]*time + p->accel[2]*time2;
 
 		V_AddParticle (org, color, alpha);
-		// PMM
-		if (p->alphavel == INSTANT_PARTICLE)
-		{
-			p->alphavel = 0.0;
-			p->alpha = 0.0;
-		}
 	}
 
 	active_particles = active;

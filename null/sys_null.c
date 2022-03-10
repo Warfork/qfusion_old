@@ -19,7 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // sys_null.h -- null system driver to aid porting efforts
 
-#include "qcommon.h"
+#include "../qcommon/qcommon.h"
 #include "errno.h"
 
 int	curtime;
@@ -75,10 +75,6 @@ void Sys_AppActivate (void)
 {
 }
 
-void Sys_CopyProtect (void)
-{
-}
-
 char *Sys_GetClipboardData( void )
 {
 	return NULL;
@@ -89,7 +85,7 @@ void	*Hunk_Begin (int maxsize)
 	return NULL;
 }
 
-void	*Hunk_Alloc (int size)
+void	*Hunk_AllocName (int size, char *name)
 {
 	return NULL;
 }

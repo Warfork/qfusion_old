@@ -21,13 +21,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../client/ref.h"
 #include "ui.h"
 
-static uiimport_t uii;
+static ui_import_t uii;
 
-void M_Init (void);
-void M_Shutdown (void);
+void UI_Init (void);
+void UI_Shutdown (void);
 
-void M_Draw (void);
-void M_Keydown ( int key );
+void UI_Refresh ( int frametime );
+void UI_Update (void);
+
+void UI_Keydown ( int key );
+void UI_MouseMove (int dx, int dy);
 
 void M_Menu_Main_f (void);
 void M_AddToServerList ( netadr_t *adr, char *info );
@@ -39,7 +42,7 @@ void trap_Sys_Error ( int err_level, char *str, ... ) {
 	char		msg[MAXPRINTMSG];
 	
 	va_start ( argptr, str );
-	vsprintf ( msg, str, argptr );
+	vsnprintf ( msg, sizeof(msg), str, argptr );
 	va_end ( argptr );
 
 	uii.Sys_Error ( err_level, msg );
@@ -61,16 +64,12 @@ void trap_Cmd_Execute (void) {
 	uii.Cmd_Execute ();
 }
 
-qboolean trap_Con_Func (void) {
-	return uii.Con_Func ();
-}
-
 void trap_Con_Printf ( int print_level, char *str, ... ) {
 	va_list		argptr;
 	char		msg[MAXPRINTMSG];
 	
 	va_start ( argptr, str );
-	vsprintf ( msg, str, argptr );
+	vsnprintf ( msg, sizeof(msg), str, argptr );
 	va_end ( argptr );
 
 	uii.Con_Printf ( print_level, str );
@@ -88,10 +87,6 @@ struct shader_s *trap_RegisterPic ( char *name ) {
 	return uii.RegisterPic ( name );
 }
 
-int	trap_ModelNumFrames ( struct model_s *model ) {
-	return uii.ModelNumFrames ( model );
-}
-
 void trap_RenderFrame ( refdef_t *fd ) {
 	uii.RenderFrame ( fd );
 }
@@ -100,20 +95,12 @@ void trap_S_StartLocalSound ( char *s ) {
 	uii.S_StartLocalSound ( s );
 }
 
-void trap_CL_Snd_Restart_f (void) {
-	uii.CL_Snd_Restart_f ();
-}
-
-void trap_CL_PingServers_f (void) {
-	uii.CL_PingServers_f ();
-}
-
 float trap_CL_GetTime_f (void) {
 	return uii.CL_GetTime_f ();
 }
 
-void trap_CL_SetKeyDest_f ( enum keydest_t keydest ) {
-	uii.CL_SetKeyDest_f ( keydest );
+void trap_CL_SetKeyDest_f ( int key_dest ) {
+	uii.CL_SetKeyDest_f ( key_dest );
 }
 
 void trap_CL_ResetServerCount_f (void) {
@@ -124,8 +111,12 @@ void trap_CL_Quit_f (void) {
 	uii.CL_Quit_f ();
 }
 
-int trap_Com_ServerState (void) {
-	return uii.Com_ServerState ();
+int trap_GetClientState (void) {
+	return uii.GetClientState ();
+}
+
+int trap_GetServerState (void) {
+	return uii.GetServerState ();
 }
 
 char *trap_NET_AdrToString ( netadr_t *a ) {
@@ -157,8 +148,12 @@ void trap_FS_FreeFile ( void *buf ) {
 	uii.FS_FreeFile ( buf );
 }
 
+int trap_FS_FileExists ( char *path ) {
+	return uii.FS_FileExists ( path );
+}
+
 int	trap_FS_ListFiles ( char *path, char *ext, char *buf, int bufsize ) {
-	return uii.FS_ListFiles ( path, ext, buf, bufsize );
+	return uii.FS_ListFiles ( ( const char * )path, ( const char * )ext, buf, bufsize );
 }
 
 char *trap_FS_NextPath ( char *prevpath ) {
@@ -193,20 +188,28 @@ char *trap_Cvar_VariableString ( char *name ) {
 	return uii.Cvar_VariableString ( name );
 }
 
-void trap_DrawPic ( int x, int y, char *name ) {
-	uii.DrawPic ( x, y, name );
+void trap_DrawStretchPic (int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader) {
+	uii.DrawStretchPic ( x, y, w, h, s1, t1, s2, t2, color, shader );
 }
 
-void trap_DrawChar ( int x, int y, int c, fontstyle_t fntstl, vec4_t colour ) {
-	uii.DrawChar ( x, y, c, fntstl, colour );
+void trap_DrawChar ( int x, int y, int c, int fontstyle, vec4_t color ) {
+	uii.DrawChar ( x, y, c, fontstyle, color );
 }
 
-void trap_DrawStringLen ( int x, int y, char *str, int len, fontstyle_t fntstl, vec4_t colour ) {
-	uii.DrawStringLen ( x, y, str, len, fntstl, colour );
+void trap_DrawString ( int x, int y, char *str, int fontstyle, vec4_t color ) {
+	uii.DrawString ( x, y, str, fontstyle, color );
 }
 
-void trap_DrawFill ( int x, int y, int w, int h, int c ) {
-	uii.DrawFill ( x, y, w, h, c );
+void trap_DrawPropString ( int x, int y, char *str, int fontstyle, vec4_t color ) {
+	uii.DrawPropString ( x, y, str, fontstyle, color );
+}
+
+int trap_PropStringLength ( char *str, int fontstyle ) {
+	return uii.PropStringLength ( str, fontstyle );
+}
+
+void trap_FillRect ( int x, int y, int w, int h, vec4_t color ) {
+	uii.FillRect ( x, y, w, h, color );
 }
 
 void trap_EndFrame (void) {
@@ -233,25 +236,28 @@ int Q_PlayerGender ( void *player ) {
 	return GENDER_MALE;
 }
 
-__declspec(dllexport) uiexport_t GetUiAPI (uiimport_t uiimp)
+ui_export_t *GetUIAPI (ui_import_t *uiimp)
 {
-	uiexport_t	uie;
+	static ui_export_t	uie;
 
-	uii = uiimp;
+	uii = *uiimp;
 
 	uie.api_version = UI_API_VERSION;
 
-	uie.Init = M_Init;
-	uie.Shutdown = M_Shutdown;
+	uie.Init = UI_Init;
+	uie.Shutdown = UI_Shutdown;
 
-	uie.Draw = M_Draw;
-	uie.Keydown = M_Keydown;
+	uie.Refresh = UI_Refresh;
+	uie.Update = UI_Update;
+
+	uie.Keydown = UI_Keydown;
+	uie.MouseMove = UI_MouseMove;
 
 	uie.MainMenu = M_Menu_Main_f;
 	uie.ForceMenuOff = M_ForceMenuOff;
 	uie.AddToServerList = M_AddToServerList;
 
-	return uie;
+	return &uie;
 }
 
 #ifndef UI_HARD_LINKED
@@ -262,7 +268,7 @@ void Sys_Error (char *error, ...)
 	char		text[1024];
 
 	va_start (argptr, error);
-	vsprintf (text, error, argptr);
+	vsnprintf (text, sizeof(text), error, argptr);
 	va_end (argptr);
 
 	uii.Sys_Error (ERR_FATAL, "%s", text);
@@ -274,7 +280,7 @@ void Com_Printf (char *fmt, ...)
 	char		text[1024];
 
 	va_start (argptr, fmt);
-	vsprintf (text, fmt, argptr);
+	vsnprintf (text, sizeof(text), fmt, argptr);
 	va_end (argptr);
 
 	uii.Con_Printf (PRINT_ALL, "%s", text);

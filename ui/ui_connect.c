@@ -65,7 +65,7 @@ void M_AddToServerList (netadr_t *adr, char *info)
 			return;
 
 	memcpy ( &local_server_netadr[m_num_servers], adr, sizeof(netadr_t) );
-	strncpy ( local_server_names[m_num_servers], info, sizeof(local_server_names[0])-1 );
+	Q_strncpyz ( local_server_names[m_num_servers], info, sizeof(local_server_names[0]) );
 	m_num_servers++;
 }
 
@@ -110,11 +110,8 @@ void SearchLocalGames( void )
 	M_Print( 16 + 16, 120 - 48 + 16, "could take up to a minute, so" );
 	M_Print( 16 + 16, 120 - 48 + 24, "please be patient." );
 
-	// the text box won't show up unless we do a buffer swap
-	trap_EndFrame();
-
 	// send out info packets
-	trap_CL_PingServers_f();
+	trap_Cmd_ExecuteText (EXEC_APPEND, "pingservers\n");
 }
 
 void SearchLocalGamesFunc( void *self )
@@ -126,9 +123,9 @@ void JoinServer_MenuInit( void )
 {
 	int i;
 	int y = 0;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_joinserver_menu.x = trap_GetWidth() * 0.50 - 120;
+	s_joinserver_menu.x = trap_GetWidth() / 2 - 120;
 	s_joinserver_menu.nitems = 0;
 
 	s_joinserver_title.generic.type = MTYPE_SEPARATOR;
@@ -179,6 +176,8 @@ void JoinServer_MenuInit( void )
 
 	Menu_Center( &s_joinserver_menu );
 
+	Menu_Init ( &s_joinserver_menu );
+
 	SearchLocalGames();
 }
 
@@ -196,5 +195,5 @@ const char *JoinServer_MenuKey( int key )
 void M_Menu_JoinServer_f (void)
 {
 	JoinServer_MenuInit();
-	M_PushMenu( JoinServer_MenuDraw, JoinServer_MenuKey );
+	M_PushMenu( &s_joinserver_menu, JoinServer_MenuDraw, JoinServer_MenuKey );
 }

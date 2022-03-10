@@ -35,6 +35,9 @@ cvar_t		*cl_testblend;
 
 cvar_t		*cl_stats;
 
+cvar_t		*cl_thirdPerson;
+cvar_t		*cl_thirdPersonAngle;
+cvar_t		*cl_thirdPersonRange;
 
 int			r_numdlights;
 dlight_t	r_dlights[MAX_DLIGHTS];
@@ -73,7 +76,8 @@ void V_AddEntity (entity_t *ent)
 {
 	if (r_numentities >= MAX_ENTITIES)
 		return;
-	r_entities[r_numentities++] = *ent;
+	r_entities[r_numentities] = *ent;
+	r_entities[r_numentities].number = r_numentities++;
 }
 
 
@@ -173,7 +177,7 @@ void V_TestEntities (void)
 			cl.v_right[j]*r;
 
 		ent->model = cl.baseclientinfo.model;
-		ent->skin = cl.baseclientinfo.skin;
+		ent->customShader = cl.baseclientinfo.skin;
 	}
 }
 
@@ -223,8 +227,7 @@ void CL_PrepRefresh (void)
 {
 	char		mapname[32];
 	int			i;
-	char		name[MAX_QPATH];
-	float		r, g, b;
+	char		*name;
 
 	if (!cl.configstrings[CS_MODELS+1][0])
 		return;		// no map loaded
@@ -237,17 +240,12 @@ void CL_PrepRefresh (void)
 	mapname[strlen(mapname)-4] = 0;		// cut off ".bsp"
 
 	// register models, pics, and skins
-	Com_Printf ("Map: %s\r", mapname); 
-	SCR_UpdateScreen ();
 	R_BeginRegistration (mapname);
-	Com_Printf ("                                     \r");
 
 	// precache status bar pics
-	Com_Printf ("pics\r"); 
-	SCR_UpdateScreen ();
 	SCR_TouchPics ();
-	Com_Printf ("                                     \r");
 
+	CL_LoadingString ("models");
 	CL_RegisterMediaModels ();
 
 	num_cl_weaponmodels = 1;
@@ -255,19 +253,17 @@ void CL_PrepRefresh (void)
 
 	for (i=1 ; i<MAX_MODELS && cl.configstrings[CS_MODELS+i][0] ; i++)
 	{
-		strcpy (name, cl.configstrings[CS_MODELS+i]);
-		name[37] = 0;	// never go beyond one line
+		name = cl.configstrings[CS_MODELS+i];
 		if (name[0] != '*')
-			Com_Printf ("%s\r", name); 
-		SCR_UpdateScreen ();
+			CL_LoadingFilename (name);
 		Sys_SendKeyEvents ();	// pump message loop
 		if (name[0] == '#')
 		{
 			// special player weapon model
 			if (num_cl_weaponmodels < MAX_CLIENTWEAPONMODELS)
 			{
-				strncpy(cl_weaponmodels[num_cl_weaponmodels], cl.configstrings[CS_MODELS+i]+1,
-					sizeof(cl_weaponmodels[num_cl_weaponmodels]) - 1);
+				Q_strncpyz (cl_weaponmodels[num_cl_weaponmodels], cl.configstrings[CS_MODELS+i]+1,
+					sizeof(cl_weaponmodels[num_cl_weaponmodels]));
 				num_cl_weaponmodels++;
 			}
 		} 
@@ -279,31 +275,28 @@ void CL_PrepRefresh (void)
 			else
 				cl.model_clip[i] = NULL;
 		}
-		if (name[0] != '*')
-			Com_Printf ("                                     \r");
 	}
 
-	Com_Printf ("images\r", i); 
-	SCR_UpdateScreen ();
-
+	CL_LoadingString ("images");
 	CL_RegisterMediaPics ();
 
 	for (i=1 ; i<MAX_IMAGES && cl.configstrings[CS_IMAGES+i][0] ; i++)
 	{
-		cl.image_precache[i] = R_RegisterShaderNoMip (cl.configstrings[CS_IMAGES+i]);
+		CL_LoadingFilename (cl.configstrings[CS_IMAGES+i]);
+		cl.image_precache[i] = R_RegisterPic (cl.configstrings[CS_IMAGES+i]);
 		Sys_SendKeyEvents ();	// pump message loop
 	}
+
+	CL_LoadingFilename ("");
 	
-	Com_Printf ("                                     \r");
 	for (i=0 ; i<MAX_CLIENTS ; i++)
 	{
 		if (!cl.configstrings[CS_PLAYERSKINS+i][0])
 			continue;
-		Com_Printf ("client %i\r", i); 
-		SCR_UpdateScreen ();
+
+		CL_LoadingString (va("client %i", i));
 		Sys_SendKeyEvents ();	// pump message loop
 		CL_ParseClientinfo (i);
-		Com_Printf ("                                     \r");
 	}
 
 	CL_LoadClientinfo (&cl.baseclientinfo, "unnamed\\male/grunt");
@@ -311,16 +304,62 @@ void CL_PrepRefresh (void)
 	// the renderer can now free unneeded stuff
 	R_EndRegistration ();
 
-	sscanf (cl.configstrings[CS_GRIDSIZE], "%f %f %f", 
-		&r, &g, &b);
-	R_SetGridsize (r, g, b);
-	
 	// clear any lines of console text
 	Con_ClearNotify ();
 
 	SCR_UpdateScreen ();
 	cl.refresh_prepped = true;
 	cl.force_refdef = true;	// make sure we have a valid refdef
+}
+
+//============================================================================
+/*
+================
+Camera_Update
+================
+*/
+void Camera_Update (void)
+{
+	float	dist, f, r;
+	vec3_t	dest, stop;
+	vec3_t	chase_dest;
+	trace_t	trace;
+	static vec3_t mins = { -4, -4, -4 };
+	static vec3_t maxs = { 4, 4, 4 };
+
+	// calc exact destination
+	VectorCopy ( cl.refdef.vieworg, chase_dest );
+	r = DEG2RAD( cl_thirdPersonAngle->value );
+	f = -cos( r );
+	r = -sin( r );
+	VectorMA( chase_dest, cl_thirdPersonRange->value * f, cl.v_forward, chase_dest );
+	VectorMA( chase_dest, cl_thirdPersonRange->value * r, cl.v_right, chase_dest );
+	chase_dest[2] += 8;
+
+	// find the spot the player is looking at
+	VectorMA ( cl.refdef.vieworg, 512, cl.v_forward, dest );
+	trace = CL_Trace ( cl.refdef.vieworg, mins, maxs, dest, IGNORE_PLAYER, MASK_SOLID );
+
+	// calculate pitch to look at the same spot from camera
+	VectorSubtract ( trace.endpos, cl.refdef.vieworg, stop );
+	dist = sqrt ( stop[0] * stop[0] + stop[1] * stop[1] );
+	if (dist < 1)
+		dist = 1;
+	cl.refdef.viewangles[PITCH] = RAD2DEG( -atan2(stop[2], dist) );
+	cl.refdef.viewangles[YAW] -= cl_thirdPersonAngle->value;
+	AngleVectors ( cl.refdef.viewangles, cl.v_forward, cl.v_right, cl.v_up );
+
+	// move towards destination
+	trace = CL_Trace ( cl.refdef.vieworg, mins, maxs, chase_dest, IGNORE_PLAYER, MASK_SOLID );
+
+	if ( trace.fraction != 1.0 ) {
+		VectorCopy ( trace.endpos, stop );
+		stop[2] += ( 1.0 - trace.fraction ) * 32;
+		trace = CL_Trace ( cl.refdef.vieworg, mins, maxs, stop, IGNORE_PLAYER, MASK_SOLID );
+		VectorCopy ( trace.endpos, chase_dest );
+	}
+
+	VectorCopy ( chase_dest, cl.refdef.vieworg );
 }
 
 //============================================================================
@@ -343,13 +382,14 @@ void SCR_DrawCrosshair (void)
 		SCR_TouchPics ();
 	}
 
-	if (!crosshair_pic[0])
+	if (!crosshair_shader)
 		return;
 
 	w = (int)crosshair_size->value;
 	h = (int)crosshair_size->value;
 
-	Draw_StretchPic (crosshairX + ((scr_vrect.width - w)>>1), crosshairY + ((scr_vrect.height - h)>>1), w, h, crosshair_pic);
+	Draw_StretchPic (scr_vrect.x + crosshairX + ((scr_vrect.width - w)>>1), scr_vrect.y + crosshairY + ((scr_vrect.height - h)>>1), w, h, 
+		0, 0, 1, 1, colorWhite, crosshair_shader);
 }
 
 /*
@@ -363,8 +403,6 @@ V_RenderView
 
 void V_RenderView( float stereo_separation )
 {
-	extern int entitycmpfnc( const entity_t *, const entity_t * );
-
 	if (cls.state != ca_active)
 		return;
 
@@ -406,12 +444,12 @@ void V_RenderView( float stereo_separation )
 		}
 
 		// offset vieworg appropriately if we're doing stereo separation
-		if ( stereo_separation != 0 )
-		{
-			vec3_t tmp;
+		if ( stereo_separation != 0 ) {
+			VectorMA( cl.refdef.vieworg, stereo_separation, cl.v_right, cl.refdef.vieworg );
+		}
 
-			VectorScale( cl.v_right, stereo_separation, tmp );
-			VectorAdd( cl.refdef.vieworg, tmp, cl.refdef.vieworg );
+		if ( cl.thirdperson ) {
+			Camera_Update ();
 		}
 
 		// never let it sit exactly on a node line, because a water plane can
@@ -439,7 +477,7 @@ void V_RenderView( float stereo_separation )
 			r_numdlights = 0;
 		if (!cl_add_blend->value)
 		{
-			VectorClear (cl.refdef.blend);
+			cl.refdef.blend[0] = cl.refdef.blend[1] = cl.refdef.blend[2] = cl.refdef.blend[3] = 0;
 		}
 
 		cl.refdef.num_entities = r_numentities;
@@ -458,17 +496,14 @@ void V_RenderView( float stereo_separation )
 			cl.refdef.fov_x += v;
 			cl.refdef.fov_y -= v;
 		}
-
-		// sort entities for better cache locality
-        qsort( cl.refdef.entities, cl.refdef.num_entities, sizeof( cl.refdef.entities[0] ), (int (*)(const void *, const void *))entitycmpfnc );
 	}
 
 	R_RenderFrame (&cl.refdef);
+
 	if (cl_stats->value)
 		Com_Printf ("ent:%i  lt:%i  part:%i\n", r_numentities, r_numdlights, r_numparticles);
 	if ( log_stats->value && ( log_stats_file != 0 ) )
 		fprintf( log_stats_file, "%i,%i,%i,",r_numentities, r_numdlights, r_numparticles);
-
 
 	SCR_AddDirtyPoint (scr_vrect.x, scr_vrect.y);
 	SCR_AddDirtyPoint (scr_vrect.x+scr_vrect.width-1,
@@ -504,10 +539,14 @@ void V_Init (void)
 	crosshair_x = Cvar_Get ("crosshair_x", "0", CVAR_ARCHIVE );
 	crosshair_y = Cvar_Get ("crosshair_y", "0", CVAR_ARCHIVE );
 
-	cl_testblend = Cvar_Get ("cl_testblend", "0", 0);
-	cl_testparticles = Cvar_Get ("cl_testparticles", "0", 0);
-	cl_testentities = Cvar_Get ("cl_testentities", "0", 0);
-	cl_testlights = Cvar_Get ("cl_testlights", "0", 0);
+	cl_testblend = Cvar_Get ("cl_testblend", "0", CVAR_CHEAT);
+	cl_testparticles = Cvar_Get ("cl_testparticles", "0", CVAR_CHEAT);
+	cl_testentities = Cvar_Get ("cl_testentities", "0", CVAR_CHEAT);
+	cl_testlights = Cvar_Get ("cl_testlights", "0", CVAR_CHEAT);
 
 	cl_stats = Cvar_Get ("cl_stats", "0", 0);
+
+	cl_thirdPerson = Cvar_Get ( "cl_thirdperson", "0", CVAR_CHEAT );
+	cl_thirdPersonAngle = Cvar_Get ( "cl_thirdpersonangle", "0", 0 );
+	cl_thirdPersonRange = Cvar_Get ( "cl_thirdpersonrange", "70", 0 );
 }

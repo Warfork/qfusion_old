@@ -25,6 +25,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define __QGL_H__
 
 #ifdef _WIN32
+# define GL_DRIVERNAME	"opengl32.dll"
+#endif
+
+#ifdef __linux
+# define GL_DRIVERNAME	"libGL.so"
+#endif
+
+#ifdef _WIN32
 #  include <windows.h>
 #endif
 
@@ -431,17 +439,7 @@ extern BOOL ( WINAPI * qwglSetDeviceGammaRamp3DFX ) ( HDC, WORD * );
 // local function in dll
 extern void *qwglGetProcAddress(char *symbol);
 
-/*
-//FX Mesa Functions
-extern fxMesaContext (*qfxMesaCreateContext)(GLuint win, GrScreenResolution_t, GrScreenRefresh_t, const GLint attribList[]);
-extern fxMesaContext (*qfxMesaCreateBestContext)(GLuint win, GLint width, GLint height, const GLint attribList[]);
-extern void (*qfxMesaDestroyContext)(fxMesaContext ctx);
-extern void (*qfxMesaMakeCurrent)(fxMesaContext ctx);
-extern fxMesaContext (*qfxMesaGetCurrentContext)(void);
-extern void (*qfxMesaSwapBuffers)(void);
-*/
-
-//GLX Functions
+// GLX Functions
 extern XVisualInfo * (*qglXChooseVisual)( Display *dpy, int screen, int *attribList );
 extern GLXContext (*qglXCreateContext)( Display *dpy, XVisualInfo *vis, GLXContext shareList, Bool direct );
 extern void (*qglXDestroyContext)( Display *dpy, GLXContext ctx );
@@ -449,39 +447,34 @@ extern Bool (*qglXMakeCurrent)( Display *dpy, GLXDrawable drawable, GLXContext c
 extern void (*qglXCopyContext)( Display *dpy, GLXContext src, GLXContext dst, GLuint mask );
 extern void (*qglXSwapBuffers)( Display *dpy, GLXDrawable drawable );
 
-// 3dfxSetPaletteEXT shunt
-void Fake_glColorTableEXT( GLenum target, GLenum internalformat,
-                             GLsizei width, GLenum format, GLenum type,
-                             const GLvoid *table );
-
 #endif // linux
 
 /*
 ** extension constants
 */
-#define GL_POINT_SIZE_MIN_EXT				0x8126
-#define GL_POINT_SIZE_MAX_EXT				0x8127
-#define GL_POINT_FADE_THRESHOLD_SIZE_EXT	0x8128
-#define GL_DISTANCE_ATTENUATION_EXT			0x8129
-
-#ifdef __sgi
-#define GL_SHARED_TEXTURE_PALETTE_EXT		GL_TEXTURE_COLOR_TABLE_SGI
-#else
-#define GL_SHARED_TEXTURE_PALETTE_EXT		0x81FB
-#endif
 
 #define GL_TEXTURE0_SGIS					0x835E
 #define GL_TEXTURE1_SGIS					0x835F
 #define GL_TEXTURE0_ARB						0x84C0
 #define GL_TEXTURE1_ARB						0x84C1
 
-extern int GL_TEXTURE0, GL_TEXTURE1;
+extern int GL_TEXTURE_0, GL_TEXTURE_1;
 
 #ifndef GL_POLYGON_OFFSET
-#define GL_POLYGON_OFFSET               0x8037
+# define GL_POLYGON_OFFSET					0x8037
+#endif
+
+#ifndef GL_SGIS_generate_mipmap
+#define GL_SGIS_generate_mipmap
+
+#define GL_GENERATE_MIPMAP_SGIS           0x8191
+#define GL_GENERATE_MIPMAP_HINT_SGIS      0x8192
+
 #endif
 
 #ifndef GL_EXT_texture_env_combine
+#define GL_EXT_texture_env_combine
+
 #define GL_COMBINE_EXT                    0x8570
 #define GL_COMBINE_RGB_EXT                0x8571
 #define GL_COMBINE_ALPHA_EXT              0x8572
@@ -523,13 +516,45 @@ extern int GL_TEXTURE0, GL_TEXTURE1;
 #define GL_OPERAND5_ALPHA_EXT             0x859D
 #define GL_OPERAND6_ALPHA_EXT             0x859E
 #define GL_OPERAND7_ALPHA_EXT             0x859F
+
 #endif
 
 /* NV_texture_env_combine4 */
+#ifndef GL_NV_texture_env_combine4
+#define GL_NV_texture_env_combine4
+
 #define GL_COMBINE4_NV                      0x8503
 #define GL_SOURCE3_RGB_NV                   0x8583
 #define GL_SOURCE3_ALPHA_NV                 0x858B
 #define GL_OPERAND3_RGB_NV                  0x8593
 #define GL_OPERAND3_ALPHA_NV                0x859B
+
+#endif
+
+#ifndef GL_ARB_texture_compression
+#define GL_ARB_texture_compression
+
+#define GL_COMPRESSED_ALPHA_ARB           0x84E9
+#define GL_COMPRESSED_LUMINANCE_ARB       0x84EA
+#define GL_COMPRESSED_LUMINANCE_ALPHA_ARB 0x84EB
+#define GL_COMPRESSED_INTENSITY_ARB       0x84EC
+#define GL_COMPRESSED_RGB_ARB             0x84ED
+#define GL_COMPRESSED_RGBA_ARB            0x84EE
+#define GL_TEXTURE_COMPRESSION_HINT_ARB   0x84EF
+#define GL_TEXTURE_IMAGE_SIZE_ARB         0x86A0
+#define GL_TEXTURE_COMPRESSED_ARB         0x86A1
+#define GL_NUM_COMPRESSED_TEXTURE_FORMATS_ARB 0x86A2
+#define GL_COMPRESSED_TEXTURE_FORMATS_ARB 0x86A3
+
+#endif
+
+/* GL_EXT_texture_filter_anisotropic */
+#ifndef GL_EXT_texture_filter_anisotropic
+#define GL_EXT_texture_filter_anisotropic
+
+#define GL_TEXTURE_MAX_ANISOTROPY_EXT                           0x84FE
+#define GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT                       0x84FF
+
+#endif
 
 #endif

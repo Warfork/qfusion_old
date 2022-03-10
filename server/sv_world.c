@@ -188,24 +188,15 @@ void SV_LinkEdict (edict_t *ent)
 	if (ent->solid == SOLID_BBOX && !(ent->svflags & SVF_CORPSE))
 	{	// assume that x/y are equal and symetric
 		i = ent->maxs[0]/8;
-		if (i<1)
-			i = 1;
-		if (i>31)
-			i = 31;
+		clamp ( i, 1, 31 );
 
 		// z is not symetric
 		j = (-ent->mins[2])/8;
-		if (j<1)
-			j = 1;
-		if (j>31)
-			j = 31;
+		clamp ( j, 1, 31 );
 
 		// and z maxs can be negative...
 		k = (ent->maxs[2]+32)/8;
-		if (k<1)
-			k = 1;
-		if (k>63)
-			k = 63;
+		clamp ( k, 1, 63 );
 
 		ent->s.solid = (k<<10) | (j<<5) | i;
 	}
@@ -220,23 +211,14 @@ void SV_LinkEdict (edict_t *ent)
 	if (ent->solid == SOLID_BSP && 
 		(ent->s.angles[0] || ent->s.angles[1] || ent->s.angles[2]) )
 	{	// expand for rotation
-		float		max, v;
-		int			i;
+		float		radius;
 
-		max = 0;
+		radius = RadiusFromBounds ( ent->mins, ent->maxs );
+
 		for (i=0 ; i<3 ; i++)
 		{
-			v =fabs( ent->mins[i]);
-			if (v > max)
-				max = v;
-			v =fabs( ent->maxs[i]);
-			if (v > max)
-				max = v;
-		}
-		for (i=0 ; i<3 ; i++)
-		{
-			ent->absmin[i] = ent->s.origin[i] - max;
-			ent->absmax[i] = ent->s.origin[i] + max;
+			ent->absmin[i] = ent->s.origin[i] - radius;
+			ent->absmax[i] = ent->s.origin[i] + radius;
 		}
 	}
 	else
@@ -371,7 +353,7 @@ void SV_AreaEdicts_r (areanode_t *node)
 
 		if (check->solid == SOLID_NOT)
 			continue;		// deactivated
-		if ( !CheckBounds (check->absmin, check->absmax,
+		if ( !BoundsIntersect (check->absmin, check->absmax,
 			area_mins, area_maxs) )
 			continue;		// not touching
 
@@ -406,26 +388,24 @@ with the same entity.
 */
 void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 {
-	int			i;
-	int			leafs[MAX_TOTAL_ENT_LEAFS];
-	int			num_leafs;
-	int			areaportal, area1, area2, area;
-	vec3_t		mins, maxs, apmins, apmaxs;
+	int	leafs[MAX_TOTAL_ENT_LEAFS];
+	int i, num_leafs;
+	int areaportal;
 
 	// entity must touch at least two areas
-	if ( !ent->areanum || !ent->areanum2 )
+	if ( !ent->areanum || !ent->areanum2 ) {
 		return;
+	}
 
 	// get all leafs, including solids
 	num_leafs = CM_BoxLeafnums (ent->absmin, ent->absmax,
 		leafs, MAX_TOTAL_ENT_LEAFS, NULL);
 
-	if ( !num_leafs )
+	if ( !num_leafs ) {
 		return;
+	}
 
 	areaportal = 0;
-	area1 = 0;
-	area2 = 0;
 	for (i=0 ; i<num_leafs ; i++)
 	{
 		if ( !CM_LeafCluster ( leafs[i] ) )
@@ -433,54 +413,15 @@ void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 
 		if ( CM_LeafContents( leafs[i] ) & CONTENTS_AREAPORTAL ) {
 			areaportal = leafs[i];
-			VectorCopy ( CM_LeafMins ( areaportal ), apmins );
-			VectorCopy ( CM_LeafMaxs ( areaportal ), apmaxs );
 			break;
 		}
 	}
 
-	if ( !areaportal )
+	if ( !areaportal ) {
 		return;
-
-	for (i=0 ; i<num_leafs ; i++)
-	{
-		if ( !CM_LeafCluster ( leafs[i] ) )
-			continue;
-		if ( leafs[i] == areaportal )
-			continue;
-
-		area = CM_LeafArea( leafs[i] );
-
-		if ( !area1 && area ) {
-			VectorCopy ( CM_LeafMins ( leafs[i] ), mins );
-			VectorCopy ( CM_LeafMaxs ( leafs[i] ), maxs );
-		
-			if ( CheckBounds ( mins, maxs, apmins, apmaxs ) ) {
-				area1 = area;
-			}
-		}
-
-		if ( !area2 && area && (area1 != area) ) {
-			VectorCopy ( CM_LeafMins ( leafs[i] ), mins );
-			VectorCopy ( CM_LeafMaxs ( leafs[i] ), maxs );
-
-			if ( CheckBounds ( mins, maxs, apmins, apmaxs ) ) {
-				area2 = area;
-			}
-		}
-
-		if ( area1 && area2 )
-			break;
 	}
 
-	// if areas were not detected, try using areanums of the entity
-	if ( !area1 || !area2 ) {
-		area1 = ent->areanum;
-		area2 = ent->areanum2;
-	}
-
-	CM_SetAreaPortalState ( area1, area2, open );
-	Com_DPrintf ( "area%i-area%i: %s\n", area1, area2, open ? "open" : "close" );
+	CM_SetAreaPortalState ( ent->areanum, ent->areanum2, open );
 }
 
 /*
@@ -649,7 +590,7 @@ void SV_ClipMoveToEntities ( moveclip_t *clip )
 				touch->s.origin, angles);
 
 		if (trace.allsolid || trace.startsolid ||
-		trace.fraction < clip->trace.fraction)
+			trace.fraction < clip->trace.fraction)
 		{
 			trace.ent = touch;
 		 	if (clip->trace.startsolid)

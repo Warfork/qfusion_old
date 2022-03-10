@@ -31,7 +31,6 @@ void CL_CheckPredictionError (void)
 	int		frame;
 	int		delta[3];
 	int		i;
-	int		len;
 
 	if (!cl_predict->value || (cl.frame.playerstate.pmove.pm_flags & PMF_NO_PREDICTION))
 		return;
@@ -44,8 +43,7 @@ void CL_CheckPredictionError (void)
 	VectorSubtract (cl.frame.playerstate.pmove.origin, cl.predicted_origins[frame], delta);
 
 	// save the prediction error for interpolation
-	len = abs(delta[0]) + abs(delta[1]) + abs(delta[2]);
-	if (len > 640)	// 80 world units
+	if (abs(delta[0]) > 128*8 || abs(delta[1]) > 128*8 || abs(delta[2]) > 128*8)
 	{	// a teleport or something
 		VectorClear (cl.prediction_error);
 	}
@@ -63,14 +61,13 @@ void CL_CheckPredictionError (void)
 	}
 }
 
-
 /*
 ====================
 CL_ClipMoveToEntities
 
 ====================
 */
-void CL_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, trace_t *tr )
+void CL_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask, trace_t *tr )
 {
 	int			i, x, zd, zu;
 	trace_t		trace;
@@ -78,7 +75,7 @@ void CL_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 	float		*angles;
 	entity_state_t	*ent;
 	int			num;
-	cmodel_t		*cmodel;
+	cmodel_t	*cmodel;
 	vec3_t		bmins, bmaxs;
 
 	for (i=0 ; i<cl.frame.num_entities ; i++)
@@ -89,7 +86,7 @@ void CL_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 		if (!ent->solid)
 			continue;
 
-		if (ent->number == cl.playernum+1)
+		if (ent->number == ignore)
 			continue;
 
 		if (ent->solid == 31)
@@ -119,8 +116,7 @@ void CL_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 			return;
 
 		trace = CM_TransformedBoxTrace (start, end,
-			mins, maxs, headnode,  MASK_PLAYERSOLID,
-			ent->origin, angles);
+			mins, maxs, headnode,  contentmask,	ent->origin, angles);
 
 		if (trace.allsolid || trace.startsolid ||
 		trace.fraction < tr->fraction)
@@ -145,28 +141,44 @@ void CL_ClipMoveToEntities ( vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end,
 CL_PMTrace
 ================
 */
-trace_t		CL_PMTrace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end)
+trace_t CL_Trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask)
 {
 	trace_t	t;
 
 	// check against world
-	t = CM_BoxTrace (start, end, mins, maxs, 0, MASK_PLAYERSOLID);
+	t = CM_BoxTrace (start, end, mins, maxs, 0, contentmask);
 	if (t.fraction < 1.0)
 		t.ent = (struct edict_s *)1;
 
 	// check all other solid models
-	CL_ClipMoveToEntities (start, mins, maxs, end, &t);
+	CL_ClipMoveToEntities (start, mins, maxs, end, ignore, contentmask, &t);
 
 	return t;
 }
 
-int		CL_PMpointcontents (vec3_t point)
+
+/*
+================
+CL_PMTrace
+================
+*/
+trace_t	CL_PMTrace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end)
 {
-	int		i;
+	return CL_Trace ( start, mins, maxs, end, IGNORE_PLAYER, MASK_PLAYERSOLID );
+}
+
+/*
+================
+CL_PMpointcontents
+================
+*/
+int	CL_PMpointcontents (vec3_t point)
+{
+	int			i;
 	entity_state_t	*ent;
-	int		num;
+	int			num;
 	cmodel_t	*cmodel;
-	int		contents;
+	int			contents;
 
 	contents = CM_PointContents (point, 0);
 
@@ -205,6 +217,7 @@ void CL_PredictMovement (void)
 	pmove_t		pm;
 	int			i;
 	int			step;
+	float		oldstep;
 	int			oldz;
 
 	if (cls.state != ca_active)
@@ -237,14 +250,8 @@ void CL_PredictMovement (void)
 	memset (&pm, 0, sizeof(pm));
 	pm.trace = CL_PMTrace;
 	pm.pointcontents = CL_PMpointcontents;
-
 	pm_airaccelerate = atof(cl.configstrings[CS_AIRACCEL]);
-
 	pm.s = cl.frame.playerstate.pmove;
-
-//	SCR_DebugGraph (current - ack - 1, 0);
-
-	frame = 0;
 
 	// run frames
 	while (++ack < current)
@@ -263,9 +270,13 @@ void CL_PredictMovement (void)
 	oldz = cl.predicted_origins[oldframe][2];
 	step = pm.s.origin[2] - oldz;
 
-	if (step > 63 && step < 160 && (pm.s.pm_flags & PMF_ON_GROUND) )
+	if (pm.step && step > 0 && step < 160 )
 	{
-		cl.predicted_step = step * 0.125;
+		oldstep = 0;
+		if (cls.realtime - cl.predicted_step_time < 150)
+			oldstep = cl.predicted_step * (150 - (cls.realtime - cl.predicted_step_time)) * (1.0 / 150.0);
+
+		cl.predicted_step = oldstep + step * 0.125;
 		cl.predicted_step_time = cls.realtime - cls.frametime * 500;
 	}
 

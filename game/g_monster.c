@@ -180,7 +180,7 @@ void M_CheckGround (edict_t *ent)
 }
 
 
-void M_CatagorizePosition (edict_t *ent)
+void M_CategorizePosition (edict_t *ent)
 {
 	vec3_t		point;
 	int			cont;
@@ -325,18 +325,17 @@ void M_droptofloor (edict_t *ent)
 
 	gi.linkentity (ent);
 	M_CheckGround (ent);
-	M_CatagorizePosition (ent);
+	M_CategorizePosition (ent);
 }
 
 
 void M_SetEffects (edict_t *ent)
 {
-	ent->s.effects &= ~(EF_COLOR_SHELL|EF_POWERSCREEN);
+	ent->s.effects &= ~(EF_POWERSCREEN);
 	ent->s.renderfx &= ~(RF_SHELL_RED|RF_SHELL_GREEN|RF_SHELL_BLUE);
 
 	if (ent->monsterinfo.aiflags & AI_RESURRECTING)
 	{
-		ent->s.effects |= EF_COLOR_SHELL;
 		ent->s.renderfx |= RF_SHELL_RED;
 	}
 
@@ -351,7 +350,6 @@ void M_SetEffects (edict_t *ent)
 		}
 		else if (ent->monsterinfo.power_armor_type == POWER_ARMOR_SHIELD)
 		{
-			ent->s.effects |= EF_COLOR_SHELL;
 			ent->s.renderfx |= RF_SHELL_GREEN;
 		}
 	}
@@ -424,7 +422,7 @@ void monster_think (edict_t *self)
 		self->monsterinfo.linkcount = self->linkcount;
 		M_CheckGround (self);
 	}
-	M_CatagorizePosition (self);
+	M_CategorizePosition (self);
 	M_WorldEffects (self);
 	M_SetEffects (self);
 }

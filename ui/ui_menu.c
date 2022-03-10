@@ -20,11 +20,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <ctype.h>
 
 #include "ui_local.h"
-#include "ui_keycodes.h"
 
-char *menu_in_sound		= "misc/menu1.wav";
-char *menu_move_sound	= "misc/menu2.wav";
-char *menu_out_sound	= "misc/menu3.wav";
+char *menu_in_sound		= "sound/misc/menu1.wav";
+char *menu_move_sound	= "sound/misc/menu2.wav";
+char *menu_out_sound	= "sound/misc/menu3.wav";
 
 void M_Menu_Main_f (void);
 	void M_Menu_Game_f (void);
@@ -40,14 +39,20 @@ void M_Menu_Main_f (void);
 			void M_Menu_DMOptions_f (void);
 	void M_Menu_Options_f (void);
 		void M_Menu_Keys_f (void);
+	void M_Menu_Sound_f (void);
+	void M_Menu_Gfx_f (void);
 	void M_Menu_Video_f (void);
 	void M_Menu_Quit_f (void);
 
 	void M_Menu_Credits( void );
 
+ui_local_t	uis;
+
 qboolean	m_entersound;		// play after drawing a frame, so caching
 								// won't disrupt the sound
 
+menuframework_s *m_active;
+void	*m_cursoritem;
 void	(*m_drawfunc) (void);
 const char *(*m_keyfunc) (int key);
 
@@ -59,6 +64,7 @@ const char *(*m_keyfunc) (int key);
 
 typedef struct
 {
+	menuframework_s *m;
 	void	(*draw) (void);
 	const char *(*key) (int k);
 } menulayer_t;
@@ -66,18 +72,20 @@ typedef struct
 menulayer_t	m_layers[MAX_MENU_DEPTH];
 int		m_menudepth;
 
-void M_PushMenu ( void (*draw) (void), const char *(*key) (int k) )
+void UI_UpdateMousePosition (void);
+
+void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (int k) )
 {
 	int		i;
 
-	if (trap_Cvar_VariableValue ("maxclients") == 1 
-		&& trap_Com_ServerState ())
+	if (trap_Cvar_VariableValue ("sv_maxclients") == 1 
+		&& trap_GetServerState ())
 		trap_Cvar_Set ("paused", "1");
 
 	// if this menu is already present, drop back to that level
 	// to avoid stacking menus by hotkeys
 	for (i=0 ; i<m_menudepth ; i++)
-		if (m_layers[i].draw == draw &&
+		if (m_layers[i].m == m && m_layers[i].draw == draw &&
 			m_layers[i].key == key)
 		{
 			m_menudepth = i;
@@ -90,6 +98,7 @@ void M_PushMenu ( void (*draw) (void), const char *(*key) (int k) )
 			return;
 		}
 
+		m_layers[m_menudepth].m = m_active;
 		m_layers[m_menudepth].draw = m_drawfunc;
 		m_layers[m_menudepth].key = m_keyfunc;
 		m_menudepth++;
@@ -97,14 +106,18 @@ void M_PushMenu ( void (*draw) (void), const char *(*key) (int k) )
 
 	m_drawfunc = draw;
 	m_keyfunc = key;
+	m_active = m;
 
 	m_entersound = true;
+
+	UI_UpdateMousePosition ();
 
 	trap_CL_SetKeyDest_f ( key_menu );
 }
 
 void M_ForceMenuOff (void)
 {
+	m_active = 0;
 	m_drawfunc = 0;
 	m_keyfunc = 0;
 	trap_CL_SetKeyDest_f ( key_game );
@@ -115,6 +128,12 @@ void M_ForceMenuOff (void)
 
 void M_PopMenu (void)
 {
+	if ( (m_menudepth == 1) && (uis.clientState == ca_disconnected) ) {
+		// start the demo loop again
+		trap_Cmd_ExecuteText (EXEC_APPEND, "d1\n");
+		return;
+	}
+
 	trap_S_StartLocalSound( menu_out_sound );
 
 	if (m_menudepth < 1) {
@@ -126,9 +145,13 @@ void M_PopMenu (void)
 
 	m_drawfunc = m_layers[m_menudepth].draw;
 	m_keyfunc = m_layers[m_menudepth].key;
+	m_active = m_layers[m_menudepth].m;
 
-	if (!m_menudepth)
+	UI_UpdateMousePosition ();
+
+	if ( !m_menudepth && (uis.clientState > ca_disconnected) ) {
 		M_ForceMenuOff ();
+	}
 }
 
 
@@ -154,6 +177,32 @@ const char *Default_MenuKey( menuframework_s *m, int key )
 	case K_ESCAPE:
 		M_PopMenu();
 		return menu_out_sound;
+
+	case K_MOUSE1:
+		if ( m && (m_cursoritem == item) && Menu_SlideItem( m, 1 ) )
+		{
+			sound = menu_move_sound;
+		}
+		else
+		{
+			if ( m )
+				Menu_SelectItem( m );
+			sound = menu_move_sound;
+		}
+		break;
+
+	case K_MOUSE2:
+		if ( m && (m_cursoritem == item) && Menu_SlideItem( m, -1 ) )
+		{
+			sound = menu_move_sound;
+		}
+		else
+		{
+			M_PopMenu ();
+			sound = menu_out_sound;
+		}
+		break;
+
 	case K_KP_UPARROW:
 	case K_UPARROW:
 		if ( m )
@@ -197,8 +246,6 @@ const char *Default_MenuKey( menuframework_s *m, int key )
 		}
 		break;
 
-	case K_MOUSE1:
-	case K_MOUSE2:
 	case K_MOUSE3:
 	case K_JOY1:
 	case K_JOY2:
@@ -236,7 +283,7 @@ const char *Default_MenuKey( menuframework_s *m, int key )
 	case K_AUX30:
 	case K_AUX31:
 	case K_AUX32:
-		
+
 	case K_KP_ENTER:
 	case K_ENTER:
 		if ( m )
@@ -258,6 +305,40 @@ float M_ClampCvar( float min, float max, float value )
 //=============================================================================
 
 /*
+=================
+UI_malloc
+=================
+*/
+void *UI_malloc (int cnt)
+{
+	void *buf = (void *)malloc (cnt);
+
+	if (!buf) {
+		Com_Printf ("UI_malloc: failed on allocation of %i bytes.\n", cnt);
+		return NULL;
+	}
+
+	memset (buf, 0, cnt);
+	return buf;
+}
+
+/*
+=================
+UI_free
+=================
+*/
+void UI_free (void *buf)
+{
+	if (!buf) {
+		return;
+	}
+
+	free (buf);
+}
+
+//=============================================================================
+
+/*
 ================
 M_DrawCharacter
 
@@ -271,26 +352,21 @@ void M_Print (int cx, int cy, char *str)
 {
 	int w, h;
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
-	trap_DrawStringLen (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, -1, FONT_SMALL, colorWhite);
+	w = uis.vidWidth;
+	h = uis.vidHeight;
+
+	trap_DrawString (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, FONT_SMALL, colorWhite);
 }
 
 void M_PrintWhite (int cx, int cy, char *str)
 {
 	int w, h;
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
-	trap_DrawStringLen (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, -1, FONT_SMALL, colorYellow);
+	w = uis.vidWidth;
+	h = uis.vidHeight;
+
+	trap_DrawString (cx + ((w - 320)>>1), cy + ((h - 240)>>1), str, FONT_SMALL, colorYellow);
 }
-
-void M_DrawPic (int x, int y, char *pic)
-{
-	int w, h;
-
-	trap_Vid_GetCurrentInfo ( &w, &h );
-	trap_DrawPic (x + ((w - 320)>>1), y + ((h - 240)>>1), pic);
-}
-
 
 /*
 =============
@@ -351,16 +427,29 @@ void M_DrawTextBox (int x, int y, int width, int lines)
 }
 
 //=============================================================================
-/* Menu Subsystem */
+/* User Interface Subsystem */
 
 
 /*
 =================
-M_Init
+UI_Init
 =================
 */
-void M_Init (void)
+void UI_Init (void)
 {
+	uis.clientState = trap_GetClientState (); 
+	uis.serverState = trap_GetServerState ();
+
+	trap_Vid_GetCurrentInfo ( &uis.vidWidth, &uis.vidHeight );
+
+//	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
+//	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
+	uis.scaleX = 1;
+	uis.scaleY = 1;
+
+	uis.cursorX = uis.vidWidth / 2;
+	uis.cursorY = uis.vidHeight / 2;
+
 	trap_Cmd_AddCommand ("menu_main", M_Menu_Main_f);
 	trap_Cmd_AddCommand ("menu_game", M_Menu_Game_f);
 		trap_Cmd_AddCommand ("menu_loadgame", M_Menu_LoadGame_f);
@@ -373,6 +462,8 @@ void M_Init (void)
 			trap_Cmd_AddCommand ("menu_downloadoptions", M_Menu_DownloadOptions_f);
 		trap_Cmd_AddCommand ("menu_credits", M_Menu_Credits_f );
 	trap_Cmd_AddCommand ("menu_multiplayer", M_Menu_Multiplayer_f );
+	trap_Cmd_AddCommand ("menu_sound", M_Menu_Sound_f);
+	trap_Cmd_AddCommand ("menu_gfx", M_Menu_Gfx_f);
 	trap_Cmd_AddCommand ("menu_video", M_Menu_Video_f);
 	trap_Cmd_AddCommand ("menu_options", M_Menu_Options_f);
 		trap_Cmd_AddCommand ("menu_keys", M_Menu_Keys_f);
@@ -381,10 +472,10 @@ void M_Init (void)
 
 /*
 =================
-M_Init
+UI_Shutdown
 =================
 */
-void M_Shutdown (void)
+void UI_Shutdown (void)
 {
 	trap_Cmd_RemoveCommand ("menu_main");
 	trap_Cmd_RemoveCommand ("menu_game");
@@ -398,6 +489,8 @@ void M_Shutdown (void)
 	trap_Cmd_RemoveCommand ("menu_downloadoptions");
 	trap_Cmd_RemoveCommand ("menu_credits");
 	trap_Cmd_RemoveCommand ("menu_multiplayer");
+	trap_Cmd_RemoveCommand ("menu_gfx");
+	trap_Cmd_RemoveCommand ("menu_sound");
 	trap_Cmd_RemoveCommand ("menu_video");
 	trap_Cmd_RemoveCommand ("menu_options");
 	trap_Cmd_RemoveCommand ("menu_keys");
@@ -406,12 +499,94 @@ void M_Shutdown (void)
 
 /*
 =================
-M_Draw
+UI_UpdateMousePosition
 =================
 */
-void M_Draw (void)
+void UI_UpdateMousePosition (void)
 {
+	int i;
+
+	if ( !m_active || !m_active->nitems ) {
+		return;
+	}
+
+	/*
+	** check items
+	*/
+	m_cursoritem = NULL;
+
+	for ( i = 0; i < m_active->nitems; i++ )
+	{
+		if ( uis.cursorX > ( ( menucommon_s * ) m_active->items[i] )->maxs[0] || 
+			uis.cursorY > ( ( menucommon_s * ) m_active->items[i] )->maxs[1] ||
+			uis.cursorX < ( ( menucommon_s * ) m_active->items[i] )->mins[0] || 
+			uis.cursorY < ( ( menucommon_s * ) m_active->items[i] )->mins[1] )
+			continue;
+
+		m_cursoritem = m_active->items[i];
+
+		if ( m_active->cursor == i ) {
+			break;
+		}
+
+		Menu_AdjustCursor( m_active, i - m_active->cursor );
+		m_active->cursor = i;
+
+		trap_S_StartLocalSound( ( char * )menu_move_sound );
+
+		break;
+	}
+}
+
+/*
+=================
+UI_MouseMove
+=================
+*/
+void UI_MouseMove (int dx, int dy)
+{
+	uis.cursorX += dx;
+	uis.cursorY += dy;
+
+	clamp ( uis.cursorX, 0, uis.vidWidth );
+	clamp ( uis.cursorY, 0, uis.vidHeight );
+
+	if ( dx || dy ) {
+		UI_UpdateMousePosition ();
+	}
+}
+
+/*
+=================
+UI_Refresh
+=================
+*/
+void UI_Refresh ( int frametime )
+{
+	if ( !m_drawfunc )
+		return;
+
+	uis.clientState = trap_GetClientState (); 
+	uis.serverState = trap_GetServerState (); 
+
+	trap_Vid_GetCurrentInfo ( &uis.vidWidth, &uis.vidHeight );
+
+//	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
+//	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
+	uis.scaleX = 1;
+	uis.scaleY = 1;
+
+	// draw background
+	if ( trap_GetClientState() == ca_disconnected ) {
+		trap_DrawStretchPic ( 0, 0, uis.vidWidth, uis.vidHeight, 
+			0, 0, 1, 1, colorWhite, trap_RegisterPic ( "menuback" ) );
+	}
+
 	m_drawfunc ();
+
+	// draw cursor
+	trap_DrawStretchPic ( uis.cursorX - 16, uis.cursorY - 16, 32, 32, 
+		0, 0, 1, 1, colorWhite, trap_RegisterPic ( "menu/art/3_cursor2" ) );
 
 	// delay playing the enter sound until after the
 	// menu has been drawn, to avoid delay while
@@ -423,13 +598,32 @@ void M_Draw (void)
 	}
 }
 
+/*
+=================
+UI_Update
+
+Force an update
+=================
+*/
+void UI_Update (void)
+{
+	uis.clientState = trap_GetClientState (); 
+	uis.serverState = trap_GetServerState (); 
+
+	trap_Vid_GetCurrentInfo ( &uis.vidWidth, &uis.vidHeight );
+
+//	uis.scaleX = uis.vidWidth / MENU_DEFAULT_WIDTH;
+//	uis.scaleY = uis.vidHeight / MENU_DEFAULT_HEIGHT;
+	uis.scaleX = 1;
+	uis.scaleY = 1;
+}
 
 /*
 =================
-M_Keydown
+UI_Keydown
 =================
 */
-void M_Keydown (int key)
+void UI_Keydown (int key)
 {
 	const char *s;
 
@@ -437,3 +631,4 @@ void M_Keydown (int key)
 		if ( ( s = m_keyfunc( key ) ) != 0 )
 			trap_S_StartLocalSound( ( char * ) s );
 }
+

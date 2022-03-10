@@ -23,9 +23,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../game/q_shared.h"
 
 
-#define	VERSION		3.21
+#define	VERSION		3.03
 
 #define	BASEDIRNAME	"baseq3"
+
+#define APPLICATION "QFusion"
 
 #ifdef WIN32
 
@@ -96,14 +98,12 @@ struct entity_state_s;
 void MSG_WriteChar (sizebuf_t *sb, int c);
 void MSG_WriteByte (sizebuf_t *sb, int c);
 void MSG_WriteShort (sizebuf_t *sb, int c);
+void MSG_WriteInt3 (sizebuf_t *sb, int c);
 void MSG_WriteLong (sizebuf_t *sb, int c);
 void MSG_WriteFloat (sizebuf_t *sb, float f);
 void MSG_WriteString (sizebuf_t *sb, char *s);
-void MSG_WriteShortCoord (sizebuf_t *sb, float f);
-void MSG_WriteShortPos (sizebuf_t *sb, vec3_t pos);
-void MSG_WriteLongCoord (sizebuf_t *sb, float f);
-void MSG_WriteLongCoord (sizebuf_t *sb, float f);
-void MSG_WriteLongPos (sizebuf_t *sb, vec3_t pos);
+void MSG_WriteCoord (sizebuf_t *sb, float f);
+void MSG_WritePos (sizebuf_t *sb, vec3_t pos);
 void MSG_WriteAngle (sizebuf_t *sb, float f);
 void MSG_WriteAngle16 (sizebuf_t *sb, float f);
 void MSG_WriteDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
@@ -116,15 +116,14 @@ void	MSG_BeginReading (sizebuf_t *sb);
 int		MSG_ReadChar (sizebuf_t *sb);
 int		MSG_ReadByte (sizebuf_t *sb);
 int		MSG_ReadShort (sizebuf_t *sb);
+int		MSG_ReadInt3 (sizebuf_t *sb);
 int		MSG_ReadLong (sizebuf_t *sb);
 float	MSG_ReadFloat (sizebuf_t *sb);
 char	*MSG_ReadString (sizebuf_t *sb);
 char	*MSG_ReadStringLine (sizebuf_t *sb);
 
-float	MSG_ReadShortCoord (sizebuf_t *sb);
-void	MSG_ReadShortPos (sizebuf_t *sb, vec3_t pos);
-float	MSG_ReadLongCoord (sizebuf_t *sb);
-void	MSG_ReadLongPos (sizebuf_t *sb, vec3_t pos);
+float	MSG_ReadCoord (sizebuf_t *sb);
+void	MSG_ReadPos (sizebuf_t *sb, vec3_t pos);
 float	MSG_ReadAngle (sizebuf_t *sb);
 float	MSG_ReadAngle16 (sizebuf_t *sb);
 void	MSG_ReadDeltaUsercmd (sizebuf_t *sb, struct usercmd_s *from, struct usercmd_s *cmd);
@@ -134,18 +133,6 @@ void	MSG_ReadDir (sizebuf_t *sb, vec3_t vector);
 void	MSG_ReadData (sizebuf_t *sb, void *buffer, int size);
 
 //============================================================================
-
-extern	qboolean		bigendien;
-
-extern	short	BigShort (short l);
-extern	short	LittleShort (short l);
-extern	int		BigLong (int l);
-extern	int		LittleLong (int l);
-extern	float	BigFloat (float l);
-extern	float	LittleFloat (float l);
-
-//============================================================================
-
 
 int	COM_Argc (void);
 char *COM_Argv (int arg);	// range and null checked
@@ -170,7 +157,10 @@ void CRC_ProcessByte(unsigned short *crcvalue, byte data);
 unsigned short CRC_Value(unsigned short crcvalue);
 unsigned short CRC_Block (byte *start, int count);
 
+/* mesh.h */
 
+void Mesh_GetFlatness ( float maxflat, vec4_t *points, int *mesh_cp, int *flat );
+void Mesh_EvalQuadricBezierPatch ( vec4_t *p, int *numcp, int *tess, vec4_t *dest );
 
 /*
 ==============================================================
@@ -182,12 +172,12 @@ PROTOCOL
 
 // protocol.h -- communications protocols
 
-#define	PROTOCOL_VERSION	36
+#define	PROTOCOL_VERSION	38
 
 //=========================================
 
 #define	PORT_MASTER	27900
-#define	PORT_CLIENT	27901
+#define	PORT_CLIENT	(rand()%11000)+5000
 #define	PORT_SERVER	27910
 
 //=========================================
@@ -232,7 +222,8 @@ enum svc_ops_e
 	svc_packetentities,			// [...]
 	svc_deltapacketentities,	// [...]
 	svc_frame,
-	svc_obituary
+	svc_obituary,
+	svc_stringcmd				// [string] command to execute
 };
 
 //==============================================
@@ -282,17 +273,15 @@ enum clc_ops_e
 #define	CM_SIDE		(1<<4)
 #define	CM_UP		(1<<5)
 #define	CM_BUTTONS	(1<<6)
-#define	CM_IMPULSE	(1<<7)
 
 //==============================================
 
 // a sound without an ent or pos will be a local only sound
 #define	SND_VOLUME		(1<<0)		// a byte
 #define	SND_ATTENUATION	(1<<1)		// a byte
-#define	SND_POSS		(1<<2)		// three short coordinates
+#define	SND_POS			(1<<2)		// three coordinates (9 bytes)
 #define	SND_ENT			(1<<3)		// a short 0-2: channel, 3-12: entity
 #define	SND_OFFSET		(1<<4)		// a byte, msec offset from frame start
-#define	SND_POSL		(1<<5)		// three long coordinates
 
 #define DEFAULT_SOUND_PACKET_VOLUME	1.0
 #define DEFAULT_SOUND_PACKET_ATTENUATION 1.0
@@ -335,10 +324,6 @@ enum clc_ops_e
 #define	U_SKIN16	(1<<25)
 #define	U_SOUND		(1<<26)
 #define	U_SOLID		(1<<27)
-#define	U_ORIGIN1L	(1<<28)		// weapons, flags, etc
-#define	U_ORIGIN2L	(1<<29)
-#define	U_ORIGIN3L	(1<<30)
-#define	U_OLDORIGINL (1<<30)	// FIXME: get rid of this
 
 
 /*
@@ -429,6 +414,8 @@ char 	*Cmd_CompleteCommand (char *partial);
 // attempts to match a partial command for automatic command line completion
 // returns NULL if nothing fits
 
+void	Cmd_WriteAliases (FILE *f);
+
 int		Cmd_CompleteAliasCountPossible (char *partial);
 char	**Cmd_CompleteAliasBuildList (char *partial);
 int		Cmd_CompleteCountPossible (char *partial);
@@ -505,12 +492,17 @@ char 	*Cvar_CompleteVariable (char *partial);
 // attempts to match a partial variable name for command line completion
 // returns NULL if nothing fits
 
+void	Cmd_WriteAliases (FILE *f);
+
 int Cvar_CompleteCountPossible (char *partial);
 char **Cvar_CompleteBuildList (char *partial);
 char *Cvar_TabComplete (const char *partial);
 
-void	Cvar_GetLatchedVars (void);
+void	Cvar_GetLatchedVars (int flags);
 // any CVAR_LATCHED variables that have been set will now take effect
+
+void	Cvar_FixCheatVars (void);
+// all cheat variables with be reset to default unless cheats are allowed
 
 qboolean Cvar_Command (void);
 // called by Cmd_ExecuteString when Cmd_Argv(0) doesn't match a known
@@ -672,6 +664,7 @@ trace_t		CM_TransformedBoxTrace (vec3_t start, vec3_t end,
 
 byte		*CM_ClusterPVS (int cluster);
 byte		*CM_ClusterPHS (int cluster);
+int			CM_ClusterSize (void);
 
 int			CM_PointLeafnum (vec3_t p);
 
@@ -683,13 +676,12 @@ int			CM_BoxLeafnums (vec3_t mins, vec3_t maxs, int *list,
 int			CM_LeafContents (int leafnum);
 int			CM_LeafCluster (int leafnum);
 int			CM_LeafArea (int leafnum);
-int			*CM_LeafMins (int leafnum);
-int			*CM_LeafMaxs (int leafnum);
 
 void		CM_SetAreaPortalState (int area1, int area2, qboolean open);
 qboolean	CM_AreasConnected (int area1, int area2);
 
 int			CM_WriteAreaBits (byte *buffer, int area);
+void		CM_MergeAreaBits (byte *buffer, int area);
 qboolean	CM_HeadnodeVisible (int headnode, byte *visbits);
 
 void		CM_WritePortalState (FILE *f);
@@ -724,8 +716,7 @@ char	*FS_NextPath (char *prevpath);
 void	FS_ExecAutoexec (void);
 
 int		FS_FOpenFile (char *filename, int *file);
-qboolean FS_FileExists (char *path);
-int		FS_FileSize (char *filename);
+int		FS_FileExists (char *path);
 void	FS_FCloseFile (int file);
 int		FS_GetFileList (const char *dir, const char *extension, char *str, int bufsize);
 
@@ -770,11 +761,16 @@ void 		Com_DPrintf (char *fmt, ...);
 void 		Com_Error (int code, char *fmt, ...);
 void 		Com_Quit (void);
 
+int			Com_ClientState (void);		// this should have just been a cvar...
+void		Com_SetClientState (int state);
+
 int			Com_ServerState (void);		// this should have just been a cvar...
 void		Com_SetServerState (int state);
 
 unsigned	Com_BlockChecksum (void *buffer, int length);
 byte		COM_BlockSequenceCRCByte (byte *base, int length, int sequence);
+
+unsigned int Com_HashKey (char *name, int hashsize);
 
 float	frand(void);	// 0 ti 1
 float	crand(void);	// -1 to 1
@@ -797,16 +793,15 @@ void *Z_Malloc (int size);			// returns 0 filled memory
 void *Z_TagMalloc (int size, int tag);
 void Z_FreeTags (int tag);
 
+void *Q_malloc (int cnt);
+void Q_free (void *buf);
+
 void Qcommon_Init (int argc, char **argv);
 void Qcommon_Frame (int msec);
 void Qcommon_Shutdown (void);
 
 #define NUMVERTEXNORMALS	162
 extern	vec3_t	bytedirs[NUMVERTEXNORMALS];
-
-// this is in the client code, but can be used for debugging from server
-void SCR_DebugGraph (float value, int color);
-
 
 /*
 ==============================================================
@@ -816,12 +811,14 @@ NON-PORTABLE SYSTEM SERVICES
 ==============================================================
 */
 
+typedef enum { LIB_GAME, LIB_CGAME, LIB_UI } gamelib_t;
+
 void	Sys_Init (void);
 
 void	Sys_AppActivate (void);
 
-void	Sys_UnloadGame (void);
-void	*Sys_GetGameAPI (void *parms);
+void	Sys_UnloadLibrary (gamelib_t gamelib);
+void	*Sys_LoadLibrary (gamelib_t gamelib, void *parms);
 // loads the game dll and calls the api init function
 
 char	*Sys_ConsoleInput (void);
@@ -830,7 +827,6 @@ void	Sys_SendKeyEvents (void);
 void	Sys_Error (char *error, ...);
 void	Sys_Quit (void);
 char	*Sys_GetClipboardData( void );
-void	Sys_CopyProtect (void);
 
 void	Sys_PrintCPUInfo (void);
 

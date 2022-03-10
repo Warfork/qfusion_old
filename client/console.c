@@ -44,59 +44,37 @@ Con_ToggleConsole_f
 */
 void Con_ToggleConsole_f (void)
 {
+	static int oldkeydest;
+
 	SCR_EndLoadingPlaque ();	// get rid of loading plaque
 
-	if (cl.attractloop)
+/*	if (cl.attractloop)
 	{
 		Cbuf_AddText ("killserver\n");
 		return;
-	}
-
-	if (cls.state == ca_disconnected)
-	{	// start the demo loop again
-		Cbuf_AddText ("d1\n");
-		return;
-	}
+	} */
 
 	Key_ClearTyping ();
 	Con_ClearNotify ();
 
 	if ( cls.key_dest == key_console ) {
-		UI_ForceMenuOff ();
+		cls.key_dest = oldkeydest;
+		Key_ClearStates ();
 		Cvar_Set ("paused", "0");
 	}
 	else
 	{
+		Key_ClearStates ();
+
+		oldkeydest = cls.key_dest;
 		cls.key_dest = key_console;	
 
-		if (Cvar_VariableValue ("maxclients") == 1 
+		if (Cvar_VariableValue ("sv_maxclients") == 1 
 			&& Com_ServerState ())
 			Cvar_Set ("paused", "1");
 	}
 }
 
-/*
-================
-Con_ToggleChat_f
-================
-*/
-void Con_ToggleChat_f (void)
-{
-	Key_ClearTyping ();
-
-	if (cls.key_dest == key_console)
-	{
-		if (cls.state == ca_active)
-		{
-			UI_ForceMenuOff ();
-			cls.key_dest = key_game;
-		}
-	}
-	else
-		cls.key_dest = key_console;
-	
-	Con_ClearNotify ();
-}
 
 /*
 ================
@@ -197,7 +175,8 @@ Con_MessageMode_f
 void Con_MessageMode_f (void)
 {
 	chat_team = false;
-	cls.key_dest = key_message;
+	if (cls.state == ca_active)
+		cls.key_dest = key_message;
 }
 
 /*
@@ -208,7 +187,8 @@ Con_MessageMode2_f
 void Con_MessageMode2_f (void)
 {
 	chat_team = true;
-	cls.key_dest = key_message;
+	if (cls.state == ca_active)
+		cls.key_dest = key_message;
 }
 
 /*
@@ -230,7 +210,7 @@ void Con_CheckResize (void)
 
 	if (width < 1)			// video hasn't been initialized yet
 	{
-		width = 38;
+		width = 78;
 		con.linewidth = width;
 		con.totallines = CON_TEXTSIZE / con.linewidth;
 		memset (con.text, ' ', CON_TEXTSIZE);
@@ -291,7 +271,6 @@ void Con_Init (void)
 	con_notifytime = Cvar_Get ("con_notifytime", "3", 0);
 
 	Cmd_AddCommand ("toggleconsole", Con_ToggleConsole_f);
-	Cmd_AddCommand ("togglechat", Con_ToggleChat_f);
 	Cmd_AddCommand ("messagemode", Con_MessageMode_f);
 	Cmd_AddCommand ("messagemode2", Con_MessageMode2_f);
 	Cmd_AddCommand ("clear", Con_Clear_f);
@@ -329,9 +308,12 @@ void Con_Print (char *txt)
 	int		y;
 	int		c, l;
 	static int	cr;
+	int		color;
 
 	if (!con.initialized)
 		return;
+
+	color = ColorIndex ( COLOR_WHITE );
 
 	while ( (c = *txt) )
 	{
@@ -343,8 +325,6 @@ void Con_Print (char *txt)
 	// word wrap
 		if (l != con.linewidth && (con.x + l > con.linewidth) )
 			con.x = 0;
-
-		txt++;
 
 		if (cr)
 		{
@@ -359,15 +339,25 @@ void Con_Print (char *txt)
 		// mark time for transparent overlay
 			if (con.current >= 0)
 				con.times[con.current % NUM_CON_TIMES] = cls.realtime;
+
+			y = con.current % con.totallines;
+
+			if ( color != ColorIndex ( COLOR_WHITE ) ) {
+				con.text[y*con.linewidth] = '^';
+				con.text[y*con.linewidth+1] = '0' + color;
+				con.x += 2;
+			}
 		}
 
 		switch (c)
 		{
 		case '\n':
+			color = ColorIndex ( COLOR_WHITE );
 			con.x = 0;
 			break;
 
 		case '\r':
+			color = ColorIndex ( COLOR_WHITE );
 			con.x = 0;
 			cr = 1;
 			break;
@@ -378,9 +368,14 @@ void Con_Print (char *txt)
 			con.x++;
 			if (con.x >= con.linewidth)
 				con.x = 0;
+
+			if ( Q_IsColorString( txt ) ) {
+				color = ColorIndex ( *(txt+1) );
+			}
 			break;
 		}
-		
+
+		txt++;
 	}
 }
 
@@ -414,6 +409,55 @@ DRAWING
 */
 
 
+int Q_ColorCharCount (char *s, int byteofs)
+{
+	int c;
+	char *end;
+
+	end = s + byteofs;
+
+	for (c = 0; *s && s < end; s++, c++)
+		if (Q_IsColorString(s))
+			s++, c--;
+
+	return c;
+}
+
+int Q_ColorCharOffset (char *s, int charcount)
+{
+	char *start = s;
+
+	for ( ; *s && charcount; s++)
+	{
+		if (Q_IsColorString(s))
+			s++;
+		else
+			charcount--;
+	}
+
+	return s - start;
+}
+
+int Q_ColorStrLastColor (char *s, int byteofs)
+{
+	int c;
+	char *end;
+	int lastcolor = ColorIndex(COLOR_WHITE);
+
+	end = s + byteofs - 1;	// don't check last byte
+
+	for (c = 0; s < end && *s; s++, c++)
+		if (Q_IsColorString(s))
+		{
+			lastcolor = ColorIndex(s[1]);
+			s++, c--;
+		}
+
+	return lastcolor;
+}
+
+
+
 /*
 ================
 Con_DrawInput
@@ -424,23 +468,36 @@ The input line scrolls horizontally if typing goes beyond the right edge
 void Con_DrawInput (void)
 {
 	char	*text;
+	extern qboolean	key_insert;
+	int		colorlinepos;
+	int		startcolor = ColorIndex(COLOR_WHITE);
+	int		byteofs;
+	int		bytelen;
 
-	if (cls.key_dest == key_menu)
+	if (cls.key_dest != key_console)
 		return;
-	if (cls.key_dest != key_console && cls.state == ca_active)
-		return;		// don't draw anything (always draw if not active)
 
 	text = key_lines[edit_line];
 
-//	prestep if horizontally scrolling
-	if (key_linepos >= con.linewidth)
-		text += 1 + key_linepos - con.linewidth;
-		
-// draw it
-	Draw_StringLen ( 8, con.vislines-SMALL_CHAR_HEIGHT, text, con.linewidth, FONT_SMALL, colorWhite );
+	// convert byte offset to visible character count
+	colorlinepos = Q_ColorCharCount (text, key_linepos);
 
-// add the cursor frame
-	Draw_Char ( 8+key_linepos*SMALL_CHAR_WIDTH, con.vislines-SMALL_CHAR_HEIGHT, 10+((int)(cls.realtime>>8)&1), FONT_SMALL, colorWhite);
+	// prestep if horizontally scrolling
+	if (colorlinepos >= con.linewidth + 1)
+	{
+		byteofs = Q_ColorCharOffset (text, colorlinepos - con.linewidth);
+		startcolor = Q_ColorStrLastColor (text, byteofs);
+		text += byteofs;
+		colorlinepos = con.linewidth;
+	}
+
+	// draw it
+	bytelen = Q_ColorCharOffset (text, con.linewidth);
+	Draw_StringLen ( 8, con.vislines-SMALL_CHAR_HEIGHT-14, text, bytelen, FONT_SMALL, color_table[startcolor] );
+
+	// add the cursor frame
+	if ((int)(cls.realtime>>8)&1)
+		Draw_Char ( 8+colorlinepos*SMALL_CHAR_WIDTH, con.vislines-SMALL_CHAR_HEIGHT-14, key_insert ? '_' : 11, FONT_SMALL, colorWhite);
 }
 
 
@@ -482,12 +539,12 @@ void Con_DrawNotify (void)
 	{
 		if (chat_team)
 		{
-			Draw_StringLen ( 8, v, "say_team:", -1, FONT_SMALL, colorWhite );
+			Draw_String ( 8, v, "say_team:", FONT_SMALL, colorWhite );
 			skip = 11;
 		}
 		else
 		{
-			Draw_StringLen ( 8, v, "say:", -1, FONT_SMALL, colorWhite );
+			Draw_String ( 8, v, "say:", FONT_SMALL, colorWhite );
 			skip = 5;
 		}
 
@@ -495,7 +552,7 @@ void Con_DrawNotify (void)
 		if (chat_bufferlen >viddef.width/SMALL_CHAR_WIDTH-(skip+1))
 			s += chat_bufferlen - (viddef.width/SMALL_CHAR_WIDTH-(skip+1));
 
-		Draw_StringLen ( skip*SMALL_CHAR_WIDTH, v, s, -1, FONT_SMALL, colorWhite );
+		Draw_String ( skip*SMALL_CHAR_WIDTH, v, s, FONT_SMALL, colorWhite );
 		Draw_Char ( (strlen(s)+skip)*SMALL_CHAR_WIDTH, v, 10+((cls.realtime>>8)&1), FONT_SMALL, colorWhite );
 		v += SMALL_CHAR_HEIGHT;
 	}
@@ -516,13 +573,12 @@ Draws the console with the solid background
 */
 void Con_DrawConsole (float frac)
 {
-	int				i, j, x, y, n;
+	int				i, x, y;
 	int				rows;
 	char			*text;
 	int				row;
 	int				lines;
 	char			version[64];
-	char			dlbar[1024];
 
 	lines = viddef.height * frac;
 	if (lines <= 0)
@@ -531,27 +587,31 @@ void Con_DrawConsole (float frac)
 	if (lines > viddef.height)
 		lines = viddef.height;
 
-// draw the background
-	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, "console");
-	SCR_AddDirtyPoint (0,0);
-	SCR_AddDirtyPoint (viddef.width-1,lines-1);
+	SCR_AddDirtyPoint (0, 0);
+	SCR_AddDirtyPoint (viddef.width-1, lines-1);
 
-	Com_sprintf (version, sizeof(version), "v%4.2f", VERSION);
-	Draw_StringLen (viddef.width-44, lines-20, version, -1, FONT_SMALL, colorWhite );
+// draw the background
+	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, 
+		0, 0, 1, 1, colorWhite, R_RegisterPic( "console" ) );
+	Draw_StretchPic (0, -(int)viddef.height+lines+viddef.height, viddef.width, 3, 
+		0, 0, 1, 1, colorRed, R_RegisterPic( "***r_whitetexture***" ) );
+
+	Com_sprintf (version, sizeof(version), APPLICATION " v%4.2f", VERSION);
+	Draw_String (viddef.width-strlen(version)*SMALL_CHAR_WIDTH-4, lines-20, version, FONT_SMALL, colorRed );
 
 // draw the text
 	con.vislines = lines;
 	
-	rows = (lines-22) / SMALL_CHAR_WIDTH;		// rows of text to draw
+	rows = (lines-SMALL_CHAR_HEIGHT-14) / SMALL_CHAR_HEIGHT;		// rows of text to draw
 
-	y = lines - 30;
+	y = lines - SMALL_CHAR_HEIGHT-14-SMALL_CHAR_HEIGHT;
 
 // draw from the bottom up
 	if (con.display != con.current)
 	{
 	// draw arrows to show the buffer is backscrolled
 		for (x=0 ; x<con.linewidth ; x+=4)
-			Draw_Char ( (x+1)*SMALL_CHAR_WIDTH, y, '^', FONT_SMALL, colorWhite);
+			Draw_Char ( (x+1)*SMALL_CHAR_WIDTH, y, '^', FONT_SMALL, colorRed );
 	
 		y -= SMALL_CHAR_HEIGHT;
 		rows--;
@@ -569,49 +629,6 @@ void Con_DrawConsole (float frac)
 
 		Draw_StringLen ( 8, y, text, con.linewidth, FONT_SMALL, colorWhite );
 	}
-
-//ZOID
-	// draw the download bar
-	// figure out width
-	if (cls.download) {
-		if ((text = strrchr(cls.downloadname, '/')) != NULL)
-			text++;
-		else
-			text = cls.downloadname;
-
-		x = con.linewidth - ((con.linewidth * 7) / 40);
-		y = x - strlen(text) - SMALL_CHAR_WIDTH;
-		i = con.linewidth/3;
-		if (strlen(text) > i) {
-			y = x - i - 11;
-			strncpy(dlbar, text, i);
-			dlbar[i] = 0;
-			strcat(dlbar, "...");
-		} else
-			strcpy(dlbar, text);
-		strcat(dlbar, ": ");
-		i = strlen(dlbar);
-		dlbar[i++] = '\x80';
-		// where's the dot go?
-		if (cls.downloadpercent == 0)
-			n = 0;
-		else
-			n = y * cls.downloadpercent / 100;
-			
-		for (j = 0; j < y; j++)
-			if (j == n)
-				dlbar[i++] = '\x83';
-			else
-				dlbar[i++] = '\x81';
-		dlbar[i++] = '\x82';
-		dlbar[i] = 0;
-
-		sprintf(dlbar + strlen(dlbar), " %02d%%", cls.downloadpercent);
-
-		// draw it
-		Draw_StringLen (8, con.vislines-SMALL_CHAR_HEIGHT-4, dlbar, -1, FONT_SMALL, colorWhite);
-	}
-//ZOID
 
 // draw the input prompt, user text, and cursor if desired
 	Con_DrawInput ();
@@ -692,7 +709,7 @@ void Con_CompleteCommandLine (void)
 	a = Cmd_CompleteAliasCountPossible(s);
 	
 	if (!(c + v + a)) {	// No possible matches, let the user know they're insane
-		Com_Printf("\n\nNo matching aliases, commands, or cvars were found.\n\n");
+		Com_Printf("\nNo matching aliases, commands, or cvars were found.\n\n");
 		return;
 	}
 	
@@ -731,17 +748,17 @@ void Con_CompleteCommandLine (void)
 
 		// Print Possible Commands
 		if (c) {
-			Com_Printf(S_COLOR_RED "%i possible command%s%s\n\n", c, (c > 1) ? "s: " : ":", S_COLOR_WHITE);
+			Com_Printf(S_COLOR_RED "%i possible command%s%s\n", c, (c > 1) ? "s: " : ":", S_COLOR_WHITE);
 			Con_DisplayList(list[0]);
 		}
 		
 		if (v) {
-			Com_Printf(S_COLOR_RED "%i possible variable%s%s\n\n", v, (v > 1) ? "s: " : ":", S_COLOR_WHITE);
+			Com_Printf(S_COLOR_RED "%i possible variable%s%s\n", v, (v > 1) ? "s: " : ":", S_COLOR_WHITE);
 			Con_DisplayList(list[1]);
 		}
 		
 		if (a) {
-			Com_Printf(S_COLOR_RED "%i possible alias%s%s\n\n", a, (a > 1) ? "es: " : ":", S_COLOR_WHITE);
+			Com_Printf(S_COLOR_RED "%i possible alias%s%s\n", a, (a > 1) ? "es: " : ":", S_COLOR_WHITE);
 			Con_DisplayList(list[2]);
 		}
 	}

@@ -20,7 +20,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // sv_main.c -- server main program
 
 #include "server.h"
-#include <limits.h>
 
 /*
 =============================================================================
@@ -71,8 +70,8 @@ void SV_ClientPrintf (client_t *cl, int level, char *fmt, ...)
 	if (level < cl->messagelevel)
 		return;
 	
-	va_start (argptr,fmt);
-	vsprintf (string, fmt,argptr);
+	va_start (argptr, fmt);
+	vsnprintf (string, sizeof(string), fmt, argptr);
 	va_end (argptr);
 	
 	MSG_WriteByte (&cl->netchan.message, svc_print);
@@ -94,8 +93,8 @@ void SV_BroadcastPrintf (int level, char *fmt, ...)
 	client_t	*cl;
 	int			i;
 
-	va_start (argptr,fmt);
-	vsprintf (string, fmt,argptr);
+	va_start (argptr, fmt);
+	vsnprintf (string, sizeof(string), fmt, argptr);
 	va_end (argptr);
 	
 	// echo to console
@@ -104,7 +103,7 @@ void SV_BroadcastPrintf (int level, char *fmt, ...)
 		char	copy[1024];
 		int		i, j;
 		
-		// mask off high bits and coloured strings
+		// mask off high bits and colored strings
 		for (i=0, j=0 ; j<1023 && string[j] ; ) {
 			if ( Q_IsColorString( &string[j] ) ) {
 				j += 2;
@@ -134,7 +133,7 @@ void SV_BroadcastPrintf (int level, char *fmt, ...)
 =================
 SV_BroadcastCommand
 
-Sends text to all active clients
+Sends a command to all active clients
 =================
 */
 void SV_BroadcastCommand (char *fmt, ...)
@@ -144,11 +143,11 @@ void SV_BroadcastCommand (char *fmt, ...)
 	
 	if (!sv.state)
 		return;
-	va_start (argptr,fmt);
-	vsprintf (string, fmt,argptr);
+	va_start (argptr, fmt);
+	vsnprintf (string, sizeof(string), fmt, argptr);
 	va_end (argptr);
 
-	MSG_WriteByte (&sv.multicast, svc_stufftext);
+	MSG_WriteByte (&sv.multicast, svc_stringcmd);
 	MSG_WriteString (&sv.multicast, string);
 	SV_Multicast (NULL, MULTICAST_ALL_R);
 }
@@ -302,7 +301,7 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 
 	ent = NUM_FOR_EDICT(entity);
 
-	if (channel & 8)	// no PHS flag
+	if (channel & CHAN_NO_PHS_ADD)	// no PHS flag
 	{
 		use_phs = false;
 		channel &= 7;
@@ -318,12 +317,10 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 	if (attenuation != DEFAULT_SOUND_PACKET_ATTENUATION)
 		flags |= SND_ATTENUATION;
 
-
 	// the client doesn't know that bmodels have weird origins
 	// the origin can also be explicitly set
 	if ( (entity->svflags & SVF_NOCLIENT)
-		|| (entity->solid == SOLID_BSP) 
-		|| origin ) {
+		|| (entity->solid == SOLID_BSP) || origin ) {
 		send_org = true;
 	}
 
@@ -348,14 +345,8 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 		}
 	}
 
-	if (send_org) {
-		if ( fabs( origin[0] ) > SHRT_MAX*(1.0/8.0) ||
-			fabs( origin[1] ) > SHRT_MAX*(1.0/8.0) ||
-			fabs( origin[2] ) > SHRT_MAX*(1.0/8.0) )
-			flags |= SND_POSS;
-		else
-			flags |= SND_POSL;
-	}
+	if (send_org)
+		flags |= SND_POS;
 
 	MSG_WriteByte (&sv.multicast, svc_sound);
 	MSG_WriteByte (&sv.multicast, flags);
@@ -371,10 +362,8 @@ void SV_StartSound (vec3_t origin, edict_t *entity, int channel,
 	if (flags & SND_ENT)
 		MSG_WriteShort (&sv.multicast, sendchan);
 
-	if (flags & SND_POSL)
-		MSG_WriteLongPos (&sv.multicast, origin);
-	else if (flags & SND_POSS)
-		MSG_WriteShortPos (&sv.multicast, origin);
+	if (flags & SND_POS)
+		MSG_WritePos (&sv.multicast, origin);
 
 	// if the sound doesn't attenuate,send it to everyone
 	// (global radio chatter, voiceovers, etc)
@@ -462,8 +451,8 @@ void SV_DemoCompleted (void)
 {
 	if (sv.demofile)
 	{
-		fclose (sv.demofile);
-		sv.demofile = NULL;
+		FS_FCloseFile (sv.demofile);
+		sv.demofile = 0;
 	}
 	SV_Nextserver ();
 }
@@ -495,7 +484,7 @@ qboolean SV_RateDrop (client_t *c)
 
 	if (total > c->rate)
 	{
-		c->surpressCount++;
+		c->suppressCount++;
 		c->message_size[sv.framenum % RATE_MESSAGES] = 0;
 		return true;
 	}
@@ -514,7 +503,6 @@ void SV_SendClientMessages (void)
 	client_t	*c;
 	int			msglen;
 	byte		msgbuf[MAX_MSGLEN];
-	int			r;
 
 	msglen = 0;
 
@@ -525,13 +513,16 @@ void SV_SendClientMessages (void)
 			msglen = 0;
 		else
 		{
-			// get the next message
-			r = fread (&msglen, 4, 1, sv.demofile);
-			if (r != 1)
+			if (sv.demolen <= 0)
 			{
 				SV_DemoCompleted ();
 				return;
 			}
+
+			// get the next message
+			FS_Read (&msglen, 4, sv.demofile);
+			sv.demolen -= 4;
+
 			msglen = LittleLong (msglen);
 			if (msglen == -1)
 			{
@@ -540,12 +531,13 @@ void SV_SendClientMessages (void)
 			}
 			if (msglen > MAX_MSGLEN)
 				Com_Error (ERR_DROP, "SV_SendClientMessages: msglen > MAX_MSGLEN");
-			r = fread (msgbuf, msglen, 1, sv.demofile);
-			if (r != 1)
+			if (sv.demolen <= 0)
 			{
 				SV_DemoCompleted ();
 				return;
 			}
+			FS_Read (msgbuf, msglen, sv.demofile);
+			sv.demolen -= msglen;
 		}
 	}
 
@@ -566,7 +558,6 @@ void SV_SendClientMessages (void)
 
 		if (sv.state == ss_cinematic 
 			|| sv.state == ss_demo 
-			|| sv.state == ss_pic
 			)
 			Netchan_Transmit (&c->netchan, msglen, msgbuf);
 		else if (c->state == cs_spawned)

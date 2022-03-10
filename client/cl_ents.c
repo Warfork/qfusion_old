@@ -75,7 +75,7 @@ CL_ParseDelta
 Can go from either a baseline or a previous packet_entity
 ==================
 */
-void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, int bits)
+void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, unsigned bits)
 {
 	// set everything to the state we are delta'ing from
 	*to = *from;
@@ -119,19 +119,11 @@ void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, int bi
 		to->renderfx = MSG_ReadShort(&net_message);
 
 	if (bits & U_ORIGIN1)
-		to->origin[0] = MSG_ReadShortCoord (&net_message);
-	else if (bits & U_ORIGIN1L)
-		to->origin[0] = MSG_ReadLongCoord (&net_message);
-
+		to->origin[0] = MSG_ReadCoord (&net_message);
 	if (bits & U_ORIGIN2)
-		to->origin[1] = MSG_ReadShortCoord (&net_message);
-	else if (bits & U_ORIGIN2L)
-		to->origin[1] = MSG_ReadLongCoord (&net_message);
-
+		to->origin[1] = MSG_ReadCoord (&net_message);
 	if (bits & U_ORIGIN3)
-		to->origin[2] = MSG_ReadShortCoord (&net_message);
-	else if (bits & U_ORIGIN3L)
-		to->origin[2] = MSG_ReadLongCoord (&net_message);
+		to->origin[2] = MSG_ReadCoord (&net_message);
 		
 	if (bits & U_ANGLE1)
 		to->angles[0] = MSG_ReadAngle(&net_message);
@@ -141,9 +133,7 @@ void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, int bi
 		to->angles[2] = MSG_ReadAngle(&net_message);
 
 	if (bits & U_OLDORIGIN)
-		MSG_ReadShortPos (&net_message, to->old_origin);
-	else if (bits & U_OLDORIGINL)
-		MSG_ReadLongPos (&net_message, to->old_origin);
+		MSG_ReadPos (&net_message, to->old_origin);
 
 	if (bits & U_SOUND)
 		to->sound = MSG_ReadByte (&net_message);
@@ -165,7 +155,7 @@ Parses deltas from the given base and adds the resulting entity
 to the current frame
 ==================
 */
-void CL_DeltaEntity (frame_t *frame, int newnum, entity_state_t *old, int bits)
+void CL_DeltaEntity (frame_t *frame, int newnum, entity_state_t *old, unsigned bits)
 {
 	centity_t	*ent;
 	entity_state_t	*state;
@@ -230,7 +220,7 @@ rest of the data stream.
 void CL_ParsePacketEntities (frame_t *oldframe, frame_t *newframe)
 {
 	int			newnum;
-	int			bits;
+	unsigned	bits;
 	entity_state_t	*oldstate;
 	int			oldindex, oldnum;
 
@@ -383,16 +373,16 @@ void CL_ParsePlayerstate (frame_t *oldframe, frame_t *newframe)
 
 	if (flags & PS_M_ORIGIN)
 	{
-		state->pmove.origin[0] = MSG_ReadShort (&net_message);
-		state->pmove.origin[1] = MSG_ReadShort (&net_message);
-		state->pmove.origin[2] = MSG_ReadShort (&net_message);
+		state->pmove.origin[0] = MSG_ReadInt3 (&net_message);
+		state->pmove.origin[1] = MSG_ReadInt3 (&net_message);
+		state->pmove.origin[2] = MSG_ReadInt3 (&net_message);
 	}
 
 	if (flags & PS_M_VELOCITY)
 	{
-		state->pmove.velocity[0] = MSG_ReadShort (&net_message);
-		state->pmove.velocity[1] = MSG_ReadShort (&net_message);
-		state->pmove.velocity[2] = MSG_ReadShort (&net_message);
+		state->pmove.velocity[0] = MSG_ReadInt3 (&net_message);
+		state->pmove.velocity[1] = MSG_ReadInt3 (&net_message);
+		state->pmove.velocity[2] = MSG_ReadInt3 (&net_message);
 	}
 
 	if (flags & PS_M_TIME)
@@ -511,10 +501,7 @@ void CL_ParseFrame (void)
 	cl.frame.serverframe = MSG_ReadLong (&net_message);
 	cl.frame.deltaframe = MSG_ReadLong (&net_message);
 	cl.frame.servertime = cl.frame.serverframe*100;
-
-	// BIG HACK to let old demos continue to work
-	if (cls.serverProtocol != 26)
-		cl.surpressCount = MSG_ReadByte (&net_message);
+	cl.suppressCount = MSG_ReadByte (&net_message);
 
 	if (cl_shownet->value == 3)
 		Com_Printf ("   frame:%i  delta:%i\n", cl.frame.serverframe,
@@ -582,7 +569,7 @@ void CL_ParseFrame (void)
 		// getting a valid frame message ends the connection process
 		if (cls.state != ca_active)
 		{
-			cls.state = ca_active;
+			CL_SetClientState (ca_active);
 			cl.force_refdef = true;
 			cl.predicted_origin[0] = cl.frame.playerstate.pmove.origin[0]*0.125;
 			cl.predicted_origin[1] = cl.frame.playerstate.pmove.origin[1]*0.125;
@@ -666,7 +653,8 @@ void CL_AddPacketEntities (void)
 {
 	entity_t			ent;
 	entity_state_t		*state;
-	float				autorotate;
+	vec3_t				ent_angles, autorotate;
+	mat3_t				autorotate_axis;
 	int					i;
 	int					pnum;
 	centity_t			*cent;
@@ -676,7 +664,8 @@ void CL_AddPacketEntities (void)
 	int					msec;
 
 	// bonus items rotate at a fixed rate
-	autorotate = anglemod(cl.time/10);
+	VectorSet ( autorotate, 0, anglemod(cl.time*0.1), 0 );
+	AnglesToAxis ( autorotate, autorotate_axis );
 
 	// brush models can auto animate their frames
 	autoanim = 2*cl.time/1000;
@@ -691,7 +680,7 @@ void CL_AddPacketEntities (void)
 		effects = state->effects;
 		renderfx = state->renderfx;
 
-			// set frame
+		// set frame
 		if (effects & EF_ANIM01)
 			ent.frame = autoanim & 1;
 		else if (effects & EF_ANIM23)
@@ -703,25 +692,15 @@ void CL_AddPacketEntities (void)
 		else
 			ent.frame = state->frame;
 
-		// quad and pent can do different things on client
-		if (effects & EF_PENT)
-		{
-			effects &= ~EF_PENT;
-			effects |= EF_COLOR_SHELL;
-			renderfx |= RF_SHELL_RED;
+		if ( state->number < MAX_CLIENTS+1 ) {
+			renderfx |= RF_MINLIGHT;
 		}
 
-		if (effects & EF_QUAD)
-		{
-			effects &= ~EF_QUAD;
-			effects |= EF_COLOR_SHELL;
-			renderfx |= RF_SHELL_BLUE;
-		}
-
+		ent.shaderTime = 0;
 		ent.oldframe = cent->prev.frame;
 		ent.backlerp = 1.0 - cl.lerpfrac;
 
-		if (renderfx & (RF_FRAMELERP|RF_BEAM))
+		if (renderfx & (RF_FRAMELERP|RF_BEAM|RF_PORTALSURFACE))
 		{	// step origin discretely, because the frames
 			// do the animation properly
 			VectorCopy (cent->current.origin, ent.origin);
@@ -741,43 +720,80 @@ void CL_AddPacketEntities (void)
 		// tweak the color of beams
 		if ( renderfx & RF_BEAM )
 		{	// the four beam colors are encoded in 32 bits of skinnum (hack)
-			ent.alpha = 0.30;
-			ent.skinnum = (state->skinnum >> ((rand() % 4)*8)) & 0xff;
+			ent.type = ET_BEAM;
+			ent.radius = state->frame * 0.5f;
+			ent.color[0] = ( state->skinnum & 0xFF );
+			ent.color[1] = ( state->skinnum >> 8 ) & 0xFF;
+			ent.color[2] = ( state->skinnum >> 16 ) & 0xFF;
+			ent.color[3] = ( state->skinnum >> 24 ) & 0xFF;
 			ent.model = NULL;
 		}
+		else if ( renderfx & RF_PORTALSURFACE ) 
+		{
+			ent.type = ET_PORTALSURFACE;
+			ent.scale = state->frame / 256.0f;
+
+			if ( state->modelindex3 )
+				ent.frame = state->modelindex2 ? state->modelindex2 : 50;
+			else
+				ent.frame = 0;
+
+			ent.skinnum = state->skinnum;
+			ent.model = NULL;
+			V_AddEntity ( &ent );
+			continue;
+		}	
 		else
 		{
+			ent.type = ET_MODEL;
+
 			// set skin
 			if (state->modelindex == 255)
 			{	// use custom player skin
 				ent.skinnum = 0;
 				ci = &cl.clientinfo[state->skinnum & 0xff];
-				ent.skin = ci->skin;
+				ent.customShader = ci->skin;
 				ent.model = ci->model;
-				if (!ent.skin || !ent.model)
+				if (!ent.customShader || !ent.model)
 				{
-					ent.skin = cl.baseclientinfo.skin;
+					ent.customShader = cl.baseclientinfo.skin;
 					ent.model = cl.baseclientinfo.model;
 				}
 			}
 			else
 			{
 				ent.skinnum = state->skinnum;
-				ent.skin = NULL;
+				ent.customShader = NULL;
 				ent.model = cl.model_draw[state->modelindex];
 			}
 		}
 
-		// only used for black hole model right now, FIXME: do better
-		if (renderfx == RF_TRANSLUCENT)
-			ent.alpha = 0.70;
-
-		// render effects (fullbright, translucent, etc)
-		if (effects & EF_COLOR_SHELL)
-			ent.flags = 0;	// renderfx go on color shell entity
+		// render effects
+		if ( renderfx & (RF_SHELL_GREEN | RF_SHELL_RED | RF_SHELL_BLUE) )
+		{
+			if (renderfx & RF_MINLIGHT)
+				ent.flags = RF_MINLIGHT;	// renderfx go on color shell entity
+			else
+				ent.flags = 0;
+		}
 		else
+		{
 			ent.flags = renderfx;
+		}
 
+		// bmodels with skinnum cast light
+		if ( (state->solid == 31) && state->skinnum ) {
+			int r, g, b, i;
+
+			r = ( state->skinnum & 0xFF );
+			g = ( state->skinnum >> 8 ) & 0xFF;
+			b = ( state->skinnum >> 16 ) & 0xFF;
+			i = ( state->skinnum >> 24 ) & 0xFF;
+
+			V_AddLight ( ent.origin, i * 4.0, r * (1.0/255.0), g * (1.0/255.0),	b * (1.0/255.0) );
+		}
+
+		// respawning items
 		msec = cl.time - cent->respawnTime;
 		
 		if ( msec >= 0 && msec < ITEM_RESPAWN_TIME  ) {
@@ -786,8 +802,17 @@ void CL_AddPacketEntities (void)
 			ent.scale = 1.0f;
 		}
 
+		if ( renderfx & RF_SCALEHACK ) {
+			ent.scale *= 1.5;
+		}
+
+		if ( !ent.scale ) {
+			continue;
+		}
+
 		// bobbing items
-		if ( effects & EF_BOB ) {
+		if (effects & EF_BOB) 
+		{
 			float scale = 0.005f + state->number * 0.00001f;
 			float bob = 4 + cos( (cl.time + 1000) * scale ) * 4;
 			ent.oldorigin[2] += bob;
@@ -797,9 +822,7 @@ void CL_AddPacketEntities (void)
 		// calculate angles
 		if (effects & EF_ROTATE)
 		{	// some bonus items auto-rotate
-			ent.angles[0] = 0;
-			ent.angles[1] = autorotate;
-			ent.angles[2] = 0;
+			Matrix3_Copy ( autorotate_axis, ent.axis );
 		}
 		else
 		{	// interpolate angles
@@ -809,48 +832,76 @@ void CL_AddPacketEntities (void)
 			{
 				a1 = cent->current.angles[i];
 				a2 = cent->prev.angles[i];
-				ent.angles[i] = LerpAngle (a2, a1, cl.lerpfrac);
+				ent_angles[i] = LerpAngle (a2, a1, cl.lerpfrac);
+			}
+
+			if ( ent_angles[0] || ent_angles[1] || ent_angles[2] ) {
+				AnglesToAxis ( ent_angles, ent.axis );
+			} else {
+				Matrix3_Copy ( axis_identity, ent.axis );
 			}
 		}
 
 		if (state->number == cl.playernum+1)
 		{
-			ent.flags |= RF_VIEWERMODEL;	// only draw from mirrors
-			// FIXME: still pass to refresh
+			cl.effects = effects;
 
-			if (effects & EF_FLAG1)
-				V_AddLight (ent.origin, 225, 1.0, 0.1, 0.1);
-			else if (effects & EF_FLAG2)
-				V_AddLight (ent.origin, 225, 0.1, 0.1, 1.0);
-	
-			continue;
+			if ( !cl_thirdPerson->value ) {
+				ent.flags |= RF_VIEWERMODEL;	// only draw from mirrors
+				cl.thirdperson = false;
+			} else { 
+				cl.thirdperson = ( state->modelindex != 0 );
+			}
 		}
 
 		// if set to invisible, skip
 		if (!state->modelindex)
 			continue;
 
-		if (effects & EF_BFG)
-		{
-			ent.flags |= RF_TRANSLUCENT;
-			ent.alpha = 0.30;
-		}
-
 		// add to refresh list
 		V_AddEntity (&ent);
 
-		// color shells generate a seperate entity for the main model
-		if (effects & EF_COLOR_SHELL)
+		// quad and pent can do different things on client
+		if (effects & EF_QUAD) 
 		{
-			ent.flags = renderfx | RF_TRANSLUCENT;
-			ent.alpha = 0.30;
+			ent.customShader = cl.media.shaderPowerupQuad;
 			V_AddEntity (&ent);
 		}
 
-		ent.skin = NULL;		// never use a custom skin on others
+		if (effects & EF_PENT) 
+		{
+			ent.customShader = cl.media.shaderPowerupPenta;
+			V_AddEntity (&ent);
+		}
+
+		// color shells generate a separate entity for the main model
+		if ( renderfx & (RF_SHELL_GREEN | RF_SHELL_RED | RF_SHELL_BLUE) )
+		{
+			vec4_t shadelight = { 0, 0, 0, 0.3 };
+
+			if ( renderfx & RF_SHELL_RED )
+				shadelight[0] = 1.0;
+			if ( renderfx & RF_SHELL_GREEN )
+				shadelight[1] = 1.0;
+			if ( renderfx & RF_SHELL_BLUE )
+				shadelight[2] = 1.0;
+		
+			for (i=0 ; i<4 ; i++)
+				ent.color[i] = shadelight[i] * 255;
+
+			ent.customShader = cl.media.shaderShellEffect;
+			V_AddEntity (&ent);
+		}
+
+		ent.color[0] = ent.color[1] = ent.color[2] = ent.color[3] = 255;
+
+		ent.customShader = NULL;		// never use a custom skin on others
 		ent.skinnum = 0;
-		ent.flags = 0;
-		ent.alpha = 0;
+
+		if ( ent.flags & RF_VIEWERMODEL )	// only draw from mirrors
+			ent.flags = RF_VIEWERMODEL;
+		else
+			ent.flags = 0;
 
 		// duplicate for linked models
 		if (state->modelindex2)
@@ -868,21 +919,35 @@ void CL_AddPacketEntities (void)
 					if (!ent.model)
 						ent.model = cl.baseclientinfo.weaponmodel[0];
 				}
+
+				V_AddEntity (&ent);
 			}
 			else
+			{
 				ent.model = cl.model_draw[state->modelindex2];
-
-			V_AddEntity (&ent);
-
-			// make sure these get reset
-			ent.flags = 0;
-			ent.alpha = 0;
+				V_AddEntity (&ent);
+			}
 		}
+
 		if (state->modelindex3)
 		{
+			int frame, oldframe;
+
+			frame = ent.frame;
+			oldframe = ent.oldframe;
+
+			if ( effects & (EF_FLAG1|EF_FLAG2) ) {
+				ent.frame = 0;
+				ent.oldframe = 0;
+			}
+
 			ent.model = cl.model_draw[state->modelindex3];
 			V_AddEntity (&ent);
+
+			ent.frame = frame;
+			ent.oldframe = oldframe;
 		}
+
 		if (state->modelindex4)
 		{
 			ent.model = cl.model_draw[state->modelindex4];
@@ -894,8 +959,6 @@ void CL_AddPacketEntities (void)
 			ent.model = cl.media.modPowerScreen;
 			ent.oldframe = 0;
 			ent.frame = 0;
-			ent.flags |= (RF_TRANSLUCENT | RF_SHELL_GREEN);
-			ent.alpha = 0.30;
 			V_AddEntity (&ent);
 		}
 
@@ -905,16 +968,16 @@ void CL_AddPacketEntities (void)
 			if (effects & EF_ROCKET)
 			{
 				CL_RocketTrail (cent->lerp_origin, ent.origin, cent);
-				V_AddLight (ent.origin, 200, 1, 1, 0);
+				V_AddLight (ent.origin, 300, 1, 1, 0);
 			}
 			else if (effects & EF_BLASTER)
 			{
 				CL_BlasterTrail (cent->lerp_origin, ent.origin);
-				V_AddLight (ent.origin, 200, 1, 1, 0);
+				V_AddLight (ent.origin, 300, 1, 1, 0);
 			}
 			else if (effects & EF_HYPERBLASTER)
 			{
-				V_AddLight (ent.origin, 200, 1, 1, 0);
+				V_AddLight (ent.origin, 300, 1, 1, 0);
 			}
 			else if (effects & EF_GIB)
 			{
@@ -930,18 +993,34 @@ void CL_AddPacketEntities (void)
 			}
 			else if (effects & EF_BFG)
 			{
-				static int bfg_lightramp[6] = {300, 400, 600, 300, 150, 75};
+				static int bfg_lightramp[6] = {400, 500, 700, 400, 250, 175};
 
 				if (effects & EF_ANIM_ALLFAST)
 				{
 					CL_BfgParticles (&ent);
-					i = 200;
+					i = 300;
 				}
 				else
 				{
 					i = bfg_lightramp[state->frame];
 				}
 				V_AddLight (ent.origin, i, 0, 1, 0);
+			}
+			else if ((effects & (EF_FLAG1|EF_FLAG2)) == EF_FLAG1)
+			{
+				CL_FlagTrail (cent->lerp_origin, ent.origin, 242);
+				V_AddLight (ent.origin, 225, 1, 0.1, 0.1);
+			}
+			else if ((effects & (EF_FLAG1|EF_FLAG2)) == EF_FLAG2)
+			{
+				CL_FlagTrail (cent->lerp_origin, ent.origin, 115);
+				V_AddLight (ent.origin, 225, 0.1, 0.1, 1);
+			}
+			else if ((effects & (EF_FLAG1|EF_FLAG2)) == (EF_FLAG1|EF_FLAG2))
+			{
+				CL_FlagTrail (cent->lerp_origin, ent.origin, 242);
+				CL_FlagTrail (cent->lerp_origin, ent.origin, 115);
+				V_AddLight (ent.origin, 225, 1, 0.2, 1);
 			}
 		}
 
@@ -959,14 +1038,15 @@ CL_AddViewWeapon
 void CL_AddViewWeapon (player_state_t *ps, player_state_t *ops)
 {
 	entity_t	gun;		// view model
+	vec3_t		gun_angles;
 	int			i;
 
 	// allow the gun to be completely removed
-	if (!cl_gun->value)
+	if (!cl_gun->value || cl.thirdperson)
 		return;
 
 	// don't draw gun if in wide angle view
-	if (ps->fov > 90)
+	if ((ps->fov > 90) && (cl_gun->value == 2))
 		return;
 
 	memset (&gun, 0, sizeof(gun));
@@ -980,21 +1060,27 @@ void CL_AddViewWeapon (player_state_t *ps, player_state_t *ops)
 	for (i=0 ; i<3 ; i++)
 	{
 		gun.origin[i] = cl.refdef.vieworg[i];
-		gun.angles[i] = cl.refdef.viewangles[i] + LerpAngle (ops->gunangles[i],
+		gun_angles[i] = cl.refdef.viewangles[i] + LerpAngle (ops->gunangles[i],
 			ps->gunangles[i], cl.lerpfrac);
 	}
+
+	AnglesToAxis ( gun_angles, gun.axis );
 
 	gun.frame = ps->gunframe;
 	if (gun.frame == 0)
 		gun.oldframe = 0;	// just changed weapons, don't lerp from old
 	else
 		gun.oldframe = ops->gunframe;
-
 	gun.scale = 1.0f;
 	gun.flags = RF_MINLIGHT | RF_DEPTHHACK | RF_WEAPONMODEL;
 	gun.backlerp = 1.0 - cl.lerpfrac;
 	VectorCopy (gun.origin, gun.oldorigin);	// don't lerp at all
 	V_AddEntity (&gun);
+
+	if ( cl.effects & EF_QUAD ) {
+		gun.customShader = cl.media.shaderQuadWeapon;
+		V_AddEntity (&gun);
+	}
 }
 
 
@@ -1031,7 +1117,8 @@ void CL_CalcViewValues (void)
 	lerp = cl.lerpfrac;
 
 	// calculate the origin
-	if (cl_predict->value && !(cl.frame.playerstate.pmove.pm_flags & PMF_NO_PREDICTION))
+	if (cl_predict->value && !(cl.frame.playerstate.pmove.pm_flags & PMF_NO_PREDICTION)
+		&& !cl.thirdperson )
 	{	// use predicted values
 		unsigned	delta;
 
@@ -1045,8 +1132,8 @@ void CL_CalcViewValues (void)
 
 		// smooth out stair climbing
 		delta = cls.realtime - cl.predicted_step_time;
-		if (delta < 100)
-			cl.refdef.vieworg[2] -= cl.predicted_step * (100 - delta) * 0.01;
+		if (delta < 150)
+			cl.refdef.vieworg[2] -= cl.predicted_step * (150 - delta) / 150;
 	}
 	else
 	{	// just use interpolated values
@@ -1133,14 +1220,19 @@ CL_GetEntitySoundOrigin
 Called to get the sound spatialization origin
 ===============
 */
-void CL_GetEntitySoundOrigin (int ent, vec3_t org)
+void CL_GetEntitySoundOrigin (int entnum, vec3_t org)
 {
-	centity_t	*old;
+	centity_t	*ent;
 
-	if (ent < 0 || ent >= MAX_EDICTS)
-		Com_Error (ERR_DROP, "CL_GetEntitySoundOrigin: bad ent");
-	old = &cl_entities[ent];
-	VectorCopy (old->lerp_origin, org);
+	if (entnum < 0 || entnum >= MAX_EDICTS)
+		Com_Error (ERR_DROP, "CL_GetEntitySoundOrigin: bad entnum");
+	ent = &cl_entities[entnum];
 
-	// FIXME: bmodel issues...
+	if ( ent->current.solid == 31 ) {	// bmodel
+		VectorAdd ( cl.model_clip[ent->current.modelindex]->maxs,
+			cl.model_clip[ent->current.modelindex]->mins, org );
+		VectorMA ( ent->lerp_origin, 0.5f, org, org );
+	} else {
+		VectorCopy ( ent->lerp_origin, org );
+	}
 }

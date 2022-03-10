@@ -42,9 +42,9 @@ void SV_BeginDemoserver (void)
 	char		name[MAX_OSPATH];
 
 	Com_sprintf (name, sizeof(name), "demos/%s", sv.name);
-	sv.demofile = fopen (name, "rb");
+	sv.demolen = FS_FOpenFile (name, &sv.demofile);
 	if (!sv.demofile)
-		Com_Error (ERR_DROP, "Couldn't open %s\n", name);
+		Com_Error (ERR_DROP, "Couldn't open %s", name);
 }
 
 /*
@@ -89,7 +89,7 @@ void SV_New_f (void)
 	MSG_WriteByte (&sv_client->netchan.message, sv.attractloop);
 	MSG_WriteString (&sv_client->netchan.message, gamedir);
 
-	if (sv.state == ss_cinematic || sv.state == ss_pic)
+	if (sv.state == ss_cinematic)
 		playernum = -1;
 	else
 		playernum = sv_client - svs.clients;
@@ -110,8 +110,8 @@ void SV_New_f (void)
 		memset (&sv_client->lastcmd, 0, sizeof(sv_client->lastcmd));
 
 		// begin fetching configstrings
-		MSG_WriteByte (&sv_client->netchan.message, svc_stufftext);
-		MSG_WriteString (&sv_client->netchan.message, va("cmd configstrings %i 0\n",svs.spawncount) );
+		MSG_WriteByte (&sv_client->netchan.message, svc_stringcmd);
+		MSG_WriteString (&sv_client->netchan.message, va("cmd configstrings %i 0",svs.spawncount) );
 	}
 
 }
@@ -161,13 +161,13 @@ void SV_Configstrings_f (void)
 
 	if (start == MAX_CONFIGSTRINGS)
 	{
-		MSG_WriteByte (&sv_client->netchan.message, svc_stufftext);
-		MSG_WriteString (&sv_client->netchan.message, va("cmd baselines %i 0\n",svs.spawncount) );
+		MSG_WriteByte (&sv_client->netchan.message, svc_stringcmd);
+		MSG_WriteString (&sv_client->netchan.message, va("cmd baselines %i 0",svs.spawncount) );
 	}
 	else
 	{
-		MSG_WriteByte (&sv_client->netchan.message, svc_stufftext);
-		MSG_WriteString (&sv_client->netchan.message, va("cmd configstrings %i %i\n",svs.spawncount, start) );
+		MSG_WriteByte (&sv_client->netchan.message, svc_stringcmd);
+		MSG_WriteString (&sv_client->netchan.message, va("cmd configstrings %i %i",svs.spawncount, start) );
 	}
 }
 
@@ -220,13 +220,13 @@ void SV_Baselines_f (void)
 
 	if (start == MAX_EDICTS)
 	{
-		MSG_WriteByte (&sv_client->netchan.message, svc_stufftext);
-		MSG_WriteString (&sv_client->netchan.message, va("precache %i\n", svs.spawncount) );
+		MSG_WriteByte (&sv_client->netchan.message, svc_stringcmd);
+		MSG_WriteString (&sv_client->netchan.message, va("precache %i", svs.spawncount) );
 	}
 	else
 	{
-		MSG_WriteByte (&sv_client->netchan.message, svc_stufftext);
-		MSG_WriteString (&sv_client->netchan.message, va("cmd baselines %i %i\n",svs.spawncount, start) );
+		MSG_WriteByte (&sv_client->netchan.message, svc_stringcmd);
+		MSG_WriteString (&sv_client->netchan.message, va("cmd baselines %i %i",svs.spawncount, start) );
 	}
 }
 
@@ -323,13 +323,13 @@ void SV_BeginDownload_f(void)
 		// leading slash bad as well, must be in subdir
 		|| *name == '/'
 		// next up, skin check
-		|| (strncmp(name, "players/", 6) == 0 && !allow_download_players->value)
+		|| (strncmp(name, "players/", 8) == 0 && !allow_download_players->value)
 		// now models
-		|| (strncmp(name, "models/", 6) == 0 && !allow_download_models->value)
+		|| (strncmp(name, "models/", 7) == 0 && !allow_download_models->value)
 		// now sounds
 		|| (strncmp(name, "sound/", 6) == 0 && !allow_download_sounds->value)
 		// now maps (note special case for maps, must not be in pak)
-		|| (strncmp(name, "maps/", 6) == 0 && !allow_download_maps->value)
+		|| (strncmp(name, "maps/", 5) == 0 && !allow_download_maps->value)
 		// MUST be in a subdirectory	
 		|| !strstr (name, "/") )	
 	{	// don't allow anything with .. path
@@ -407,7 +407,7 @@ void SV_Nextserver (void)
 	char	*v;
 
 	//ZOID, ss_pic can be nextserver'd in coop mode
-	if (sv.state == ss_game || (sv.state == ss_pic && !Cvar_VariableValue("coop")))
+	if (sv.state == ss_game)
 		return;		// can't nextserver while playing a normal game
 
 	svs.spawncount++;	// make sure another doesn't sneak in
@@ -478,13 +478,9 @@ void SV_ExecuteUserCommand (char *s)
 {
 	ucmd_t	*u;
 
-// Vic: do not do macro expansion on the server side. Thanks go to Redix
 	Cmd_TokenizeString ( s, false );
-//	Cmd_TokenizeString ( s, true );
 
 	sv_player = sv_client->edict;
-
-//	SV_BeginRedirect (RD_CLIENT);
 
 	for (u=ucmds ; u->name ; u++)
 		if (!strcmp (Cmd_Argv(0), u->name) )
@@ -495,8 +491,6 @@ void SV_ExecuteUserCommand (char *s)
 
 	if (!u->name && sv.state == ss_game)
 		ge->ClientCommand (sv_player);
-
-//	SV_EndRedirect ();
 }
 
 /*
@@ -510,7 +504,6 @@ USER CMD EXECUTION
 
 
 void SV_ClientThink (client_t *cl, usercmd_t *cmd)
-
 {
 	cl->commandMsec -= cmd->msec;
 
@@ -537,7 +530,6 @@ void SV_ExecuteClientMessage (client_t *cl)
 {
 	int		c;
 	char	*s;
-
 	usercmd_t	nullcmd;
 	usercmd_t	oldest, oldcmd, newcmd;
 	int		net_drop;
@@ -578,7 +570,7 @@ void SV_ExecuteClientMessage (client_t *cl)
 			break;
 
 		case clc_userinfo:
-			strncpy (cl->userinfo, MSG_ReadString (&net_message), sizeof(cl->userinfo)-1);
+			Q_strncpyz (cl->userinfo, MSG_ReadString (&net_message), sizeof(cl->userinfo));
 			SV_UserinfoChanged (cl);
 			break;
 

@@ -19,7 +19,29 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include "q_shared.h"
 
-vec3_t		vec3_origin = {0,0,0};
+vec3_t		vec3_origin = { 0, 0, 0 };
+
+mat3_t		mat3_identity = 
+{ 
+	1, 0, 0, 
+	0, 1, 0, 
+	0, 0, 1 
+};
+
+mat4_t		mat4_identity = 
+{ 
+	1, 0, 0, 0, 
+	0, 1, 0, 0, 
+	0, 0, 1, 0, 
+	0, 0, 0, 1 
+};
+
+mat3_t		axis_identity = 
+{ 
+	1, 0, 0, 
+	0, 1, 0, 
+	0, 0, 1 
+};
 
 vec4_t		colorBlack	= {0, 0, 0, 1};
 vec4_t		colorRed	= {1, 0, 0, 1};
@@ -34,7 +56,7 @@ vec4_t		colorMdGrey	= {0.5, 0.5, 0.5, 1};
 vec4_t		colorDkGrey	= {0.25, 0.25, 0.25, 1};
 
 vec4_t	color_table[8] =
-	{
+{
 	{0.0, 0.0, 0.0, 1.0},
 	{1.0, 0.0, 0.0, 1.0},
 	{0.0, 1.0, 0.0, 1.0},
@@ -43,15 +65,15 @@ vec4_t	color_table[8] =
 	{0.0, 1.0, 1.0, 1.0},
 	{1.0, 0.0, 1.0, 1.0},
 	{1.0, 1.0, 1.0, 1.0},
-	};
+};
 
 //============================================================================
 
-void MakeNormalVectors (vec3_t forward, vec3_t right, vec3_t up)
+void MakeNormalVectors (const vec3_t forward, vec3_t right, vec3_t up)
 {
 	float		d;
 
-	// this rotate and negat guarantees a vector
+	// this rotate and negate guarantees a vector
 	// not colinear with the original
 	right[1] = -forward[0];
 	right[2] = forward[1];
@@ -59,7 +81,7 @@ void MakeNormalVectors (vec3_t forward, vec3_t right, vec3_t up)
 
 	d = DotProduct (right, forward);
 	VectorMA (right, -d, forward, right);
-	VectorNormalize (right);
+	VectorNormalizeFast (right);
 	CrossProduct (right, forward, up);
 }
 
@@ -95,10 +117,10 @@ void RotatePointAroundVector( vec3_t dst, const vec3_t dir, const vec3_t point, 
 		+ (t0 * vr[2] + t1 * vu[2] + vf[2] * vf[2]) * point[2];
 }
 
-void AngleVectors (vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
+void AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
 {
-	float		angle;
-	static float		sr, sp, sy, cr, cp, cy;
+	float				angle;
+	static float		sr, sp, sy, cr, cp, cy, t;
 	// static to help MS compiler fp bugs
 
 	angle = DEG2RAD ( angles[YAW] );
@@ -119,18 +141,60 @@ void AngleVectors (vec3_t angles, vec3_t forward, vec3_t right, vec3_t up)
 	}
 	if (right)
 	{
-		right[0] = (-1*sr*sp*cy+-1*cr*-sy);
-		right[1] = (-1*sr*sp*sy+-1*cr*cy);
+		t = sr*sp;
+		right[0] = (-1*t*cy+-1*cr*-sy);
+		right[1] = (-1*t*sy+-1*cr*cy);
 		right[2] = -1*sr*cp;
 	}
 	if (up)
 	{
-		up[0] = (cr*sp*cy+-sr*-sy);
-		up[1] = (cr*sp*sy+-sr*cy);
+		t = cr*sp;
+		up[0] = (t*cy+-sr*-sy);
+		up[1] = (t*sy+-sr*cy);
 		up[2] = cr*cp;
 	}
 }
 
+void VecToAngles (const vec3_t vec, vec3_t angles)
+{
+	float	forward;
+	float	yaw, pitch;
+	
+	if (vec[1] == 0 && vec[0] == 0)
+	{
+		yaw = 0;
+		if (vec[2] > 0)
+			pitch = 90;
+		else
+			pitch = 270;
+	}
+	else
+	{
+		if (vec[0])
+			yaw = RAD2DEG ( atan2(vec[1], vec[0]) );
+		else if (vec[1] > 0)
+			yaw = 90;
+		else
+			yaw = -90;
+		if (yaw < 0)
+			yaw += 360;
+
+		forward = sqrt (vec[0]*vec[0] + vec[1]*vec[1]);
+		pitch = RAD2DEG ( atan2(vec[2], forward) );
+		if (pitch < 0)
+			pitch += 360;
+	}
+
+	angles[PITCH] = -pitch;
+	angles[YAW] = yaw;
+	angles[ROLL] = 0;
+}
+
+void AnglesToAxis ( vec3_t angles, mat3_t axis )
+{
+	AngleVectors ( angles, axis[0], axis[1], axis[2] );
+	VectorInverse ( axis[1] );
+}
 
 void ProjectPointOnPlane( vec3_t dst, const vec3_t p, const vec3_t normal )
 {
@@ -186,6 +250,27 @@ void PerpendicularVector( vec3_t dst, const vec3_t src )
 	VectorNormalize( dst );
 }
 
+/*
+================
+R_ConcatTransforms
+================
+*/
+void R_ConcatTransforms (const float in1[3*4], const float in2[3*4], float out[3*4])
+{
+	out[0*4+0] = in1[0*4+0] * in2[0*4+0] + in1[0*4+1] * in2[1*4+0] + in1[0*4+2] * in2[2*4+0];
+	out[0*4+1] = in1[0*4+0] * in2[0*4+1] + in1[0*4+1] * in2[1*4+1] + in1[0*4+2] * in2[2*4+1];
+	out[0*4+2] = in1[0*4+0] * in2[0*4+2] + in1[0*4+1] * in2[1*4+2] + in1[0*4+2] * in2[2*4+2];
+	out[0*4+3] = in1[0*4+0] * in2[0*4+3] + in1[0*4+1] * in2[1*4+3] + in1[0*4+2] * in2[2*4+3] + in1[0*4+3];
+	out[1*4+0] = in1[1*4+0] * in2[0*4+0] + in1[1*4+1] * in2[1*4+0] + in1[1*4+2] * in2[2*4+0];
+	out[1*4+1] = in1[1*4+0] * in2[0*4+1] + in1[1*4+1] * in2[1*4+1] + in1[1*4+2] * in2[2*4+1];
+	out[1*4+2] = in1[1*4+0] * in2[0*4+2] + in1[1*4+1] * in2[1*4+2] + in1[1*4+2] * in2[2*4+2];
+	out[1*4+3] = in1[1*4+0] * in2[0*4+3] + in1[1*4+1] * in2[1*4+3] + in1[1*4+2] * in2[2*4+3] + in1[1*4+3];
+	out[2*4+0] = in1[2*4+0] * in2[0*4+0] + in1[2*4+1] * in2[1*4+0] + in1[2*4+2] * in2[2*4+0];
+	out[2*4+1] = in1[2*4+0] * in2[0*4+1] + in1[2*4+1] * in2[1*4+1] + in1[2*4+2] * in2[2*4+1];
+	out[2*4+2] = in1[2*4+0] * in2[0*4+2] + in1[2*4+1] * in2[1*4+2] + in1[2*4+2] * in2[2*4+2];
+	out[2*4+3] = in1[2*4+0] * in2[0*4+3] + in1[2*4+1] * in2[1*4+3] + in1[2*4+2] * in2[2*4+3] + in1[2*4+3];
+}
+
 //============================================================================
 
 float Q_fabs (float f)
@@ -232,7 +317,7 @@ LerpAngle
 
 ===============
 */
-float LerpAngle (float a2, float a1, float frac)
+float LerpAngle (float a2, float a1, const float frac)
 {
 	if (a1 - a2 > 180)
 		a1 -= 360;
@@ -268,38 +353,6 @@ int		i;
 vec3_t	corners[2];
 
 
-// this is the slow, general version
-int BoxOnPlaneSide2 (vec3_t emins, vec3_t emaxs, struct cplane_s *p)
-{
-	int		i;
-	float	dist1, dist2;
-	int		sides;
-	vec3_t	corners[2];
-
-	for (i=0 ; i<3 ; i++)
-	{
-		if (p->normal[i] < 0)
-		{
-			corners[0][i] = emins[i];
-			corners[1][i] = emaxs[i];
-		}
-		else
-		{
-			corners[1][i] = emins[i];
-			corners[0][i] = emaxs[i];
-		}
-	}
-	dist1 = DotProduct (p->normal, corners[0]) - p->dist;
-	dist2 = DotProduct (p->normal, corners[1]) - p->dist;
-	sides = 0;
-	if (dist1 >= 0)
-		sides = 1;
-	if (dist2 < 0)
-		sides |= 2;
-
-	return sides;
-}
-
 /*
 ==================
 BoxOnPlaneSide
@@ -307,8 +360,7 @@ BoxOnPlaneSide
 Returns 1, 2, or 1 + 2
 ==================
 */
-#if !id386 || defined __linux__ 
-int BoxOnPlaneSide (vec3_t emins, vec3_t emaxs, struct cplane_s *p)
+int BoxOnPlaneSide (const vec3_t emins, const vec3_t emaxs, const cplane_t *p)
 {
 	float	dist1, dist2;
 	int		sides;
@@ -374,240 +426,109 @@ dist2 = p->normal[0]*emaxs[0] + p->normal[1]*emaxs[1] + p->normal[2]*emaxs[2];
 
 	return sides;
 }
-#else
-#pragma warning( disable: 4035 )
 
-__declspec( naked ) int BoxOnPlaneSide (vec3_t emins, vec3_t emaxs, struct cplane_s *p)
+/*
+=================
+SignbitsForPlane
+=================
+*/
+int SignbitsForPlane ( cplane_t *out )
 {
-	static int bops_initialized;
-	static int Ljmptab[8];
+	int	bits, j;
 
-	__asm {
+	// for fast box on planeside test
 
-		push ebx
-			
-		cmp bops_initialized, 1
-		je  initialized
-		mov bops_initialized, 1
+	bits = 0;
+	for (j=0 ; j<3 ; j++)
+	{
+		if (out->normal[j] < 0)
+			bits |= 1<<j;
+	}
+	return bits;
+}
+
+/*
+=================
+PlaneTypeForNormal
+=================
+*/
+int	PlaneTypeForNormal ( vec3_t normal )
+{
+	vec_t	ax, ay, az;
+	
+// NOTE: should these have an epsilon around 1.0?		
+	if ( normal[0] >= 1.0)
+		return PLANE_X;
+	if ( normal[1] >= 1.0 )
+		return PLANE_Y;
+	if ( normal[2] >= 1.0 )
+		return PLANE_Z;
 		
-		mov Ljmptab[0*4], offset Lcase0
-		mov Ljmptab[1*4], offset Lcase1
-		mov Ljmptab[2*4], offset Lcase2
-		mov Ljmptab[3*4], offset Lcase3
-		mov Ljmptab[4*4], offset Lcase4
-		mov Ljmptab[5*4], offset Lcase5
-		mov Ljmptab[6*4], offset Lcase6
-		mov Ljmptab[7*4], offset Lcase7
-			
-initialized:
+	ax = fabs( normal[0] );
+	ay = fabs( normal[1] );
+	az = fabs( normal[2] );
 
-		mov edx,ds:dword ptr[4+12+esp]
-		mov ecx,ds:dword ptr[4+4+esp]
-		xor eax,eax
-		mov ebx,ds:dword ptr[4+8+esp]
-		mov al,ds:byte ptr[17+edx]
-		cmp al,8
-		jge Lerror
-		fld ds:dword ptr[0+edx]
-		fld st(0)
-		jmp dword ptr[Ljmptab+eax*4]
-Lcase0:
-		fmul ds:dword ptr[ebx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ebx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase1:
-		fmul ds:dword ptr[ecx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ebx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase2:
-		fmul ds:dword ptr[ebx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ecx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase3:
-		fmul ds:dword ptr[ecx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ecx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase4:
-		fmul ds:dword ptr[ebx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ebx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase5:
-		fmul ds:dword ptr[ecx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ebx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase6:
-		fmul ds:dword ptr[ebx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ecx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ecx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-		jmp LSetSides
-Lcase7:
-		fmul ds:dword ptr[ecx]
-		fld ds:dword ptr[0+4+edx]
-		fxch st(2)
-		fmul ds:dword ptr[ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[4+ecx]
-		fld ds:dword ptr[0+8+edx]
-		fxch st(2)
-		fmul ds:dword ptr[4+ebx]
-		fxch st(2)
-		fld st(0)
-		fmul ds:dword ptr[8+ecx]
-		fxch st(5)
-		faddp st(3),st(0)
-		fmul ds:dword ptr[8+ebx]
-		fxch st(1)
-		faddp st(3),st(0)
-		fxch st(3)
-		faddp st(2),st(0)
-LSetSides:
-		faddp st(2),st(0)
-		fcomp ds:dword ptr[12+edx]
-		xor ecx,ecx
-		fnstsw ax
-		fcomp ds:dword ptr[12+edx]
-		and ah,1
-		xor ah,1
-		add cl,ah
-		fnstsw ax
-		and ah,1
-		add ah,ah
-		add cl,ah
-		pop ebx
-		mov eax,ecx
-		ret
-Lerror:
-		int 3
+	if ( ax >= ay && ax >= az )
+		return PLANE_ANYX;
+	if ( ay >= ax && ay >= az )
+		return PLANE_ANYY;
+	return PLANE_ANYZ;
+}
+
+/*
+=================
+CategorizePlane
+
+A slightly simplier version of SignbitsForPlane and PlaneTypeForNormal
+=================
+*/
+void CategorizePlane ( cplane_t *plane )
+{
+	int i;
+
+	plane->type = PLANE_ANYZ;
+	for (i = 0; i < 3; i++)
+	{
+		if (plane->normal[i] < 0)
+			plane->signbits |= 1<<i;
+		if (plane->normal[i] == 1.0f)
+			plane->type = i;
 	}
 }
-#pragma warning( default: 4035 )
-#endif
+
+/*
+=================
+PlaneFromPoints
+=================
+*/
+void PlaneFromPoints ( vec3_t verts[3], cplane_t *plane )
+{
+	vec3_t	v1, v2;
+
+	VectorSubtract( verts[1], verts[0], v1 );
+	VectorSubtract( verts[2], verts[0], v2 );
+	CrossProduct( v2, v1, plane->normal );
+	VectorNormalize( plane->normal );
+	plane->dist = DotProduct( verts[0], plane->normal );
+}
+
+void ClearBounds (vec3_t mins, vec3_t maxs)
+{
+	mins[0] = mins[1] = mins[2] = 99999;
+	maxs[0] = maxs[1] = maxs[2] = -99999;
+}
+
+qboolean BoundsIntersect (vec3_t mins1, vec3_t maxs1, vec3_t mins2, vec3_t maxs2)
+{
+	return (mins1[0] <= maxs2[0] && mins1[1] <= maxs2[1] && mins1[2] <= maxs2[2] &&
+		 maxs1[0] >= mins2[0] && maxs1[1] >= mins2[1] && maxs1[2] >= mins2[2]);
+}
+
+qboolean BoundsAndSphereIntersect (vec3_t mins, vec3_t maxs, vec3_t centre, float radius)
+{
+	return (mins[0] <= centre[0]+radius && mins[1] <= centre[1]+radius && mins[2] <= centre[2]+radius &&
+		maxs[0] >= centre[0]-radius && maxs[1] >= centre[1]-radius && maxs[2] >= centre[2]-radius);
+}
 
 void AddPointToBounds (vec3_t v, vec3_t mins, vec3_t maxs)
 {
@@ -622,6 +543,24 @@ void AddPointToBounds (vec3_t v, vec3_t mins, vec3_t maxs)
 		if (val > maxs[i])
 			maxs[i] = val;
 	}
+}
+
+/*
+=================
+RadiusFromBounds
+=================
+*/
+float RadiusFromBounds (vec3_t mins, vec3_t maxs)
+{
+	int		i;
+	vec3_t	corner;
+
+	for (i=0 ; i<3 ; i++)
+	{
+		corner[i] = fabs(mins[i]) > fabs(maxs[i]) ? fabs(mins[i]) : fabs(maxs[i]);
+	}
+
+	return VectorLength (corner);
 }
 
 vec_t VectorNormalize (vec3_t v)
@@ -640,7 +579,6 @@ vec_t VectorNormalize (vec3_t v)
 	}
 		
 	return length;
-
 }
 
 vec_t VectorNormalize2 (vec3_t v, vec3_t out)
@@ -659,7 +597,6 @@ vec_t VectorNormalize2 (vec3_t v, vec3_t out)
 	}
 		
 	return length;
-
 }
 
 void VectorNormalizeFast (vec3_t v)
@@ -671,7 +608,7 @@ void VectorNormalizeFast (vec3_t v)
 	v[2] *= ilength;
 }
 
-void VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc)
+void _VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc)
 {
 	vecc[0] = veca[0] + scale*vecb[0];
 	vecc[1] = veca[1] + scale*vecb[1];
@@ -713,20 +650,32 @@ int Q_log2(int val)
 	return answer;
 }
 
-
-void Matrix4_Identity(mat4_t mat)
+void Matrix4_Identity (mat4_t mat)
 {
-	memset(mat, 0, 16 * sizeof(float));
+	mat[1] = mat[2] = mat[3] = mat[4] = mat[6] = mat[7] = mat[8] = mat[9] =	mat[11] = mat[12] = mat[13] = mat[14] = 0;
 	mat[0] = mat[5] = mat[10] = mat[15] = 1.0f;
 }
 
-void Matrix3_Identity (vec3_t mat[3])
+void Matrix4_Copy (mat4_t a, mat4_t b)
 {
-	memset(mat, 0, 9 * sizeof(float));
-	mat[0][0] = mat[1][1] = mat[2][2] = 1.0f;
+	b[0] = a[0]; b[1] = a[1]; b[2] = a[2]; b[3] = a[3];
+	b[4] = a[4]; b[5] = a[5]; b[6] = a[6]; b[7] = a[7];
+	b[8] = a[8]; b[9] = a[9]; b[10] = a[10]; b[11] = a[11];
+	b[12] = a[12]; b[13] = a[13]; b[14] = a[14]; b[15] = a[15];
 }
 
-void Matrix4_Multiply(mat4_t a, mat4_t b, mat4_t product)
+qboolean Matrix4_Compare (mat4_t a, mat4_t b)
+{
+	for (i = 0; i < 16; i++)
+	{
+		if ( a[i] != b[i] )
+			return false;
+	}
+
+	return true;
+}
+
+void Matrix4_Multiply (mat4_t a, mat4_t b, mat4_t product)
 {
 	product[0]  = a[0] * b[0] + a[4] * b[1] + a[8] * b[2] + a[12] * b[3];
 	product[1]  = a[1] * b[0] + a[5] * b[1] + a[9] * b[2] + a[13] * b[3];
@@ -746,7 +695,7 @@ void Matrix4_Multiply(mat4_t a, mat4_t b, mat4_t product)
 	product[15] = a[3] * b[12] + a[7] * b[13] + a[11] * b[14] + a[15] * b[15];
 }
 
-void Matrix4_MultiplyFast(mat4_t a, mat4_t b, mat4_t product)
+void Matrix4_MultiplyFast (mat4_t a, mat4_t b, mat4_t product)
 {
 	product[0]  = a[0] * b[0] + a[4] * b[1] + a[8] * b[2];
 	product[1]  = a[1] * b[0] + a[5] * b[1] + a[9] * b[2];
@@ -766,66 +715,56 @@ void Matrix4_MultiplyFast(mat4_t a, mat4_t b, mat4_t product)
 	product[15] = 1.0f;
 }
 
-void Matrix3_Multiply (vec3_t in1[3], vec3_t in2[3], vec3_t out[3])
+void Matrix4_Rotate (mat4_t a, float angle, float x, float y, float z)
 {
-	out[0][0] = in1[0][0] * in2[0][0] + in1[0][1] * in2[1][0] +
-				in1[0][2] * in2[2][0];
-	out[0][1] = in1[0][0] * in2[0][1] + in1[0][1] * in2[1][1] +
-				in1[0][2] * in2[2][1];
-	out[0][2] = in1[0][0] * in2[0][2] + in1[0][1] * in2[1][2] +
-				in1[0][2] * in2[2][2];
-	out[1][0] = in1[1][0] * in2[0][0] + in1[1][1] * in2[1][0] +
-				in1[1][2] * in2[2][0];
-	out[1][1] = in1[1][0] * in2[0][1] + in1[1][1] * in2[1][1] +
-				in1[1][2] * in2[2][1];
-	out[1][2] = in1[1][0] * in2[0][2] + in1[1][1] * in2[1][2] +
-				in1[1][2] * in2[2][2];
-	out[2][0] = in1[2][0] * in2[0][0] + in1[2][1] * in2[1][0] +
-				in1[2][2] * in2[2][0];
-	out[2][1] = in1[2][0] * in2[0][1] + in1[2][1] * in2[1][1] +
-				in1[2][2] * in2[2][1];
-	out[2][2] = in1[2][0] * in2[0][2] + in1[2][1] * in2[1][2] +
-				in1[2][2] * in2[2][2];
+	mat4_t m, b;
+	float c = cos( DEG2RAD(angle) );
+	float s = sin( DEG2RAD(angle) );
+	float mc = 1 - c, t1, t2;
+	
+	m[0]  = (x * x * mc) + c;
+	m[5]  = (y * y * mc) + c;
+	m[10] = (z * z * mc) + c;
+
+	t1 = y * x * mc;
+	t2 = z * s;
+	m[1] = t1 + t2;
+	m[4] = t1 - t2;
+
+	t1 = x * z * mc;
+	t2 = y * s;
+	m[2] = t1 - t2;
+	m[8] = t1 + t2;
+
+	t1 = y * z * mc;
+	t2 = x * s;
+	m[6] = t1 + t2;
+	m[9] = t1 - t2;
+
+	m[3] = m[7] = m[11] = m[12] = m[13] = m[14] = 0;
+	m[15] = 1;
+
+	Matrix4_Copy ( a, b );
+	Matrix4_MultiplyFast ( b, m, a );
 }
 
-void Matrix3_Multiply_Vec3 (vec3_t a[3], vec3_t b, vec3_t product)
+void Matrix4_Translate (mat4_t m, float x, float y, float z)
 {
-	product[0] = a[0][0]*b[0] + a[1][0]*b[1] + a[2][0]*b[2];
-	product[1] = a[0][1]*b[0] + a[1][1]*b[1] + a[2][1]*b[2];
-	product[2] = a[0][2]*b[0] + a[1][2]*b[1] + a[2][2]*b[2];
+	m[12] = m[0] * x + m[4] * y + m[8]  * z + m[12];
+	m[13] = m[1] * x + m[5] * y + m[9]  * z + m[13];
+	m[14] = m[2] * x + m[6] * y + m[10] * z + m[14];
+	m[15] = m[3] * x + m[7] * y + m[11] * z + m[15];
 }
 
-// This can be used to calc the inverse of a rotation matrix 
-void Matrix3_Transponse (vec3_t in[3], vec3_t out[3])
+void Matrix4_Scale (mat4_t m, float x, float y, float z)
 {
-	out[0][0] = in[0][0];
-	out[1][1] = in[1][1];
-	out[2][2] = in[2][2];
-
-	out[0][1] = in[1][0];
-	out[0][2] = in[2][0];
-	out[1][0] = in[0][1];
-	out[1][2] = in[2][1];
-	out[2][0] = in[0][2];
-	out[2][1] = in[1][2];
+	m[0] *= x;   m[4] *= y;   m[8]  *= z;
+	m[1] *= x;   m[5] *= y;   m[9]  *= z;
+	m[2] *= x;   m[6] *= y;   m[10] *= z;
+	m[3] *= x;   m[7] *= y;   m[11] *= z;
 }
 
-void Matrix_Multiply_Vec4 (mat4_t a, vec4_t b, vec4_t product)
-{
-	product[0] = a[0]*b[0] + a[4]*b[1] + a[8]*b[2] + a[12]*b[3];
-	product[1] = a[1]*b[0] + a[5]*b[1] + a[9]*b[2] + a[13]*b[3];
-	product[2] = a[2]*b[0] + a[6]*b[1] + a[10]*b[2] + a[14]*b[3];
-	product[3] = a[3]*b[0] + a[7]*b[1] + a[11]*b[2] + a[15]*b[3];
-}
-
-void Matrix_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product)
-{
-	product[0] = a[0]*b[0] + a[4]*b[1] + a[8]*b[2] + a[12];
-	product[1] = a[1]*b[0] + a[5]*b[1] + a[9]*b[2] + a[13];
-	product[2] = a[2]*b[0] + a[6]*b[1] + a[10]*b[2] + a[14];
-}
-
-void Matrix4_Transponse (mat4_t m, mat4_t ret)
+void Matrix4_Transpose (mat4_t m, mat4_t ret)
 {
 	ret[0] = m[0]; ret[1] = m[4]; ret[2] = m[8]; ret[3] = m[12];
 	ret[4] = m[1]; ret[5] = m[5]; ret[6] = m[9]; ret[7] = m[13];
@@ -833,60 +772,7 @@ void Matrix4_Transponse (mat4_t m, mat4_t ret)
 	ret[12] = m[3]; ret[13] = m[7]; ret[14] = m[11]; ret[15] = m[15];
 }
 
-void Matrix4_Matrix3 (mat4_t in, mat3x3_t out)
-{
-	out[0][0] = in[0];
-	out[0][1] = in[1];
-	out[0][2] = in[2];
-
-	out[1][0] = in[4];
-	out[1][1] = in[5];
-	out[1][2] = in[6];
-
-	out[2][0] = in[8];
-	out[2][1] = in[9];
-	out[2][2] = in[10];
-}
-
-void Matrix_Multiply_Vec2 (mat4_t a, vec2_t b, vec2_t product)
-{
-	product[0] = a[0]*b[0] + a[1]*b[1] + a[2] + a[3];
-	product[1] = a[4]*b[0] + a[5]*b[1] + a[6] + a[7];
-}
-
-static float Matrix3_Det (float *mat)
-{
-    return (mat[0] * (mat[4]*mat[8] - mat[7]*mat[5])
-         - mat[1] * (mat[3]*mat[8] - mat[6]*mat[5])
-         + mat[2] * (mat[3]*mat[7] - mat[6]*mat[4]));
-}
-
-static void Matrix3_Inverse(float *mr, float *ma)
-{
-	float det = Matrix3_Det ( ma );
-	
-	if ( fabs( det ) < 0.0005 )
-	{
-		Matrix3_Identity( (float (*)[3])ma );
-		return;
-	}
-
-	det = 1 / det;
-	
-	mr[0] =   ma[4]*ma[8] - ma[5]*ma[7]  * det;
-	mr[1] = -(ma[1]*ma[8] - ma[7]*ma[2]) * det;
-	mr[2] =   ma[1]*ma[5] - ma[4]*ma[2]  * det;
-	
-	mr[3] = -(ma[3]*ma[8] - ma[5]*ma[6]) * det;
-	mr[4] =   ma[0]*ma[8] - ma[6]*ma[2]  * det;
-	mr[5] = -(ma[0]*ma[5] - ma[3]*ma[2]) * det;
-	
-	mr[6] =   ma[3]*ma[7] - ma[6]*ma[4]  * det;
-	mr[7] = -(ma[0]*ma[7] - ma[6]*ma[1]) * det;
-	mr[8] =   ma[0]*ma[4] - ma[1]*ma[3]  * det;
-}
-
-static void Matrix4_Submat( mat4_t mr, float * mb, int i, int j )
+static void Matrix4_Submat (mat4_t mr, mat3_t mb, int i, int j)
 {
     int ti, tj, idst, jdst;
 	
@@ -907,49 +793,239 @@ static void Matrix4_Submat( mat4_t mr, float * mb, int i, int j )
 						jdst = tj-1;
 					
 					if ( ti != i && tj != j )
-						mb[idst*3 + jdst] = mr[ti*4 + tj ];
+						mb[idst][jdst] = mr[ti*4 + tj];
 			}
 	}
 }
 
-static float Matrix4_Det( mat4_t mr )
+float Matrix4_Det (mat4_t mr)
 {
      float  det, result = 0, i = 1;
-     float	msub3[9];
+     mat3_t	msub3;
      int    n;
 
      for ( n = 0; n < 4; n++, i *= -1 )
 	 {
-		 Matrix4_Submat(mr, msub3, 0, n);
+		 Matrix4_Submat (mr, msub3, 0, n);
 		 
-		 det     = Matrix3_Det( msub3 );
+		 det     = Matrix3_Det ( msub3 );
 		 result += mr[n] * det * i;
 	 }
 	 
 	 return result;
 }
 
-qboolean Matrix4_Inverse( mat4_t mr, mat4_t ma )
+void Matrix4_Inverse (mat4_t mr, mat4_t ma)
 {
-    float  mdet = Matrix4_Det( ma );
-    float  mtemp[9];
+    float  mdet = Matrix4_Det( mr );
+    mat3_t mtemp;
 	int    i, j, sign;
 	
 	if ( fabs( mdet ) < 0.0005 )
-        return 0;
-	
+	{
+		Matrix4_Identity ( ma );
+        return;
+	}
+
+	mdet = 1.0f / mdet;
 	for ( i = 0; i < 4; i++ )
 		for ( j = 0; j < 4; j++ )
 		{
 			sign = 1 - ( (i + j) % 2 ) * 2;
 			
-			Matrix4_Submat( ma, mtemp, i, j );
-			
-			mr[i+j*4] = ( Matrix3_Det( mtemp ) * sign ) / mdet;
+			Matrix4_Submat( mr, mtemp, i, j );
+			ma[i+j*4] = ( Matrix3_Det( mtemp ) * sign ) * mdet;
 		}
-		
-	return 1;
 }
+
+void Matrix4_Matrix3 (mat4_t in, mat3_t out)
+{
+	out[0][0] = in[0];
+	out[0][1] = in[1];
+	out[0][2] = in[2];
+
+	out[1][0] = in[4];
+	out[1][1] = in[5];
+	out[1][2] = in[6];
+
+	out[2][0] = in[8];
+	out[2][1] = in[9];
+	out[2][2] = in[10];
+}
+
+void Matrix4_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product)
+{
+	product[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+	product[1] = a[4]*b[0] + a[5]*b[1] + a[6]*b[2];
+	product[2] = a[8]*b[0] + a[9]*b[1] + a[10]*b[2];
+}
+
+void Matrix3_Identity (mat3_t mat)
+{
+	mat[0][1] = mat[0][2] = mat[1][0] = mat[1][2] = mat[2][0] = mat[2][1] = 0;
+	mat[0][0] = mat[1][1] = mat[2][2] = 1.0f;
+}
+
+void Matrix3_Copy (mat3_t a, mat3_t b)
+{
+	VectorCopy (a[0], b[0]);
+	VectorCopy (a[1], b[1]);
+	VectorCopy (a[2], b[2]);
+}
+
+qboolean Matrix3_Compare (mat3_t a, mat3_t b)
+{
+	return ( VectorCompare (a[0], b[0]) && 
+		VectorCompare (a[1], b[1]) && VectorCompare (a[2], b[2]) );
+}
+
+void Matrix3_Multiply (mat3_t in1, mat3_t in2, mat3_t out)
+{
+	out[0][0] = in1[0][0]*in2[0][0] + in1[0][1]*in2[1][0] + in1[0][2]*in2[2][0];
+	out[0][1] = in1[0][0]*in2[0][1] + in1[0][1]*in2[1][1] + in1[0][2]*in2[2][1];
+	out[0][2] = in1[0][0]*in2[0][2] + in1[0][1]*in2[1][2] + in1[0][2]*in2[2][2];
+	out[1][0] = in1[1][0]*in2[0][0] + in1[1][1]*in2[1][0] +	in1[1][2]*in2[2][0];
+	out[1][1] = in1[1][0]*in2[0][1] + in1[1][1]*in2[1][1] + in1[1][2]*in2[2][1];
+	out[1][2] = in1[1][0]*in2[0][2] + in1[1][1]*in2[1][2] +	in1[1][2]*in2[2][2];
+	out[2][0] = in1[2][0]*in2[0][0] + in1[2][1]*in2[1][0] +	in1[2][2]*in2[2][0];
+	out[2][1] = in1[2][0]*in2[0][1] + in1[2][1]*in2[1][1] +	in1[2][2]*in2[2][1];
+	out[2][2] = in1[2][0]*in2[0][2] + in1[2][1]*in2[1][2] +	in1[2][2]*in2[2][2];
+}
+
+void Matrix3_Multiply_Vec3 (mat3_t a, vec3_t b, vec3_t product)
+{
+	product[0] = a[0][0]*b[0] + a[0][1]*b[1] + a[0][2]*b[2];
+	product[1] = a[1][0]*b[0] + a[1][1]*b[1] + a[1][2]*b[2];
+	product[2] = a[2][0]*b[0] + a[2][1]*b[1] + a[2][2]*b[2];
+}
+
+void Matrix3_Transpose (mat3_t in, mat3_t out)
+{
+	out[0][0] = in[0][0];
+	out[1][1] = in[1][1];
+	out[2][2] = in[2][2];
+
+	out[0][1] = in[1][0];
+	out[0][2] = in[2][0];
+	out[1][0] = in[0][1];
+	out[1][2] = in[2][1];
+	out[2][0] = in[0][2];
+	out[2][1] = in[1][2];
+}
+
+float Matrix3_Det (mat3_t mat)
+{
+    return (mat[0][0] * (mat[1][1]*mat[2][2] - mat[2][1]*mat[1][2])
+         - mat[0][1] * (mat[1][0]*mat[2][2] - mat[2][0]*mat[1][2])
+         + mat[0][2] * (mat[1][0]*mat[2][1] - mat[2][0]*mat[1][1]));
+}
+
+void Matrix3_Inverse (mat3_t mr, mat3_t ma)
+{
+	float det = Matrix3_Det ( mr );
+	
+	if ( fabs( det ) < 0.0005 )
+	{
+		Matrix3_Identity( ma );
+		return;
+	}
+
+	det = 1.0 / det;
+	
+	ma[0][0] =  (mr[1][1]*mr[2][2] - mr[1][2]*mr[2][1]) * det;
+	ma[0][1] = -(mr[0][1]*mr[2][2] - mr[2][1]*mr[0][2]) * det;
+	ma[0][2] =  (mr[0][1]*mr[1][2] - mr[1][1]*mr[0][2]) * det;
+	
+	ma[1][0] = -(mr[1][0]*mr[2][2] - mr[1][2]*mr[2][0]) * det;
+	ma[1][1] =  (mr[0][0]*mr[2][2] - mr[2][0]*mr[0][2]) * det;
+	ma[1][2] = -(mr[0][0]*mr[1][2] - mr[1][0]*mr[0][2]) * det;
+	
+	ma[2][0] =  (mr[1][0]*mr[2][1] - mr[2][0]*mr[1][1]) * det;
+	ma[2][1] = -(mr[0][0]*mr[2][1] - mr[2][0]*mr[0][1]) * det;
+	ma[2][2] =  (mr[0][0]*mr[1][1] - mr[0][1]*mr[1][0]) * det;
+}
+
+void Matrix3_EulerAngles (mat3_t mat, vec3_t angles)
+{
+	float	c;
+	float	pitch, yaw, roll;
+
+	pitch = -asin( mat[0][2] );
+	c = cos ( pitch );
+	pitch = RAD2DEG( pitch );
+
+	if ( fabs( c ) > 0.005 )             // Gimball lock?
+	{
+		c = 1.0f / c;
+		yaw = RAD2DEG( atan2 ( (-1)*-mat[0][1] * c, mat[0][0] * c ) );
+		roll = RAD2DEG( atan2 ( -mat[1][2] * c, mat[2][2] * c ) );
+	}
+	else
+	{
+		if (mat[0][2] > 0)
+			pitch = -90;
+		else
+			pitch = 90;
+		yaw = RAD2DEG( atan2 ( mat[1][0], (-1)*mat[1][1] ) );
+		roll = 0;
+	}
+
+	angles[PITCH] = anglemod( pitch );
+	angles[YAW] = anglemod( yaw );
+	angles[ROLL] = anglemod( roll );
+}
+
+void Matrix_Multiply_Vec2 (mat4_t a, vec2_t b, vec2_t product)
+{
+	product[0] = a[0]*b[0] + a[1]*b[1] + a[2] + a[3];
+	product[1] = a[4]*b[0] + a[5]*b[1] + a[6] + a[7];
+}
+
+void Matrix_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product)
+{
+	product[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[12];
+	product[1] = a[4]*b[0] + a[5]*b[1] + a[6]*b[2] + a[13];
+	product[2] = a[8]*b[0] + a[8]*b[1] + a[10]*b[2] + a[14];
+}
+
+void Matrix_Multiply_Vec4 (mat4_t a, vec4_t b, vec4_t product)
+{
+	product[0] = a[0]*b[0] + a[1]*b[1] + a[2]*b[2] + a[3]*b[3];
+	product[1] = a[4]*b[0] + a[5]*b[1] + a[6]*b[2] + a[7]*b[3];
+	product[2] = a[8]*b[0] + a[9]*b[1] + a[10]*b[2] + a[11]*b[3];
+	product[3] = a[12]*b[0] + a[13]*b[1] + a[14]*b[2] + a[15]*b[3];
+}
+
+void Matrix3_Rotate (mat3_t a, float angle, float x, float y, float z)
+{
+	mat3_t m, b;
+	float c = cos( DEG2RAD(angle) );
+	float s = sin( DEG2RAD(angle) );
+	float mc = 1 - c, t1, t2;
+	
+	m[0][0] = (x * x * mc) + c;
+	m[1][1] = (y * y * mc) + c;
+	m[2][2] = (z * z * mc) + c;
+
+	t1 = y * x * mc;
+	t2 = z * s;
+	m[0][1] = t1 + t2;
+	m[1][0] = t1 - t2;
+
+	t1 = x * z * mc;
+	t2 = y * s;
+	m[0][2] = t1 - t2;
+	m[2][0] = t1 + t2;
+
+	t1 = y * z * mc;
+	t2 = x * s;
+	m[1][2] = t1 + t2;
+	m[2][1] = t1 - t2;
+
+	Matrix3_Copy ( a, b );
+	Matrix3_Multiply ( b, m, a );
+}
+
 
 //====================================================================================
 
@@ -1094,23 +1170,14 @@ void COM_DefaultExtension (char *path, char *extension)
 ============================================================================
 */
 
-qboolean	bigendien;
-
-// can't just use function pointers, or dll linkage can
-// mess up when qcommon is included in multiple places
-short	(*_BigShort) (short l);
-short	(*_LittleShort) (short l);
-int		(*_BigLong) (int l);
-int		(*_LittleLong) (int l);
-float	(*_BigFloat) (float l);
-float	(*_LittleFloat) (float l);
-
-short	BigShort(short l){return _BigShort(l);}
-short	LittleShort(short l) {return _LittleShort(l);}
-int		BigLong (int l) {return _BigLong(l);}
-int		LittleLong (int l) {return _LittleLong(l);}
-float	BigFloat (float l) {return _BigFloat(l);}
-float	LittleFloat (float l) {return _LittleFloat(l);}
+#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
+short   (*BigShort) (short l);
+short   (*LittleShort) (short l);
+int     (*BigLong) (int l);
+int     (*LittleLong) (int l);
+float   (*BigFloat) (float l);
+float   (*LittleFloat) (float l);
+#endif
 
 short   ShortSwap (short l)
 {
@@ -1122,10 +1189,12 @@ short   ShortSwap (short l)
 	return (b1<<8) + b2;
 }
 
-short	ShortNoSwap (short l)
+#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
+short   ShortNoSwap (short l)
 {
 	return l;
 }
+#endif
 
 int    LongSwap (int l)
 {
@@ -1139,20 +1208,22 @@ int    LongSwap (int l)
 	return ((int)b1<<24) + ((int)b2<<16) + ((int)b3<<8) + b4;
 }
 
-int	LongNoSwap (int l)
+#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
+int     LongNoSwap (int l)
 {
 	return l;
 }
+#endif
 
 float FloatSwap (float f)
 {
 	union
 	{
-		float	f;
-		byte	b[4];
+		float   f;
+		byte    b[4];
 	} dat1, dat2;
-	
-	
+
+
 	dat1.f = f;
 	dat2.b[0] = dat1.b[3];
 	dat2.b[1] = dat1.b[2];
@@ -1161,10 +1232,13 @@ float FloatSwap (float f)
 	return dat2.f;
 }
 
+#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
 float FloatNoSwap (float f)
 {
 	return f;
 }
+#endif
+
 
 /*
 ================
@@ -1173,30 +1247,29 @@ Swap_Init
 */
 void Swap_Init (void)
 {
-	byte	swaptest[2] = {1,0};
+#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
+	byte    swaptest[2] = {1,0};
 
-// set the byte swapping variables in a portable manner	
+// set the byte swapping variables in a portable manner
 	if ( *(short *)swaptest == 1)
 	{
-		bigendien = false;
-		_BigShort = ShortSwap;
-		_LittleShort = ShortNoSwap;
-		_BigLong = LongSwap;
-		_LittleLong = LongNoSwap;
-		_BigFloat = FloatSwap;
-		_LittleFloat = FloatNoSwap;
+		BigShort = ShortSwap;
+		LittleShort = ShortNoSwap;
+		BigLong = LongSwap;
+		LittleLong = LongNoSwap;
+		BigFloat = FloatSwap;
+		LittleFloat = FloatNoSwap;
 	}
 	else
 	{
-		bigendien = true;
-		_BigShort = ShortNoSwap;
-		_LittleShort = ShortSwap;
-		_BigLong = LongNoSwap;
-		_LittleLong = LongSwap;
-		_BigFloat = FloatNoSwap;
-		_LittleFloat = FloatSwap;
+		BigShort = ShortNoSwap;
+		LittleShort = ShortSwap;
+		BigLong = LongNoSwap;
+		LittleLong = LongSwap;
+		BigFloat = FloatNoSwap;
+		LittleFloat = FloatSwap;
 	}
-
+#endif
 }
 
 
@@ -1216,7 +1289,13 @@ char	*va(char *format, ...)
 	static char		string[1024];
 	
 	va_start (argptr, format);
-	vsprintf (string, format,argptr);
+
+#ifdef _WIN32
+	_vsnprintf (string, sizeof(string), format, argptr);
+#else
+	vsnprintf (string, sizeof(string), format, argptr);
+#endif
+
 	va_end (argptr);
 
 	return string;	
@@ -1346,61 +1425,24 @@ void Com_PageInMemory (byte *buffer, int size)
 ============================================================================
 */
 
-// FIXME: replace all Q_stricmp with Q_strcasecmp
-int Q_stricmp (char *s1, char *s2)
+void Q_strncpyz (char *dest, char *src, int size)
 {
-#if defined(WIN32)
-	return _stricmp (s1, s2);
-#else
-	return strcasecmp (s1, s2);
-#endif
+	strncpy (dest, src, size-1);
+	dest[size-1] = 0;
 }
-
-
-int Q_strncasecmp (char *s1, char *s2, int n)
-{
-	int		c1, c2;
-	
-	do
-	{
-		c1 = *s1++;
-		c2 = *s2++;
-
-		if (!n--)
-			return 0;		// strings are equal until end point
-		
-		if (c1 != c2)
-		{
-			if (c1 >= 'a' && c1 <= 'z')
-				c1 -= ('a' - 'A');
-			if (c2 >= 'a' && c2 <= 'z')
-				c2 -= ('a' - 'A');
-			if (c1 != c2)
-				return -1;		// strings not equal
-		}
-	} while (c1);
-	
-	return 0;		// strings are equal
-}
-
-int Q_strcasecmp (char *s1, char *s2)
-{
-	return Q_strncasecmp (s1, s2, 99999);
-}
-
 
 
 void Com_sprintf (char *dest, int size, char *fmt, ...)
 {
 	int		len;
-	va_list		argptr;
+	va_list	argptr;
 	char	bigbuffer[0x10000];
 
 	va_start (argptr,fmt);
-	len = vsprintf (bigbuffer,fmt,argptr);
+	len = vsnprintf (bigbuffer, sizeof(bigbuffer), fmt, argptr);
 	va_end (argptr);
 	if (len >= size)
-		Com_Printf ("Com_sprintf: overflow of %i(%s) in %i\n", len, bigbuffer, size);
+		Com_Printf ("Com_sprintf: overflow of %i in %i\n", len, bigbuffer, size);
 	strncpy (dest, bigbuffer, size-1);
 }
 
@@ -1585,34 +1627,8 @@ void Info_SetValueForKey (char *s, char *key, char *value)
 
 //====================================================================
 
-
-// Vic added this
-void *Q_malloc (int cnt)
+void Q_Obituary ( void *victim, int gender, void *attacker, int mod, char *message, char *message2 )
 {
-	void *buf = (void *)malloc (cnt);
-
-	if (!buf) {
-		Com_Printf ("Q_malloc: failed on allocation of %i bytes.\n", cnt);
-		return NULL;
-	}
-
-	memset (buf, 0, cnt);
-	return buf;
-}
-
-void Q_free (void *buf)
-{
-	if (!buf) {
-		return;
-	}
-
-	free (buf);
-}
-
-void Q_Obituary ( void *victim, void *attacker, int mod, char *message, char *message2 )
-{
-	int	gender = Q_PlayerGender ( victim );
-
 	message [0] = 0;
 	message2[0] = 0;
 
@@ -1662,6 +1678,14 @@ void Q_Obituary ( void *victim, void *attacker, int mod, char *message, char *me
 		{
 		case MOD_HELD_GRENADE:
 			strcpy ( message, "tried to put the pin back in" );
+			break;
+		case MOD_LASER_TRAP:
+			if ( gender == GENDER_FEMALE )
+				strcpy ( message, "didn't see her own laser trap" );
+			else if ( gender == GENDER_MALE )
+				strcpy ( message, "didn't see his own laser trap" );
+			else
+				strcpy ( message, "didn't see its own laser trap" );
 			break;
 		case MOD_HG_SPLASH:
 		case MOD_G_SPLASH:
@@ -1769,6 +1793,10 @@ void Q_Obituary ( void *victim, void *attacker, int mod, char *message, char *me
 		case MOD_TELEFRAG:
 			strcpy ( message, "tried to invade" );
 			strcpy ( message2, "'s personal space" );
+			break;
+		case MOD_LASER_TRAP:
+			strcpy ( message, "got into" );
+			strcpy ( message2, "'s laser trap" );
 			break;
 			//ZOID
 		case MOD_GRAPPLE:

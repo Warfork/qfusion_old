@@ -20,12 +20,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // common.c -- misc functions used in client and server
 #include "qcommon.h"
 #include <setjmp.h>
-#include <limits.h>
 
 #define	MAXPRINTMSG	4096
 
 #define MAX_NUM_ARGVS	50
 
+qboolean	com_initialized;
 
 int		com_argc;
 char	*com_argv[MAX_NUM_ARGVS+1];
@@ -43,12 +43,13 @@ cvar_t	*developer;
 cvar_t	*timescale;
 cvar_t	*fixedtime;
 cvar_t	*logfile_active;	// 1 = buffer log, 2 = flush after each print
-cvar_t	*showtrace;
+cvar_t	*com_showtrace;
 cvar_t	*dedicated;
 
 FILE	*logfile;
 
 int			server_state;
+int			client_state;
 
 // host_speeds times
 int		time_before_game;
@@ -105,7 +106,7 @@ void Com_Printf (char *fmt, ...)
 	char		msg[MAXPRINTMSG];
 
 	va_start (argptr,fmt);
-	vsprintf (msg,fmt,argptr);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 
 	if (rd_target)
@@ -161,7 +162,7 @@ void Com_DPrintf (char *fmt, ...)
 		return;			// don't confuse non-developers with techie stuff...
 
 	va_start (argptr,fmt);
-	vsprintf (msg,fmt,argptr);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 	
 	Com_Printf ("%s", msg);
@@ -186,14 +187,16 @@ void Com_Error (int code, char *fmt, ...)
 		Sys_Error ("recursive error after: %s", msg);
 	recursive = true;
 
-	va_start (argptr,fmt);
-	vsprintf (msg,fmt,argptr);
+	va_start (argptr, fmt);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 	
 	if (code == ERR_DISCONNECT)
 	{
 		CL_Drop ();
 		recursive = false;
+		if (!com_initialized)
+			Sys_Error ("%s", msg);
 		longjmp (abortframe, -1);
 	}
 	else if (code == ERR_DROP)
@@ -202,6 +205,8 @@ void Com_Error (int code, char *fmt, ...)
 		SV_Shutdown (va("Server crashed: %s\n", msg), false);
 		CL_Drop ();
 		recursive = false;
+		if (!com_initialized)
+			Sys_Error ("%s", msg);
 		longjmp (abortframe, -1);
 	}
 	else
@@ -263,6 +268,43 @@ void Com_SetServerState (int state)
 	server_state = state;
 }
 
+int Com_ClientState (void)
+{
+	return client_state;
+}
+
+void Com_SetClientState (int state)
+{
+	client_state = state;
+}
+
+
+/*
+==========
+Com_HashKey
+
+Returns hash key for a string
+==========
+*/
+unsigned int Com_HashKey (char *name, int hashsize)
+{
+	int i;
+	unsigned int v;
+	unsigned int c;
+
+	v = 0;
+	for ( i = 0; name[i]; i++ )
+	{
+		c = name[i];
+		if ( c == '\\' ) {
+			c = '/';
+		}
+
+		v = (v + i) * 37 + tolower (c);	// case insensitivity
+	}
+
+	return v & (hashsize - 1);
+}
 
 /*
 ==============================================================================
@@ -356,22 +398,9 @@ void MSG_WriteString (sizebuf_t *sb, char *s)
 		SZ_Write (sb, s, strlen(s)+1);
 }
 
-void MSG_WriteShortCoord (sizebuf_t *sb, float f)
-{
-	MSG_WriteShort (sb, Q_rint(f*8));
-}
-
-void MSG_WriteShortPos (sizebuf_t *sb, vec3_t pos)
-{
-	MSG_WriteShortCoord (sb, pos[0]);
-	MSG_WriteShortCoord (sb, pos[1]);
-	MSG_WriteShortCoord (sb, pos[2]);
-}
-
-void MSG_WriteLongCoord (sizebuf_t *sb, float f)
+void MSG_WriteInt3 (sizebuf_t *sb, int c)
 {
 	byte	*buf;
-	int		c = Q_rint(f*8);
 	
 	buf = SZ_GetSpace (sb, 3);
 	buf[0] = c&0xff;
@@ -379,11 +408,16 @@ void MSG_WriteLongCoord (sizebuf_t *sb, float f)
 	buf[2] = (c>>16)&0xff;
 }
 
-void MSG_WriteLongPos (sizebuf_t *sb, vec3_t pos)
+void MSG_WriteCoord (sizebuf_t *sb, float f)
 {
-	MSG_WriteLongCoord (sb, pos[0]);
-	MSG_WriteLongCoord (sb, pos[1]);
-	MSG_WriteLongCoord (sb, pos[2]);
+	MSG_WriteInt3 (sb, Q_rint(f*8));
+}
+
+void MSG_WritePos (sizebuf_t *sb, vec3_t pos)
+{
+	MSG_WriteCoord (sb, pos[0]);
+	MSG_WriteCoord (sb, pos[1]);
+	MSG_WriteCoord (sb, pos[2]);
 }
 
 void MSG_WriteAngle (sizebuf_t *sb, float f)
@@ -419,8 +453,6 @@ void MSG_WriteDeltaUsercmd (sizebuf_t *buf, usercmd_t *from, usercmd_t *cmd)
 		bits |= CM_UP;
 	if (cmd->buttons != from->buttons)
 		bits |= CM_BUTTONS;
-	if (cmd->impulse != from->impulse)
-		bits |= CM_IMPULSE;
 
     MSG_WriteByte (buf, bits);
 
@@ -440,8 +472,6 @@ void MSG_WriteDeltaUsercmd (sizebuf_t *buf, usercmd_t *from, usercmd_t *cmd)
 
  	if (bits & CM_BUTTONS)
 	  	MSG_WriteByte (buf, cmd->buttons);
- 	if (bits & CM_IMPULSE)
-	    MSG_WriteByte (buf, cmd->impulse);
 
     MSG_WriteByte (buf, cmd->msec);
 }
@@ -507,24 +537,12 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if (to->number >= 256)
 		bits |= U_NUMBER16;		// number8 is implicit otherwise
 
-	if (to->origin[0] != from->origin[0]) {
-		if ( fabs( to->origin[0]) > SHRT_MAX*(1.0/8.0) )
-			bits |= U_ORIGIN1L;
-		else 
-			bits |= U_ORIGIN1;
-	}
-	if (to->origin[1] != from->origin[1]) {
-		if ( fabs( to->origin[1]) > SHRT_MAX*(1.0/8.0))
-			bits |= U_ORIGIN2L;
-		else 
-			bits |= U_ORIGIN2;
-	}
-	if (to->origin[2] != from->origin[2]) {
-		if ( fabs( to->origin[2]) > SHRT_MAX*(1.0/8.0))
-			bits |= U_ORIGIN3L;
-		else 
-			bits |= U_ORIGIN3;
-	}
+	if ( to->origin[0] != from->origin[0] )
+		bits |= U_ORIGIN1;
+	if ( to->origin[1] != from->origin[1] )
+		bits |= U_ORIGIN2;
+	if ( to->origin[2] != from->origin[2] )
+		bits |= U_ORIGIN3;
 
 	if ( to->angles[0] != from->angles[0] )
 		bits |= U_ANGLE1;		
@@ -590,14 +608,8 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if ( to->sound != from->sound )
 		bits |= U_SOUND;
 
-	if (newentity || (to->renderfx & RF_BEAM)) {
-		if ( fabs( to->origin[0]) > SHRT_MAX*(1.0/8.0) ||
-			fabs( to->origin[1]) > SHRT_MAX*(1.0/8.0) ||
-			fabs( to->origin[2]) > SHRT_MAX*(1.0/8.0) )
-			bits |= U_OLDORIGINL;
-		else
-			bits |= U_OLDORIGIN;
-	}
+	if (newentity || (to->renderfx & (RF_BEAM|RF_PORTALSURFACE)))
+		bits |= U_OLDORIGIN;
 
 	//
 	// write the message
@@ -675,26 +687,12 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	else if (bits & U_RENDERFX16)
 		MSG_WriteShort (msg, to->renderfx);
 
-	if ( (bits & (U_ORIGIN1|U_ORIGIN1L)) == (U_ORIGIN1|U_ORIGIN1L) )
-		Com_Error (ERR_FATAL, "U_ORIGIN1|U_ORIGIN1L");
-	else if (bits & U_ORIGIN1)
-		MSG_WriteShortCoord (msg, to->origin[0]);
-	else if (bits & U_ORIGIN1L)
-		MSG_WriteLongCoord (msg, to->origin[0]);
-
-	if ( (bits & (U_ORIGIN2|U_ORIGIN2L)) == (U_ORIGIN2|U_ORIGIN2L) )
-		Com_Error (ERR_FATAL, "U_ORIGIN2|U_ORIGIN2L");
-	else if (bits & U_ORIGIN2)
-		MSG_WriteShortCoord (msg, to->origin[1]);
-	else if (bits & U_ORIGIN2L)
-		MSG_WriteLongCoord (msg, to->origin[1]);
-
-	if ( (bits & (U_ORIGIN3|U_ORIGIN3L)) == (U_ORIGIN3|U_ORIGIN3L) )
-		Com_Error (ERR_FATAL, "U_ORIGIN3|U_ORIGIN3L");
-	else if (bits & U_ORIGIN3)
-		MSG_WriteShortCoord (msg, to->origin[2]);
-	else if (bits & U_ORIGIN3L)
-		MSG_WriteLongCoord (msg, to->origin[2]);
+	if (bits & U_ORIGIN1)
+		MSG_WriteCoord (msg, to->origin[0]);
+	if (bits & U_ORIGIN2)
+		MSG_WriteCoord (msg, to->origin[1]);
+	if (bits & U_ORIGIN3)
+		MSG_WriteCoord (msg, to->origin[2]);
 
 	if (bits & U_ANGLE1)
 		MSG_WriteAngle(msg, to->angles[0]);
@@ -703,12 +701,8 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if (bits & U_ANGLE3)
 		MSG_WriteAngle(msg, to->angles[2]);
 
-	if ( (bits & (U_OLDORIGIN|U_OLDORIGINL)) == (U_OLDORIGIN|U_OLDORIGINL))
-		Com_Error (ERR_FATAL, "U_OLDORIGIN|U_OLDORIGINL");
-	else if (bits & U_OLDORIGINL)
-		MSG_WriteLongPos (msg, to->old_origin);
-	else if (bits & U_OLDORIGIN)
-		MSG_WriteShortPos (msg, to->old_origin);
+	if (bits & U_OLDORIGIN)
+		MSG_WritePos (msg, to->old_origin);
 
 	if (bits & U_SOUND)
 		MSG_WriteByte (msg, to->sound);
@@ -772,6 +766,23 @@ int MSG_ReadShort (sizebuf_t *msg_read)
 	return c;
 }
 
+int MSG_ReadInt3 (sizebuf_t *msg_read)
+{
+	int	c;
+	
+	if (msg_read->readcount+3 > msg_read->cursize)
+		c = -1;
+	else
+		c = msg_read->data[msg_read->readcount] | 
+			(msg_read->data[msg_read->readcount+1]<<8) | 
+			(msg_read->data[msg_read->readcount+2]<<16) | 
+			((msg_read->data[msg_read->readcount+2] & 0x80) ? ~0xFFFFFF : 0);
+	
+	msg_read->readcount += 3;
+
+	return c;
+}
+
 int MSG_ReadLong (sizebuf_t *msg_read)
 {
 	int	c;
@@ -822,7 +833,7 @@ char *MSG_ReadString (sizebuf_t *msg_read)
 	l = 0;
 	do
 	{
-		c = MSG_ReadChar (msg_read);
+		c = MSG_ReadByte (msg_read);
 		if (c == -1 || c == 0)
 			break;
 		string[l] = c;
@@ -842,7 +853,7 @@ char *MSG_ReadStringLine (sizebuf_t *msg_read)
 	l = 0;
 	do
 	{
-		c = MSG_ReadChar (msg_read);
+		c = MSG_ReadByte (msg_read);
 		if (c == -1 || c == 0 || c == '\n')
 			break;
 		string[l] = c;
@@ -854,41 +865,16 @@ char *MSG_ReadStringLine (sizebuf_t *msg_read)
 	return string;
 }
 
-float MSG_ReadShortCoord (sizebuf_t *msg_read)
+float MSG_ReadCoord (sizebuf_t *msg_read)
 {
-	return MSG_ReadShort(msg_read) * (1.0/8.0);
+	return MSG_ReadInt3( msg_read ) * (1.0/8.0);
 }
 
-void MSG_ReadShortPos (sizebuf_t *msg_read, vec3_t pos)
+void MSG_ReadPos (sizebuf_t *msg_read, vec3_t pos)
 {
-	pos[0] = MSG_ReadShortCoord ( msg_read );
-	pos[1] = MSG_ReadShortCoord ( msg_read );
-	pos[2] = MSG_ReadShortCoord ( msg_read );
-}
-
-
-float MSG_ReadLongCoord (sizebuf_t *msg_read)
-{
-	int	c;
-	
-	if (msg_read->readcount+3 > msg_read->cursize)
-		c = -1;
-	else
-		c = msg_read->data[msg_read->readcount] | 
-			(msg_read->data[msg_read->readcount+1]<<8) | 
-			(msg_read->data[msg_read->readcount+2]<<16) | 
-			((msg_read->data[msg_read->readcount+2] & 0x80) ? ~0xFFFFFF : 0);
-	
-	msg_read->readcount += 3;
-	
-	return c * (1.0/8.0);
-}
-
-void MSG_ReadLongPos (sizebuf_t *msg_read, vec3_t pos)
-{
-	pos[0] = MSG_ReadLongCoord ( msg_read );
-	pos[1] = MSG_ReadLongCoord ( msg_read );
-	pos[2] = MSG_ReadLongCoord ( msg_read );
+	pos[0] = MSG_ReadCoord ( msg_read );
+	pos[1] = MSG_ReadCoord ( msg_read );
+	pos[2] = MSG_ReadCoord ( msg_read );
 }
 
 float MSG_ReadAngle (sizebuf_t *msg_read)
@@ -928,9 +914,6 @@ void MSG_ReadDeltaUsercmd (sizebuf_t *msg_read, usercmd_t *from, usercmd_t *move
 // read buttons
 	if (bits & CM_BUTTONS)
 		move->buttons = MSG_ReadByte (msg_read);
-
-	if (bits & CM_IMPULSE)
-		move->impulse = MSG_ReadByte (msg_read);
 
 // read time to run command
 	move->msec = MSG_ReadByte (msg_read);
@@ -1223,7 +1206,7 @@ void *Z_TagMalloc (int size, int tag)
 	zhead_t	*z;
 	
 	size = size + sizeof(zhead_t);
-	z = Q_malloc(size);
+	z = malloc(size);
 	if (!z)
 		Com_Error (ERR_FATAL, "Z_Malloc: failed on allocation of %i bytes",size);
 	memset (z, 0, size);
@@ -1253,62 +1236,6 @@ void *Z_Malloc (int size)
 
 
 //============================================================================
-
-
-/*
-====================
-COM_BlockSequenceCheckByte
-
-For proxy protecting
-
-// THIS IS MASSIVELY BROKEN!  CHALLENGE MAY BE NEGATIVE
-// DON'T USE THIS FUNCTION!!!!!
-
-====================
-*/
-byte	COM_BlockSequenceCheckByte (byte *base, int length, int sequence, int challenge)
-{
-	Sys_Error("COM_BlockSequenceCheckByte called\n");
-
-#if 0
-	int		checksum;
-	byte	buf[68];
-	byte	*p;
-	float temp;
-	byte c;
-
-	temp = bytedirs[(sequence/3) % NUMVERTEXNORMALS][sequence % 3];
-	temp = LittleFloat(temp);
-	p = ((byte *)&temp);
-
-	if (length > 60)
-		length = 60;
-	memcpy (buf, base, length);
-
-	buf[length] = (sequence & 0xff) ^ p[0];
-	buf[length+1] = p[1];
-	buf[length+2] = ((sequence>>8) & 0xff) ^ p[2];
-	buf[length+3] = p[3];
-
-	temp = bytedirs[((sequence+challenge)/3) % NUMVERTEXNORMALS][(sequence+challenge) % 3];
-	temp = LittleFloat(temp);
-	p = ((byte *)&temp);
-
-	buf[length+4] = (sequence & 0xff) ^ p[3];
-	buf[length+5] = (challenge & 0xff) ^ p[2];
-	buf[length+6] = ((sequence>>8) & 0xff) ^ p[1];
-	buf[length+7] = ((challenge >> 7) & 0xff) ^ p[0];
-
-	length += 8;
-
-	checksum = LittleLong(Com_BlockChecksum (buf, length));
-
-	checksum &= 0xff;
-
-	return checksum;
-#endif
-	return 0;
-}
 
 static byte chktbl[1024] = {
 0x84, 0x47, 0x51, 0xc1, 0x93, 0x22, 0x21, 0x24, 0x2f, 0x66, 0x60, 0x4d, 0xb0, 0x7c, 0xda,
@@ -1392,9 +1319,8 @@ byte	COM_BlockSequenceCRCByte (byte *base, int length, int sequence)
 	byte chkb[60 + 4];
 	unsigned short crc;
 
-
 	if (sequence < 0)
-		Sys_Error("sequence < 0, this shouldn't happen\n");
+		Sys_Error("sequence < 0, this shouldn't happen");
 
 	p = chktbl + (sequence % (sizeof(chktbl) - 4));
 
@@ -1447,6 +1373,37 @@ void Com_Error_f (void)
 	Com_Error (ERR_FATAL, "%s", Cmd_Argv(1));
 }
 
+/*
+=================
+Q_malloc
+=================
+*/
+void *Q_malloc (int cnt)
+{
+	void *buf = (void *)malloc (cnt);
+
+	if (!buf) {
+		Com_Printf ("Q_malloc: failed on allocation of %i bytes.\n", cnt);
+		return NULL;
+	}
+
+	memset (buf, 0, cnt);
+	return buf;
+}
+
+/*
+=================
+Q_free
+=================
+*/
+void Q_free (void *buf)
+{
+	if (!buf) {
+		return;
+	}
+
+	free (buf);
+}
 
 /*
 =================
@@ -1484,7 +1441,7 @@ void Qcommon_Init (int argc, char **argv)
 	FS_InitFilesystem ();
 
 	Cbuf_AddText ("exec default.cfg\n");
-	Cbuf_AddText ("exec config.cfg\n");
+	Cbuf_AddText ("exec qfconfig.cfg\n");
 
 	Cbuf_AddEarlyCommands (true);
 	Cbuf_Execute ();
@@ -1501,7 +1458,7 @@ void Qcommon_Init (int argc, char **argv)
 	timescale = Cvar_Get ("timescale", "1", 0);
 	fixedtime = Cvar_Get ("fixedtime", "0", 0);
 	logfile_active = Cvar_Get ("logfile", "0", 0);
-	showtrace = Cvar_Get ("showtrace", "0", 0);
+	com_showtrace = Cvar_Get ("com_showtrace", "0", 0);
 #ifdef DEDICATED_ONLY
 	dedicated = Cvar_Get ("dedicated", "1", CVAR_NOSET);
 #else
@@ -1525,6 +1482,8 @@ void Qcommon_Init (int argc, char **argv)
 
 	Sys_PrintCPUInfo ();
 
+	SCR_EndLoadingPlaque ();
+
 	// add + commands from command line
 	if (!Cbuf_AddLateCommands ())
 	{	// if the user didn't give any commands, run default action
@@ -1540,7 +1499,9 @@ void Qcommon_Init (int argc, char **argv)
 		SCR_EndLoadingPlaque ();
 	}
 
-	Com_Printf ("====== Quake2 Initialized ======\n\n");	
+	Com_Printf ("====== %s Initialized ======\n\n", APPLICATION);	
+
+	com_initialized = true;
 }
 
 /*
@@ -1589,7 +1550,7 @@ void Qcommon_Frame (int msec)
 			msec = 1;
 	}
 
-	if (showtrace->value)
+	if (com_showtrace->value)
 	{
 		extern	int c_traces, c_brush_traces;
 		extern	int	c_pointcontents;
@@ -1600,13 +1561,16 @@ void Qcommon_Frame (int msec)
 		c_pointcontents = 0;
 	}
 
-	do
-	{
-		s = Sys_ConsoleInput ();
-		if (s)
-			Cbuf_AddText (va("%s\n",s));
-	} while (s);
-	Cbuf_Execute ();
+	if ( dedicated->value ) {
+		do
+		{
+			s = Sys_ConsoleInput ();
+			if (s)
+				Cbuf_AddText (va("%s\n",s));
+		} while (s);
+
+		Cbuf_Execute ();
+	}
 
 	if (host_speeds->value)
 		time_before = Sys_Milliseconds ();

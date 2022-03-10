@@ -135,7 +135,7 @@ extern	vec3_t	listener_up;
 extern	dma_t	dma;
 extern	playsound_t	s_pendingplays;
 
-#define	MAX_RAW_SAMPLES	8192
+#define	MAX_RAW_SAMPLES	16384
 extern	portable_samplepair_t	s_rawsamples[MAX_RAW_SAMPLES];
 
 extern cvar_t	*s_volume;
@@ -145,7 +145,7 @@ extern cvar_t	*s_khz;
 extern cvar_t	*s_show;
 extern cvar_t	*s_mixahead;
 extern cvar_t	*s_testsound;
-extern cvar_t	*s_primary;
+extern cvar_t	*s_swapstereo;
 
 wavinfo_t GetWavinfo (char *name, byte *wav, int wavlength);
 

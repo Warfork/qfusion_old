@@ -21,7 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "client.h"
 
-cvar_t	*freelook;
+cvar_t	*cl_freelook;
 
 cvar_t	*adr0;
 cvar_t	*adr1;
@@ -44,7 +44,6 @@ cvar_t	*cl_autoskins;
 cvar_t	*cl_footsteps;
 cvar_t	*cl_timeout;
 cvar_t	*cl_predict;
-//cvar_t	*cl_minfps;
 cvar_t	*cl_maxfps;
 cvar_t	*cl_gun;
 
@@ -116,6 +115,12 @@ void CL_WriteDemoMessage (void)
 	// the first eight bytes are just packet sequencing stuff
 	len = net_message.cursize-8;
 	swlen = LittleLong(len);
+
+	// skip bad packets
+	if ( !swlen ) {
+		return;
+	}
+
 	fwrite (&swlen, 4, 1, cls.demofile);
 	fwrite (net_message.data+8,	len, 1, cls.demofile);
 }
@@ -187,7 +192,8 @@ void CL_Record_f (void)
 	//
 	// open the demo file
 	//
-	Com_sprintf (name, sizeof(name), "%s/demos/%s.dm2", FS_Gamedir(), Cmd_Argv(1));
+	Com_sprintf (name, sizeof(name)-4, "%s/demos/%s", FS_Gamedir(), Cmd_Argv(1));
+	COM_DefaultExtension (name, ".dqf");
 
 	Com_Printf ("recording to %s.\n", name);
 	FS_CreatePath (name);
@@ -257,8 +263,8 @@ void CL_Record_f (void)
 		MSG_WriteDeltaEntity (&nullstate, &cl_entities[i].baseline, &buf, true, true);
 	}
 
-	MSG_WriteByte (&buf, svc_stufftext);
-	MSG_WriteString (&buf, "precache\n");
+	MSG_WriteByte (&buf, svc_stringcmd);
+	MSG_WriteString (&buf, "precache");
 
 	// write it to the demo file
 
@@ -366,7 +372,7 @@ CL_Pause_f
 void CL_Pause_f (void)
 {
 	// never pause in multiplayer
-	if (Cvar_VariableValue ("maxclients") > 1 || !Com_ServerState ())
+	if (Cvar_VariableValue ("sv_maxclients") > 1 || !Com_ServerState ())
 	{
 		Cvar_SetValue ("paused", 0);
 		return;
@@ -452,8 +458,8 @@ void CL_CheckForResend (void)
 	// then connect
 	if (cls.state == ca_disconnected && Com_ServerState() )
 	{
-		cls.state = ca_connecting;
-		strncpy (cls.servername, "localhost", sizeof(cls.servername)-1);
+		CL_SetClientState (ca_connecting);
+		Q_strncpyz (cls.servername, "localhost", sizeof(cls.servername));
 		// we don't need a challenge on the localhost
 		CL_SendConnectPacket ();
 		return;
@@ -469,7 +475,7 @@ void CL_CheckForResend (void)
 	if (!NET_StringToAdr (cls.servername, &adr))
 	{
 		Com_Printf ("Bad server address\n");
-		cls.state = ca_disconnected;
+		CL_SetClientState (ca_disconnected);
 		return;
 	}
 	if (adr.port == 0)
@@ -514,8 +520,8 @@ void CL_Connect_f (void)
 
 	CL_Disconnect ();
 
-	cls.state = ca_connecting;
-	strncpy (cls.servername, server, sizeof(cls.servername)-1);
+	CL_SetClientState (ca_connecting);
+	Q_strncpyz (cls.servername, server, sizeof(cls.servername));
 	cls.connect_time = -99999;	// CL_CheckForResend() will fire immediately
 }
 
@@ -628,9 +634,6 @@ void CL_Disconnect (void)
 	}
 
 	VectorClear (cl.refdef.blend);
-	R_SetPalette (NULL);
-
-	UI_ForceMenuOff ();
 
 	cls.connect_time = 0;
 
@@ -650,11 +653,11 @@ void CL_Disconnect (void)
 
 	// stop download
 	if (cls.download) {
-		fclose(cls.download);
+		fclose (cls.download);
 		cls.download = NULL;
 	}
 
-	cls.state = ca_disconnected;
+	CL_SetClientState (ca_disconnected);
 }
 
 void CL_Disconnect_f (void)
@@ -731,7 +734,8 @@ void CL_Changing_f (void)
 		return;
 
 	SCR_BeginLoadingPlaque ();
-	cls.state = ca_connected;	// not active anymore, but not disconnected
+	CL_SetClientState (ca_connected);	// not active anymore, but not disconnected
+	cl.configstrings[CS_MAPNAME][0] = 0;
 	Com_Printf ("\nChanging map...\n");
 }
 
@@ -753,7 +757,8 @@ void CL_Reconnect_f (void)
 	S_StopAllSounds ();
 	if (cls.state == ca_connected) {
 		Com_Printf ("reconnecting...\n");
-		cls.state = ca_connected;
+		CL_SetClientState (ca_connected);
+		cl.configstrings[CS_MAPNAME][0] = 0;
 		MSG_WriteChar (&cls.netchan.message, clc_stringcmd);
 		MSG_WriteString (&cls.netchan.message, "new");		
 		return;
@@ -766,9 +771,20 @@ void CL_Reconnect_f (void)
 		} else
 			cls.connect_time = -99999; // fire immediately
 
-		cls.state = ca_connecting;
+		CL_SetClientState (ca_connecting);
 		Com_Printf ("reconnecting...\n");
 	}
+}
+
+/*
+=================
+CL_PlayBackgroundMusic
+==================
+*/
+void CL_PlayBackgroundMusic ( void )
+{
+	if ( cl.music_precache )
+		S_StartSound ( NULL, cl.playernum+1, 0, cl.music_precache, 1, 1, 0 );
 }
 
 /*
@@ -778,12 +794,10 @@ CL_Spawn
 Called at first spawn on the server
 =================
 */
-
 void CL_Spawn ( void )
 {
 	// start playing background music
-	if ( cl.configstrings[CS_AUDIOTRACK][0] )
-		S_StartLocalSound ( cl.configstrings[CS_AUDIOTRACK] );
+	CL_PlayBackgroundMusic ();
 }
 
 /*
@@ -916,7 +930,8 @@ void CL_ConnectionlessPacket (void)
 		Netchan_Setup (NS_CLIENT, &cls.netchan, net_from, cls.quakePort);
 		MSG_WriteChar (&cls.netchan.message, clc_stringcmd);
 		MSG_WriteString (&cls.netchan.message, "new");	
-		cls.state = ca_connected;
+		CL_SetClientState (ca_connected);
+		cl.configstrings[CS_MAPNAME][0] = 0;
 		return;
 	}
 
@@ -1071,7 +1086,7 @@ void CL_FixUpGender(void)
 			return;
 		}
 
-		strncpy(sk, skin->string, sizeof(sk) - 1);
+		Q_strncpyz (sk, skin->string, sizeof(sk));
 		if ((p = strchr(sk, '/')) != NULL)
 			*p = 0;
 		if (Q_stricmp(sk, "male") == 0 || Q_stricmp(sk, "cyborg") == 0)
@@ -1108,14 +1123,12 @@ void CL_Snd_Restart_f (void)
 	S_Shutdown ();
 	S_Init ();
 	CL_RegisterSounds ();
+	CL_PlayBackgroundMusic ();
 }
 
 int precache_check; // for autodownload of precache items
 int precache_spawncount;
 int precache_tex;
-int precache_model_skin;
-
-byte *precache_model; // used for skin checking in alias models
 
 #define PLAYER_MULT 5
 
@@ -1127,7 +1140,6 @@ void CL_RequestNextDownload (void)
 {
 	unsigned	map_checksum;		// for detecting cheater maps
 	char fn[MAX_OSPATH];
-	dmdl_t *pheader;
 
 	if (cls.state != ca_connected)
 		return;
@@ -1151,60 +1163,15 @@ void CL_RequestNextDownload (void)
 					precache_check++;
 					continue;
 				}
-				if (precache_model_skin == 0) {
-					if (!CL_CheckOrDownloadFile(cl.configstrings[precache_check])) {
-						precache_model_skin = 1;
-						return; // started a download
-					}
-					precache_model_skin = 1;
-				}
 
-				// checking for skins in the model
-				if (!precache_model) {
-
-					FS_LoadFile (cl.configstrings[precache_check], (void **)&precache_model);
-					if (!precache_model) {
-						precache_model_skin = 0;
-						precache_check++;
-						continue; // couldn't load it
-					}
-					if (LittleLong(*(unsigned *)precache_model) != IDALIASHEADER) {
-						// not an alias model
-						FS_FreeFile(precache_model);
-						precache_model = 0;
-						precache_model_skin = 0;
-						precache_check++;
-						continue;
-					}
-					pheader = (dmdl_t *)precache_model;
-					if (LittleLong (pheader->version) != ALIAS_VERSION) {
-						precache_check++;
-						precache_model_skin = 0;
-						continue; // couldn't load it
-					}
+				if (!CL_CheckOrDownloadFile(cl.configstrings[precache_check++])) {
+					return; // started a download
 				}
-
-				pheader = (dmdl_t *)precache_model;
-
-				while (precache_model_skin - 1 < LittleLong(pheader->num_skins)) {
-					if (!CL_CheckOrDownloadFile((char *)precache_model +
-						LittleLong(pheader->ofs_skins) + 
-						(precache_model_skin - 1)*MAX_SKINNAME)) {
-						precache_model_skin++;
-						return; // started a download
-					}
-					precache_model_skin++;
-				}
-				if (precache_model) { 
-					FS_FreeFile(precache_model);
-					precache_model = 0;
-				}
-				precache_model_skin = 0;
-				precache_check++;
 			}
 		}
 		precache_check = CS_SOUNDS;
 	}
+
 	if (precache_check >= CS_SOUNDS && precache_check < CS_SOUNDS+MAX_SOUNDS) { 
 		if (allow_download_sounds->value) {
 			if (precache_check == CS_SOUNDS)
@@ -1216,11 +1183,7 @@ void CL_RequestNextDownload (void)
 					continue;
 				}
 
-				if (!strncmp (cl.configstrings[precache_check], "sound/", 6))
-					Com_sprintf(fn, sizeof(fn), "%s", cl.configstrings[precache_check++]);
-				else
-					Com_sprintf(fn, sizeof(fn), "sound/%s", cl.configstrings[precache_check++]);
-
+				Com_sprintf(fn, sizeof(fn), "%s", cl.configstrings[precache_check++]);
 				if (!CL_CheckOrDownloadFile(fn))
 					return; // started a download
 			}
@@ -1316,21 +1279,10 @@ void CL_RequestNextDownload (void)
 	}
 
 	if (precache_check == ENV_CNT) {
-		strcpy ( cl.mapname, cl.configstrings[CS_MODELS+1] + 5 );	// skip "maps/"
-		cl.mapname[strlen(cl.mapname)-4] = 0;		// cut off ".bsp"
-
-		Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "levelshots/%s.jpg", cl.mapname );
-
-		if ( !FS_FileExists ( cl.levelshot ) ) 
-			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "levelshots/%s.tga", cl.mapname );
-
-		if ( !FS_FileExists ( cl.levelshot ) ) 
-			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "menu/art/unknownmap" );
-
 		CM_LoadMap (cl.configstrings[CS_MODELS+1], true, &map_checksum);
 
 		if (map_checksum != atoi(cl.configstrings[CS_MAPCHECKSUM])) {
-			Com_Error (ERR_DROP, "Local map version differs from server: %i != '%s'\n",
+			Com_Error (ERR_DROP, "Local map version differs from server: %i != '%s'",
 				map_checksum, cl.configstrings[CS_MAPCHECKSUM]);
 			return;
 		}
@@ -1349,8 +1301,11 @@ void CL_RequestNextDownload (void)
 	}
 
 //ZOID
+	CL_LoadingString ("sounds");
 	CL_RegisterSounds ();
 	CL_PrepRefresh ();
+
+	CL_LoadingString ("-");		// awaiting snapshot...
 
 	MSG_WriteByte (&cls.netchan.message, clc_stringcmd);
 	MSG_WriteString (&cls.netchan.message, va("begin %i\n", precache_spawncount) );
@@ -1366,23 +1321,103 @@ before allowing the client into the server
 */
 void CL_Precache_f (void)
 {
-	//Yet another hack to let old demos work
-	//the old precache sequence
-	if (Cmd_Argc() < 2) {
-		unsigned	map_checksum;		// for detecting cheater maps
-
+	if (Cmd_Argc() < 2)
+	{	// demo playback
+		unsigned	map_checksum;
 		CM_LoadMap (cl.configstrings[CS_MODELS+1], true, &map_checksum);
+		CL_LoadingString ("sounds");
 		CL_RegisterSounds ();
 		CL_PrepRefresh ();
+		CL_LoadingString ("-");		// awaiting snapshot...
 		return;
 	}
 
 	precache_check = CS_MODELS;
 	precache_spawncount = atoi(Cmd_Argv(1));
-	precache_model = 0;
-	precache_model_skin = 0;
 
 	CL_RequestNextDownload();
+}
+
+/*
+===============
+CL_WriteConfiguration
+
+Writes key bindings and archived cvars to a config file
+===============
+*/
+void CL_WriteConfiguration (char *name)
+{
+	FILE	*f;
+	char	path[MAX_QPATH];
+
+	Com_sprintf (path, sizeof(path),"%s/%s", FS_Gamedir(), name);
+	f = fopen (path, "wt");
+	if (!f)
+	{
+		Com_Printf ("Couldn't write %s.\n", name);
+		return;
+	}
+
+	fprintf (f, "// generated by quake, do not modify\n");
+
+	fprintf (f, "\n// key bindings\n");
+	Key_WriteBindings (f);
+
+	fprintf (f, "\n// variables\n");
+	Cvar_WriteVariables (f);
+
+	fprintf (f, "\n// aliases\n");
+	Cmd_WriteAliases (f);
+
+	fclose (f);
+}
+
+
+/*
+===============
+CL_WriteConfig_f
+===============
+*/
+void CL_WriteConfig_f (void)
+{
+	char	name[MAX_QPATH];
+
+	if (Cmd_Argc() != 2) {
+		Com_Printf ("usage: writeconfig <filename>\n");
+		return;
+	}
+
+	Q_strncpyz (name, Cmd_Argv(1), sizeof(name)-4);
+	COM_DefaultExtension (name, ".cfg");
+
+	Com_Printf ("Writing %s\n", name);
+
+	CL_WriteConfiguration (name);
+}
+
+
+/*
+=================
+CL_SetClientState
+=================
+*/
+void CL_SetClientState (int state)
+{
+	cls.state = state;
+	Com_SetClientState (state);
+
+	if ( state == ca_disconnected ) { 
+		UI_ForceMenuOff ();
+		UI_Menu_Main_f ();
+		cls.key_dest = key_menu;
+	} else if ( state == ca_connecting || state == ca_active ) {
+		cls.key_dest = key_game;
+		scr_con_current = 0;
+		Con_ClearNotify ();
+	} else if ( state == ca_connected ) {
+		UI_ForceMenuOff ();
+		Cvar_FixCheatVars ();
+	}
 }
 
 
@@ -1393,7 +1428,7 @@ CL_InitLocal
 */
 void CL_InitLocal (void)
 {
-	cls.state = ca_disconnected;
+	CL_SetClientState (ca_disconnected);
 	cls.realtime = Sys_Milliseconds ();
 
 	CL_InitInput ();
@@ -1423,7 +1458,6 @@ void CL_InitLocal (void)
 	cl_noskins = Cvar_Get ("cl_noskins", "0", 0);
 	cl_autoskins = Cvar_Get ("cl_autoskins", "0", 0);
 	cl_predict = Cvar_Get ("cl_predict", "1", 0);
-//	cl_minfps = Cvar_Get ("cl_minfps", "5", 0);
 	cl_maxfps = Cvar_Get ("cl_maxfps", "90", 0);
 
 	cl_upspeed = Cvar_Get ("cl_upspeed", "200", 0);
@@ -1433,8 +1467,8 @@ void CL_InitLocal (void)
 	cl_pitchspeed = Cvar_Get ("cl_pitchspeed", "150", 0);
 	cl_anglespeedkey = Cvar_Get ("cl_anglespeedkey", "1.5", 0);
 
-	cl_run = Cvar_Get ("cl_run", "0", CVAR_ARCHIVE);
-	freelook = Cvar_Get( "freelook", "0", CVAR_ARCHIVE );
+	cl_run = Cvar_Get ("cl_run", "1", CVAR_ARCHIVE);
+	cl_freelook = Cvar_Get( "cl_freelook", "1", CVAR_ARCHIVE );
 	lookspring = Cvar_Get ("lookspring", "0", CVAR_ARCHIVE);
 	lookstrafe = Cvar_Get ("lookstrafe", "0", CVAR_ARCHIVE);
 	sensitivity = Cvar_Get ("sensitivity", "3", CVAR_ARCHIVE);
@@ -1446,7 +1480,7 @@ void CL_InitLocal (void)
 
 	cl_shownet = Cvar_Get ("cl_shownet", "0", 0);
 	cl_showmiss = Cvar_Get ("cl_showmiss", "0", 0);
-	cl_showclamp = Cvar_Get ("showclamp", "0", 0);
+	cl_showclamp = Cvar_Get ("cl_showclamp", "0", 0);
 	cl_timeout = Cvar_Get ("cl_timeout", "120", 0);
 	cl_paused = Cvar_Get ("paused", "0", 0);
 	cl_timedemo = Cvar_Get ("timedemo", "0", 0);
@@ -1483,7 +1517,6 @@ void CL_InitLocal (void)
 	Cmd_AddCommand ("userinfo", CL_Userinfo_f);
 	Cmd_AddCommand ("snd_restart", CL_Snd_Restart_f);
 
-	Cmd_AddCommand ("changing", CL_Changing_f);
 	Cmd_AddCommand ("disconnect", CL_Disconnect_f);
 	Cmd_AddCommand ("record", CL_Record_f);
 	Cmd_AddCommand ("stop", CL_Stop_f);
@@ -1495,13 +1528,11 @@ void CL_InitLocal (void)
 
 	Cmd_AddCommand ("rcon", CL_Rcon_f);
 
-// 	Cmd_AddCommand ("packet", CL_Packet_f); // this is dangerous to leave in
-
 	Cmd_AddCommand ("setenv", CL_Setenv_f );
 
-	Cmd_AddCommand ("precache", CL_Precache_f);
-
 	Cmd_AddCommand ("download", CL_Download_f);
+
+	Cmd_AddCommand ("writeconfig", CL_WriteConfig_f);
 
 	//
 	// forward to server commands
@@ -1513,6 +1544,7 @@ void CL_InitLocal (void)
 	Cmd_AddCommand ("inven", NULL);
 	Cmd_AddCommand ("kill", NULL);
 	Cmd_AddCommand ("use", NULL);
+	Cmd_AddCommand ("weapon", NULL);
 	Cmd_AddCommand ("drop", NULL);
 	Cmd_AddCommand ("say", NULL);
 	Cmd_AddCommand ("say_team", NULL);
@@ -1528,44 +1560,6 @@ void CL_InitLocal (void)
 	Cmd_AddCommand ("invdrop", NULL);
 	Cmd_AddCommand ("weapnext", NULL);
 	Cmd_AddCommand ("weapprev", NULL);
-}
-
-
-
-/*
-===============
-CL_WriteConfiguration
-
-Writes key bindings and archived cvars to config.cfg
-===============
-*/
-void CL_WriteConfiguration (void)
-{
-	FILE	*f;
-	char	path[MAX_QPATH];
-
-	if (cls.state == ca_uninitialized)
-		return;
-
-	Com_sprintf (path, sizeof(path),"%s/config.cfg",FS_Gamedir());
-	f = fopen (path, "wt");
-	if (!f)
-	{
-		Com_Printf ("Couldn't write config.cfg.\n");
-		return;
-	}
-
-	fprintf (f, "// generated by quake, do not modify\n");
-
-	fprintf (f, "\n");
-	fprintf (f, "// bindings\n");
-	Key_WriteBindings (f);
-
-	fprintf (f, "\n");
-	fprintf (f, "// variables\n");
-	Cvar_WriteVariables (f);
-
-	fclose (f);
 }
 
 
@@ -1586,15 +1580,8 @@ typedef struct
 cheatvar_t	cheatvars[] = {
 	{"timescale", "1"},
 	{"timedemo", "0"},
-	{"r_drawworld", "1"},
-	{"cl_testlights", "0"},
-	{"r_fullbright", "0"},
-	{"r_drawflat", "0"},
 	{"paused", "0"},
 	{"fixedtime", "0"},
-	{"sw_draworder", "0"},
-	{"gl_lightmap", "0"},
-	{"gl_saturatelighting", "0"},
 	{NULL, NULL}
 };
 
@@ -1680,7 +1667,7 @@ void CL_Frame (int msec)
 	{
 		if (cls.state == ca_connected && extratime < 100)
 			return;			// don't flood packets out while connecting
-		if (extratime < 1000/cl_maxfps->value)
+		if (cl_maxfps->value && extratime < 1000/cl_maxfps->value)
 			return;			// framerate is too high
 	}
 
@@ -1693,13 +1680,9 @@ void CL_Frame (int msec)
 	cls.realtime = curtime;
 
 	extratime = 0;
-#if 0
-	if (cls.frametime > (1.0 / cl_minfps->value))
-		cls.frametime = (1.0 / cl_minfps->value);
-#else
+
 	if (cls.frametime > (1.0 / 5))
 		cls.frametime = (1.0 / 5);
-#endif
 
 	// if in the debugger last frame, don't timeout
 	if (msec > 5000)
@@ -1788,11 +1771,12 @@ void CL_Init (void)
 	net_message.maxsize = sizeof(net_message_buffer);
 
 	UI_Init ();	
+
+	RoQ_Init ();
 	
 	SCR_Init ();
 	cls.disable_screen = true;	// don't draw yet
 
-// Vic
 	CL_InitLocal ();
 	IN_Init ();
 
@@ -1819,11 +1803,18 @@ void CL_Shutdown(void)
 		printf ("recursive shutdown\n");
 		return;
 	}
+
 	isdown = true;
 
-	CL_WriteConfiguration (); 
+	if ( cl.statusbar ) {
+		Z_Free ( cl.statusbar );
+	}
+	if ( cls.state != ca_uninitialized ) {
+		CL_WriteConfiguration ("qfconfig.cfg");
+	}
 
-	S_Shutdown();
+	UI_Shutdown ();
+	S_Shutdown ();
 	IN_Shutdown ();
 	VID_Shutdown();
 }

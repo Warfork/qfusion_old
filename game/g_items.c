@@ -833,13 +833,18 @@ edict_t *Drop_Item (edict_t *ent, gitem_t *item)
 	dropped->item = item;
 	dropped->spawnflags = DROPPED_ITEM;
 	dropped->s.effects = item->world_model_flags;
-	dropped->s.renderfx = RF_GLOW;
 	VectorSet (dropped->mins, -15, -15, -15);
 	VectorSet (dropped->maxs, 15, 15, 15);
 	dropped->solid = SOLID_TRIGGER;
 	dropped->movetype = MOVETYPE_TOSS;  
 	dropped->touch = drop_temp_touch;
 	dropped->owner = ent;
+
+	if ( (dropped->item->flags & ~IT_STAY_COOP) == IT_WEAPON ) {
+		dropped->s.renderfx = RF_SCALEHACK;
+	} else {
+		dropped->s.renderfx = 0;
+	}
 
 	dropped->s.modelindex = gi.modelindex (dropped->item->world_model[0]);
 	dropped->s.modelindex2 = gi.modelindex (dropped->item->world_model[1]);
@@ -921,6 +926,12 @@ void Finish_SpawningItem (edict_t *ent)
 			ent->s.modelindex4 = gi.modelindex (ent->item->world_model[3]);
 	}
 
+	if ( (ent->item->flags & ~IT_STAY_COOP) == IT_WEAPON ) {
+		ent->s.renderfx = RF_SCALEHACK;
+	} else {
+		ent->s.renderfx = 0;
+	}
+
 	ent->solid = SOLID_TRIGGER;
 	ent->movetype = MOVETYPE_TOSS;  
 	ent->touch = Touch_Item;
@@ -1000,7 +1011,7 @@ void PrecacheItem (gitem_t *it)
 			PrecacheItem (ammo);
 	}
 
-	// parse the space seperated precache string for other items
+	// parse the space separated precache string for other items
 	s = it->precaches;
 	if (!s || !s[0])
 		return;
@@ -1023,6 +1034,8 @@ void PrecacheItem (gitem_t *it)
 		if (!strcmp(data+len-3, "md2"))
 			gi.modelindex (data);
 		else if (!strcmp(data+len-3, "md3"))
+			gi.modelindex (data);
+		else if (!strcmp(data+len-3, "dpm"))
 			gi.modelindex (data);
 		else if (!strcmp(data+len-3, "sp2"))
 			gi.modelindex (data);
@@ -1104,9 +1117,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 
 //ZOID
 //Don't spawn the flags unless enabled
-	if (!ctf->value &&
-		(strcmp(ent->classname, "item_flag_team1") == 0 ||
-		strcmp(ent->classname, "item_flag_team2") == 0)) {
+	if ( !ctf->value && (item->flags & IT_FLAG) ) {
 		G_FreeEdict(ent);
 		return;
 	}
@@ -1119,8 +1130,7 @@ void SpawnItem (edict_t *ent, gitem_t *item)
 
 //ZOID
 //flags are server animated and have special handling
-	if (strcmp(ent->classname, "item_flag_team1") == 0 ||
-		strcmp(ent->classname, "item_flag_team2") == 0) {
+	if ( item->flags & IT_FLAG ) {
 		ent->think = CTFFlagSetup;
 	}
 //ZOID
@@ -1158,7 +1168,7 @@ gitem_t	itemlist[] =
 		NULL,
 		NULL,
 		NULL,
-		"sound/misc/ar1_pkup.wav",
+		"sound/misc/ar3_pkup.wav",
 		{ "models/powerups/armor/armor_red.md3", 0, 0, 0 }, 
 		EF_ROTATE|EF_BOB,
 		NULL,
@@ -1181,7 +1191,7 @@ gitem_t	itemlist[] =
 		NULL,
 		NULL,
 		NULL,
-		"sound/misc/ar1_pkup.wav",
+		"sound/misc/ar2_pkup.wav",
 		{ "models/powerups/armor/armor_yel.md3", 0, 0, 0 }, 
 		EF_ROTATE|EF_BOB,
 		NULL,
@@ -1227,7 +1237,7 @@ gitem_t	itemlist[] =
 		NULL,
 		NULL,
 		NULL,
-		"sound/misc/ar2_pkup.wav",
+		"sound/misc/ar1_pkup.wav",
 		{ "models/powerups/armor/shard.md3", 0, 0, 0 }, 
 		EF_ROTATE|EF_BOB,
 		NULL,
@@ -1313,7 +1323,7 @@ always owned, never in the world
 		IT_WEAPON,
 		WEAP_GRAPPLE,
 		NULL,
-		0,
+		WP_GRAPPLE,
 /* precache */ "sound/weapons/grapple/grfire.wav sound/weapons/grapple/grpull.wav sound/weapons/grapple/grhang.wav sound/weapons/grapple/grreset.wav sound/weapons/grapple/grhit.wav"
 	},
 
@@ -1336,8 +1346,31 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_BLASTER,
 		NULL,
-		0,
+		WP_BLASTER,
 /* precache */ "sound/weapons/blastf1a.wav sound/misc/lasfly.wav"
+	},
+
+/*QUAKED weapon_shotgun_q2 (.3 .3 1) (-16 -16 -16) (16 16 16)
+*/
+	{
+		"weapon_shotgun_q2", 
+		Pickup_Weapon,
+		Use_Weapon,
+		Drop_Weapon,
+		Weapon_Shotgun,
+		"sound/misc/w_pkup.wav",
+		{ "models/weapons/g_shotg/tris.md2", 0, 0, 0 }, 
+		EF_ROTATE|EF_BOB,
+		"models/weapons/v_shotg/tris.md2",
+/* icon */		"pics/w_shotgun",
+/* pickup */	"Shotgun",
+		1,
+		"Shells",
+		IT_WEAPON|IT_STAY_COOP,
+		WEAP_SHOTGUN,
+		NULL,
+		WP_SHOTGUN,
+/* precache */ "sound/weapons/shotgf1b.wav sound/weapons/shotgr1b.wav"
 	},
 
 /*QUAKED weapon_shotgun (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1347,20 +1380,20 @@ always owned, never in the world
 		Pickup_Weapon,
 		Use_Weapon,
 		Drop_Weapon,
-		Weapon_Shotgun,
+		Weapon_SuperShotgun,
 		"sound/misc/w_pkup.wav",
 		{ "models/weapons2/shotgun/shotgun.md3", 0, 0, 0 }, 
 		EF_ROTATE|EF_BOB,
-		"models/weapons/v_shotg/tris.md2",
+		"models/weapons/v_shotg2/tris.md2",
 /* icon */		"icons/iconw_shotgun",
-/* pickup */	"Shotgun",
-		1,
+/* pickup */	"Super Shotgun",
+		2,
 		"Shells",
 		IT_WEAPON|IT_STAY_COOP,
-		WEAP_SHOTGUN,
+		WEAP_SUPERSHOTGUN,
 		NULL,
-		0,
-/* precache */ "sound/weapons/shotgf1b.wav sound/weapons/shotgr1b.wav"
+		WP_SUPERSHOTGUN,
+/* precache */ "sound/weapons/sshotf1b.wav"
 	},
 
 /*QUAKED weapon_supershotgun (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1382,7 +1415,7 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_SUPERSHOTGUN,
 		NULL,
-		0,
+		WP_SUPERSHOTGUN,
 /* precache */ "sound/weapons/sshotf1b.wav"
 	},
 
@@ -1405,8 +1438,8 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_MACHINEGUN,
 		NULL,
-		0,
-/* precache */ "sound/weapons/machgf1b.wav sound/weapons/machgf2b.wav sound/weapons/machgf3b.wav sound/weapons/machgf4b.wav weapons/machgf5b.wav"
+		WP_MACHINEGUN,
+/* precache */ "sound/weapons/machinegun/machgf1b.wav sound/weapons/machinegun/machgf2b.wav sound/weapons/machinegun/machgf3b.wav sound/weapons/machinegun/machgf4b.wav"
 	},
 
 /*QUAKED weapon_chaingun (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1418,17 +1451,17 @@ always owned, never in the world
 		Drop_Weapon,
 		Weapon_Chaingun,
 		"sound/misc/w_pkup.wav",
-		{ "models/weapons/g_chain/tris.md2", 0, 0, 0 }, 
+		{ "models/weapons/vulcan/vulcan.md3", 0, 0, 0 }, 
 		EF_ROTATE|EF_BOB,
 		"models/weapons/v_chain/tris.md2",
-/* icon */		"pics/w_chaingun",
+/* icon */		"icons/iconw_chaingun",
 /* pickup */	"Chaingun",
 		1,
 		"Bullets",
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_CHAINGUN,
 		NULL,
-		0,
+		WP_CHAINGUN,
 /* precache */ "sound/weapons/chngnu1a.wav sound/weapons/chngnl1a.wav sound/weapons/machgf3b.wav sound/weapons/chngnd1a.wav"
 	},
 
@@ -1452,7 +1485,7 @@ always owned, never in the world
 		WEAP_GRENADES,
 		NULL,
 		AMMO_GRENADES,
-/* precache */ "weapons/hgrent1a.wav weapons/hgrena1b.wav weapons/hgrenc1b.wav weapons/hgrenb1a.wav weapons/hgrenb2a.wav "
+/* precache */ "sound/weapons/hgrent1a.wav sound/weapons/hgrena1b.wav sound/weapons/hgrenc1b.wav sound/weapons/hgrenb1a.wav sound/weapons/hgrenb2a.wav "
 	},
 
 /*QUAKED weapon_grenadelauncher (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1474,8 +1507,8 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_GRENADELAUNCHER,
 		NULL,
-		0,
-/* precache */ "models/objects/grenade/tris.md2 sound/weapons/grenade/grenlf1a.wav"
+		WP_GRENADELAUNCHER,
+/* precache */ "models/ammo/grenade1.md3 sound/weapons/grenade/grenlf1a.wav"
 	},
 
 /*QUAKED weapon_rocketlauncher (.3 .3 1) (-16 -16 -16) (16 16 16)
@@ -1497,30 +1530,30 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_ROCKETLAUNCHER,
 		NULL,
-		0,
-/* precache */ "models/objects/rocket/tris.md2 sound/weapons/rocket/rockfly.wav sound/weapons/rocket/rocklx1a.wav sound/weapons/rocket/rocklf1a.wav models/objects/debris2/tris.md2"
+		WP_ROCKETLAUNCHER,
+/* precache */ "models/ammo/rocket/rocket.md3 sound/weapons/rocket/rockfly.wav sound/weapons/rocket/rocklx1a.wav sound/weapons/rocket/rocklf1a.wav models/objects/debris2/tris.md2"
 	},
 
-/*QUAKED weapon_hyperblaster (.3 .3 1) (-16 -16 -16) (16 16 16)
+/*QUAKED weapon_plasmagun (.3 .3 1) (-16 -16 -16) (16 16 16)
 */
 	{
-		"weapon_hyperblaster", 
+		"weapon_plasmagun", 
 		Pickup_Weapon,
 		Use_Weapon,
 		Drop_Weapon,
 		Weapon_HyperBlaster,
 		"sound/misc/w_pkup.wav",
-		{ "models/weapons/g_hyperb/tris.md2", 0, 0, 0 }, 
+		{ "models/weapons2/plasma/plasma.md3", 0, 0, 0 }, 
 		EF_ROTATE|EF_BOB,
 		"models/weapons/v_hyperb/tris.md2",
-/* icon */		"pics/w_hyperblaster",
-/* pickup */	"HyperBlaster",
+/* icon */		"icons/iconw_plasma",
+/* pickup */	"Plasma Gun",
 		1,
 		"Cells",
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_HYPERBLASTER,
 		NULL,
-		0,
+		WP_PLASMAGUN,
 /* precache */ "sound/weapons/hyprbu1a.wav sound/weapons/hyprbl1a.wav sound/weapons/hyprbf1a.wav sound/weapons/hyprbd1a.wav sound/misc/lasfly.wav"
 	},
 
@@ -1543,7 +1576,7 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_RAILGUN,
 		NULL,
-		0,
+		WP_RAILGUN,
 /* precache */ "sound/weapons/railgun/rg_hum.wav"
 	},
 
@@ -1566,7 +1599,7 @@ always owned, never in the world
 		IT_WEAPON|IT_STAY_COOP,
 		WEAP_BFG,
 		NULL,
-		0,
+		WP_BFG,
 /* precache */ "sprites/s_bfg1.sp2 sprites/s_bfg2.sp2 sprites/s_bfg3.sp2 sound/weapons/bfg__f1y.wav sound/weapons/bfg__l1a.wav sound/weapons/bfg__x1b.wav sound/weapons/bfg_hum.wav"
 	},
 
@@ -1834,21 +1867,21 @@ Special item that gives +2 to maximum health
 /* precache */ ""
 	},
 
-/*QUAKED item_adrenaline (.3 .3 1) (-16 -16 -16) (16 16 16)
+/*QUAKED holdable_medkit (.3 .3 1) (-16 -16 -16) (16 16 16)
 gives +1 to maximum health
 */
 	{
-		"item_adrenaline",
+		"holdable_medkit",
 		Pickup_Adrenaline,
 		NULL,
 		NULL,
 		NULL,
-		"sound/items/pkup.wav",
-		{ "models/items/adrenal/tris.md2", 0, 0, 0 },
+		"sound/items/use_medkit.wav",
+		{ "models/powerups/holdable/medkit.md3", 0, 0, 0 },
 		EF_ROTATE|EF_BOB,
 		NULL,
-/* icon */		"pics/p_adrenaline",
-/* pickup */	"Adrenaline",
+/* icon */		"icons/medkit",
+/* pickup */	"Medkit",
 		60,
 		NULL,
 		0,
@@ -2032,7 +2065,7 @@ gives +1 to maximum health
 		NULL,
 		CTFDrop_Flag, // Should this be null if we don't want players to drop it manually?
 		NULL,
-		"sound/ctf/flagtk.wav",
+		NULL,
 		{ "models/flags/r_flag.md3", 0, 0, 0 }, 
 		EF_FLAG1|EF_BOB|EF_ROTATE,
 		NULL,
@@ -2055,7 +2088,7 @@ gives +1 to maximum health
 		NULL,
 		CTFDrop_Flag, // Should this be null if we don't want players to drop it manually?
 		NULL,
-		"sound/ctf/flagtk.wav",
+		NULL,
 		{ "models/flags/b_flag.md3", 0, 0, 0 }, 
 		EF_FLAG2|EF_BOB|EF_ROTATE,
 		NULL,

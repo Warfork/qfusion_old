@@ -20,7 +20,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef __REF_H
 #define __REF_H
 
-#include "qcommon.h"
+#include "../qcommon/qcommon.h"
+#include "cin.h"
 
 #define	MAX_DLIGHTS		32
 #define	MAX_ENTITIES	128
@@ -28,60 +29,61 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #define POWERSUIT_SCALE		4.0F
 
-#define SHELL_RED_COLOR		0xF2
-#define SHELL_GREEN_COLOR	0xD0
-#define SHELL_BLUE_COLOR	0xF3
+#define	FONT_BIG		1
+#define FONT_SMALL		2
+#define FONT_GIANT		4
+#define FONT_SHADOWED	8
 
-#define SHELL_RG_COLOR		0xDC
-//#define SHELL_RB_COLOR		0x86
-#define SHELL_RB_COLOR		0x68
-#define SHELL_BG_COLOR		0x78
+typedef unsigned int index_t;
 
-#define SHELL_WHITE_COLOR	0xD7
-
-typedef enum 
+typedef struct 
 {
-	FONT_BIG,
-	FONT_SMALL,
-	FONT_GIANT
-} fontstyle_t;
+	vec3_t			origin;
+	float			axis[3][3];
+} orientation_t;
+
+typedef enum
+{
+	ET_MODEL,
+	ET_SPRITE,
+	ET_BEAM,
+	ET_PORTALSURFACE,
+
+	NUM_ETYPES
+} etype_t;
 
 typedef struct entity_s
 {
+	unsigned int		number;
+
+	etype_t				type;
 	struct model_s		*model;			// opaque type outside refresh
-	float				angles[3];
+	struct shader_s		*customShader;	// NULL for inline skin
+	float				shaderTime;
+	byte_vec4_t			color;
 
 	/*
 	** most recent data
 	*/
-	float				origin[3];		// also used as RF_BEAM's "from"
-	int					frame;			// also used as RF_BEAM's diameter
+	float				origin[3];		// also used as ET_BEAM's "from"
+	vec3_t				axis[3];
+	float				scale;
+	float				radius;			// used as ET_SPRITE's and ET_BEAM's radius
+	int					frame;
 
 	/*
 	** previous data for lerping
 	*/
-	float				oldorigin[3];	// also used as RF_BEAM's "to"
+	float				oldorigin[3];	// also used as ET_BEAM's "to"
 	int					oldframe;
 
 	/*
 	** misc
 	*/
-	float	backlerp;				// 0.0 = current, 1.0 = old
-	int		skinnum;				// also used as RF_BEAM's palette index
-
-	int		lightstyle;				// for flashing entities
-	float	alpha;					// ignore if RF_TRANSLUCENT isn't set
-
-	struct shader_s	*skin;			// NULL for inline skin
-	int		flags;
-
-	vec3_t	angleVectors[3];
-	float	scale;
-
-	qboolean	transignore;
+	float				backlerp;		// 0.0 = current, 1.0 = old
+	int					skinnum;		// used as ET_BEAM's palette index
+	int					flags;
 } entity_t;
-
-#define ENTITY_FLAGS  68
 
 typedef struct
 {
@@ -119,39 +121,38 @@ typedef struct refdef_s
 	particle_t	*particles;
 } refdef_t;
 
-void	R_SetPalette ( const unsigned char *palette);
-void	Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, byte *data);
-
 void	R_BeginRegistration (char *map);
+void	R_EndRegistration (void);
 
 struct model_s	*R_RegisterModel (char *name);
 
-struct shader_s *R_RegisterShaderNoMip (char *name);
+struct shader_s *R_RegisterPic (char *name);
 struct shader_s *R_RegisterShader (char *name);
-struct shader_s *R_RegisterShaderMD3 (char *name);
-
-int		R_ModelNumFrames ( struct model_s *model );
-
-void	R_SetGridsize (float x, float y, float z);
-void	R_EndRegistration (void);
+struct shader_s *R_RegisterSkin (char *name);
 
 void	R_RenderFrame (refdef_t *fd);
 
-void	Draw_Pic (int x, int y, char *name);
-void	Draw_StretchPic (int x, int y, int w, int h, char *name);
-void	Draw_Char (int x, int y, int num, fontstyle_t fntstl, vec4_t colour);
-void	Draw_StringLen (int x, int y, char *str, int len, fontstyle_t fntstl, vec4_t colour);
+void	Draw_StretchPic (int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader);
+void	Draw_Char (int x, int y, int num, int fontstyle, vec4_t color);
+void	Draw_String (int x, int y, char *str, int fontstyle, vec4_t color);
+void	Draw_StringLen (int x, int y, char *str, int len, int fontstyle, vec4_t color);
+void	Draw_PropString (int x, int y, char *str, int fontstyle, vec4_t color);
+void	Draw_CenteredPropString (int y, char *str, int fontstyle, vec4_t color);
+int		Q_PropStringLength (char *str, int fontstyle);
 void	Draw_TileClear (int x, int y, int w, int h, char *name);
-void	Draw_Fill (int x, int y, int w, int h, int c);
+void	Draw_FillRect (int x, int y, int w, int h, vec4_t color);
 void	Draw_FadeScreen (void);
-void	Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, byte *data);
+void	Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, int frame, byte *data);
 
 void	R_BeginFrame( float camera_separation );
+void	R_ApplySoftwareGamma( void );
+void	R_Flush (void);
+
 void	GLimp_EndFrame (void);
 
 void	GLimp_AppActivate( qboolean active );
 
-qboolean R_Init( void *hinstance, void *hWnd );
+int		R_Init( void *hinstance, void *hWnd );
 void	R_Shutdown (void);
 
 #endif // __REF_H

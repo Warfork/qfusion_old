@@ -69,10 +69,10 @@ void PF_dprintf (char *fmt, ...)
 	char		copy[1024];
 
 	va_start (argptr,fmt);
-	vsprintf (msg, fmt, argptr);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 
-	// mask off high bits and coloured strings
+	// mask off high bits and colored strings
 	for (i=0, j=0 ; j<1023 && msg[j] ; ) {
 		if ( Q_IsColorString( &msg[j] ) ) {
 			j += 2;
@@ -108,7 +108,7 @@ void PF_cprintf (edict_t *ent, int level, char *fmt, ...)
 	}
 
 	va_start (argptr,fmt);
-	vsprintf (msg, fmt, argptr);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 
 	if (ent)
@@ -136,7 +136,7 @@ void PF_centerprintf (edict_t *ent, char *fmt, ...)
 		return;	// Com_Error (ERR_DROP, "centerprintf to a non-client");
 
 	va_start (argptr,fmt);
-	vsprintf (msg, fmt, argptr);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 
 	MSG_WriteByte (&sv.multicast,svc_centerprint);
@@ -158,7 +158,7 @@ void PF_error (char *fmt, ...)
 	va_list		argptr;
 	
 	va_start (argptr,fmt);
-	vsprintf (msg, fmt, argptr);
+	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
 
 	Com_Error (ERR_DROP, "Game Error: %s", msg);
@@ -233,7 +233,7 @@ PF_Configstring
 void PF_Configstring (int index, char *val)
 {
 	if (index < 0 || index >= MAX_CONFIGSTRINGS)
-		Com_Error (ERR_DROP, "configstring: bad index %i\n", index);
+		Com_Error (ERR_DROP, "configstring: bad index %i", index);
 
 	if (!val)
 		val = "";
@@ -260,10 +260,7 @@ void PF_WriteShort (int c) {MSG_WriteShort (&sv.multicast, c);}
 void PF_WriteLong (int c) {MSG_WriteLong (&sv.multicast, c);}
 void PF_WriteFloat (float f) {MSG_WriteFloat (&sv.multicast, f);}
 void PF_WriteString (char *s) {MSG_WriteString (&sv.multicast, s);}
-//void PF_WritePos (vec3_t pos) {MSG_WritePos (&sv.multicast, pos);}
-
-// Vic: FIXME!!!
-void PF_WritePos (vec3_t pos) {MSG_WriteLongPos (&sv.multicast, pos);}
+void PF_WritePos (vec3_t pos) {MSG_WritePos (&sv.multicast, pos);}
 void PF_WriteDir (vec3_t dir) {MSG_WriteDir (&sv.multicast, dir);}
 void PF_WriteAngle (float f) {MSG_WriteAngle (&sv.multicast, f);}
 
@@ -351,7 +348,7 @@ void SV_ShutdownGameProgs (void)
 	if (!ge)
 		return;
 	ge->Shutdown ();
-	Sys_UnloadGame ();
+	Sys_UnloadLibrary (LIB_GAME);
 	ge = NULL;
 }
 
@@ -362,8 +359,6 @@ SV_InitGameProgs
 Init the game subsystem for a new map
 ===============
 */
-void SCR_DebugGraph (float value, int color);
-
 void SV_InitGameProgs (void)
 {
 	game_import_t	import;
@@ -424,11 +419,10 @@ void SV_InitGameProgs (void)
 	import.args = Cmd_Args;
 	import.AddCommandString = Cbuf_AddText;
 
-	import.DebugGraph = SCR_DebugGraph;
 	import.SetAreaPortalState = SV_SetAreaPortalState;
 	import.AreasConnected = CM_AreasConnected;
 
-	ge = (game_export_t *)Sys_GetGameAPI (&import);
+	ge = (game_export_t *)Sys_LoadLibrary (LIB_GAME, &import);
 
 	if (!ge)
 		Com_Error (ERR_DROP, "failed to load game DLL");

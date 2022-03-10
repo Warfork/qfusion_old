@@ -52,7 +52,7 @@ void SP_target_temp_entity (edict_t *ent)
 
 Normal sounds play each time the target is used.  The reliable flag can be set for crucial voiceovers.
 
-Looped sounds are allways atten 3 / vol 1, and the use function toggles it on/off.
+Looped sounds are always atten 3 / vol 1, and the use function toggles it on/off.
 Multiple identical looping sounds will just increase volume without any speed cost.
 */
 void Use_Target_Speaker (edict_t *ent, edict_t *other, edict_t *activator)
@@ -92,7 +92,7 @@ void SP_target_speaker (edict_t *ent)
 	if (!strstr (st.noise, ".wav"))
 		Com_sprintf (buffer, sizeof(buffer), "%s.wav", st.noise);
 	else
-		strncpy (buffer, st.noise, sizeof(buffer));
+		Q_strncpyz (buffer, st.noise, sizeof(buffer));
 	ent->noise_index = gi.soundindex (buffer);
 
 	if (!ent->volume)
@@ -120,9 +120,9 @@ void SP_target_speaker (edict_t *ent)
 void Use_Target_Help (edict_t *ent, edict_t *other, edict_t *activator)
 {
 	if (ent->spawnflags & 1)
-		strncpy (game.helpmessage1, ent->message, sizeof(game.helpmessage2)-1);
+		Q_strncpyz (game.helpmessage1, ent->message, sizeof(game.helpmessage2));
 	else
-		strncpy (game.helpmessage2, ent->message, sizeof(game.helpmessage1)-1);
+		Q_strncpyz (game.helpmessage2, ent->message, sizeof(game.helpmessage1));
 
 	game.helpchanged++;
 }
@@ -179,9 +179,6 @@ void SP_target_secret (edict_t *ent)
 	ent->noise_index = gi.soundindex (st.noise);
 	ent->svflags = SVF_NOCLIENT;
 	level.total_secrets++;
-	// map bug hack
-	if (!stricmp(level.mapname, "mine3") && ent->s.origin[0] == 280 && ent->s.origin[1] == -2048 && ent->s.origin[2] == -624)
-		ent->message = "You have found a secret area.";
 }
 
 //==========================================================
@@ -271,7 +268,7 @@ Changes level to "map" when fired
 void use_target_changelevel (edict_t *self, edict_t *other, edict_t *activator)
 {
 	if (level.intermissiontime)
-		return;		// allready activated
+		return;		// already activated
 
 	if (!deathmatch->value && !coop->value)
 	{
@@ -310,10 +307,6 @@ void SP_target_changelevel (edict_t *ent)
 		G_FreeEdict (ent);
 		return;
 	}
-
-	// ugly hack because *SOMEBODY* screwed up their map
-   if((stricmp(level.mapname, "fact1") == 0) && (stricmp(ent->map, "fact3") == 0))
-	   ent->map = "fact3$secret1";
 
 	ent->use = use_target_changelevel;
 	ent->svflags = SVF_NOCLIENT;
@@ -510,6 +503,17 @@ void target_laser_think (edict_t *self)
 	vec3_t	last_movedir;
 	int		count;
 
+	// our lifetime has expired
+	if (self->delay && (self->wait < level.time))
+	{
+		if ( self->owner && self->owner->use ) {
+			self->owner->use ( self->owner, self, self->activator );
+		}
+
+		G_FreeEdict (self);
+		return;
+	}
+
 	if (self->spawnflags & 0x80000000)
 		count = 8;
 	else
@@ -528,7 +532,7 @@ void target_laser_think (edict_t *self)
 	ignore = self;
 	VectorCopy (self->s.origin, start);
 	VectorMA (start, 2048, self->movedir, end);
-	while(1)
+	while (1)
 	{
 		tr = gi.trace (start, NULL, NULL, end, ignore, MASK_SHOT);
 
@@ -537,7 +541,17 @@ void target_laser_think (edict_t *self)
 
 		// hurt it if we can
 		if ((tr.ent->takedamage) && !(tr.ent->flags & FL_IMMUNE_LASER))
-			T_Damage (tr.ent, self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, MOD_TARGET_LASER);
+		{
+			if (tr.ent->client && self->activator->client)
+			{
+				if (!ctf->value || tr.ent->client->resp.ctf_team != self->activator->client->resp.ctf_team)
+					T_Damage (tr.ent, self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
+			}
+			else
+			{
+				T_Damage (tr.ent, self, self->activator, self->movedir, tr.endpos, vec3_origin, self->dmg, 1, DAMAGE_ENERGY, self->count);
+			}
+		}
 
 		// if we hit something that's not a monster or player or is immune to lasers, we're done
 		if (!(tr.ent->svflags & SVF_MONSTER) && (!tr.ent->client))
@@ -571,6 +585,7 @@ void target_laser_on (edict_t *self)
 		self->activator = self;
 	self->spawnflags |= 0x80000001;
 	self->svflags &= ~SVF_NOCLIENT;
+	self->wait = level.time + self->delay;
 	target_laser_think (self);
 }
 
@@ -596,7 +611,7 @@ void target_laser_start (edict_t *self)
 
 	self->movetype = MOVETYPE_NONE;
 	self->solid = SOLID_NOT;
-	self->s.renderfx |= RF_BEAM|RF_TRANSLUCENT;
+	self->s.renderfx |= RF_BEAM;
 	self->s.modelindex = 1;			// must be non-zero
 
 	// set the beam diameter
@@ -607,15 +622,15 @@ void target_laser_start (edict_t *self)
 
 	// set the color
 	if (self->spawnflags & 2)
-		self->s.skinnum = 0xf2f2f0f0;
+		self->s.skinnum = (220 << 0) | (76 << 24);
 	else if (self->spawnflags & 4)
-		self->s.skinnum = 0xd0d1d2d3;
+		self->s.skinnum = (220 << 8) | (76 << 24);
 	else if (self->spawnflags & 8)
-		self->s.skinnum = 0xf3f3f1f1;
+		self->s.skinnum = (220 << 16) | (76 << 24);
 	else if (self->spawnflags & 16)
-		self->s.skinnum = 0xdcdddedf;
+		self->s.skinnum = (220 << 0) | (220 << 8) | (76 << 24);
 	else if (self->spawnflags & 32)
-		self->s.skinnum = 0xe0e1e2e3;
+		self->s.skinnum = (255 << 0) | (255 << 8) | (76 << 24);
 
 	if (!self->enemy)
 	{
@@ -654,6 +669,7 @@ void SP_target_laser (edict_t *self)
 	// let everything else get spawned before we start firing
 	self->think = target_laser_start;
 	self->nextthink = level.time + 1;
+	self->count = MOD_TARGET_LASER;
 }
 
 //==========================================================
@@ -745,4 +761,42 @@ void SP_target_location (edict_t *self)
 			self->count = 7;
 		}
 	}
+}
+
+void SP_target_print_use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	int n;
+	edict_t *player;
+
+	if (activator->client && (self->spawnflags & 4)) 
+	{
+		gi.centerprintf ( activator, self->message );
+		return;
+	}
+
+	// will add team-specific later...
+	if ( self->spawnflags & 3 ) {
+		return;
+	}
+		
+	for (n = 1; n <= maxclients->value; n++)
+	{
+		player = &g_edicts[n];
+
+		if (!player->inuse)
+			continue;
+		
+		gi.centerprintf ( player, self->message );
+	}
+}
+
+void SP_target_print (edict_t *self)
+{
+	if ( !self->message ) {
+		G_FreeEdict ( self );
+		return;
+	}
+
+	self->use = SP_target_print_use;
+	// do nothing
 }

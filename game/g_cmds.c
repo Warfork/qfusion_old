@@ -170,7 +170,7 @@ void Cmd_Give_f (edict_t *ent)
 
 	if (deathmatch->value && !sv_cheats->value)
 	{
-		gi.cprintf (ent, PRINT_HIGH, "You must run the server with '+set cheats 1' to enable this command.\n");
+		gi.cprintf (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
 	}
 
@@ -321,7 +321,7 @@ void Cmd_God_f (edict_t *ent)
 
 	if (deathmatch->value && !sv_cheats->value)
 	{
-		gi.cprintf (ent, PRINT_HIGH, "You must run the server with '+set cheats 1' to enable this command.\n");
+		gi.cprintf (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
 	}
 
@@ -350,7 +350,7 @@ void Cmd_Notarget_f (edict_t *ent)
 
 	if (deathmatch->value && !sv_cheats->value)
 	{
-		gi.cprintf (ent, PRINT_HIGH, "You must run the server with '+set cheats 1' to enable this command.\n");
+		gi.cprintf (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
 	}
 
@@ -377,7 +377,7 @@ void Cmd_Noclip_f (edict_t *ent)
 
 	if (deathmatch->value && !sv_cheats->value)
 	{
-		gi.cprintf (ent, PRINT_HIGH, "You must run the server with '+set cheats 1' to enable this command.\n");
+		gi.cprintf (ent, PRINT_HIGH, "Cheats are not enabled on this server.\n");
 		return;
 	}
 
@@ -572,6 +572,44 @@ void Cmd_LastWeap_f (edict_t *ent)
 	cl->pers.lastweapon->use (ent, cl->pers.lastweapon);
 }
 //ZOID
+
+/*
+=================
+Cmd_Weapon_f
+=================
+*/
+void Cmd_Weapon_f (edict_t *ent)
+{
+	gitem_t		*it;
+	int			i;
+	int			weapnum;
+
+	if (!*gi.args())
+		return;
+
+	weapnum = atoi(gi.args());
+	if (weapnum < 1 || weapnum > 15)
+		return;
+
+	it = itemlist;
+	for (i=0 ; i<game.num_items ; i++, it++)
+		if (it->tag == weapnum + 100)
+			break;
+
+	if (i == game.num_items)
+		return;		// not found
+
+	if (!it->use)
+		return;		// not usable?
+
+	if (!ent->client->pers.inventory[it - itemlist])
+	{	// don't have this one
+		gi.cprintf (ent, PRINT_HIGH, "Out of item: %s\n", it->pickup_name);
+		return;
+	}
+
+	it->use (ent, it);
+}
 
 /*
 =================
@@ -1022,6 +1060,8 @@ void ClientCommand (edict_t *ent)
 		Cmd_InvUse_f (ent);
 	else if (Q_stricmp (cmd, "invdrop") == 0)
 		Cmd_InvDrop_f (ent);
+	else if (Q_stricmp (cmd, "weapon") == 0)
+		Cmd_Weapon_f (ent);
 	else if (Q_stricmp (cmd, "weapprev") == 0)
 		Cmd_WeapPrev_f (ent);
 	else if (Q_stricmp (cmd, "weapnext") == 0)

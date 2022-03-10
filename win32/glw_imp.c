@@ -32,9 +32,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include <assert.h>
 #include <windows.h>
-#include "../ref_gl/gl_local.h"
+#include "../ref_gl/r_local.h"
 #include "glw_win.h"
 #include "winquake.h"
+
+#define	WINDOW_STYLE	(WS_OVERLAPPED|WS_BORDER|WS_CAPTION|WS_VISIBLE)
 
 static qboolean GLimp_SwitchFullscreen( int width, int height );
 qboolean GLimp_InitGL (void);
@@ -42,6 +44,7 @@ qboolean GLimp_InitGL (void);
 glwstate_t glw_state;
 
 extern cvar_t *vid_fullscreen;
+extern cvar_t *vid_displayfrequency;
 
 static qboolean VerifyDriver( void )
 {
@@ -58,7 +61,7 @@ static qboolean VerifyDriver( void )
 /*
 ** VID_CreateWindow
 */
-#define	WINDOW_CLASS_NAME	"L33T"
+#define	WINDOW_CLASS_NAME	APPLICATION
 
 qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 {
@@ -70,16 +73,16 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	int				exstyle;
 
 	/* Register the frame class */
-    wc.style         = 0;
-    wc.lpfnWndProc   = (WNDPROC)glw_state.wndproc;
-    wc.cbClsExtra    = 0;
-    wc.cbWndExtra    = 0;
-    wc.hInstance     = glw_state.hInstance;
-    wc.hIcon         = 0;
-    wc.hCursor       = LoadCursor (NULL,IDC_ARROW);
-	wc.hbrBackground = (void *)COLOR_GRAYTEXT;
-    wc.lpszMenuName  = 0;
-    wc.lpszClassName = WINDOW_CLASS_NAME;
+	wc.style		 = 0;
+	wc.lpfnWndProc	 = (WNDPROC)glw_state.wndproc;
+	wc.cbClsExtra	 = 0;
+	wc.cbWndExtra	 = 0;
+	wc.hInstance	 = glw_state.hInstance;
+	wc.hIcon		 = 0;
+	wc.hCursor		 = LoadCursor (NULL,IDC_ARROW);
+	wc.hbrBackground = (HBRUSH)GetStockObject(GRAY_BRUSH);
+	wc.lpszMenuName  = 0;
+	wc.lpszClassName = WINDOW_CLASS_NAME;
 
     if (!RegisterClass (&wc) )
 		Com_Error (ERR_FATAL, "Couldn't register window class");
@@ -121,7 +124,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 	glw_state.hWnd = CreateWindowEx (
 		 exstyle, 
 		 WINDOW_CLASS_NAME,
-		 "l33t",
+		 APPLICATION,
 		 stylebits,
 		 x, y, w, h,
 		 NULL,
@@ -155,7 +158,7 @@ qboolean VID_CreateWindow( int width, int height, qboolean fullscreen )
 /*
 ** GLimp_SetMode
 */
-rserr_t GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
+int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen )
 {
 	int width, height;
 	const char *win_fs[] = { "W", "FS" };
@@ -193,11 +196,11 @@ rserr_t GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen 
 		dm.dmPelsHeight = height;
 		dm.dmFields     = DM_PELSWIDTH | DM_PELSHEIGHT;
 
-		if ( gl_bitdepth->value != 0 )
+		if ( r_colorbits->value != 0 )
 		{
-			dm.dmBitsPerPel = gl_bitdepth->value;
+			dm.dmBitsPerPel = r_colorbits->value;
 			dm.dmFields |= DM_BITSPERPEL;
-			Com_Printf ( "...using gl_bitdepth of %d\n", ( int ) gl_bitdepth->value );
+			Com_Printf ( "...using r_bitdepth of %d\n", ( int ) r_colorbits->value );
 		}
 		else
 		{
@@ -207,6 +210,13 @@ rserr_t GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen 
 			Com_Printf ( "...using desktop display depth of %d\n", bitspixel );
 
 			ReleaseDC( 0, hdc );
+		}
+
+		if ( vid_displayfrequency->value > 0 )
+		{
+			dm.dmFields |= DM_DISPLAYFREQUENCY;
+			dm.dmDisplayFrequency = vid_displayfrequency->value;
+			Com_Printf ( "...using display frequency %i\n", dm.dmDisplayFrequency );
 		}
 
 		Com_Printf ( "...calling CDS: " );
@@ -237,10 +247,17 @@ rserr_t GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen 
 			dm.dmPelsHeight = height;
 			dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
 
-			if ( gl_bitdepth->value != 0 )
+			if ( r_colorbits->value != 0 )
 			{
-				dm.dmBitsPerPel = gl_bitdepth->value;
+				dm.dmBitsPerPel = r_colorbits->value;
 				dm.dmFields |= DM_BITSPERPEL;
+			}
+
+			if ( vid_displayfrequency->value > 0 )
+			{
+				dm.dmFields |= DM_DISPLAYFREQUENCY;
+				dm.dmDisplayFrequency = vid_displayfrequency->value;
+				Com_Printf ( "...using display frequency %i\n", dm.dmDisplayFrequency );
 			}
 
 			/*
@@ -364,7 +381,7 @@ void GLimp_Shutdown( void )
 ** of OpenGL.  Under Win32 this means dealing with the pixelformats and
 ** doing the wgl interface stuff.
 */
-qboolean GLimp_Init( void *hinstance, void *wndproc )
+int GLimp_Init( void *hinstance, void *wndproc )
 {
 #define OSR2_BUILD_NUMBER 1111
 
@@ -407,7 +424,7 @@ qboolean GLimp_Init( void *hinstance, void *wndproc )
 	return true;
 }
 
-qboolean GLimp_InitGL (void)
+int GLimp_InitGL (void)
 {
     PIXELFORMATDESCRIPTOR pfd = 
 	{
@@ -417,13 +434,13 @@ qboolean GLimp_InitGL (void)
 		PFD_SUPPORT_OPENGL |			// support OpenGL
 		PFD_DOUBLEBUFFER,				// double buffered
 		PFD_TYPE_RGBA,					// RGBA type
-		24,								// 24-bit color depth
+		32,								// 32-bit color depth
 		0, 0, 0, 0, 0, 0,				// color bits ignored
 		0,								// no alpha buffer
 		0,								// shift bit ignored
 		0,								// no accumulation buffer
 		0, 0, 0, 0, 					// accum bits ignored
-		32,								// 32-bit z-buffer	
+		24,								// 32-bit z-buffer	
 		0,								// no stencil buffer
 		0,								// no auxiliary buffer
 		PFD_MAIN_PLANE,					// main layer
@@ -437,10 +454,10 @@ qboolean GLimp_InitGL (void)
 	stereo = Cvar_Get( "cl_stereo", "0", 0 );
 
 	// Vic
-	stencil = Cvar_Get( "gl_stencilbuffer", "0", 0 );
+	stencil = Cvar_Get( "r_stencilbits", "0", 0 );
+	pfd.cStencilBits = (int)max(0, stencil->value);
 
-	if ( stencil->value != 0 ) {
-		pfd.cStencilBits = 8;
+	if ( pfd.cStencilBits != 0 ) {
 		gl_state.stencil_enabled = true;
 	} else {
 		gl_state.stencil_enabled = false;
@@ -511,9 +528,9 @@ qboolean GLimp_InitGL (void)
 
 		if ( !( pfd.dwFlags & PFD_GENERIC_ACCELERATED ) )
 		{
-			extern cvar_t *gl_allow_software;
+			extern cvar_t *r_allow_software;
 
-			if ( gl_allow_software->value )
+			if ( r_allow_software->value )
 				glw_state.mcd_accelerated = true;
 			else
 				glw_state.mcd_accelerated = false;
@@ -559,7 +576,7 @@ qboolean GLimp_InitGL (void)
 	/*
 	** print out PFD specifics 
 	*/
-	Com_Printf ( "GL PFD: color(%d-bits) Z(%d-bit)\n", ( int ) pfd.cColorBits, ( int ) pfd.cDepthBits );
+	Com_Printf ( "GL PFD: color(%d-bits) Z(%d-bit) stencil(%d-bits)\n", ( int ) pfd.cColorBits, ( int ) pfd.cDepthBits, ( int )pfd.cStencilBits );
 
 	ZeroMemory (original_ramp, sizeof(original_ramp));
 
@@ -605,26 +622,26 @@ fail:
 	return false;
 }
 
-void UpdateGammaRamp (void)
+/*
+** GLimp_UpdateGammaRamp
+*/
+void GLimp_UpdateGammaRamp (void)
 {
-	int i, o;
+	int i;
+	signed int v;
+	double div;
 
 	if (!gl_state.gammaramp)
 		return;
 	
 	memcpy (gamma_ramp, original_ramp, sizeof(original_ramp));
-
-	for (o = 0; o < 3; o++) 
+	
+	div = (double)(1 << (int)floor(r_overbrightbits->value)) / 255.5;
+	for (i = 0; i < 256; i++) 
 	{
-		for (i = 0; i < 256; i++) 
-		{
-			signed int v;
-
-			v = 255 * pow ((i+0.5)/255.5, vid_gamma->value ) + 0.5;
-			if (v > 255) v = 255;
-			if (v < 0) v = 0;
-			gamma_ramp[o][i] = ((WORD)v) << 8;
-		}
+		v = 255 * pow ((i+0.5)*div, vid_gamma->value ) + 0.5;
+		clamp ( v, 0, 255 );
+		gamma_ramp[0][i] = gamma_ramp[1][i] = gamma_ramp[2][i] = ((WORD)v) << 8;
 	}
 
 	if( qwglSetDeviceGammaRamp3DFX ) {
@@ -650,14 +667,14 @@ void GLimp_BeginFrame( float camera_separation )
 {
 	extern int curtime;
 
-	if ( gl_bitdepth->modified )
+	if ( r_colorbits->modified )
 	{
-		if ( gl_bitdepth->value != 0 && !glw_state.allowdisplaydepthchange )
+		if ( r_colorbits->value != 0 && !glw_state.allowdisplaydepthchange )
 		{
-			Cvar_SetValue( "gl_bitdepth", 0 );
-			Com_Printf ( "gl_bitdepth requires Win95 OSR2.x or WinNT 4.x\n" );
+			Cvar_SetValue( "r_colorbits", 0 );
+			Com_Printf ( "r_colorbits requires Win95 OSR2.x or WinNT 4.x\n" );
 		}
-		gl_bitdepth->modified = false;
+		r_colorbits->modified = false;
 	}
 
 	if ( camera_separation < 0 && gl_state.stereo_enabled )
@@ -673,7 +690,8 @@ void GLimp_BeginFrame( float camera_separation )
 		qglDrawBuffer( GL_BACK );
 	}
 
-	r_shadertime = curtime * 0.001f;
+	r_shadertime = curtime * 0.001;
+	Shader_RunCinematic ();
 }
 
 /*
@@ -690,10 +708,10 @@ void GLimp_EndFrame (void)
 	err = qglGetError();
 	assert( err == GL_NO_ERROR );
 
-	if ( stricmp( gl_drawbuffer->string, "GL_BACK" ) == 0 )
+	if ( Q_stricmp( gl_drawbuffer->string, "GL_BACK" ) == 0 )
 	{
 		if ( !qwglSwapBuffers( glw_state.hDC ) )
-			Com_Error( ERR_FATAL, "GLimp_EndFrame() - SwapBuffers() failed!\n" );
+			Com_Error( ERR_FATAL, "GLimp_EndFrame() - SwapBuffers() failed!" );
 	}
 }
 

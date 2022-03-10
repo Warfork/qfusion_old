@@ -364,7 +364,7 @@ void SV_WriteServerFile (qboolean autosave)
 	}
 	else
 	{	// autosaved
-		Com_sprintf (comment, sizeof(comment), "ENTERING %s", sv.configstrings[CS_MESSAGE]);
+		Com_sprintf (comment, sizeof(comment), "%s", sv.configstrings[CS_MESSAGE]);
 	}
 
 	fwrite (comment, 1, sizeof(comment), f);
@@ -461,12 +461,43 @@ void SV_ReadServerFile (void)
 SV_DemoMap_f
 
 Puts the server in demo mode on a specific map/cinematic
+
+FIXME: remove?
 ==================
 */
 void SV_DemoMap_f (void)
 {
 	SV_Map (true, Cmd_Argv(1), false, false );
 }
+
+/*
+==================
+SV_Demo_f
+
+Appends the default extension and starts a demo server
+==================
+*/
+void SV_Demo_f (void)
+{
+	char filename[MAX_QPATH], expanded[MAX_QPATH];
+
+	if (Cmd_Argc() != 2) {
+		Com_Printf ("usage: demo <filename>\n");
+		return;
+	}
+
+	Q_strncpyz (filename, Cmd_Argv(1), sizeof(filename)-4);
+	COM_DefaultExtension (filename, ".dqf");
+
+	Com_sprintf (expanded, sizeof(expanded), "demos/%s", filename);
+	if ( !FS_FileExists (expanded) ) {
+		Com_Printf ("Can't find %s\n", expanded);
+		return;
+	}
+
+	SV_Map (true, filename, false, false );
+}
+
 
 /*
 ==================
@@ -537,7 +568,7 @@ void SV_GameMap_f (void)
 	SV_Map (false, Cmd_Argv(1), false, !Q_stricmp(Cmd_Argv(0), "devmap") );
 
 	// archive server state
-	strncpy (svs.mapcmd, Cmd_Argv(1), sizeof(svs.mapcmd)-1);
+	Q_strncpyz (svs.mapcmd, Cmd_Argv(1), sizeof(svs.mapcmd));
 
 	// copy off the level to the autosave slot
 	if (!dedicated->value)
@@ -909,7 +940,7 @@ void SV_ServerRecord_f (void)
 	//
 	// open the demo file
 	//
-	Com_sprintf (name, sizeof(name), "%s/demos/%s.dm2", FS_Gamedir(), Cmd_Argv(1));
+	Com_sprintf (name, sizeof(name), "%s/demos/%s.dqf", FS_Gamedir(), Cmd_Argv(1));
 
 	Com_Printf ("recording to %s.\n", name);
 	FS_CreatePath (name);
@@ -1032,6 +1063,7 @@ void SV_InitOperatorCommands (void)
 
 	Cmd_AddCommand ("map", SV_Map_f);
 	Cmd_AddCommand ("devmap", SV_Map_f);
+	Cmd_AddCommand ("demo", SV_Demo_f);
 	Cmd_AddCommand ("demomap", SV_DemoMap_f);
 	Cmd_AddCommand ("gamemap", SV_GameMap_f);
 	Cmd_AddCommand ("setmaster", SV_SetMaster_f);

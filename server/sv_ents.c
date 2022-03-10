@@ -216,16 +216,16 @@ void SV_WritePlayerstateToClient (client_frame_t *from, client_frame_t *to, size
 
 	if (pflags & PS_M_ORIGIN)
 	{
-		MSG_WriteShort (msg, ps->pmove.origin[0]);
-		MSG_WriteShort (msg, ps->pmove.origin[1]);
-		MSG_WriteShort (msg, ps->pmove.origin[2]);
+		MSG_WriteInt3 (msg, ps->pmove.origin[0]);
+		MSG_WriteInt3 (msg, ps->pmove.origin[1]);
+		MSG_WriteInt3 (msg, ps->pmove.origin[2]);
 	}
 
 	if (pflags & PS_M_VELOCITY)
 	{
-		MSG_WriteShort (msg, ps->pmove.velocity[0]);
-		MSG_WriteShort (msg, ps->pmove.velocity[1]);
-		MSG_WriteShort (msg, ps->pmove.velocity[2]);
+		MSG_WriteInt3 (msg, ps->pmove.velocity[0]);
+		MSG_WriteInt3 (msg, ps->pmove.velocity[1]);
+		MSG_WriteInt3 (msg, ps->pmove.velocity[2]);
 	}
 
 	if (pflags & PS_M_TIME)
@@ -337,8 +337,8 @@ void SV_WriteFrameToClient (client_t *client, sizebuf_t *msg)
 	MSG_WriteByte (msg, svc_frame);
 	MSG_WriteLong (msg, sv.framenum);
 	MSG_WriteLong (msg, lastframe);	// what we are delta'ing from
-	MSG_WriteByte (msg, client->surpressCount);	// rate dropped packets
-	client->surpressCount = 0;
+	MSG_WriteByte (msg, client->suppressCount);	// rate dropped packets
+	client->suppressCount = 0;
 
 	// send over the areabits
 	MSG_WriteByte (msg, frame->areabytes);
@@ -360,7 +360,7 @@ Build a client frame structure
 =============================================================================
 */
 
-byte		fatpvs[65536/8];	// 32767 is MAX_MAP_LEAFS
+byte		fatpvs[MAX_MAP_LEAFS/8];
 
 /*
 ============
@@ -372,7 +372,7 @@ so we can't use a single PVS point
 */
 void SV_FatPVS (vec3_t org)
 {
-	int		leafs[64];
+	int		leafs[128];
 	int		i, j, count;
 	int		longs;
 	byte	*src;
@@ -384,16 +384,17 @@ void SV_FatPVS (vec3_t org)
 		maxs[i] = org[i] + 8;
 	}
 
-	count = CM_BoxLeafnums (mins, maxs, leafs, 64, NULL);
+	count = CM_BoxLeafnums (mins, maxs, leafs, 128, NULL);
 	if (count < 1)
 		Com_Error (ERR_FATAL, "SV_FatPVS: count < 1");
-	longs = (CM_NumClusters()+31)>>5;
+	longs = CM_ClusterSize()>>2;
 
 	// convert leafs to clusters
 	for (i=0 ; i<count ; i++)
 		leafs[i] = CM_LeafCluster(leafs[i]);
 
 	memcpy (fatpvs, CM_ClusterPVS(leafs[0]), longs<<2);
+
 	// or in all the other leaf bits
 	for (i=1 ; i<count ; i++)
 	{
@@ -408,6 +409,49 @@ void SV_FatPVS (vec3_t org)
 	}
 }
 
+/*
+============
+SV_MergePVS
+
+Portal entities merge a second PVS at old_origin into fatpvs 
+===========
+*/
+void SV_MergePVS (vec3_t org)
+{
+	int		leafs[128];
+	int		i, j, count;
+	int		longs;
+	byte	*src;
+	vec3_t	mins, maxs;
+
+	for (i=0 ; i<3 ; i++)
+	{
+		mins[i] = org[i] - 8;
+		maxs[i] = org[i] + 8;
+	}
+
+	count = CM_BoxLeafnums (mins, maxs, leafs, 128, NULL);
+	if (count < 1)
+		Com_Error (ERR_FATAL, "SV_FatPVS: count < 1");
+	longs = CM_ClusterSize()>>2;
+
+	// convert leafs to clusters
+	for (i=0 ; i<count ; i++)
+		leafs[i] = CM_LeafCluster(leafs[i]);
+
+	// or in all the other leaf bits
+	for (i=0 ; i<count ; i++)
+	{
+		for (j=0 ; j<i ; j++)
+			if (leafs[i] == leafs[j])
+				break;
+		if (j != i)
+			continue;		// already have the cluster we want
+		src = CM_ClusterPVS(leafs[i]);
+		for (j=0 ; j<longs ; j++)
+			((long *)fatpvs)[j] |= ((long *)src)[j];
+	}
+}
 
 /*
 =============
@@ -427,6 +471,7 @@ void SV_BuildClientFrame (client_t *client)
 	entity_state_t	*state;
 	int		l;
 	int		clientarea, clientcluster;
+	int		portalarea;
 	int		leafnum;
 	int		c_fullsend;
 	byte	*clientphs;
@@ -465,6 +510,7 @@ void SV_BuildClientFrame (client_t *client)
 
 	c_fullsend = 0;
 
+	// portal entities are the first to be checked so we can merge PVS
 	for (e=1 ; e<ge->num_edicts ; e++)
 	{
 		ent = EDICT_NUM(e);
@@ -478,6 +524,10 @@ void SV_BuildClientFrame (client_t *client)
 			&& !ent->s.event)
 			continue;
 
+		// ignore if not a portal
+		if (!(ent->s.renderfx & RF_PORTALSURFACE))
+			continue;
+
 		// ignore if not touching a PV leaf
 		if (ent != clent)
 		{
@@ -487,6 +537,82 @@ void SV_BuildClientFrame (client_t *client)
 				// we may need to check another one
 				if (!ent->areanum2
 					|| !CM_AreasConnected (clientarea, ent->areanum2))
+					continue;		// blocked by a door
+			}
+
+			bitvector = fatpvs;
+
+			if (ent->num_clusters == -1)
+			{	// too many leafs for individual check, go by headnode
+				if (!CM_HeadnodeVisible (ent->headnode, bitvector))
+					continue;
+				c_fullsend++;
+			}
+			else
+			{	// check individual leafs
+				for (i=0 ; i < ent->num_clusters ; i++)
+				{
+					l = ent->clusternums[i];
+					if (bitvector[l >> 3] & (1 << (l&7) )) {
+						break;
+					}
+				}
+				if (i == ent->num_clusters)
+					continue;		// not visible
+			}
+
+			// merge PV sets if portal 
+			if ( !VectorCompare ( ent->s.origin, ent->s.old_origin ) ) {
+				portalarea = CM_PointLeafnum ( ent->s.old_origin );
+				portalarea = CM_LeafArea ( portalarea );
+
+				SV_MergePVS ( ent->s.old_origin );
+
+				CM_MergeAreaBits ( frame->areabits, portalarea );
+			}
+		}
+
+		// add it to the circular client_entities array
+		state = &svs.client_entities[svs.next_client_entities%svs.num_client_entities];
+		if (ent->s.number != e)
+		{
+			Com_DPrintf ("FIXING ENT->S.NUMBER!!!\n");
+			ent->s.number = e;
+		}
+		*state = ent->s;
+
+		// don't mark players missiles as solid
+		if (ent->owner == client->edict)
+			state->solid = 0;
+
+		svs.next_client_entities++;
+		frame->num_entities++;
+	}
+
+	for (e=1 ; e<ge->num_edicts ; e++)
+	{
+		ent = EDICT_NUM(e);
+
+		// ignore ents without visible models
+		if (ent->svflags & SVF_NOCLIENT)
+			continue;
+
+		// ignore ents without visible models unless they have an effect
+		if (!ent->s.modelindex && !ent->s.effects && !ent->s.sound
+			&& !ent->s.event)
+			continue;
+		if (ent->s.renderfx & RF_PORTALSURFACE)
+			continue;
+
+		// ignore if not touching a PV leaf
+		if (ent != clent)
+		{
+			// check area
+			if (! (frame->areabits[ent->areanum>>3] & (1<<(ent->areanum&7)) ) )
+			{	// doors can legally straddle two areas, so
+				// we may need to check another one
+				if (!ent->areanum2
+					|| !(frame->areabits[ent->areanum2>>3] & (1<<(ent->areanum2&7)) ))
 					continue;		// blocked by a door
 			}
 
@@ -519,9 +645,11 @@ void SV_BuildClientFrame (client_t *client)
 					for (i=0 ; i < ent->num_clusters ; i++)
 					{
 						l = ent->clusternums[i];
-						if (bitvector[l >> 3] & (1 << (l&7) ))
+						if (bitvector[l >> 3] & (1 << (l&7) )) {
 							break;
+						}
 					}
+
 					if (i == ent->num_clusters)
 						continue;		// not visible
 				}

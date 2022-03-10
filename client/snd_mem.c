@@ -22,10 +22,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "client.h"
 #include "snd_loc.h"
 
-int			cache_full_cycle;
-
-byte *S_Alloc (int size);
-
 /*
 ================
 ResampleSfx
@@ -34,7 +30,6 @@ ResampleSfx
 void ResampleSfx (sfxcache_t *sc, byte *data, char *name)
 {
 	int i, outcount, srcsample, srclength, samplefrac, fracstep;
-	float scale = (float) sc->speed / (float) dma.speed;
 
 	// this is usually 0.5 (128), 1 (256), or 2 (512)
 	fracstep = ((double) sc->speed / (double) dma.speed) * 256.0;
@@ -240,9 +235,9 @@ sfxcache_t *S_LoadSound (sfx_t *s)
 		name = s->name;
 
 	if (name[0] == '#')
-		strcpy(namebuffer, &name[1]);
+		Com_sprintf (namebuffer, sizeof(namebuffer), &name[1]);
 	else
-		Com_sprintf (namebuffer, sizeof(namebuffer), "%s", name);
+		Com_sprintf (namebuffer, sizeof(namebuffer), name);
 
 	size = FS_LoadFile (namebuffer, (void **)&data);
 
@@ -367,7 +362,7 @@ void DumpChunks(void)
 	char	str[5];
 	
 	str[4] = 0;
-	data_p=iff_data;
+	data_p = iff_data;
 	do
 	{
 		memcpy (str, data_p, 4);

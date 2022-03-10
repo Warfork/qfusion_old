@@ -29,11 +29,12 @@ int		snd_musicscaletable[32][256];
 int 	*snd_p, snd_linear_count, snd_vol, music_vol;
 short	*snd_out;
 
+#if !id386 || defined __linux__
 void S_WriteLinearBlastStereo16 (void)
 {
 	int		i;
 	int		val;
-
+	
 	for (i=0 ; i<snd_linear_count ; i+=2)
 	{
 		val = snd_p[i]>>8;
@@ -43,7 +44,7 @@ void S_WriteLinearBlastStereo16 (void)
 			snd_out[i] = (short)0x8000;
 		else
 			snd_out[i] = val;
-
+		
 		val = snd_p[i+1]>>8;
 		if (val > 0x7fff)
 			snd_out[i+1] = 0x7fff;
@@ -53,6 +54,118 @@ void S_WriteLinearBlastStereo16 (void)
 			snd_out[i+1] = val;
 	}
 }
+
+void S_WriteSwappedLinearBlastStereo16 (void)
+{
+	int		i;
+	int		val;
+	
+	for (i=0 ; i<snd_linear_count ; i+=2)
+	{
+		val = snd_p[i+1]>>8;
+		if (val > 0x7fff)
+			snd_out[i] = 0x7fff;
+		else if (val < (short)0x8000)
+			snd_out[i] = (short)0x8000;
+		else
+			snd_out[i] = val;
+		
+		val = snd_p[i]>>8;
+		if (val > 0x7fff)
+			snd_out[i+1] = 0x7fff;
+		else if (val < (short)0x8000)
+			snd_out[i+1] = (short)0x8000;
+		else
+			snd_out[i+1] = val;
+	}
+}
+#else
+__declspec( naked ) void S_WriteLinearBlastStereo16 (void)
+{
+	__asm {
+		 push edi
+		 push ebx
+		 mov ecx,ds:dword ptr[snd_linear_count]
+		 mov ebx,ds:dword ptr[snd_p]
+		 mov edi,ds:dword ptr[snd_out]
+		LWLBLoopTop:
+		 mov eax,ds:dword ptr[-8+ebx+ecx*4]
+		 sar eax,8
+		 cmp eax,07FFFh
+		 jg LClampHigh
+		 cmp eax,0FFFF8000h
+		 jnl LClampDone
+		 mov eax,0FFFF8000h
+		 jmp LClampDone
+		LClampHigh:
+		 mov eax,07FFFh
+		LClampDone:
+		 mov edx,ds:dword ptr[-4+ebx+ecx*4]
+		 sar edx,8
+		 cmp edx,07FFFh
+		 jg LClampHigh2
+		 cmp edx,0FFFF8000h
+		 jnl LClampDone2
+		 mov edx,0FFFF8000h
+		 jmp LClampDone2
+		LClampHigh2:
+		 mov edx,07FFFh
+		LClampDone2:
+		 shl edx,16
+		 and eax,0FFFFh
+		 or edx,eax
+		 mov ds:dword ptr[-4+edi+ecx*2],edx
+		 sub ecx,2
+		 jnz LWLBLoopTop
+		 pop ebx
+		 pop edi
+		 ret
+	}
+}
+
+__declspec( naked ) void S_WriteSwappedLinearBlastStereo16 (void)
+{
+	__asm {
+		 push edi
+		 push ebx
+		 mov ecx,ds:dword ptr[snd_linear_count]
+		 mov ebx,ds:dword ptr[snd_p]
+		 mov edi,ds:dword ptr[snd_out]
+		LWLBLoopTop:
+		 mov eax,ds:dword ptr[-4+ebx+ecx*4]
+		 sar eax,8
+		 cmp eax,07FFFh
+		 jg LClampHigh
+		 cmp eax,0FFFF8000h
+		 jnl LClampDone
+		 mov eax,0FFFF8000h
+		 jmp LClampDone
+		LClampHigh:
+		 mov eax,07FFFh
+		LClampDone:
+		 mov edx,ds:dword ptr[-8+ebx+ecx*4]
+		 sar edx,8
+		 cmp edx,07FFFh
+		 jg LClampHigh2
+		 cmp edx,0FFFF8000h
+		 jnl LClampDone2
+		 mov edx,0FFFF8000h
+		 jmp LClampDone2
+		LClampHigh2:
+		 mov edx,07FFFh
+		LClampDone2:
+		 shl edx,16
+		 and eax,0FFFFh
+		 or edx,eax
+		 mov ds:dword ptr[-4+edi+ecx*2],edx
+		 sub ecx,2
+		 jnz LWLBLoopTop
+		 pop ebx
+		 pop edi
+		 ret
+	}
+}
+#endif
 
 void S_TransferStereo16 (unsigned long *pbuf, int endtime)
 {
@@ -76,7 +189,11 @@ void S_TransferStereo16 (unsigned long *pbuf, int endtime)
 		snd_linear_count <<= 1;
 
 	// write a linear blast of samples
-		S_WriteLinearBlastStereo16 ();
+		if ( s_swapstereo->value ) {
+			S_WriteSwappedLinearBlastStereo16 ();
+		} else {
+			S_WriteLinearBlastStereo16 ();
+		}
 
 		snd_p += snd_linear_count;
 		lpaintedtime += (snd_linear_count>>1);
@@ -112,7 +229,6 @@ void S_TransferPaintBuffer(int endtime)
 			paintbuffer[i].left = paintbuffer[i].right = sin((paintedtime+i)*0.1)*20000*256;
 	}
 
-
 	if (dma.samplebits == 16 && dma.channels == 2)
 	{	// optimized case
 		S_TransferStereo16 (pbuf, endtime);
@@ -131,7 +247,7 @@ void S_TransferPaintBuffer(int endtime)
 			while (count--)
 			{
 				val = *p >> 8;
-				p+= step;
+				p += step;
 				if (val > 0x7fff)
 					val = 0x7fff;
 				else if (val < (short)0x8000)
@@ -146,7 +262,7 @@ void S_TransferPaintBuffer(int endtime)
 			while (count--)
 			{
 				val = *p >> 8;
-				p+= step;
+				p += step;
 				if (val > 0x7fff)
 					val = 0x7fff;
 				else if (val < (short)0x8000)
@@ -230,7 +346,6 @@ void S_PaintChannels(int endtime)
 				paintbuffer[i-paintedtime].right = 0;
 			}
 		}
-
 
 	// paint in the channels.
 		ch = channels;
@@ -322,9 +437,9 @@ void S_InitMusicScaletable (void)
 
 void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 {
+	int		i, j;
 	int		*lscale, *rscale;
 	unsigned char *sfx;
-	int		i;
 	portable_samplepair_t	*samp;
 
 	if (ch->leftvol > 255)
@@ -333,9 +448,19 @@ void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 		ch->rightvol = 255;
 
 	if ( sc->music ) {
+		if ( !s_musicvolume->value ) {
+			ch->pos += count;
+			return;
+		}
+
 		lscale = snd_musicscaletable[ch->leftvol >> 3];
 		rscale = snd_musicscaletable[ch->rightvol >> 3];
 	} else {
+		if ( !s_volume->value ) {
+			ch->pos += count;
+			return;
+		}
+
 		lscale = snd_scaletable[ch->leftvol >> 3];
 		rscale = snd_scaletable[ch->rightvol >> 3];
 	}
@@ -358,8 +483,9 @@ void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 
 		for (i=0 ; i<count ; i++, samp++)
 		{
-			samp->left += lscale[*sfx];
-			samp->right += rscale[*sfx++];
+			j = *sfx++;
+			samp->left += lscale[j];
+			samp->right += rscale[j];
 		}
 	}
 
@@ -368,15 +494,25 @@ void S_PaintChannelFrom8 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 
 void S_PaintChannelFrom16 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 {
+	int	i, j;
 	int leftvol, rightvol;
 	signed short *sfx;
-	int	i;
 	portable_samplepair_t	*samp;
 
 	if ( sc->music ) {
+		if ( !music_vol ) {
+			ch->pos += count;
+			return;
+		}
+
 		leftvol = ch->leftvol*music_vol;
 		rightvol = ch->rightvol*music_vol;
 	} else {
+		if ( !snd_vol ) {
+			ch->pos += count;
+			return;
+		}
+
 		leftvol = ch->leftvol*snd_vol;
 		rightvol = ch->rightvol*snd_vol;
 	}
@@ -399,8 +535,9 @@ void S_PaintChannelFrom16 (channel_t *ch, sfxcache_t *sc, int count, int offset)
 
 		for (i=0 ; i<count ; i++, samp++)
 		{
-			samp->left += (*sfx * leftvol) >> 8;
-			samp->right += (*sfx++ * rightvol) >> 8;
+			j = *sfx++;
+			samp->left += (j * leftvol) >> 8;
+			samp->right += (j * rightvol) >> 8;
 		}
 	}
 

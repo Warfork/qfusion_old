@@ -19,7 +19,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "ui_local.h"
-#include "ui_keycodes.h"
 
 /*
 =======================================================================
@@ -101,7 +100,7 @@ static void M_UnbindCommand (char *command)
 		if (!b)
 			continue;
 		if (!strncmp (b, command, l) )
-			trap_Key_SetBinding (j, "");
+			trap_Key_SetBinding (j, NULL);
 	}
 }
 
@@ -133,10 +132,14 @@ static void M_FindKeysForCommand (char *command, int *twokeys)
 
 static void KeyCursorDrawFunc( menuframework_s *menu )
 {
+	menucommon_s *item;
+
+	item = Menu_ItemAtCursor( menu );
+
 	if ( bind_grab )
-		trap_DrawChar( menu->x, menu->y + menu->cursor * (BIG_CHAR_HEIGHT+1), '=', FONT_BIG, colorWhite );
+		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, '=', FONT_BIG, colorWhite );
 	else
-		trap_DrawChar( menu->x, menu->y + menu->cursor * (BIG_CHAR_HEIGHT+1), 12 + ( ( int ) ( Sys_Milliseconds() / 250 ) & 1 ), FONT_BIG, colorWhite );
+		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, 12 + ( ( int ) ( Sys_Milliseconds() / 250 ) & 1 ), FONT_BIG, colorWhite );
 }
 
 static void DrawKeyBindingFunc( void *self )
@@ -148,23 +151,28 @@ static void DrawKeyBindingFunc( void *self )
 		
 	if (keys[0] == -1)
 	{
-		Menu_DrawString( a->generic.x + a->generic.parent->x + 16, a->generic.y + a->generic.parent->y, "???" );
+		trap_DrawPropString ( a->generic.x + a->generic.parent->x + 16, 
+			a->generic.y + a->generic.parent->y, "???", FONT_SMALL, colorWhite );
 	}
 	else
 	{
 		int x;
-		const char *name;
+		char *name;
 
 		name = trap_Key_KeynumToString (keys[0]);
 
-		Menu_DrawString( a->generic.x + a->generic.parent->x + 16, a->generic.y + a->generic.parent->y, name );
+		trap_DrawPropString ( a->generic.x + a->generic.parent->x + 16, 
+			a->generic.y + a->generic.parent->y, name, FONT_SMALL, colorWhite );
 
-		x = strlen(name) * BIG_CHAR_WIDTH;
+		x = trap_PropStringLength ( name, FONT_SMALL );
 
 		if (keys[1] != -1)
 		{
-			Menu_DrawString( a->generic.x + a->generic.parent->x + 16 + BIG_CHAR_WIDTH + x, a->generic.y + a->generic.parent->y, "or" );
-			Menu_DrawString( a->generic.x + a->generic.parent->x + 16 + BIG_CHAR_WIDTH + BIG_CHAR_WIDTH*3 + x, a->generic.y + a->generic.parent->y, trap_Key_KeynumToString (keys[1]) );
+			trap_DrawString ( a->generic.x + a->generic.parent->x + 16 + 8 + x, 
+				a->generic.y + a->generic.parent->y, "or", FONT_SMALL, colorWhite );
+
+			trap_DrawPropString ( a->generic.x + a->generic.parent->x + 16 + 8 + x + 8*3,
+				a->generic.y + a->generic.parent->y, trap_Key_KeynumToString (keys[1]), FONT_SMALL, colorWhite );
 		}
 	}
 }
@@ -186,11 +194,16 @@ static void KeyBindingFunc( void *self )
 
 static void Keys_MenuInit( void )
 {
+	int w, h;
 	int y = 0;
 	int i = 0;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_keys_menu.x = trap_GetWidth() * 0.50;
+	w = uis.vidWidth;
+	h = uis.vidHeight;
+
+	s_keys_menu.x = w / 2;
+	s_keys_menu.y = h / 2 - 80;
 	s_keys_menu.nitems = 0;
 	s_keys_menu.cursordraw = KeyCursorDrawFunc;
 
@@ -404,8 +417,10 @@ static void Keys_MenuInit( void )
 
 	Menu_AddItem( &s_keys_menu, ( void * ) &s_keys_help_computer_action );
 	
-	Menu_SetStatusBar( &s_keys_menu, "enter to change, backspace to clear" );
 	Menu_Center( &s_keys_menu );
+	Menu_Init ( &s_keys_menu );
+
+	Menu_SetStatusBar( &s_keys_menu, "enter to change, backspace to clear" );
 }
 
 static void Keys_MenuDraw (void)
@@ -437,6 +452,7 @@ static const char *Keys_MenuKey( int key )
 	{
 	case K_KP_ENTER:
 	case K_ENTER:
+	case K_MOUSE1:
 		KeyBindingFunc( item );
 		return menu_in_sound;
 	case K_BACKSPACE:		// delete bindings
@@ -452,6 +468,6 @@ static const char *Keys_MenuKey( int key )
 void M_Menu_Keys_f (void)
 {
 	Keys_MenuInit();
-	M_PushMenu( Keys_MenuDraw, Keys_MenuKey );
+	M_PushMenu( &s_keys_menu, Keys_MenuDraw, Keys_MenuKey );
 }
 

@@ -35,7 +35,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "input.h"
 #include "keys.h"
 #include "console.h"
-// Vic
 #include "../ui/ui.h"
 
 //=============================================================================
@@ -151,6 +150,14 @@ typedef struct
 	struct	model_s		*modPowerScreen;
 	struct	model_s		*modLightning;
 	struct	model_s		*modMeatyGib;
+	
+	// shaders
+	struct	shader_s	*shaderGrenadeExplosion;
+	struct	shader_s	*shaderRocketExplosion;
+	struct	shader_s	*shaderPowerupQuad;
+	struct	shader_s	*shaderQuadWeapon;
+	struct	shader_s	*shaderPowerupPenta;
+	struct	shader_s	*shaderShellEffect;
 } client_media_t;
 
 //
@@ -183,7 +190,7 @@ typedef struct
 	vec3_t		prediction_error;
 
 	frame_t		frame;				// received from server
-	int			surpressCount;		// number of messages rate supressed
+	int			suppressCount;		// number of messages rate suppressed
 	frame_t		frames[UPDATE_BACKUP];
 
 	// the client maintains its own idea of view angles, which are
@@ -209,12 +216,7 @@ typedef struct
 
 	//
 	// non-gameserver infornamtion
-	// FIXME: move this cinematic stuff into the cin_t structure
-	int			cinematic_file;
-	int			cinematictime;		// cls.realtime for first cinematic frame
-	int			cinematicframe;
-	char		cinematicpalette[768];
-	qboolean	cinematicpalette_active;
+	cinematics_t cin;
 
 	//
 	// server state information
@@ -225,14 +227,21 @@ typedef struct
 	int			playernum;
 
 	char		configstrings[MAX_CONFIGSTRINGS][MAX_QPATH];
-	char		mapname[MAX_QPATH-4-5];
-	char		levelshot[MAX_QPATH+10];
+	char		*statusbar;
+
+	char		levelshot[MAX_QPATH];
+	char		checkname[MAX_QPATH];
+	char		loadingstring[32];
+	int			effects;
+	qboolean	thirdperson;
 
 	//
 	// locally derived information from server state
 	//
 	struct model_s	*model_draw[MAX_MODELS];
 	struct cmodel_s	*model_clip[MAX_MODELS];
+
+	struct sfx_s	*music_precache;
 
 	struct sfx_s	*sound_precache[MAX_SOUNDS];
 	struct shader_s	*image_precache[MAX_IMAGES];
@@ -255,14 +264,6 @@ of server connections
 */
 
 typedef enum {
-	ca_uninitialized,
-	ca_disconnected, 	// not talking to a server
-	ca_connecting,		// sending request packets to the server
-	ca_connected,		// netchan_t established, waiting for svc_serverdata
-	ca_active			// game views should be displayed
-} connstate_t;
-
-typedef enum {
 	dl_none,
 	dl_model,
 	dl_sound,
@@ -270,16 +271,9 @@ typedef enum {
 	dl_single
 } dltype_t;		// download type
 
-typedef enum {
-	key_game, 
-	key_console, 
-	key_message, 
-	key_menu
-} keydest_t;
-
 typedef struct
 {
-	connstate_t	state;
+	connstate_t	state;				// only set through CL_SetClientState
 	keydest_t	key_dest;
 
 	int			framecount;
@@ -300,7 +294,6 @@ typedef struct
 	int			quakePort;			// a 16 bit value that allows quake servers
 									// to work around address translating routers
 	netchan_t	netchan;
-	int			serverProtocol;		// in case we are doing some kind of version hack
 
 	int			challenge;			// from the server to use for connecting
 
@@ -361,12 +354,16 @@ extern	cvar_t	*m_yaw;
 extern	cvar_t	*m_forward;
 extern	cvar_t	*m_side;
 
-extern	cvar_t	*freelook;
+extern	cvar_t	*cl_freelook;
 
 extern	cvar_t	*cl_paused;
 extern	cvar_t	*cl_timedemo;
 
 extern	cvar_t	*cl_vwep;
+
+extern	cvar_t	*cl_thirdPerson;
+extern	cvar_t	*cl_thirdPersonAngle;
+extern	cvar_t	*cl_thirdPersonRange;
 
 typedef struct
 {
@@ -375,7 +372,6 @@ typedef struct
 	vec3_t	origin;
 	float	radius;
 	float	die;				// stop lighting after this time
-	float	decay;				// drop this each second
 	float	minlight;			// don't add when contributing less
 } cdlight_t;
 
@@ -421,8 +417,6 @@ typedef struct particle_s
 
 
 #define	PARTICLE_GRAVITY	40
-#define BLASTER_PARTICLE_COLOR		0xe0
-#define INSTANT_PARTICLE	-10000.0
 
 void CL_ClearEffects (void);
 void CL_ClearTEnts (void);
@@ -431,16 +425,19 @@ void CL_QuadTrail (vec3_t start, vec3_t end);
 void CL_RailTrail (vec3_t start, vec3_t end);
 void CL_BubbleTrail (vec3_t start, vec3_t end, int dist);
 void CL_FlagTrail (vec3_t start, vec3_t end, float color);
+void CL_GibPlayer ( vec3_t origin, vec3_t mins, vec3_t maxs );
+void CL_AddLaser ( vec3_t start, vec3_t end, int colors );
+void CL_AddBeam (int ent, vec3_t start, vec3_t end, vec3_t offset, struct model_s *model );
+void CL_AddLightning (int srcEnt, int destEnt, vec3_t start, vec3_t end, struct model_s *model);
 
 int CL_ParseEntityBits (unsigned *bits);
-void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, int bits);
+void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, unsigned bits);
 void CL_ParseFrame (void);
 
 void CL_ParseTEnt (void);
 void CL_ParseConfigString (void);
 void CL_ParseMuzzleFlash (void);
 void CL_ParseMuzzleFlash2 (void);
-void SmokeAndFlash(vec3_t origin);
 
 void CL_RunParticles (void);
 void CL_RunDLights (void);
@@ -448,7 +445,6 @@ void CL_RunDLights (void);
 void CL_AddEntities (void);
 void CL_AddDLights (void);
 void CL_AddTEnts (void);
-void CL_GibPlayer ( entity_state_t *ent );
 
 //=================================================
 
@@ -465,7 +461,7 @@ void CL_ParseLayout (void);
 //
 // cl_main
 //
-extern	uiexport_t	uie;	// interface to user interface .dll
+extern	ui_export_t	*uie;	// interface to user interface .dll
 
 void CL_Init (void);
 
@@ -476,7 +472,9 @@ void CL_Disconnect_f (void);
 void CL_GetChallengePacket (void);
 void CL_PingServers_f (void);
 void CL_Snd_Restart_f (void);
+void CL_PlayBackgroundMusic (void); 
 void CL_RequestNextDownload (void);
+void CL_SetClientState (int state);
 
 //
 // cl_input
@@ -554,6 +552,12 @@ void CL_InitPrediction (void);
 void CL_PredictMove (void);
 void CL_CheckPredictionError (void);
 
+#define IGNORE_NOTHING	-1
+#define IGNORE_WORLD	0
+#define IGNORE_PLAYER	cl.playernum+1
+
+trace_t CL_Trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask);
+
 //
 // cl_fx.c
 //
@@ -572,11 +576,14 @@ void CL_EntityEvent (entity_state_t *ent);
 // user interface
 //
 void UI_Init (void);
+void UI_Shutdown (void);
 void UI_Keydown (int key);
-void UI_Draw (void);
+void UI_Refresh (int frametime);
+void UI_Update (void);
 void UI_Menu_Main_f (void);
 void UI_ForceMenuOff (void);
 void UI_AddToServerList (netadr_t *adr, char *info);
+void UI_MouseMove (int dx, int dy);
 
 //
 // cl_inv.c
@@ -590,6 +597,12 @@ void CL_DrawInventory (void);
 //
 void CL_PredictMovement (void);
 
+//
+// cl_scrn.c
+void CL_LoadingString (char *str);
+void CL_LoadingFilename (char *str);
+
+//
 #if id386
 void x86_TimerStart( void );
 void x86_TimerStop( void );

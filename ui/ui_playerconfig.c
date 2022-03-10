@@ -20,7 +20,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "ui_local.h"
 
-void M_Menu_DownloadOptions_f (void);
 void M_SetMultiplayerStatusBar ( const char *string );
 
 /*
@@ -40,7 +39,6 @@ static menuseparator_s	s_player_skin_title;
 static menuseparator_s	s_player_model_title;
 static menuseparator_s	s_player_hand_title;
 static menuseparator_s	s_player_rate_title;
-static menuaction_s		s_player_download_action;
 
 #define MAX_DISPLAYNAME 16
 #define MAX_PLAYERMODELS 1024
@@ -60,11 +58,6 @@ static int s_numplayermodels;
 static int rate_tbl[] = { 2500, 3200, 5000, 10000, 25000, 0 };
 static const char *rate_names[] = { "28.8 Modem", "33.6 Modem", "Single ISDN",
 	"Dual ISDN/Cable", "T1/LAN", "User defined", 0 };
-
-void DownloadOptionsFunc( void *self )
-{
-	M_Menu_DownloadOptions_f();
-}
 
 static void HandednessCallback( void *unused )
 {
@@ -175,9 +168,7 @@ static void PlayerConfig_ScanDirectories( void )
 		if ( !nskins )
 			continue;
 
-		skinnames = Q_malloc( sizeof( char * ) * ( nskins + 1 ) );
-		memset( skinnames, 0, sizeof( char * ) * ( nskins + 1 ) );
-
+		skinnames = UI_malloc( sizeof( char * ) * ( nskins + 1 ) );
 		skinptr = pcxnames;
 
 		// copy the valid skins
@@ -201,7 +192,7 @@ static void PlayerConfig_ScanDirectories( void )
 		s_pmi[s_numplayermodels].skindisplaynames = skinnames;
 
 		// make short name for the model
-		strncpy( s_pmi[s_numplayermodels].displayname, dirptr, MAX_DISPLAYNAME-1 );
+		Q_strncpyz( s_pmi[s_numplayermodels].displayname, dirptr, sizeof(s_pmi[s_numplayermodels].displayname) );
 		strcpy( s_pmi[s_numplayermodels].directory, dirptr );
 
 		s_numplayermodels++;
@@ -242,7 +233,7 @@ qboolean PlayerConfig_MenuInit( void )
 	char *skin = trap_Cvar_VariableString ( "skin" );
 	int w, h;
 	int y = 0;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
 	static const char *handedness[] = { "right", "left", "center", 0 };
 
@@ -295,7 +286,8 @@ qboolean PlayerConfig_MenuInit( void )
 		}
 	}
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
+	w = uis.vidWidth;
+	h = uis.vidHeight;
 
 	s_player_config_menu.x = w / 2 - 95; 
 	s_player_config_menu.y = h / 2 - 97;
@@ -330,29 +322,29 @@ qboolean PlayerConfig_MenuInit( void )
 	s_player_skin_title.generic.x    = -16;
 	s_player_skin_title.generic.y	 = y+=y_offset;
 
-	s_player_skin_box.generic.type = MTYPE_SPINCONTROL;
-	s_player_skin_box.generic.x	= -56;
-	s_player_skin_box.generic.y	= y+=y_offset;
-	s_player_skin_box.generic.name	= 0;
-	s_player_skin_box.generic.callback = 0;
+	s_player_skin_box.generic.type			= MTYPE_SPINCONTROL;
+	s_player_skin_box.generic.x				= -56;
+	s_player_skin_box.generic.y				= y+=y_offset;
+	s_player_skin_box.generic.name			= 0;
+	s_player_skin_box.generic.callback		= 0;
 	s_player_skin_box.generic.cursor_offset = -72;
-	s_player_skin_box.curvalue = currentskinindex;
-	s_player_skin_box.itemnames = s_pmi[currentdirectoryindex].skindisplaynames;
+	s_player_skin_box.curvalue				= currentskinindex;
+	s_player_skin_box.itemnames				= s_pmi[currentdirectoryindex].skindisplaynames;
 	y+=y_offset;
 
-	s_player_hand_title.generic.type = MTYPE_SEPARATOR;
-	s_player_hand_title.generic.name = "handedness";
-	s_player_hand_title.generic.x    = 32;
-	s_player_hand_title.generic.y	 = y+=y_offset;
+	s_player_hand_title.generic.type		= MTYPE_SEPARATOR;
+	s_player_hand_title.generic.name		= "handedness";
+	s_player_hand_title.generic.x			= 32;
+	s_player_hand_title.generic.y			= y+=y_offset;
 
-	s_player_handedness_box.generic.type = MTYPE_SPINCONTROL;
-	s_player_handedness_box.generic.x	= -56;
-	s_player_handedness_box.generic.y	= y+=y_offset;
+	s_player_handedness_box.generic.type	= MTYPE_SPINCONTROL;
+	s_player_handedness_box.generic.x		= -56;
+	s_player_handedness_box.generic.y		= y+=y_offset;
 	s_player_handedness_box.generic.name	= 0;
 	s_player_handedness_box.generic.cursor_offset = -72;
 	s_player_handedness_box.generic.callback = HandednessCallback;
-	s_player_handedness_box.curvalue = trap_Cvar_VariableValue( "hand" );
-	s_player_handedness_box.itemnames = handedness;
+	s_player_handedness_box.curvalue		= trap_Cvar_VariableValue( "hand" );
+	s_player_handedness_box.itemnames		= handedness;
 	y+=y_offset;
 
 	for (i = 0; i < sizeof(rate_tbl) / sizeof(*rate_tbl) - 1; i++)
@@ -364,23 +356,14 @@ qboolean PlayerConfig_MenuInit( void )
 	s_player_rate_title.generic.x    = 56;
 	s_player_rate_title.generic.y	 = y+=y_offset;
 
-	s_player_rate_box.generic.type = MTYPE_SPINCONTROL;
-	s_player_rate_box.generic.x	= -56;
-	s_player_rate_box.generic.y	= y+=y_offset;
-	s_player_rate_box.generic.name	= 0;
+	s_player_rate_box.generic.type		= MTYPE_SPINCONTROL;
+	s_player_rate_box.generic.x			= -56;
+	s_player_rate_box.generic.y			= y+=y_offset;
+	s_player_rate_box.generic.name		= 0;
 	s_player_rate_box.generic.cursor_offset = -72;
 	s_player_rate_box.generic.callback = RateCallback;
-	s_player_rate_box.curvalue = i;
-	s_player_rate_box.itemnames = rate_names;
-	y+=y_offset;
-
-	s_player_download_action.generic.type = MTYPE_ACTION;
-	s_player_download_action.generic.name	= "download options";
-	s_player_download_action.generic.flags= QMF_LEFT_JUSTIFY;
-	s_player_download_action.generic.x	= -24;
-	s_player_download_action.generic.y	= y+=y_offset;
-	s_player_download_action.generic.statusbar = NULL;
-	s_player_download_action.generic.callback = DownloadOptionsFunc;
+	s_player_rate_box.curvalue			= i;
+	s_player_rate_box.itemnames			= rate_names;
 
 	Menu_AddItem( &s_player_config_menu, &s_player_name_field );
 	Menu_AddItem( &s_player_config_menu, &s_player_model_title );
@@ -394,14 +377,14 @@ qboolean PlayerConfig_MenuInit( void )
 	Menu_AddItem( &s_player_config_menu, &s_player_handedness_box );
 	Menu_AddItem( &s_player_config_menu, &s_player_rate_title );
 	Menu_AddItem( &s_player_config_menu, &s_player_rate_box );
-	Menu_AddItem( &s_player_config_menu, &s_player_download_action );
+
+	Menu_Init ( &s_player_config_menu );
 
 	return true;
 }
 
 void PlayerConfig_MenuDraw( void )
 {
-	extern float CalcFov( float fov_x, float w, float h );
 	refdef_t refdef;
 	char scratch[MAX_QPATH];
 	int w, h;
@@ -412,15 +395,15 @@ void PlayerConfig_MenuDraw( void )
 
 	refdef.x = w / 2 + 60;
 	refdef.y = h / 2 - 72;
-	refdef.width = 144;
-	refdef.height = 138;
-	refdef.fov_x = 40;
+	refdef.width = 200;
+	refdef.height = 200;
+	refdef.fov_x = 30;
 	refdef.fov_y = CalcFov( refdef.fov_x, refdef.width, refdef.height );
 	refdef.time = trap_CL_GetTime_f()*0.001;
 
 	if ( s_pmi[s_player_model_box.curvalue].skindisplaynames )
 	{
-		static int yaw;
+		static vec3_t angles;
 		int maxframe = 29;
 		entity_t entity;
 
@@ -429,17 +412,17 @@ void PlayerConfig_MenuDraw( void )
 		Com_sprintf( scratch, sizeof( scratch ), "players/%s/tris.md2", s_pmi[s_player_model_box.curvalue].directory );
 		entity.model = trap_RegisterModel( scratch );
 		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s.pcx", s_pmi[s_player_model_box.curvalue].directory, s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
-		entity.skin = trap_RegisterSkin( scratch );
+		entity.customShader = trap_RegisterSkin( scratch );
 		entity.flags = RF_FULLBRIGHT;
 		entity.origin[0] = 100;
-		entity.origin[1] = 0;
-		entity.origin[2] = 0;
+		entity.scale = 1.0f;
 		VectorCopy( entity.origin, entity.oldorigin );
-		entity.backlerp = 0.0;
-		entity.angles[1] = yaw++;
+		angles[1] += 1.0f;
 
-		if ( yaw > 360 )
-			yaw -= 360;
+		if ( angles[1] > 360 )
+			angles[1] -= 360;
+
+		AnglesToAxis ( angles, entity.axis );
 
 		entity.oldframe = entity.frame;
 		entity.frame = 0;
@@ -451,23 +434,24 @@ void PlayerConfig_MenuDraw( void )
 
 		Menu_Draw( &s_player_config_menu );
 
-		M_DrawTextBox( ( refdef.x ) * ( 320.0F / w ) + 22, ( h / 2 ) * ( 240.0F / h) - 77, refdef.width / 8, refdef.height / 8 );
-		refdef.height += 4;
-
 		trap_RenderFrame( &refdef );
 
 		Com_sprintf( scratch, sizeof( scratch ), "players/%s/%s_i.pcx", 
 			s_pmi[s_player_model_box.curvalue].directory,
 			s_pmi[s_player_model_box.curvalue].skindisplaynames[s_player_skin_box.curvalue] );
-		trap_DrawPic( s_player_config_menu.x - 40, refdef.y, scratch );
+		trap_DrawStretchPic( s_player_config_menu.x - 40, refdef.y, 32, 32, 0, 0, 1, 1, colorWhite, trap_RegisterPic(scratch) );
 	}
 }
 
 const char *PlayerConfig_MenuKey (int key)
 {
 	int i;
+	menucommon_s *item;
 
-	if ( key == K_ESCAPE )
+	item = Menu_ItemAtCursor ( &s_player_config_menu );
+
+	if ( key == K_ESCAPE || ( (key == K_MOUSE2) && (item->type != MTYPE_SPINCONTROL) &&
+		(item->type != MTYPE_SLIDER)) )
 	{
 		char scratch[1024];
 
@@ -485,15 +469,15 @@ const char *PlayerConfig_MenuKey (int key)
 
 			for ( j = 0; j < s_pmi[i].nskins; j++ )
 			{
-				if ( s_pmi[i].skindisplaynames[j] )
-					free( s_pmi[i].skindisplaynames[j] );
+				UI_free( s_pmi[i].skindisplaynames[j] );
 				s_pmi[i].skindisplaynames[j] = 0;
 			}
-			free( s_pmi[i].skindisplaynames );
+			UI_free( s_pmi[i].skindisplaynames );
 			s_pmi[i].skindisplaynames = 0;
 			s_pmi[i].nskins = 0;
 		}
 	}
+
 	return Default_MenuKey( &s_player_config_menu, key );
 }
 
@@ -507,6 +491,6 @@ void M_Menu_PlayerConfig_f (void)
 	}
 
 	M_SetMultiplayerStatusBar ( NULL );
-	M_PushMenu( PlayerConfig_MenuDraw, PlayerConfig_MenuKey );
+	M_PushMenu( &s_player_config_menu, PlayerConfig_MenuDraw, PlayerConfig_MenuKey );
 }
 

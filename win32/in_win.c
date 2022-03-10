@@ -111,7 +111,7 @@ qboolean	mlooking;
 void IN_MLookDown (void) { mlooking = true; }
 void IN_MLookUp (void) {
 mlooking = false;
-if (!freelook->value && lookspring->value)
+if (!cl_freelook->value && lookspring->value)
 		IN_CenterView ();
 }
 
@@ -280,6 +280,11 @@ void IN_MouseMove (usercmd_t *cmd)
 	if (!GetCursorPos (&current_pos))
 		return;
 
+	if ( cls.key_dest == key_menu ) {
+		UI_MouseMove ( current_pos.x - window_center_x, current_pos.y - window_center_y );
+		goto done;
+	}
+
 	mx = current_pos.x - window_center_x;
 	my = current_pos.y - window_center_y;
 
@@ -311,7 +316,7 @@ void IN_MouseMove (usercmd_t *cmd)
 	else
 		cl.viewangles[YAW] -= m_yaw->value * mouse_x;
 
-	if ( (mlooking || freelook->value) && !(in_strafe.state & 1))
+	if ( (mlooking || cl_freelook->value) && !(in_strafe.state & 1))
 	{
 		cl.viewangles[PITCH] += m_pitch->value * mouse_y;
 	}
@@ -320,6 +325,7 @@ void IN_MouseMove (usercmd_t *cmd)
 		cmd->forwardmove -= m_forward->value * mouse_y;
 	}
 
+done:
 	// force the mouse to the center, so there's room to move
 	if (mx || my)
 		SetCursorPos (window_center_x, window_center_y);
@@ -426,18 +432,6 @@ void IN_Frame (void)
 	{
 		IN_DeactivateMouse ();
 		return;
-	}
-
-	if ( !cl.refresh_prepped
-		|| cls.key_dest == key_console
-		|| cls.key_dest == key_menu)
-	{
-		// temporarily deactivate if in fullscreen
-		if (Cvar_VariableValue ("vid_fullscreen") == 0)
-		{
-			IN_DeactivateMouse ();
-			return;
-		}
 	}
 
 	IN_ActivateMouse ();

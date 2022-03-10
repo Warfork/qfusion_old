@@ -23,7 +23,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <assert.h>
 #include <float.h>
 
-#include "..\client\client.h"
+#include "../client/client.h"
 #include "winquake.h"
 //#include "zmouse.h"
 
@@ -40,6 +40,7 @@ cvar_t		*vid_gamma;
 cvar_t		*vid_xpos;			// X coordinate of window position
 cvar_t		*vid_ypos;			// Y coordinate of window position
 cvar_t		*vid_fullscreen;
+cvar_t		*vid_displayfrequency;
 
 // Global variables used internally by this module
 viddef_t	viddef;				// global video state; used by other modules
@@ -111,26 +112,26 @@ DLL GLUE
 
 //==========================================================================
 
-byte        scantokey[128] = 
-					{ 
-//  0           1       2       3       4       5       6       7 
-//  8           9       A       B       C       D       E       F 
-	0  ,    27,     '1',    '2',    '3',    '4',    '5',    '6', 
-	'7',    '8',    '9',    '0',    '-',    '=',    K_BACKSPACE, 9, // 0 
-	'q',    'w',    'e',    'r',    't',    'y',    'u',    'i', 
-	'o',    'p',    '[',    ']',    13 ,    K_CTRL,'a',  's',      // 1 
-	'd',    'f',    'g',    'h',    'j',    'k',    'l',    ';', 
-	'\'' ,    '`',    K_SHIFT,'\\',  'z',    'x',    'c',    'v',      // 2 
-	'b',    'n',    'm',    ',',    '.',    '/',    K_SHIFT,'*', 
-	K_ALT,' ',   0  ,    K_F1, K_F2, K_F3, K_F4, K_F5,   // 3 
-	K_F6, K_F7, K_F8, K_F9, K_F10,  K_PAUSE,    0  , K_HOME, 
-	K_UPARROW,K_PGUP,K_KP_MINUS,K_LEFTARROW,K_KP_5,K_RIGHTARROW, K_KP_PLUS,K_END, //4 
-	K_DOWNARROW,K_PGDN,K_INS,K_DEL,0,0,             0,              K_F11, 
-	K_F12,0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0,        // 5
-	0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0, 
-	0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0,        // 6 
-	0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0, 
-	0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0  ,    0         // 7 
+byte scantokey[128] = 
+{ 
+//  0       1       2       3       4       5       6       7 
+//  8       9       A       B       C       D       E       F 
+    0,     K_ESCAPE,'1',    '2',    '3',    '4',    '5',    '6', 
+    '7',    '8',    '9',    '0',    '-',    '=',K_BACKSPACE,K_TAB,    // 0 
+    'q',    'w',    'e',    'r',    't',    'y',    'u',    'i', 
+    'o',    'p',    '[',    ']',    13 ,    K_CTRL, 'a',    's',      // 1 
+    'd',    'f',    'g',    'h',    'j',    'k',    'l',    ';', 
+    '\'',   '`',    K_SHIFT,'\\',   'z',    'x',    'c',    'v',      // 2 
+    'b',    'n',    'm',    ',',    '.',    '/',    K_SHIFT,'*', 
+    K_ALT,  ' ', K_CAPSLOCK,K_F1,   K_F2,   K_F3,   K_F4,   K_F5,     // 3
+    K_F6,   K_F7,   K_F8,   K_F9,   K_F10,  K_PAUSE,0,      K_HOME, 
+    K_UPARROW,K_PGUP,K_KP_MINUS,K_LEFTARROW,K_KP_5,K_RIGHTARROW,K_KP_PLUS,K_END, //4 
+    K_DOWNARROW,K_PGDN,K_INS,K_DEL, 0,      0,      0,      K_F11, 
+    K_F12,  0,      0,      0,      0,      0,      0,      0,        // 5
+    0,      0,      0,      0,      0,      0,      0,      0, 
+    0,      0,      0,      0,      0,      0,      0,      0,        // 6 
+    0,      0,      0,      0,      0,      0,      0,      0, 
+    0,      0,      0,      0,      0,      0,      0,      0         // 7 
 }; 
 
 /*
@@ -186,12 +187,12 @@ int MapKey (int key)
 	{
 		switch ( result )
 		{
-		case 0x0D:
+		case K_ENTER:
 			return K_KP_ENTER;
-		case 0x2F:
+		case '/':
 			return K_KP_SLASH;
-		case 0xAF:
-			return K_KP_PLUS;
+		case K_PAUSE:
+			return K_NUMLOCK;
 		}
 		return result;
 	}
@@ -213,8 +214,6 @@ void AppActivate(BOOL fActive, BOOL minimize)
 	if (!ActiveApp)
 	{
 		IN_Activate (false);
-// Vic
-//		CDAudio_Activate (false);
 		S_Activate (false);
 
 		if ( win_noalttab->value )
@@ -225,8 +224,6 @@ void AppActivate(BOOL fActive, BOOL minimize)
 	else
 	{
 		IN_Activate (true);
-// Vic
-//		CDAudio_Activate (true);
 		S_Activate (true);
 		if ( win_noalttab->value )
 		{
@@ -248,8 +245,6 @@ LONG WINAPI MainWndProc (
     WPARAM  wParam,
     LPARAM  lParam)
 {
-	LONG			lRet = 0;
-
 	if ( uMsg == MSH_MOUSEWHEEL )
 	{
 		if ( ( ( int ) wParam ) > 0 )
@@ -480,7 +475,7 @@ void VID_UpdateWindowPosAndSize( int x, int y )
 	w = r.right - r.left;
 	h = r.bottom - r.top;
 
-	MoveWindow( cl_hwnd, vid_xpos->value, vid_ypos->value, w, h, TRUE );
+	MoveWindow( cl_hwnd, x, y, w, h, TRUE );
 }
 
 /*
@@ -531,13 +526,15 @@ qboolean VID_LoadRefresh( void )
 ============
 VID_CheckChanges
 
-This function gets called once just before drawing each frame, and it's sole purpose in life
+This function gets called once just before drawing each frame, and its sole purpose in life
 is to check to see if any of the video mode parameters have changed, and if they have to 
 update the rendering DLL and/or video mode to match.
 ============
 */
 void VID_CheckChanges (void)
 {
+	qboolean vid_ref_was_modified = false;
+
 	if ( win_noalttab->modified )
 	{
 		if ( win_noalttab->value )
@@ -553,6 +550,7 @@ void VID_CheckChanges (void)
 
 	if ( vid_ref_modified )
 	{
+		vid_ref_was_modified = true;
 		cl.force_refdef = true;		// can't use a paused refdef
 		S_StopAllSounds();
 	}
@@ -580,6 +578,17 @@ void VID_CheckChanges (void)
 		cls.disable_screen = false;
 	}
 
+	if ( reflib_active && vid_ref_was_modified ) {
+		UI_Update ();
+
+		if ( cls.state == ca_disconnected ) {
+			UI_ForceMenuOff ();
+			UI_Menu_Main_f ();
+		}
+
+		CL_PlayBackgroundMusic ();
+	}
+
 	/*
 	** update our window position
 	*/
@@ -604,7 +613,8 @@ void VID_Init (void)
 	vid_ref_modified = true;
 	vid_xpos = Cvar_Get ( "vid_xpos", "3", CVAR_ARCHIVE );
 	vid_ypos = Cvar_Get ( "vid_ypos", "22", CVAR_ARCHIVE );
-	vid_fullscreen = Cvar_Get ( "vid_fullscreen", "0", CVAR_ARCHIVE|CVAR_LATCH );
+	vid_fullscreen = Cvar_Get ( "vid_fullscreen", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	vid_displayfrequency = Cvar_Get ( "vid_displayfrequency", "0", CVAR_LATCH_VIDEO );
 	vid_gamma = Cvar_Get( "vid_gamma", "1", CVAR_ARCHIVE );
 	win_noalttab = Cvar_Get( "win_noalttab", "0", CVAR_ARCHIVE );
 
@@ -618,11 +628,11 @@ void VID_Init (void)
 #if 0
 	{
 		cvar_t *gl_driver = Cvar_Get( "gl_driver", "opengl32", 0 );
-		cvar_t *gl_mode = Cvar_Get( "gl_mode", "3", 0 );
+		cvar_t *gl_mode = Cvar_Get( "r_mode", "3", 0 );
 
-		if ( stricmp( gl_driver->string, "3dfxgl" ) == 0 )
+		if ( Q_stricmp( gl_driver->string, "3dfxgl" ) == 0 )
 		{
-			Cvar_SetValue( "gl_mode", 3 );
+			Cvar_SetValue( "r_mode", 3 );
 			viddef.width  = 640;
 			viddef.height = 480;
 		}

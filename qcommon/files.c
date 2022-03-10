@@ -41,12 +41,11 @@ typedef struct pack_s
 {
 	char	filename[MAX_OSPATH];
 	unzFile handle;
-	int		numfiles;
 } pack_t;
 
 char	fs_gamedir[MAX_OSPATH];
-cvar_t	*fs_basedir;
-cvar_t	*fs_cddir;
+cvar_t	*fs_basepath;
+cvar_t	*fs_cdpath;
 cvar_t	*fs_gamedirvar;
 
 typedef struct searchpath_s
@@ -61,12 +60,12 @@ searchpath_t	*fs_base_searchpaths;	// without gamedirs
 
 typedef struct filehandle_s
 {
-	unzFile		zipFile;
+	file_in_zip_read_info_s *zipEntry;
 	FILE		*f;
 	qboolean	occupied;
 } filehandle_t;
  
-#define MAX_HANDLES		1000
+#define MAX_HANDLES		1024
 
 filehandle_t fs_filehandles[MAX_HANDLES];
 	
@@ -111,10 +110,11 @@ void FS_FCloseFile (int f)
 		fs_filehandles[f].f = NULL;
 	}
 	
-	if (fs_filehandles[f].zipFile)
+	if (fs_filehandles[f].zipEntry)
 	{
-		unzCloseCurrentFile (fs_filehandles[f].zipFile);
-		fs_filehandles[f].zipFile = 0;
+		unzSetCurrentFileEntry (fs_filehandles[f].zipEntry->zipFile, fs_filehandles[f].zipEntry);
+		unzCloseCurrentFile (fs_filehandles[f].zipEntry->zipFile);
+		fs_filehandles[f].zipEntry = 0;
 	}
 }
 
@@ -143,68 +143,27 @@ void	FS_CreatePath (char *path)
 
 /*
 ===========
-FS_FileSize
-===========
-*/
-int FS_FileSize (char *filename)
-{
-	int file;
-	
-	FS_FOpenFile (filename, &file);
-	file--;
-
-	if (fs_filehandles[file].f)
-	{
-		int		pos;
-		int		end;
-
-		pos = ftell (fs_filehandles[file].f);
-		fseek (fs_filehandles[file].f, 0, SEEK_END);
-		end = ftell (fs_filehandles[file].f);
-		fseek (fs_filehandles[file].f, pos, SEEK_SET);
-
-		fs_filehandles[file].occupied = false;
-		fclose (fs_filehandles[file].f);
-		fs_filehandles[file].f = NULL;
-		return end;
-	}
-
-	if (fs_filehandles[file].zipFile)
-	{
-		unz_file_info info;
-
-		if (unzGetCurrentFileInfo (fs_filehandles[file].zipFile, &info, NULL, 0, NULL, 0, NULL, 0) != UNZ_OK)
-			Com_Error (ERR_FATAL, "Couldn't get size of %s", filename);
-
-		fs_filehandles[file].occupied = false;
-		unzCloseCurrentFile (fs_filehandles[file].zipFile);
-		fs_filehandles[file].zipFile = 0;
-		return info.uncompressed_size;
-	}
-
-	return -1;
-}
-
-/*
-===========
 FS_FOpenFile
 
 Finds the file in the search path.
 returns filesize and an open FILE *
 Used for streaming data out of either a pak file or
-a seperate file.
+a separate file.
 ===========
 */
-int file_from_pak = 0;
+int file_from_pak;
 
 int FS_FOpenFile (char *filename, int *file)
 {
 	searchpath_t	*search;
 	char			netpath[MAX_OSPATH];
 	pack_t			*pak;
-	int				fhandle = FS_FileHandle ();
+	unzFile			handle;
+	int				fhandle;
 
 	file_from_pak = 0;
+
+	fhandle = FS_FileHandle ();
 	*file = fhandle--;
 
 //
@@ -212,26 +171,28 @@ int FS_FOpenFile (char *filename, int *file)
 //
 	for (search = fs_searchpaths ; search ; search = search->next)
 	{
+		pak = search->pack;
+
 	// is the element a pak file?
-		if (search->pack)
+		if (pak)
 		{
 		// look through all the pak file elements
-			pak = search->pack;
+			handle = pak->handle;
 
-			if (unzLocateFile(pak->handle, filename, 2) == UNZ_OK)
+			if (unzLocateFile (handle, filename, 2) == UNZ_OK)
 			{	// found it!
-				if (unzOpenCurrentFile (pak->handle) == UNZ_OK)
+				if (unzOpenCurrentFile (handle) == UNZ_OK)
 				{
 					unz_file_info info;
 
 					file_from_pak = 1;
 
-					Com_DPrintf ("PackFile: %s : %s\n",pak->filename, filename);
+					Com_DPrintf ("PackFile: %s : %s\n", pak->filename, filename);
 
-					if (unzGetCurrentFileInfo (pak->handle, &info, NULL, 0, NULL, 0, NULL, 0) != UNZ_OK)
+					if (unzGetCurrentFileInfo (handle, &info, NULL, 0, NULL, 0, NULL, 0) != UNZ_OK)
 						Com_Error (ERR_FATAL, "Couldn't get size of %s in %s", filename, pak->filename);
 
-					fs_filehandles[fhandle].zipFile = pak->handle;
+					fs_filehandles[fhandle].zipEntry = unzGetCurrentFileEntry( handle );
 					fs_filehandles[fhandle].f = NULL;
 
 					return info.uncompressed_size;
@@ -258,7 +219,7 @@ int FS_FOpenFile (char *filename, int *file)
 			end = ftell (f);
 			fseek (f, pos, SEEK_SET);
 
-			fs_filehandles[fhandle].zipFile = 0;
+			fs_filehandles[fhandle].zipEntry = 0;
 			fs_filehandles[fhandle].f = f;
 
 			return end;
@@ -278,16 +239,42 @@ FS_FileExists
 
 ==============
 */
-qboolean FS_FileExists (char *path)
+int FS_FileExists (char *path)
 {
-	int f;
+	searchpath_t	*search;
+	char			netpath[MAX_OSPATH];
+	pack_t			*pak;
 
-	FS_FOpenFile (path, &f);
-
-	if (f)
+//
+// search through the path, one element at a time
+//
+	for (search = fs_searchpaths ; search ; search = search->next)
 	{
-		FS_FCloseFile (f);
-		return true;
+		pak = search->pack;
+
+	// is the element a pak file?
+		if (pak)
+		{
+		// look through all the pak file elements
+			if (unzFileExists (pak->handle, path, 2))
+			{	// found it!
+				return true;
+			}
+		}
+		else
+		{		
+	// check a file in the directory tree
+			FILE	*f;
+
+			Com_sprintf (netpath, sizeof(netpath), "%s/%s", search->filename, path);
+			
+			f = fopen (netpath, "rb");
+			if (!f)
+				continue;
+		
+			fclose ( f );
+			return true;
+		}
 	}
 
 	return false;
@@ -300,8 +287,6 @@ FS_ReadFile
 Properly handles partial reads
 =================
 */
-// Vic
-// void CDAudio_Stop(void);
 #define	MAX_READ	0x10000		// read in blocks of 64k
 
 void FS_Read (void *buffer, int len, int f)
@@ -318,12 +303,13 @@ void FS_Read (void *buffer, int len, int f)
 	tries = 0;
 	f--;
 
-	if (fs_filehandles[f].zipFile)
+	if (fs_filehandles[f].zipEntry)
 	{
-		read = unzReadCurrentFile (fs_filehandles[f].zipFile, buf, len);
+		unzSetCurrentFileEntry (fs_filehandles[f].zipEntry->zipFile, fs_filehandles[f].zipEntry);
+		read = unzReadCurrentFile (fs_filehandles[f].zipEntry->zipFile, buf, len);
 
-		if (read == -1)
-			Com_Error (ERR_FATAL, "FS_ReadFromFile: -1 bytes read");
+		if (read < 0)
+			Com_Error (ERR_FATAL, "FS_ReadFromFile: %i bytes read", read);
 	}
 	else 
 	{
@@ -427,9 +413,7 @@ pack_t *FS_LoadPackFile (char *packfile)
 		Com_Error (ERR_FATAL, "%s is not a packfile", packfile);
 	}
 
-	pack->numfiles = Unz_NumEntries (pack->handle);
-
-	Com_Printf ("Added packfile %s (%i files)\n", packfile, pack->numfiles);
+	Com_Printf ("Added packfile %s (%i files)\n", packfile, unzNumEntries (pack->handle));
 	return pack;
 }
 
@@ -467,7 +451,7 @@ void FS_AddGameDirectory (char *dir)
 	//
 	Com_sprintf (pakfile, sizeof(pakfile), "%s/*.pk3", dir);
 
- 	if ( ( paknames = FS_ListFiles( pakfile, &numpaks, 0, 0 ) ) != 0 )
+ 	if ( ( paknames = FS_ListFiles( pakfile, &numpaks, 0, SFF_SUBDIR | SFF_HIDDEN | SFF_SYSTEM ) ) != 0 )
 	{
 		int i;
 		
@@ -477,15 +461,52 @@ void FS_AddGameDirectory (char *dir)
 			if (!pak)
 				continue;
 			search = Z_Malloc (sizeof(searchpath_t));
+			strcpy (search->filename, paknames[i]);
 			search->pack = pak;
 			search->next = fs_searchpaths;
 			fs_searchpaths = search;
 			
-			free( paknames[i] );
+			Q_free( paknames[i] );
 		}
 
-		free( paknames );
+		Q_free( paknames );
 	}
+}
+
+/*
+================
+FS_AddHomeAsGameDirectory
+
+Use ~/.qfusion/dir as fs_gamedir
+
+icculus.org
+================
+*/
+void FS_AddHomeAsGameDirectory (char *dir)
+{
+#ifndef _WIN32
+	char gdir[MAX_OSPATH];
+	char *homedir;
+
+	homedir = getenv ("HOME");
+
+	if (homedir)
+	{
+		int len = snprintf (gdir, sizeof(gdir), "%s/.qfusion/%s/", homedir, dir);
+
+		Com_Printf ("using %s for writing\n", gdir);
+		FS_CreatePath (gdir);
+
+		if ((len > 0) && (len < sizeof(gdir)) && (gdir[len-1] == '/')) {
+			gdir[len-1] = 0;
+		}
+
+		strncpy (fs_gamedir, gdir, sizeof(fs_gamedir)-1);
+		fs_gamedir[sizeof(fs_gamedir)-1] = 0;
+		
+		FS_AddGameDirectory (gdir);
+	}
+#endif
 }
 
 /*
@@ -515,9 +536,9 @@ void FS_ExecAutoexec (void)
 
 	dir = Cvar_VariableString("fs_gamedir");
 	if (*dir)
-		Com_sprintf(name, sizeof(name), "%s/%s/autoexec.cfg", fs_basedir->string, dir); 
+		Com_sprintf(name, sizeof(name), "%s/%s/autoexec.cfg", fs_basepath->string, dir); 
 	else
-		Com_sprintf(name, sizeof(name), "%s/%s/autoexec.cfg", fs_basedir->string, BASEDIRNAME); 
+		Com_sprintf(name, sizeof(name), "%s/%s/autoexec.cfg", fs_basepath->string, BASEDIRNAME); 
 	if (Sys_FindFirst(name, 0, SFF_SUBDIR | SFF_HIDDEN | SFF_SYSTEM))
 		Cbuf_AddText ("exec autoexec.cfg\n");
 	Sys_FindClose();
@@ -549,7 +570,7 @@ void FS_SetGamedir (char *dir)
 	{
 		if (fs_searchpaths->pack) 
 		{
-			unzCloseCurrentFile (fs_searchpaths->pack->handle);
+			unzClose (fs_searchpaths->pack->handle);
 			Z_Free (fs_searchpaths->pack);
 		}
 
@@ -564,9 +585,9 @@ void FS_SetGamedir (char *dir)
 	if (dedicated && !dedicated->value)
 		Cbuf_AddText ("vid_restart\nsnd_restart\n");
 
-	Com_sprintf (fs_gamedir, sizeof(fs_gamedir), "%s/%s", fs_basedir->string, dir);
+	Com_sprintf (fs_gamedir, sizeof(fs_gamedir), "%s/%s", fs_basepath->string, dir);
 
-	if (!strcmp(dir,BASEDIRNAME) || (*dir == 0))
+	if (!strcmp (dir, BASEDIRNAME) || (*dir == 0))
 	{
 		Cvar_FullSet ("fs_gamedir", "", CVAR_SERVERINFO|CVAR_NOSET);
 		Cvar_FullSet ("fs_game", "", CVAR_LATCH|CVAR_SERVERINFO);
@@ -574,9 +595,10 @@ void FS_SetGamedir (char *dir)
 	else
 	{
 		Cvar_FullSet ("fs_gamedir", dir, CVAR_SERVERINFO|CVAR_NOSET);
-		if (fs_cddir->string[0])
-			FS_AddGameDirectory (va("%s/%s", fs_cddir->string, dir) );
-		FS_AddGameDirectory (va("%s/%s", fs_basedir->string, dir) );
+		if (fs_cdpath->string[0])
+			FS_AddGameDirectory (va("%s/%s", fs_cdpath->string, dir) );
+		FS_AddGameDirectory (va("%s/%s", fs_basepath->string, dir) );
+		FS_AddHomeAsGameDirectory (dir);
 	}
 }
 
@@ -605,7 +627,6 @@ char **FS_ListFiles( char *findname, int *numfiles, unsigned musthave, unsigned 
 	*numfiles = nfiles;
 
 	list = Q_malloc( sizeof( char * ) * nfiles );
-	memset( list, 0, sizeof( char * ) * nfiles );
 
 	s = Sys_FindFirst( findname, musthave, canthave );
 	nfiles = 0;
@@ -668,9 +689,9 @@ void FS_Dir_f( void )
 				else
 					Com_Printf( "%s\n", dirnames[i] );
 
-				free( dirnames[i] );
+				Q_free( dirnames[i] );
 			}
-			free( dirnames );
+			Q_free( dirnames );
 		}
 		Com_Printf( "\n" );
 	}
@@ -684,27 +705,28 @@ FS_GetFileList
 */
 int FS_GetFileList (const char *dir, const char *extension, char *str, int bufsize)
 {
-	int len = 0, alllen = 0;
-	int state = 0;
-	int found = 0, allfound = 0;
-	searchpath_t	*search;
-	pack_t	*pak;
+	int len, alllen;
+	int found, allfound;
+	searchpath_t *search;
+
+	alllen = 0;
+	allfound = 0;
 
 	for (search = fs_searchpaths ; search ; search = search->next)
 	{
+		// we are done
+		if ( bufsize <= alllen ) {
+			return allfound;
+		}
+
 	// is the element a pak file?
-		if (search->pack)
-		{
+		if ( search->pack ) {
 		// look through all the pak file elements
-			pak = search->pack;
+			found = unzGetStringForDir (search->pack->handle, dir, extension, str + alllen, bufsize - alllen, &len);
 
-			found = Unz_GetStringForDir(pak->handle, dir, extension, str + alllen, bufsize - alllen, &len);
-
-			if (found)
-			{
+			if ( found ) {
 				allfound += found;
-				state = 1;
-				alllen += len + 1;
+				alllen += len;
 			}
 		}
 	}
@@ -728,7 +750,7 @@ void FS_Path_f (void)
 		if (s == fs_base_searchpaths)
 			Com_Printf ("----------\n");
 		if (s->pack)
-			Com_Printf ("%s (%i files)\n", s->pack->filename, s->pack->numfiles);
+			Com_Printf ("%s (%i files)\n", s->pack->filename, unzNumEntries (s->pack->handle));
 		else
 			Com_Printf ("%s\n", s->filename);
 	}
@@ -770,34 +792,39 @@ FS_InitFilesystem
 */
 void FS_InitFilesystem (void)
 {
-	Cmd_AddCommand ("path", FS_Path_f);
-	Cmd_AddCommand ("dir", FS_Dir_f );
+	Cmd_AddCommand ("fs_path", FS_Path_f);
+	Cmd_AddCommand ("fs_dir", FS_Dir_f);
 
 	//
 	// basedir <path>
 	// allows the game to run from outside the data tree
 	//
-	fs_basedir = Cvar_Get ("basedir", ".", CVAR_NOSET);
+	fs_basepath = Cvar_Get ("fs_basepath", ".", CVAR_NOSET);
 
 	//
 	// cddir <path>
 	// Logically concatenates the cddir after the basedir for 
 	// allows the game to run from outside the data tree
 	//
-	fs_cddir = Cvar_Get ("cddir", "", CVAR_NOSET);
-	if (fs_cddir->string[0])
-		FS_AddGameDirectory (va("%s/"BASEDIRNAME, fs_cddir->string) );
+	fs_cdpath = Cvar_Get ("fs_cdpath", "", CVAR_NOSET);
+	if (fs_cdpath->string[0])
+		FS_AddGameDirectory (va("%s/"BASEDIRNAME, fs_cdpath->string) );
 
 	//
 	// start up with baseq3 by default
 	//
-	FS_AddGameDirectory (va("%s/"BASEDIRNAME, fs_basedir->string) );
+	FS_AddGameDirectory (va("%s/"BASEDIRNAME, fs_basepath->string) );
+
+	//
+	// then add a '.qfusion/baseqf' directory in home directory by default
+	//
+	FS_AddHomeAsGameDirectory (BASEDIRNAME);
 
 	// any set gamedirs will be freed up to here
 	fs_base_searchpaths = fs_searchpaths;
 
 	// check for game override
-	fs_gamedirvar = Cvar_Get ("fs_game", "", CVAR_LATCH|CVAR_SERVERINFO);
+	fs_gamedirvar = Cvar_Get ("fs_game", "baseqf", CVAR_LATCH|CVAR_SERVERINFO);
 	if (fs_gamedirvar->string[0])
 		FS_SetGamedir (fs_gamedirvar->string);
 }

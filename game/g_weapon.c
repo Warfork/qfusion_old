@@ -211,7 +211,7 @@ static void fire_lead (edict_t *self, vec3_t start, vec3_t aimdir, int damage, i
 	}
 
 	// send gun puff / flash
-	if (!((tr.surface) && (tr.surface->flags & SURF_SKY)))
+	if (!(tr.surface && (tr.surface->flags & SURF_NOIMPACT)))
 	{
 		if (tr.fraction < 1.0)
 		{
@@ -221,7 +221,7 @@ static void fire_lead (edict_t *self, vec3_t start, vec3_t aimdir, int damage, i
 			}
 			else
 			{
-				if ( !(tr.surface->flags & SURF_SKY) )
+				if ( !(tr.surface->flags & SURF_NOIMPACT) )
 				{
 					gi.WriteByte (svc_temp_entity);
 					gi.WriteByte (te_impact);
@@ -305,7 +305,7 @@ void blaster_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *
 	if (other == self->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_SKY))
+	if (surf && (surf->flags & SURF_NOIMPACT))
 	{
 		G_FreeEdict (self);
 		return;
@@ -345,7 +345,7 @@ void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 	VectorNormalize (dir);
 
 	bolt = G_Spawn();
-	bolt->svflags = SVF_PROJECTILE; // special net code is used for projectiles
+	bolt->svflags = 0;
 	VectorCopy (start, bolt->s.origin);
 	VectorCopy (start, bolt->s.old_origin);
 	vectoangles (dir, bolt->s.angles);
@@ -354,6 +354,7 @@ void fire_blaster (edict_t *self, vec3_t start, vec3_t dir, int damage, int spee
 	bolt->clipmask = MASK_SHOT;
 	bolt->solid = SOLID_BBOX;
 	bolt->s.effects |= effect;
+	bolt->s.renderfx |= RF_NOSHADOW;
 	VectorClear (bolt->mins);
 	VectorClear (bolt->maxs);
 	bolt->s.modelindex = gi.modelindex ("models/objects/laser/tris.md2");
@@ -447,7 +448,7 @@ static void Grenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, csurfa
 	if (other == ent->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_SKY))
+	if (surf && (surf->flags & SURF_NOIMPACT))
 	{
 		G_FreeEdict (ent);
 		return;
@@ -463,6 +464,80 @@ static void Grenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, csurfa
 	Grenade_Explode (ent);
 }
 
+static void LaserGrenade_SetupLaser (edict_t *ent)
+{
+	edict_t	*owner;
+	edict_t *laser;
+
+	if ( !(owner = ent->owner) ) {
+		return;
+	}
+
+	laser = G_Spawn();
+	laser->s.sound = gi.soundindex ("world/laser.wav");
+	laser->classname = "grenade_laser";
+	laser->enemy = NULL;
+	laser->target = NULL;
+  	laser->owner = ent;
+	laser->activator = owner;
+  	laser->dmg = 25;
+	laser->delay = 10;
+	laser->count = MOD_LASER_TRAP;
+	laser->spawnflags = 1;
+
+	if ( !ctf->value || !owner->client || owner->client->resp.ctf_team == CTF_TEAM1 ) {
+		laser->spawnflags |= 2;		// red
+	} else {		
+		laser->spawnflags |= 8;		// blue
+	}
+
+	VectorCopy ( ent->s.origin, laser->s.origin );
+	VectorCopy ( ent->s.angles, laser->s.angles );
+
+	target_laser_start (laser);
+}
+
+static void LaserGrenade_Use (edict_t *self, edict_t *other, edict_t *activator)
+{
+	self->enemy = NULL;
+	Grenade_Explode (self);
+}
+
+static void LaserGrenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *surf)
+{
+	if (other == ent->owner)
+		return;
+
+	if (surf && (surf->flags & SURF_NOIMPACT))
+	{
+		G_FreeEdict (ent);
+		return;
+	}
+
+	if (other->takedamage)
+	{
+		ent->enemy = other;
+		Grenade_Explode (ent);
+		return;
+	}
+
+	ent->use = LaserGrenade_Use;
+	ent->touch = NULL;
+	ent->s.event = EV_GRENADE_BOUNCE;
+	ent->movetype = MOVETYPE_NONE;
+	ent->s.sound = 0;
+
+	ent->nextthink = level.time + 2;
+	ent->think = LaserGrenade_SetupLaser;
+
+	VectorClear (ent->velocity);
+	VectorClear (ent->avelocity);
+
+	VecToAngles ( plane->normal, ent->s.angles );
+
+	gi.linkentity (ent);
+}
+
 void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int speed, float timer, float damage_radius)
 {
 	edict_t	*grenade;
@@ -475,20 +550,22 @@ void fire_grenade (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int s
 	grenade = G_Spawn();
 	VectorCopy (start, grenade->s.origin);
 	VectorScale (aimdir, speed, grenade->velocity);
-	VectorMA (grenade->velocity, 200 + crandom() * 10.0, up, grenade->velocity);
+	grenade->velocity[2] += 200 * up[2] + crandom() * 10.0;
 	VectorMA (grenade->velocity, crandom() * 10.0, right, grenade->velocity);
 	VectorSet (grenade->avelocity, 300, 300, 300);
-	grenade->movetype = MOVETYPE_BOUNCE;
+	grenade->movetype = MOVETYPE_BOUNCEGRENADE;
 	grenade->clipmask = MASK_SHOT;
 	grenade->solid = SOLID_BBOX;
 	grenade->s.effects |= EF_GRENADE;
+	grenade->s.renderfx |= RF_NOSHADOW;
 	VectorClear (grenade->mins);
 	VectorClear (grenade->maxs);
-	grenade->s.modelindex = gi.modelindex ("models/objects/grenade/tris.md2");
+	grenade->s.modelindex = gi.modelindex ("models/ammo/grenade1.md3");
 	grenade->owner = self;
 	grenade->touch = Grenade_Touch;
 	grenade->nextthink = level.time + timer;
 	grenade->think = Grenade_Explode;
+	grenade->use = NULL;
 	grenade->dmg = damage;
 	grenade->dmg_radius = damage_radius;
 	grenade->classname = "grenade";
@@ -514,12 +591,13 @@ void fire_grenade2 (edict_t *self, vec3_t start, vec3_t aimdir, int damage, int 
 	grenade->movetype = MOVETYPE_BOUNCE;
 	grenade->clipmask = MASK_SHOT;
 	grenade->solid = SOLID_BBOX;
-	grenade->s.effects |= EF_GRENADE;
+	grenade->s.renderfx |= RF_NOSHADOW;
 	VectorClear (grenade->mins);
 	VectorClear (grenade->maxs);
 	grenade->s.modelindex = gi.modelindex ("models/objects/grenade2/tris.md2");
 	grenade->owner = self;
-	grenade->touch = Grenade_Touch;
+	grenade->touch = LaserGrenade_Touch;
+	grenade->use = NULL;
 	grenade->nextthink = level.time + timer;
 	grenade->think = Grenade_Explode;
 	grenade->dmg = damage;
@@ -553,7 +631,7 @@ void rocket_touch (edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *su
 	if (other == ent->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_SKY))
+	if (surf && (surf->flags & SURF_NOIMPACT))
 	{
 		G_FreeEdict (ent);
 		return;
@@ -594,9 +672,10 @@ void fire_rocket (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed
 	rocket->clipmask = MASK_SHOT;
 	rocket->solid = SOLID_BBOX;
 	rocket->s.effects |= EF_ROCKET;
+	rocket->s.renderfx |= RF_NOSHADOW;
 	VectorClear (rocket->mins);
 	VectorClear (rocket->maxs);
-	rocket->s.modelindex = gi.modelindex ("models/objects/rocket/tris.md2");
+	rocket->s.modelindex = gi.modelindex ("models/ammo/rocket/rocket.md3");
 	rocket->owner = self;
 	rocket->touch = rocket_touch;
 	rocket->nextthink = level.time + 8000/speed;
@@ -733,7 +812,7 @@ void bfg_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf
 	if (other == self->owner)
 		return;
 
-	if (surf && (surf->flags & SURF_SKY))
+	if (surf && (surf->flags & SURF_NOIMPACT))
 	{
 		G_FreeEdict (self);
 		return;
@@ -860,7 +939,7 @@ void fire_bfg (edict_t *self, vec3_t start, vec3_t dir, int damage, int speed, f
 	bfg = G_Spawn();
 	VectorCopy (start, bfg->s.origin);
 	VectorCopy (dir, bfg->movedir);
-	vectoangles (dir, bfg->s.angles);
+	VectorClear (bfg->s.angles);
 	VectorScale (dir, speed, bfg->velocity);
 	bfg->movetype = MOVETYPE_FLYMISSILE;
 	bfg->clipmask = MASK_SHOT;

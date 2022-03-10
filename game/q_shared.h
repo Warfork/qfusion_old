@@ -21,6 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // q_shared.h -- included first by ALL program modules
 
 #ifdef _WIN32
+
 // unknown pragmas are SUPPOSED to be ignored, but....
 #pragma warning(disable : 4244)     // MIPS
 #pragma warning(disable : 4136)     // X86
@@ -28,6 +29,14 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #pragma warning(disable : 4018)     // signed/unsigned mismatch
 #pragma warning(disable : 4305)		// truncation from const double to float
+
+#ifndef inline
+#define inline __inline
+#endif
+
+#ifndef vsnprintf 
+#define vsnprintf _vsnprintf
+#endif
 
 #endif
 
@@ -126,29 +135,51 @@ typedef vec_t vec3_t[3];
 typedef vec_t vec4_t[4];
 typedef vec_t vec5_t[5];
 
+typedef vec3_t mat3_t[3];
 typedef float mat4_t[16];
-typedef vec3_t mat3x3_t[3];
-
-typedef	int	fixed4_t;
-typedef	int	fixed8_t;
-typedef	int	fixed16_t;
 
 typedef byte byte_vec4_t[4];
+
+typedef union {
+	float			f;
+	unsigned int	i;
+} float_int_t;
 
 #ifndef M_PI
 #define M_PI		3.14159265358979323846	// matches value in gcc v2 math.h
 #endif
 
 #ifndef M_TWOPI
-#define M_TWOPI		6.28318530717958647692	// matches value in gcc v2 math.h
+#define M_TWOPI		6.28318530717958647692
 #endif
 
 #define DEG2RAD( a ) ( a * M_PI ) / 180.0F
 #define RAD2DEG( a ) ( a * 180.0F ) / M_PI
 
+
+// returns b clamped to [a..c] range
+//#define bound(a,b,c) (max((a), min((b), (c))))
+
+#ifndef max
+#define max(a,b) ((a) > (b) ? (a) : (b))
+#endif
+
+#ifndef min
+#define min(a,b) ((a) < (b) ? (a) : (b))
+#endif
+
+#define bound(a,b,c) ((a) >= (c) ? (a) : (b) < (a) ? (a) : (b) > (c) ? (c) : (b))
+
+// clamps a (must be lvalue) to [b..c] range
+#define clamp(a,b,c) ((b) >= (c) ? (a)=(b) : (a) < (b) ? (a)=(b) : (a) > (c) ? (a)=(c) : (a))
+
 struct cplane_s;
 
 extern vec3_t vec3_origin;
+
+extern mat3_t mat3_identity;
+extern mat4_t mat4_identity;
+extern mat3_t axis_identity;
 
 #define	nanmask (255<<23)
 
@@ -167,40 +198,39 @@ float Q_RSqrt (float number);
 
 #define PlaneDiff(point,plane) (((plane)->type < 3 ? (point)[(plane)->type] : DotProduct((point), (plane)->normal)) - (plane)->dist)
 
-#define DotProduct(x,y)			(x[0]*y[0]+x[1]*y[1]+x[2]*y[2])
+#define DotProduct(x,y)			((x)[0]*(y)[0]+(x)[1]*(y)[1]+(x)[2]*(y)[2])
 #define CrossProduct(v1,v2,cross) ((cross)[0]=(v1)[1]*(v2)[2]-(v1)[2]*(v2)[1],(cross)[1]=(v1)[2]*(v2)[0]-(v1)[0]*(v2)[2],(cross)[2]=(v1)[0]*(v2)[1]-(v1)[1]*(v2)[0])
 
-#define VectorSubtract(a,b,c)	(c[0]=a[0]-b[0],c[1]=a[1]-b[1],c[2]=a[2]-b[2])
-#define VectorAdd(a,b,c)		(c[0]=a[0]+b[0],c[1]=a[1]+b[1],c[2]=a[2]+b[2])
-#define VectorCopy(a,b)			(b[0]=a[0],b[1]=a[1],b[2]=a[2])
-#define VectorClear(a)			(a[0]=a[1]=a[2]=0)
-#define VectorNegate(a,b)		(b[0]=-a[0],b[1]=-a[1],b[2]=-a[2])
-#define VectorSet(v, x, y, z)	(v[0]=(x), v[1]=(y), v[2]=(z))
-#define VectorAvg(a,b,c)		((c)[0]=((a)[0]+(b)[0])*0.5f,(c)[1]=((a)[1]+(b)[1])*0.5f, \
-	(c)[2]=((a)[2]+(b)[2])*0.5f)
+#define PlaneDiff(point,plane) (((plane)->type < 3 ? (point)[(plane)->type] : DotProduct((point), (plane)->normal)) - (plane)->dist)
 
+#define VectorSubtract(a,b,c)	((c)[0]=(a)[0]-(b)[0],(c)[1]=(a)[1]-(b)[1],(c)[2]=(a)[2]-(b)[2])
+#define VectorAdd(a,b,c)		((c)[0]=(a)[0]+(b)[0],(c)[1]=(a)[1]+(b)[1],(c)[2]=(a)[2]+(b)[2])
+#define VectorCopy(a,b)			((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2])
+#define VectorClear(a)			((a)[0]=(a)[1]=(a)[2]=0)
+#define VectorNegate(a,b)		((b)[0]=-(a)[0],(b)[1]=-(a)[1],(b)[2]=-(a)[2])
+#define VectorSet(v, x, y, z)	((v)[0]=(x), v[1]=(y), v[2]=(z))
+#define VectorAvg(a,b,c)		((c)[0]=((a)[0]+(b)[0])*0.5f,(c)[1]=((a)[1]+(b)[1])*0.5f, (c)[2]=((a)[2]+(b)[2])*0.5f)
+#define VectorMA(a,b,c,d)		((d)[0]=(a)[0]+(b)*(c)[0],(d)[1]=(a)[1]+(b)*(c)[1],(d)[2]=(a)[2]+(b)*(c)[2])
 #define Vector4Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2],(b)[3]=(a)[3])
+#define Vector4Scale(in,scale,out)		((out)[0]=(in)[0]*scale,(out)[1]=(in)[1]*scale,(out)[2]=(in)[2]*scale,(out)[3]=(in)[3]*scale)
+#define Vector4Add(a,b,c)		((c)[0]=(((a[0])+(b[0]))),(c)[1]=(((a[1])+(b[1]))),(c)[2]=(((a[2])+(b[2]))),(c)[3]=(((a[3])+(b[3])))) 
 #define Vector4Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f),(c)[2]=(((a[2])+(b[2]))*0.5f),(c)[3]=(((a[3])+(b[3]))*0.5f)) 
 
 #define Vector2Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1])
 #define Vector2Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f)) 
 
-void VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc);
-
 // just in case you do't want to use the macros
+void _VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc);
 vec_t _DotProduct (vec3_t v1, vec3_t v2);
 void _VectorSubtract (vec3_t veca, vec3_t vecb, vec3_t out);
 void _VectorAdd (vec3_t veca, vec3_t vecb, vec3_t out);
 void _VectorCopy (vec3_t in, vec3_t out);
 
-#define ClearBounds(mins,maxs) ((mins)[0]=(mins)[1]=(mins)[2]=99999, \
-	(maxs)[0]=(maxs)[1]=(maxs)[2]=-99999)
-
-#define CheckBounds(mins1,maxs1,mins2,maxs2) \
-	((mins1)[0]<=(maxs2)[0]&&(mins1)[1]<=(maxs2)[1]&&(mins1)[2]<=(maxs2)[2] \
-		&&(maxs1)[0]>=(mins2)[0]&&(maxs1)[1]>=(mins2)[1]&&(maxs1)[2]>=(mins2)[2])
-
+void ClearBounds (vec3_t mins, vec3_t maxs);
+qboolean BoundsIntersect (vec3_t mins1, vec3_t maxs1, vec3_t mins2, vec3_t maxs2);
+qboolean BoundsAndSphereIntersect (vec3_t mins, vec3_t maxs, vec3_t centre, float radius);
 void AddPointToBounds (vec3_t v, vec3_t mins, vec3_t maxs);
+float RadiusFromBounds (vec3_t mins, vec3_t maxs);
 
 #define VectorCompare(v1,v2) ((v1)[0]==(v2)[0] && (v1)[1]==(v2)[1] && (v1)[2]==(v2)[2])
 #define VectorLength(v) (sqrt(DotProduct((v),(v))))
@@ -211,54 +241,65 @@ vec_t VectorNormalize (vec3_t v);		// returns vector length
 vec_t VectorNormalize2 (vec3_t v, vec3_t out);
 void  VectorNormalizeFast (vec3_t v);
 
-int Q_log2(int val);
+int Q_log2 (int val);
 
-void MakeNormalVectors (vec3_t forward, vec3_t right, vec3_t up);
-void AngleVectors (vec3_t angles, vec3_t forward, vec3_t right, vec3_t up);
-int BoxOnPlaneSide (vec3_t emins, vec3_t emaxs, struct cplane_s *plane);
-float	anglemod(float a);
-float LerpAngle (float a1, float a2, float frac);
+void R_ConcatTransforms (const float in1[3*4], const float in2[3*4], float out[3*4]);
+
+void MakeNormalVectors (const vec3_t forward, vec3_t right, vec3_t up);
+void AngleVectors (const vec3_t angles, vec3_t forward, vec3_t right, vec3_t up);
+int BoxOnPlaneSide (const vec3_t emins, const vec3_t emaxs, const struct cplane_s *plane);
+float anglemod(float a);
+float LerpAngle (float a1, float a2, const float frac);
+void VecToAngles (const vec3_t vec, vec3_t angles);
+void AnglesToAxis (vec3_t angles, mat3_t axis);
 
 float CalcFov (float fov_x, float width, float height);
 
-#define BOX_ON_PLANE_SIDE(emins, emaxs, p)	\
-	(((p)->type < 3)?						\
-	(										\
-		((p)->dist <= (emins)[(p)->type])?	\
-			1								\
-		:									\
-		(									\
-			((p)->dist >= (emaxs)[(p)->type])?\
-				2							\
-			:								\
-				3							\
-		)									\
-	)										\
-	:										\
-		BoxOnPlaneSide( (emins), (emaxs), (p)))
+static inline byte FloatToByte ( float x )
+{
+	static float_int_t f2i;
 
-#define Q_rint(x)	((x) < 0 ? ((int)(x-0.5f)) : ((int)(x+0.5f)))
+	// shift float to have 8bit fraction at base of number
+	f2i.f = x + 32768.0f;
+
+	// then read as integer and kill float bits...
+	return (byte) min(f2i.i & 0x7FFFFF, 255);
+}
+
+#define Q_rint(x)	((x) < 0 ? ((int)((x)-0.5f)) : ((int)((x)+0.5f)))
 
 void ProjectPointOnPlane( vec3_t dst, const vec3_t p, const vec3_t normal );
 void PerpendicularVector( vec3_t dst, const vec3_t src );
 void RotatePointAroundVector( vec3_t dst, const vec3_t dir, const vec3_t point, float degrees );
 
+void Matrix4_Identity (mat4_t mat);
+void Matrix4_Copy (mat4_t a, mat4_t b);
+qboolean Matrix3_Compare (mat3_t a, mat3_t b);
 void Matrix4_Multiply(mat4_t a, mat4_t b, mat4_t product);
 void Matrix4_MultiplyFast(mat4_t b, mat4_t c, mat4_t a);
-void Matrix4_Transponse (mat4_t m, mat4_t ret);
+void Matrix4_Transpose (mat4_t m, mat4_t ret);
+void Matrix4_Rotate (mat4_t a, float angle, float x, float y, float z);
+void Matrix4_Translate (mat4_t m, float x, float y, float z);
+void Matrix4_Scale (mat4_t m, float x, float y, float z);
+float Matrix4_Det (mat4_t mr);
+void Matrix4_Inverse (mat4_t mr, mat4_t ma);
+void Matrix4_Matrix3 (mat4_t in, mat3_t out);
+void Matrix4_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product);
 
-void Matrix_Multiply_Vec4 (mat4_t a, vec4_t b, vec4_t product);
+void Matrix3_Identity (mat3_t mat);
+void Matrix3_Copy (mat3_t a, mat3_t b);
+qboolean Matrix4_Compare (mat4_t a, mat4_t b);
+void Matrix3_Multiply (mat3_t in1, mat3_t in2, mat3_t out);
+void Matrix3_Transpose (mat3_t in, mat3_t out);
+void Matrix3_Multiply_Vec3 (mat3_t a, vec3_t b, vec3_t product);
+float Matrix3_Det (mat3_t mat);
+void Matrix3_Inverse (mat3_t mr, mat3_t ma);
+void Matrix3_EulerAngles (mat3_t mat, vec3_t angles);
+void Matrix3_Rotate (mat3_t a, float angle, float x, float y, float z);
+
 void Matrix_Multiply_Vec2 (mat4_t a, vec2_t b, vec2_t product);
-
-void Matrix3_Identity (vec3_t mat[3]);
-void Matrix3_Multiply (vec3_t in1[3], vec3_t in2[3], vec3_t out[3]);
-void Matrix3_Transponse (vec3_t in[3], vec3_t out[3]);
-void Matrix3_Multiply_Vec3 (vec3_t a[3], vec3_t b, vec3_t product);
-
 void Matrix_Multiply_Vec3 (mat4_t a, vec3_t b, vec3_t product);
-
-qboolean Matrix4_Inverse (mat4_t mr, mat4_t ma);
-void Matrix4_Matrix3 (mat4_t in, mat3x3_t out);
+void Matrix_Multiply_Vec4 (mat4_t a, vec4_t b, vec4_t product);
 
 //=============================================
 
@@ -322,23 +363,67 @@ extern	vec4_t		colorDkGrey;
 #define GIANT_CHAR_WIDTH	32
 #define GIANT_CHAR_HEIGHT	48
 
+#define PROP_CHAR_HEIGHT	27
+#define PROP_SMALL_SCALE	0.75
+#define PROP_BIG_SCALE		1
+#define PROP_SMALL_SPACING	1.5
+#define PROP_BIG_SPACING	1
+
+#define PROP_SMALL_HEIGHT	PROP_CHAR_HEIGHT*PROP_SMALL_SCALE
+#define PROP_BIG_HEIGHT		PROP_CHAR_HEIGHT*PROP_BIG_SCALE
+
 extern vec4_t	color_table[8];
 
 //=============================================
 
-// portable case insensitive compare
-int Q_stricmp (char *s1, char *s2);
-int Q_strcasecmp (char *s1, char *s2);
-int Q_strncasecmp (char *s1, char *s2, int n);
+#ifdef _WIN32
+#define Q_stricmp(s1, s2) _stricmp((s1), (s2))
+#define Q_strnicmp(s1, s2, n) _strnicmp((s1), (s2), (n))
+#else
+#define Q_stricmp(s1, s2) strcasecmp((s1), (s2))
+#define Q_strnicmp(s1, s2, n) strncasecmp((s1), (s2), (n))
+#endif
+
+void Q_strncpyz (char *dest, char *src, int size);
 
 //=============================================
+#if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
+# if defined(__i386__) || defined(__ia64__) || defined(WIN32) || (defined(__alpha__) || defined(__alpha)) || defined(__arm__) || (defined(__mips__) && defined(__MIPSEL__)) || defined(__LITTLE_ENDIAN__)
+#  define ENDIAN_LITTLE
+# else
+#  define ENDIAN_BIG
+# endif
+#endif
 
-short	BigShort(short l);
-short	LittleShort(short l);
-int		BigLong (int l);
-int		LittleLong (int l);
-float	BigFloat (float l);
-float	LittleFloat (float l);
+short ShortSwap (short l);
+int LongSwap (int l);
+float FloatSwap (float f);
+
+#ifdef ENDIAN_LITTLE
+// little endian
+# define BigShort(l) ShortSwap(l)
+# define LittleShort(l) (l)
+# define BigLong(l) LongSwap(l)
+# define LittleLong(l) (l)
+# define BigFloat(l) FloatSwap(l)
+# define LittleFloat(l) (l)
+#elif ENDIAN_BIG
+// big endian
+# define BigShort(l) (l)
+# define LittleShort(l) ShortSwap(l)
+# define BigLong(l) (l)
+# define LittleLong(l) LongSwap(l)
+# define BigFloat(l) (l)
+# define LittleFloat(l) FloatSwap(l)
+#else
+// figure it out at runtime
+extern short (*BigShort) (short l);
+extern short (*LittleShort) (short l);
+extern int (*BigLong) (int l);
+extern int (*LittleLong) (int l);
+extern float (*BigFloat) (float l);
+extern float (*LittleFloat) (float l);
+#endif
 
 void	Swap_Init (void);
 char	*va(char *format, ...);
@@ -373,7 +458,7 @@ void	Sys_Mkdir (char *path);
 
 // large block stack allocation routines
 void	*Hunk_Begin (int maxsize);
-void	*Hunk_Alloc (int size);
+void	*Hunk_AllocName (int size, char *name);
 void	Hunk_Free (void *buf);
 int		Hunk_End (void);
 
@@ -413,13 +498,16 @@ CVARS (console variables)
 #define	CVAR_SERVERINFO	4	// added to serverinfo when changed
 #define	CVAR_NOSET		8	// don't allow change from console at all,
 							// but can be set from the command line
-#define	CVAR_LATCH		16	// save changes until server/video restart
+#define	CVAR_LATCH		16	// save changes until map restart
+#define	CVAR_LATCH_VIDEO	32	// save changes until video restart
+#define CVAR_CHEAT		64	// will be reset to default unless cheats are enabled
 
 // nothing outside the Cvar_*() functions should modify these fields!
 typedef struct cvar_s
 {
 	char		*name;
 	char		*string;
+	char		*dvalue;
 	char		*latched_string;	// for CVAR_LATCH vars
 	int			flags;
 	qboolean	modified;	// set each time the cvar is changed
@@ -449,7 +537,6 @@ COLLISION DETECTION
 #define	CONTENTS_PLAYERCLIP		0x10000
 #define	CONTENTS_MONSTERCLIP	0x20000
 
-// bot specific contents types
 #define	CONTENTS_TELEPORTER		0x40000
 #define	CONTENTS_JUMPPAD		0x80000
 #define CONTENTS_CLUSTERPORTAL	0x100000
@@ -505,27 +592,29 @@ COLLISION DETECTION
 #define	AREA_SOLID		1
 #define	AREA_TRIGGERS	2
 
+// 0-2 are axial planes
+#define	PLANE_X			0
+#define	PLANE_Y			1
+#define	PLANE_Z			2
+
+// 3-5 are non-axial planes snapped to the nearest
+#define	PLANE_ANYX		3
+#define	PLANE_ANYY		4
+#define	PLANE_ANYZ		5
 
 // plane_t structure
-// !!! if this is changed, it must be changed in asm code too !!!
 typedef struct cplane_s
 {
 	vec3_t	normal;
 	float	dist;
-	byte	type;			// for fast side tests
-	byte	signbits;		// signx + (signy<<1) + (signz<<1)
-	byte	pad[2];
+	short	type;			// for fast side tests
+	short	signbits;		// signx + (signy<<1) + (signz<<1)
 } cplane_t;
 
-// structure offset for asm code
-#define CPLANE_NORMAL_X			0
-#define CPLANE_NORMAL_Y			4
-#define CPLANE_NORMAL_Z			8
-#define CPLANE_DIST				12
-#define CPLANE_TYPE				16
-#define CPLANE_SIGNBITS			17
-#define CPLANE_PAD0				18
-#define CPLANE_PAD1				19
+int SignbitsForPlane ( cplane_t *out );
+int	PlaneTypeForNormal ( vec3_t normal );
+void CategorizePlane ( cplane_t *plane );
+void PlaneFromPoints ( vec3_t verts[3], cplane_t *plane );
 
 typedef struct cmodel_s
 {
@@ -549,7 +638,7 @@ typedef struct
 	cplane_t	plane;		// surface normal at impact
 	csurface_t	*surface;	// surface hit
 	int			contents;	// contents on other side of surface hit
-	struct edict_s	*ent;		// not set by CM_*() functions
+	struct edict_s	*ent;	// not set by CM_*() functions
 } trace_t;
 
 
@@ -585,8 +674,8 @@ typedef struct
 {
 	pmtype_t	pm_type;
 
-	short		origin[3];		// 12.3
-	short		velocity[3];	// 12.3
+	int			origin[3];		// 12.3
+	int			velocity[3];	// 12.3
 	byte		pm_flags;		// ducked, jump_held, etc
 	byte		pm_time;		// each unit = 8 ms
 	short		gravity;
@@ -610,7 +699,6 @@ typedef struct usercmd_s
 	byte	buttons;
 	short	angles[3];
 	short	forwardmove, sidemove, upmove;
-	byte	impulse;		// remove?
 } usercmd_t;
 
 
@@ -627,6 +715,7 @@ typedef struct
 	// results (out)
 	int			numtouch;
 	struct edict_s	*touchents[MAXTOUCH];
+	qboolean	step;				// true if walked up a step
 
 	vec3_t		viewangles;			// clamped
 	float		viewheight;
@@ -655,33 +744,32 @@ typedef struct
 #define	EF_GRENADE			0x00000020
 #define	EF_HYPERBLASTER		0x00000040
 #define	EF_BFG				0x00000080
-#define EF_COLOR_SHELL		0x00000100
-#define EF_POWERSCREEN		0x00000200
-#define	EF_ANIM01			0x00000400		// automatically cycle between frames 0 and 1 at 2 hz
-#define	EF_ANIM23			0x00000800		// automatically cycle between frames 2 and 3 at 2 hz
-#define EF_ANIM_ALL			0x00001000		// automatically cycle through all frames at 2hz
-#define EF_ANIM_ALLFAST		0x00002000		// automatically cycle through all frames at 10hz
-#define	EF_FLIES			0x00004000
-#define	EF_QUAD				0x00008000
-#define	EF_PENT				0x00010000
-#define EF_FLAG1			0x00020000
-#define EF_FLAG2			0x00040000
-#define EF_BOB				0x00080000
+#define EF_POWERSCREEN		0x00000100
+#define	EF_ANIM01			0x00000200		// automatically cycle between frames 0 and 1 at 2 hz
+#define	EF_ANIM23			0x00000400		// automatically cycle between frames 2 and 3 at 2 hz
+#define EF_ANIM_ALL			0x00000800		// automatically cycle through all frames at 2hz
+#define EF_ANIM_ALLFAST		0x00001000		// automatically cycle through all frames at 10hz
+#define	EF_FLIES			0x00002000
+#define	EF_QUAD				0x00004000
+#define	EF_PENT				0x00008000
+#define EF_FLAG1			0x00010000
+#define EF_FLAG2			0x00020000
+#define EF_BOB				0x00040000
 
 // entity_state_t->renderfx flags
-#define	RF_MINLIGHT			1		// allways have some light (viewmodel)
+#define	RF_MINLIGHT			1		// always have some light (viewmodel)
 #define	RF_VIEWERMODEL		2		// don't draw through eyes, only mirrors
 #define	RF_WEAPONMODEL		4		// only draw through eyes
-#define	RF_FULLBRIGHT		8		// allways draw full intensity
+#define	RF_FULLBRIGHT		8		// always draw full intensity
 #define	RF_DEPTHHACK		16		// for view weapon Z crunching
-#define	RF_TRANSLUCENT		32
-#define	RF_FRAMELERP		64
-#define RF_BEAM				128
-#define	RF_CUSTOMSKIN		256		// skin is an index in image_precache
-#define	RF_GLOW				512		// pulse lighting for bonus items
-#define RF_SHELL_RED		1024
-#define	RF_SHELL_GREEN		2048
-#define RF_SHELL_BLUE		4096
+#define	RF_FRAMELERP		32
+#define RF_BEAM				64
+#define RF_PORTALSURFACE	128
+#define RF_SHELL_RED		256
+#define	RF_SHELL_GREEN		512
+#define RF_SHELL_BLUE		1024
+#define RF_NOSHADOW			2048
+#define RF_SCALEHACK		4096	// scale 1.5 times (weapons)
 
 // player_state_t->refdef flags
 #define	RDF_UNDERWATER		1		// warp the screen as apropriate
@@ -900,12 +988,13 @@ extern	vec3_t monster_flash_offset [];
 #define MOD_HIT				32
 #define MOD_TARGET_BLASTER	33
 #define MOD_GRAPPLE			34
+#define MOD_LASER_TRAP		35
 #define MOD_FRIENDLY_FIRE	0x8000000
 
 // temp entity events
 //
 // Temp entity events are for things that happen
-// at a location seperate from any existing entity.
+// at a location separate from any existing entity.
 // Temporary entity messages are explicitly constructed
 // and broadcast.
 typedef enum
@@ -955,7 +1044,7 @@ typedef enum
 
 // sound channels
 // channel 0 never willingly overrides
-// other channels (1-7) allways override a playing sound on that channel
+// other channels (1-7) always override a playing sound on that channel
 #define	CHAN_AUTO               0
 #define	CHAN_WEAPON             1
 #define	CHAN_VOICE              2
@@ -972,6 +1061,13 @@ typedef enum
 #define	ATTN_IDLE               2
 #define	ATTN_STATIC             3	// diminish very rapidly with distance
 
+// cls.key_dest
+typedef enum {
+	key_game, 
+	key_console, 
+	key_message, 
+	key_menu
+} keydest_t;
 
 // player_state->stats[] indexes
 #define STAT_HEALTH_ICON		0
@@ -1019,15 +1115,14 @@ typedef enum
 //
 // gender stuff
 //
-typedef enum
+enum
 {
 	GENDER_MALE,
 	GENDER_FEMALE,
 	GENDER_NEUTRAL
 };
 
-int Q_PlayerGender ( void *player );
-void Q_Obituary ( void *victim, void *attacker, int mod, char *message, char *message2 );
+void Q_Obituary ( void *victim, int gender, void *attacker, int mod, char *message, char *message2 );
 
 /*
 ==========================================================
@@ -1047,8 +1142,8 @@ void Q_Obituary ( void *victim, void *attacker, int mod, char *message, char *me
 // Each config string can be at most MAX_QPATH characters.
 //
 #define	CS_MESSAGE			0
+#define	CS_MAPNAME			1
 #define	CS_AUDIOTRACK		4
-#define CS_GRIDSIZE			6
 #define	CS_STATUSBAR		7		// display program string
 
 #define CS_AIRACCEL			29		// air acceleration control
@@ -1134,6 +1229,15 @@ typedef struct entity_state_s
 
 //==============================================
 
+typedef enum {
+	ca_uninitialized,
+	ca_disconnected, 	// not talking to a server
+	ca_connecting,		// sending request packets to the server
+	ca_connected,		// netchan_t established, waiting for svc_serverdata
+	ca_active			// game views should be displayed
+} connstate_t;
+
+//==============================================
 
 // player_state_t is the information needed in addition to pmove_state_t
 // to rendered a view.  There will only be 10 player_state_t sent each second,
@@ -1162,6 +1266,3 @@ typedef struct
 
 	short		stats[MAX_STATS];		// fast status bar updates
 } player_state_t;
-
-void *Q_malloc (int cnt);
-void Q_free (void *buf);

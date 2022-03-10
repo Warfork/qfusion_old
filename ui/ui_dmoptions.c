@@ -177,7 +177,7 @@ void DMOptions_MenuInit( void )
 	};
 	int dmflags = trap_Cvar_VariableValue( "dmflags" );
 	int y = 0;
-	int y_offset = BIG_CHAR_WIDTH - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
 	s_dmoptions_menu.x = trap_GetWidth() * 0.50;
 	s_dmoptions_menu.nitems = 0;
@@ -319,6 +319,8 @@ void DMOptions_MenuInit( void )
 
 	Menu_Center( &s_dmoptions_menu );
 
+	Menu_Init ( &s_dmoptions_menu );
+
 	// set the original dmflags statusbar
 	DMFlagCallback( 0 );
 	Menu_SetStatusBar( &s_dmoptions_menu, dmoptions_statusbar );
@@ -337,5 +339,5 @@ const char *DMOptions_MenuKey( int key )
 void M_Menu_DMOptions_f (void)
 {
 	DMOptions_MenuInit();
-	M_PushMenu( DMOptions_MenuDraw, DMOptions_MenuKey );
+	M_PushMenu( &s_dmoptions_menu, DMOptions_MenuDraw, DMOptions_MenuKey );
 }

@@ -30,6 +30,7 @@ typedef struct cmdalias_s
 	struct cmdalias_s	*next;
 	char	name[MAX_ALIAS_NAME];
 	char	*value;
+	qboolean	archive;
 } cmdalias_t;
 
 cmdalias_t	*cmd_alias;
@@ -268,7 +269,7 @@ void Cbuf_AddEarlyCommands (qboolean clear)
 	for (i=0 ; i<COM_Argc() ; i++)
 	{
 		s = COM_Argv(i);
-		if (strcmp (s, "+set"))
+		if (Q_stricmp(s, "+set"))
 			continue;
 		Cbuf_AddText (va("set %s %s\n", COM_Argv(i+1), COM_Argv(i+2)));
 		if (clear)
@@ -417,9 +418,23 @@ void Cmd_Echo_f (void)
 
 /*
 ===============
+Cmd_AliasList_f
+===============
+*/
+void Cmd_AliasList_f (void)
+{
+	cmdalias_t	*a;
+
+	Com_Printf ("Current alias commands:\n");
+	for (a = cmd_alias; a; a = a->next)
+		Com_Printf ("%s : %s\n\n", a->name, a->value);
+}
+
+/*
+===============
 Cmd_Alias_f
 
-Creates a new command that executes a command string (possibly ; seperated)
+Creates a new command that executes a command string (possibly ; separated)
 ===============
 */
 void Cmd_Alias_f (void)
@@ -431,9 +446,7 @@ void Cmd_Alias_f (void)
 
 	if (Cmd_Argc() == 1)
 	{
-		Com_Printf ("Current alias commands:\n");
-		for (a = cmd_alias ; a ; a=a->next)
-			Com_Printf ("%s : %s\n", a->name, a->value);
+		Com_Printf ("usage: alias <name> <command>\n");
 		return;
 	}
 
@@ -447,7 +460,7 @@ void Cmd_Alias_f (void)
 	// if the alias already exists, reuse it
 	for (a = cmd_alias ; a ; a=a->next)
 	{
-		if (!strcmp(s, a->name))
+		if (!Q_stricmp(s, a->name))
 		{
 			Z_Free (a->value);
 			break;
@@ -462,6 +475,9 @@ void Cmd_Alias_f (void)
 	}
 	strcpy (a->name, s);	
 
+	if (!Q_stricmp(Cmd_Argv(0), "aliasa"))
+		a->archive = true;
+
 // copy the rest of the command line
 	cmd[0] = 0;		// start out with a null string
 	c = Cmd_Argc();
@@ -471,9 +487,25 @@ void Cmd_Alias_f (void)
 		if (i != (c - 1))
 			strcat (cmd, " ");
 	}
-	strcat (cmd, "\n");
 	
 	a->value = CopyString (cmd);
+}
+
+/*
+===============
+Cmd_WriteAliases
+
+Write lines containing "aliasa alias value" for all aliases
+with the archive flag set to true
+===============
+*/
+void Cmd_WriteAliases (FILE *f)
+{
+	cmdalias_t	*a;
+
+	for (a = cmd_alias ; a ; a=a->next)
+		if (a->archive)
+			fprintf (f, "aliasa %s \"%s\"\n", a->name, a->value);
 }
 
 /*
@@ -644,7 +676,7 @@ void Cmd_TokenizeString (char *text, qboolean macroExpand)
 		}
 		
 		if (*text == '\n')
-		{	// a newline seperates commands in the buffer
+		{	// a newline separates commands in the buffer
 			text++;
 			break;
 		}
@@ -702,7 +734,7 @@ void	Cmd_AddCommand (char *cmd_name, xcommand_t function)
 // fail if the command already exists
 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
 	{
-		if (!strcmp (cmd_name, cmd->name))
+		if (!Q_stricmp(cmd_name, cmd->name))
 		{
 			Com_Printf ("Cmd_AddCommand: %s already defined\n", cmd_name);
 			return;
@@ -734,7 +766,7 @@ void	Cmd_RemoveCommand (char *cmd_name)
 			Com_Printf ("Cmd_RemoveCommand: %s not added\n", cmd_name);
 			return;
 		}
-		if (!strcmp (cmd_name, cmd->name))
+		if (!Q_stricmp(cmd_name, cmd->name))
 		{
 			*back = cmd->next;
 			Z_Free (cmd);
@@ -755,11 +787,26 @@ qboolean	Cmd_Exists (char *cmd_name)
 
 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
 	{
-		if (!strcmp (cmd_name,cmd->name))
+		if (!Q_stricmp(cmd_name,cmd->name))
 			return true;
 	}
 
 	return false;
+}
+
+/*
+============
+Cmd_VStr_f
+============
+*/
+void Cmd_VStr_f (void)
+{
+	if (Cmd_Argc() != 2) {
+		Com_Printf ("vstr <variable> : execute a variable command\n");
+		return;
+	}
+
+	Cbuf_InsertText (Cvar_VariableString(Cmd_Argv(1)));
 }
 
 
@@ -783,18 +830,18 @@ Cmd_CompleteCommand (char *partial)
 
 	// check functions
 	for (cmd = cmd_functions; cmd; cmd = cmd->next)
-		if (!strncmp (partial, cmd->name, len))
+		if (!Q_strnicmp (partial, cmd->name, len))
 			return cmd->name;
 	for (a = cmd_alias; a; a = a->next)
-		if (!strcmp (partial, a->name))
+		if (!Q_stricmp (partial, a->name))
 			return a->name;
 
 	// check for partial match
 	for (cmd = cmd_functions; cmd; cmd = cmd->next)
-		if (!strncmp (partial, cmd->name, len))
+		if (!Q_strnicmp (partial, cmd->name, len))
 			return cmd->name;
 	for (a = cmd_alias; a; a = a->next)
-		if (!strncmp (partial, a->name, len))
+		if (!Q_strnicmp (partial, a->name, len))
 			return a->name;
 
 	return NULL;
@@ -810,16 +857,15 @@ int
 Cmd_CompleteCountPossible (char *partial)
 {
 	cmd_function_t	*cmd;
-	int				len, h;
+	int				len, h = 0;
 	
 	len = strlen(partial);
 	if (!len)
 		return 0;
 	
-	h = 0;
 	// Loop through the command list and count all partial matches
 	for (cmd = cmd_functions; cmd; cmd = cmd->next)
-		if (!Q_strncasecmp(partial, cmd->name, len))
+		if (!Q_strnicmp (partial, cmd->name, len))
 			h++;
 
 	return h;
@@ -835,17 +881,16 @@ char	**
 Cmd_CompleteBuildList (char *partial)
 {
 	cmd_function_t	*cmd;
-	int				len, bpos;
+	int				len, bpos = 0;
 	int				sizeofbuf = (Cmd_CompleteCountPossible (partial) + 1) * sizeof (char *);
 	char			**buf;
 
 	len = strlen(partial);
 	buf = (char**)Q_malloc(sizeofbuf + sizeof (char *));
 
-	bpos = 0;
 	// Loop through the alias list and print all matches
 	for (cmd = cmd_functions; cmd; cmd = cmd->next)
-		if (!Q_strncasecmp(partial, cmd->name, len))
+		if (!Q_strnicmp (partial, cmd->name, len))
 			buf[bpos++] = cmd->name;
 
 	buf[bpos] = NULL;
@@ -869,7 +914,7 @@ char
 
 	// Check aliases
 	for (alias = cmd_alias; alias; alias = alias->next)
-		if (!Q_strncasecmp(partial, alias->name, len))
+		if (!Q_strnicmp(partial, alias->name, len))
 			return alias->name;
 
 	return NULL;
@@ -883,17 +928,16 @@ int
 Cmd_CompleteAliasCountPossible (char *partial)
 {
 	cmdalias_t	*alias;
-	int			len, h;
+	int			len, h = 0;
 
-	len = strlen(partial);
+	len = strlen (partial);
 
 	if (!len)
 		return 0;
 
-	h = 0;
 	// Loop through the command list and count all partial matches
 	for (alias = cmd_alias; alias; alias = alias->next)
-		if (!Q_strncasecmp(partial, alias->name, len))
+		if (!Q_strnicmp (partial, alias->name, len))
 			h++;
 
 	return h;
@@ -907,17 +951,16 @@ char	**
 Cmd_CompleteAliasBuildList (char *partial)
 {
 	cmdalias_t	*alias;
-	int			len, bpos;
+	int			len, bpos = 0;
 	int			sizeofbuf = (Cmd_CompleteAliasCountPossible (partial) + 1) * sizeof (char *);
 	char		**buf;
 
-	len = strlen(partial);
-	buf = (char**)Q_malloc(sizeofbuf + sizeof (char *));
+	len = strlen (partial);
+	buf = (char **)Q_malloc (sizeofbuf + sizeof (char *));
 
-	bpos = 0;
 	// Loop through the alias list and print all matches
 	for (alias = cmd_alias; alias; alias = alias->next)
-		if (!Q_strncasecmp(partial, alias->name, len))
+		if (!Q_strnicmp (partial, alias->name, len))
 			buf[bpos++] = alias->name;
 
 	buf[bpos] = NULL;
@@ -946,7 +989,7 @@ void	Cmd_ExecuteString (char *text)
 	// check functions
 	for (cmd=cmd_functions ; cmd ; cmd=cmd->next)
 	{
-		if (!Q_strcasecmp (cmd_argv[0],cmd->name))
+		if (!Q_stricmp (cmd_argv[0],cmd->name))
 		{
 			if (!cmd->function)
 			{	// forward to server command
@@ -961,13 +1004,14 @@ void	Cmd_ExecuteString (char *text)
 	// check alias
 	for (a=cmd_alias ; a ; a=a->next)
 	{
-		if (!Q_strcasecmp (cmd_argv[0], a->name))
+		if (!Q_stricmp (cmd_argv[0], a->name))
 		{
 			if (++alias_count == ALIAS_LOOP_COUNT)
 			{
 				Com_Printf ("ALIAS_LOOP_COUNT\n");
 				return;
 			}
+			Cbuf_InsertText ("\n");
 			Cbuf_InsertText (a->value);
 			return;
 		}
@@ -1010,7 +1054,10 @@ void Cmd_Init (void)
 	Cmd_AddCommand ("cmdlist",Cmd_List_f);
 	Cmd_AddCommand ("exec",Cmd_Exec_f);
 	Cmd_AddCommand ("echo",Cmd_Echo_f);
+	Cmd_AddCommand ("aliaslist",Cmd_AliasList_f);
+	Cmd_AddCommand ("aliasa",Cmd_Alias_f);
 	Cmd_AddCommand ("alias",Cmd_Alias_f);
 	Cmd_AddCommand ("wait", Cmd_Wait_f);
+	Cmd_AddCommand ("vstr", Cmd_VStr_f);
 }
 

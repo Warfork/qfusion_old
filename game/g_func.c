@@ -413,7 +413,7 @@ void plat_blocked (edict_t *self, edict_t *other)
 {
 	if (!(other->svflags & SVF_MONSTER) && (!other->client) )
 	{
-		// give it a chance to go away on it's own terms (like gibs)
+		// give it a chance to go away on its own terms (like gibs)
 		T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
 		// if it's still there, nuke it
 		if (other)
@@ -482,12 +482,12 @@ void plat_spawn_inside_trigger (edict_t *ent)
 	
 	if (tmax[0] - tmin[0] <= 0)
 	{
-		tmin[0] = (ent->mins[0] + ent->maxs[0]) *0.5;
+		tmin[0] = (ent->mins[0] + ent->maxs[0]) * 0.5;
 		tmax[0] = tmin[0] + 1;
 	}
 	if (tmax[1] - tmin[1] <= 0)
 	{
-		tmin[1] = (ent->mins[1] + ent->maxs[1]) *0.5;
+		tmin[1] = (ent->mins[1] + ent->maxs[1]) * 0.5;
 		tmax[1] = tmin[1] + 1;
 	}
 	
@@ -576,9 +576,8 @@ void SP_func_plat (edict_t *ent)
 	VectorCopy (ent->pos2, ent->moveinfo.end_origin);
 	VectorCopy (ent->s.angles, ent->moveinfo.end_angles);
 
-	ent->moveinfo.sound_start = gi.soundindex ("sound/plats/pt1_strt.wav");
-	ent->moveinfo.sound_middle = gi.soundindex ("sound/plats/pt1_mid.wav");
-	ent->moveinfo.sound_end = gi.soundindex ("sound/plats/pt1_end.wav");
+	ent->moveinfo.sound_start = gi.soundindex ("sound/movers/plats/pt1_strt.wav");
+	ent->moveinfo.sound_end = gi.soundindex ("sound/movers/plats/pt1_end.wav");
 }
 
 //====================================================================
@@ -763,7 +762,7 @@ BUTTONS
 */
 
 /*QUAKED func_button (0 .5 .8) ?
-When a button is touched, it moves some distance in the direction of it's angle, triggers all of it's targets, waits some time, then returns to it's original position where it can be triggered again.
+When a button is touched, it moves some distance in the direction of it's angle, triggers all of it's targets, waits some time, then returns to its original position where it can be triggered again.
 
 "angle"		determines the opening direction
 "target"	all entities with a matching targetname will be used
@@ -858,9 +857,7 @@ void SP_func_button (edict_t *ent)
 	G_InitMover ( ent );
 	G_SetMovedir ( ent->s.angles, ent->movedir );
 
-	if (ent->sounds && ent->sounds[0])
-		if (ent->sounds[0] != '1')
-			ent->moveinfo.sound_start = gi.soundindex ("sound/switches/butn2.wav");
+	ent->moveinfo.sound_start = gi.soundindex ("sound/movers/switches/butn2.wav");
 	
 	if (!ent->speed)
 		ent->speed = 40;
@@ -913,7 +910,7 @@ void SP_func_button (edict_t *ent)
 DOORS
 
   spawn a trigger surrounding the entire team unless it is
-  allready targeted by another
+  already targeted by another
 
 ======================================================================
 */
@@ -1161,7 +1158,7 @@ void door_blocked  (edict_t *self, edict_t *other)
 
 	if (!(other->svflags & SVF_MONSTER) && (!other->client) )
 	{
-		// give it a chance to go away on it's own terms (like gibs)
+		// give it a chance to go away on its own terms (like gibs)
 		T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
 		// if it's still there, nuke it
 		if (other)
@@ -1225,21 +1222,17 @@ void SP_func_door (edict_t *ent)
 	G_InitMover ( ent );
 	G_SetMovedir ( ent->s.angles, ent->movedir );
 
-	if (ent->sounds && ent->sounds[0])
-		if (ent->sounds[0] != '1')
-		{
-			ent->moveinfo.sound_start = gi.soundindex  ("sound/doors/dr1_strt.wav");
-			ent->moveinfo.sound_middle = gi.soundindex  ("sound/doors/dr1_mid.wav");
-			ent->moveinfo.sound_end = gi.soundindex  ("sound/doors/dr1_end.wav");
-		}
+	if (st.noise)
+		ent->moveinfo.sound_middle = gi.soundindex (st.noise);
+
+	ent->moveinfo.sound_start = gi.soundindex ("sound/movers/doors/dr1_strt.wav");
+	ent->moveinfo.sound_end = gi.soundindex ("sound/movers/doors/dr1_end.wav");
 
 	ent->blocked = door_blocked;
 	ent->use = door_use;
 	
 	if (!ent->speed)
-		ent->speed = 100;
-	if (deathmatch->value)
-		ent->speed *= 2;
+		ent->speed = 400;
 
 	if (!ent->accel)
 		ent->accel = ent->speed;
@@ -1247,7 +1240,7 @@ void SP_func_door (edict_t *ent)
 		ent->decel = ent->speed;
 
 	if (!ent->wait)
-		ent->wait = 3;
+		ent->wait = 2;
 	if (!st.lip)
 		st.lip = 8;
 	if (!ent->dmg)
@@ -1386,13 +1379,11 @@ void SP_func_door_rotating (edict_t *ent)
 	if (!ent->dmg)
 		ent->dmg = 2;
 
-	if (ent->sounds && ent->sounds[0])
-		if (ent->sounds[0] != '1')
-		{
-			ent->moveinfo.sound_start = gi.soundindex  ("sound/doors/dr1_strt.wav");
-			ent->moveinfo.sound_middle = gi.soundindex  ("sound/doors/dr1_mid.wav");
-			ent->moveinfo.sound_end = gi.soundindex  ("sound/doors/dr1_end.wav");
-		}
+	if (st.noise)
+		ent->moveinfo.sound_middle = gi.soundindex (st.noise);
+
+	ent->moveinfo.sound_start = gi.soundindex ("sound/movers/doors/dr1_strt.wav");
+	ent->moveinfo.sound_end = gi.soundindex ("sound/movers/doors/dr1_end.wav");
 
 	// if it starts open, switch the positions
 	if (ent->spawnflags & DOOR_START_OPEN)
@@ -1545,7 +1536,7 @@ void train_blocked (edict_t *self, edict_t *other)
 {
 	if (!(other->svflags & SVF_MONSTER) && (!other->client) )
 	{
-		// give it a chance to go away on it's own terms (like gibs)
+		// give it a chance to go away on its own terms (like gibs)
 		T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
 		// if it's still there, nuke it
 		if (other)
@@ -2041,7 +2032,7 @@ void door_secret_blocked  (edict_t *self, edict_t *other)
 {
 	if (!(other->svflags & SVF_MONSTER) && (!other->client) )
 	{
-		// give it a chance to go away on it's own terms (like gibs)
+		// give it a chance to go away on its own terms (like gibs)
 		T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
 		// if it's still there, nuke it
 		if (other)
@@ -2072,9 +2063,11 @@ void SP_func_door_secret (edict_t *ent)
 	G_InitMover ( ent );
 	G_SetMovedir ( ent->s.angles, ent->movedir );
 
-	ent->moveinfo.sound_start = gi.soundindex  ("sound/doors/dr1_strt.wav");
-	ent->moveinfo.sound_middle = gi.soundindex  ("sound/doors/dr1_mid.wav");
-	ent->moveinfo.sound_end = gi.soundindex  ("sound/doors/dr1_end.wav");
+	if (st.noise)
+		ent->moveinfo.sound_middle = gi.soundindex (st.noise);
+
+	ent->moveinfo.sound_start = gi.soundindex ("sound/movers/doors/dr1_strt.wav");
+	ent->moveinfo.sound_end = gi.soundindex ("sound/movers/doors/dr1_end.wav");
 
 	ent->blocked = door_secret_blocked;
 	ent->use = door_secret_use;
@@ -2151,7 +2144,7 @@ func_bobbing_blocked
 */
 void func_bobbing_blocked (edict_t *self, edict_t *other)
 {
-	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, self->dmg, 1, 0, MOD_CRUSH);
+	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
 }
 
 /*
@@ -2181,8 +2174,10 @@ void func_bobbing_think ( edict_t *ent )
 	float phase;
 
 	delta = ( level.time - ent->moveinfo.wait ) * ent->moveinfo.phase;
-	phase = cos( delta * M_TWOPI ) * 0.5f;
-	VectorScale( ent->moveinfo.dir, phase, ent->velocity );
+	phase = sin( delta * M_TWOPI );
+
+	VectorMA( ent->moveinfo.start_origin, phase, ent->moveinfo.dir, ent->velocity );
+	VectorSubtract( ent->velocity, ent->s.origin, ent->velocity );
 
 	ent->nextthink = level.time + FRAMETIME;
 }
@@ -2204,7 +2199,7 @@ void SP_func_bobbing ( edict_t *ent )
 		st.height = 32;
 
 	ent->moveinfo.phase = 1.0f / (float)ent->speed;
-	ent->moveinfo.wait = ent->speed * st.phase + FRAMETIME * 2;
+	ent->moveinfo.wait = ent->speed * st.phase;
 
 	VectorClear ( ent->moveinfo.dir );
 
@@ -2216,6 +2211,9 @@ void SP_func_bobbing ( edict_t *ent )
 	} else {
 		ent->moveinfo.dir[2] = st.height;
 	}
+
+	VectorClear ( ent->s.angles );
+	VectorCopy ( ent->s.origin, ent->moveinfo.start_origin );
 
 	ent->think = func_bobbing_think;
 	ent->nextthink = level.time + FRAMETIME;
@@ -2240,7 +2238,7 @@ func_pendulum_blocked
 */
 void func_pendulum_blocked (edict_t *self, edict_t *other)
 {
-	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, self->dmg, 1, 0, MOD_CRUSH);
+	T_Damage (other, self, self, vec3_origin, other->s.origin, vec3_origin, 100000, 1, 0, MOD_CRUSH);
 }
 
 /*
@@ -2269,9 +2267,10 @@ void func_pendulum_think ( edict_t *ent )
 	float delta;
 	float phase;
 
-	delta = ( level.time - ent->moveinfo.wait ) / ent->moveinfo.phase;
+	delta = ( level.time + ent->moveinfo.wait ) * ent->moveinfo.phase;
 	phase = sin( delta * M_TWOPI );
-	VectorScale( ent->moveinfo.dir, phase, ent->avelocity );
+	VectorMA( ent->moveinfo.start_angles, phase, ent->moveinfo.dir, ent->avelocity );
+	VectorSubtract( ent->avelocity, ent->s.angles, ent->avelocity );
 
 	ent->nextthink = level.time + FRAMETIME;
 }
@@ -2307,8 +2306,8 @@ void SP_func_pendulum ( edict_t *ent )
 
 	VectorCopy( ent->s.angles, ent->moveinfo.start_angles );
 	VectorClear ( ent->moveinfo.dir );
-	ent->moveinfo.phase = 1 / freq;
-	ent->moveinfo.wait = st.phase * ent->moveinfo.phase;
+	ent->moveinfo.phase = freq;
+	ent->moveinfo.wait = st.phase / ent->moveinfo.phase;
 	ent->moveinfo.dir[2] = ent->speed;
 
 	ent->think = func_pendulum_think;

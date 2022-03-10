@@ -39,7 +39,8 @@ void AddressBook_MenuInit( void )
 	int y = 0;
 	int y_offset = SMALL_CHAR_HEIGHT*2 + 2;
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
+	w = uis.vidWidth;
+	h = uis.vidHeight;
 
 	s_addressbook_menu.x = w / 2 - 142;
 	s_addressbook_menu.y = 58;
@@ -65,11 +66,13 @@ void AddressBook_MenuInit( void )
 
 		Menu_AddItem( &s_addressbook_menu, &s_addressbook_fields[i] );
 	}
+
+	Menu_Init ( &s_addressbook_menu );
 }
 
 const char *AddressBook_MenuKey( int key )
 {
-	if ( key == K_ESCAPE )
+	if ( key == K_ESCAPE || key == K_MOUSE2 )
 	{
 		int index;
 		char buffer[20];
@@ -91,5 +94,5 @@ void AddressBook_MenuDraw(void)
 void M_Menu_AddressBook_f(void)
 {
 	AddressBook_MenuInit();
-	M_PushMenu( AddressBook_MenuDraw, AddressBook_MenuKey );
+	M_PushMenu( &s_addressbook_menu, AddressBook_MenuDraw, AddressBook_MenuKey );
 }

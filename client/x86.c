@@ -25,7 +25,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 static unsigned long bias;
 static unsigned long *histogram;
 static unsigned long start, range;
-static unsigned long bias;
 
 __declspec( naked ) void x86_TimerStart( void )
 {

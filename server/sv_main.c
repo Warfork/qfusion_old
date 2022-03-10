@@ -29,8 +29,8 @@ cvar_t	*sv_timedemo;
 
 cvar_t	*sv_enforcetime;
 
-cvar_t	*timeout;				// seconds without any message
-cvar_t	*zombietime;			// seconds to sink messages after disconnect
+cvar_t	*sv_timeout;				// seconds without any message
+cvar_t	*sv_zombietime;			// seconds to sink messages after disconnect
 
 cvar_t	*rcon_password;			// password for remote server commands
 
@@ -44,13 +44,13 @@ cvar_t	*sv_airaccelerate;
 
 cvar_t	*sv_noreload;			// don't reload level state when reentering
 
-cvar_t	*sv_maxclients;			// FIXME: rename sv_maxclients
+cvar_t	*sv_maxclients;
 cvar_t	*sv_showclamp;
 
-cvar_t	*hostname;
-cvar_t	*public_server;			// should heartbeats be sent
+cvar_t	*sv_hostname;
+cvar_t	*sv_public;			// should heartbeats be sent
 
-cvar_t	*sv_reconnect_limit;	// minimum seconds between connect messages
+cvar_t	*sv_reconnectlimit;	// minimum seconds between connect messages
 
 void Master_Shutdown (void);
 
@@ -147,11 +147,6 @@ Responds with all the info that qplug or qspy can see
 void SVC_Status (void)
 {
 	Netchan_OutOfBandPrint (NS_SERVER, net_from, "print\n%s", SV_StatusString());
-#if 0
-	Com_BeginRedirect (RD_PACKET, sv_outputbuf, SV_OUTPUTBUF_LENGTH, SV_FlushRedirect);
-	Com_Printf (SV_StatusString());
-	Com_EndRedirect ();
-#endif
 }
 
 /*
@@ -185,7 +180,7 @@ void SVC_Info (void)
 	version = atoi (Cmd_Argv(1));
 
 	if (version != PROTOCOL_VERSION)
-		Com_sprintf (string, sizeof(string), "%s: wrong version\n", hostname->string, sizeof(string));
+		Com_sprintf (string, sizeof(string), "%s: wrong version\n", sv_hostname->string, sizeof(string));
 	else
 	{
 		count = 0;
@@ -193,7 +188,7 @@ void SVC_Info (void)
 			if (svs.clients[i].state >= cs_connected)
 				count++;
 
-		Com_sprintf (string, sizeof(string), "%16s %8s %2i/%2i\n", hostname->string, sv.name, count, (int)sv_maxclients->value);
+		Com_sprintf (string, sizeof(string), "%16s %8s %2i/%2i\n", sv_hostname->string, sv.name, count, (int)sv_maxclients->value);
 	}
 
 	Netchan_OutOfBandPrint (NS_SERVER, net_from, "info\n%s", string);
@@ -293,8 +288,7 @@ void SVC_DirectConnect (void)
 
 	challenge = atoi(Cmd_Argv(3));
 
-	strncpy (userinfo, Cmd_Argv(4), sizeof(userinfo)-1);
-	userinfo[sizeof(userinfo) - 1] = 0;
+	Q_strncpyz (userinfo, Cmd_Argv(4), sizeof(userinfo));
 
 	// force the IP key/value pair so the game can filter based on ip
 	Info_SetValueForKey (userinfo, "ip", NET_AdrToString(&net_from));
@@ -342,7 +336,7 @@ void SVC_DirectConnect (void)
 			&& ( cl->netchan.qport == qport 
 			|| adr.port == cl->netchan.remote_address.port ) )
 		{
-			if (!NET_IsLocalAddress (&adr) && (svs.realtime - cl->lastconnect) < ((int)sv_reconnect_limit->value * 1000))
+			if (!NET_IsLocalAddress (&adr) && (svs.realtime - cl->lastconnect) < ((int)sv_reconnectlimit->value * 1000))
 			{
 				Com_DPrintf ("%s:reconnect rejected : too soon\n", NET_AdrToString (&adr));
 				return;
@@ -394,7 +388,7 @@ gotnewcl:
 	}
 
 	// parse some info from the info strings
-	strncpy (newcl->userinfo, userinfo, sizeof(newcl->userinfo)-1);
+	Q_strncpyz (newcl->userinfo, userinfo, sizeof(newcl->userinfo));
 	SV_UserinfoChanged (newcl);
 
 	// send the connect packet to the client
@@ -493,13 +487,13 @@ void SV_ConnectionlessPacket (void)
 		SVC_Ping ();
 	else if (!strcmp(c, "ack"))
 		SVC_Ack ();
-	else if (!strcmp(c,"status"))
+	else if (!strcmp(c, "status"))
 		SVC_Status ();
-	else if (!strcmp(c,"info"))
+	else if (!strcmp(c, "info"))
 		SVC_Info ();
-	else if (!strcmp(c,"getchallenge"))
+	else if (!strcmp(c, "getchallenge"))
 		SVC_GetChallenge ();
-	else if (!strcmp(c,"connect"))
+	else if (!strcmp(c, "connect"))
 		SVC_DirectConnect ();
 	else if (!strcmp(c, "rcon"))
 		SVC_RemoteCommand ();
@@ -660,8 +654,8 @@ void SV_CheckTimeouts (void)
 	int			droppoint;
 	int			zombiepoint;
 
-	droppoint = svs.realtime - 1000*timeout->value;
-	zombiepoint = svs.realtime - 1000*zombietime->value;
+	droppoint = svs.realtime - 1000*sv_timeout->value;
+	zombiepoint = svs.realtime - 1000*sv_zombietime->value;
 
 	for (i=0,cl=svs.clients ; i<sv_maxclients->value ; i++,cl++)
 	{
@@ -827,7 +821,7 @@ void Master_Heartbeat (void)
 		return;		// only dedicated servers send heartbeats
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
-	if (!public_server || !public_server->value)
+	if (!sv_public || !sv_public->value)
 		return;		// a private dedicated game
 
 	// check for time wraparound
@@ -867,7 +861,7 @@ void Master_Shutdown (void)
 		return;		// only dedicated servers send heartbeats
 
 	// pgm post3.19 change, cvar pointer not validated before dereferencing
-	if (!public_server || !public_server->value)
+	if (!sv_public || !sv_public->value)
 		return;		// a private dedicated game
 
 	// send to group master
@@ -900,7 +894,7 @@ void SV_UserinfoChanged (client_t *cl)
 	ge->ClientUserinfoChanged (cl->edict, cl->userinfo);
 	
 	// name for C code
-	strncpy (cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name)-1);
+	Q_strncpyz (cl->name, Info_ValueForKey (cl->userinfo, "name"), sizeof(cl->name));
 	// mask off high bit
 	for (i=0 ; i<sizeof(cl->name) ; i++)
 		cl->name[i] &= 127;
@@ -911,10 +905,7 @@ void SV_UserinfoChanged (client_t *cl)
 	{
 		i = atoi(val);
 		cl->rate = i;
-		if (cl->rate < 100)
-			cl->rate = 100;
-		if (cl->rate > 15000)
-			cl->rate = 15000;
+		clamp ( cl->rate, 100, 15000 );
 	}
 	else
 		cl->rate = 5000;
@@ -935,7 +926,7 @@ void SV_UserinfoChanged (client_t *cl)
 ===============
 SV_Init
 
-Only called at quake2.exe startup, not for each game
+Only called at plat.exe startup, not for each game
 ===============
 */
 void SV_Init (void)
@@ -944,18 +935,19 @@ void SV_Init (void)
 
 	rcon_password = Cvar_Get ("rcon_password", "", 0);
 	Cvar_Get ("skill", "1", 0);
-	Cvar_Get ("deathmatch", "0", CVAR_LATCH);
+	Cvar_Get ("deathmatch", "1", CVAR_LATCH);
 	Cvar_Get ("coop", "0", CVAR_LATCH);
 	Cvar_Get ("dmflags", va("%i", DF_INSTANT_ITEMS), CVAR_SERVERINFO);
 	Cvar_Get ("fraglimit", "0", CVAR_SERVERINFO);
+	Cvar_Get ("capturelimit", "0", CVAR_SERVERINFO);
 	Cvar_Get ("timelimit", "0", CVAR_SERVERINFO);
-	Cvar_Get ("cheats", "0", CVAR_SERVERINFO|CVAR_LATCH);
+	Cvar_Get ("sv_cheats", "0", CVAR_SERVERINFO|CVAR_LATCH);
 	Cvar_Get ("protocol", va("%i", PROTOCOL_VERSION), CVAR_SERVERINFO|CVAR_NOSET);
 
-	hostname = Cvar_Get ("hostname", "noname", CVAR_SERVERINFO | CVAR_ARCHIVE);
-	timeout = Cvar_Get ("timeout", "125", 0);
-	zombietime = Cvar_Get ("zombietime", "2", 0);
-	sv_showclamp = Cvar_Get ("showclamp", "0", 0);
+	sv_hostname = Cvar_Get ("sv_hostname", "noname", CVAR_SERVERINFO | CVAR_ARCHIVE);
+	sv_timeout = Cvar_Get ("sv_timeout", "125", 0);
+	sv_zombietime = Cvar_Get ("sv_zombietime", "2", 0);
+	sv_showclamp = Cvar_Get ("sv_showclamp", "0", 0);
 	sv_paused = Cvar_Get ("paused", "0", 0);
 	sv_timedemo = Cvar_Get ("timedemo", "0", 0);
 	sv_enforcetime = Cvar_Get ("sv_enforcetime", "0", 0);
@@ -965,15 +957,15 @@ void SV_Init (void)
 	allow_download_sounds = Cvar_Get ("allow_download_sounds", "1", CVAR_ARCHIVE);
 	allow_download_maps	  = Cvar_Get ("allow_download_maps", "1", CVAR_ARCHIVE);
 
-	sv_maxclients = Cvar_Get ("maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
+	sv_maxclients = Cvar_Get ("sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
 
 	sv_noreload = Cvar_Get ("sv_noreload", "0", 0);
 
 	sv_airaccelerate = Cvar_Get("sv_airaccelerate", "0", CVAR_LATCH);
 
-	public_server = Cvar_Get ("public", "0", 0);
+	sv_public = Cvar_Get ("sv_public", "0", 0);
 
-	sv_reconnect_limit = Cvar_Get ("sv_reconnect_limit", "3", CVAR_ARCHIVE);
+	sv_reconnectlimit = Cvar_Get ("sv_reconnectlimit", "3", CVAR_ARCHIVE);
 
 	SZ_Init (&net_message, net_message_buffer, sizeof(net_message_buffer));
 }
@@ -1035,9 +1027,12 @@ void SV_Shutdown (char *finalmsg, qboolean reconnect)
 	Master_Shutdown ();
 	SV_ShutdownGameProgs ();
 
+	// get any latched variable changes (sv_maxclients, etc)
+	Cvar_GetLatchedVars (CVAR_LATCH);
+
 	// free current level
 	if (sv.demofile)
-		fclose (sv.demofile);
+		FS_FCloseFile (sv.demofile);
 	memset (&sv, 0, sizeof(sv));
 	Com_SetServerState (sv.state);
 

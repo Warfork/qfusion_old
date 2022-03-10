@@ -29,7 +29,7 @@ void	SCR_CenterPrint (char *str);
 void	SCR_BeginLoadingPlaque (void);
 void	SCR_EndLoadingPlaque (void);
 
-void	SCR_DebugGraph (float value, int color);
+void	SCR_DebugGraph (float value, float r, float g, float b);
 
 void	SCR_TouchPics (void);
 
@@ -49,7 +49,7 @@ extern	cvar_t		*crosshair_y;
 
 extern	vrect_t		scr_vrect;		// position of render window
 
-extern	char		crosshair_pic[MAX_QPATH];
+extern	struct shader_s *crosshair_shader;
 extern	int			crosshairX, crosshairY;
 
 void SCR_AddDirtyPoint (int x, int y);

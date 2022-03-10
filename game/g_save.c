@@ -46,7 +46,8 @@ field_t fields[] = {
 	{"count", FOFS(count), F_INT},
 	{"health", FOFS(health), F_INT},
 	{"sounds", FOFS(sounds), F_LSTRING},
-	{"light", 0, F_IGNORE},
+	{"light", FOFS(light), F_FLOAT},
+	{"color", FOFS(color), F_VECTOR},
 	{"dmg", FOFS(dmg), F_INT},
 	{"angles", FOFS(s.angles), F_VECTOR},
 	{"angle", FOFS(s.angles), F_ANGLEHACK},
@@ -59,6 +60,7 @@ field_t fields[] = {
 	{"lip", STOFS(lip), F_INT, FFL_SPAWNTEMP},
 	{"distance", STOFS(distance), F_INT, FFL_SPAWNTEMP},
 	{"radius", STOFS(radius), F_FLOAT, FFL_SPAWNTEMP},
+	{"roll", STOFS(roll), F_FLOAT, FFL_SPAWNTEMP},
 	{"height", STOFS(height), F_INT, FFL_SPAWNTEMP},
 	{"phase", STOFS(phase), F_FLOAT, FFL_SPAWNTEMP},
 	{"noise", STOFS(noise), F_LSTRING, FFL_SPAWNTEMP},
@@ -171,12 +173,12 @@ void InitGame (void)
 	dedicated = gi.cvar ("dedicated", "0", CVAR_NOSET);
 
 	// latched vars
-	sv_cheats = gi.cvar ("cheats", "0", CVAR_SERVERINFO|CVAR_LATCH);
+	sv_cheats = gi.cvar ("sv_cheats", "0", CVAR_SERVERINFO|CVAR_LATCH);
 	gi.cvar ("gamename", GAMEVERSION , CVAR_SERVERINFO | CVAR_LATCH);
 	gi.cvar ("gamedate", __DATE__ , CVAR_SERVERINFO | CVAR_LATCH);
 
-	maxclients = gi.cvar ("maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
-	deathmatch = gi.cvar ("deathmatch", "0", CVAR_LATCH);
+	maxclients = gi.cvar ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
+	deathmatch = gi.cvar ("deathmatch", "1", CVAR_LATCH);
 	coop = gi.cvar ("coop", "0", CVAR_LATCH);
 	skill = gi.cvar ("skill", "1", CVAR_LATCH);
 	maxentities = gi.cvar ("maxentities", "1024", CVAR_LATCH);
@@ -206,11 +208,19 @@ void InitGame (void)
 
 	g_select_empty = gi.cvar ("g_select_empty", "0", CVAR_ARCHIVE);
 
+#if 0
 	run_pitch = gi.cvar ("run_pitch", "0.002", 0);
 	run_roll = gi.cvar ("run_roll", "0.005", 0);
 	bob_up  = gi.cvar ("bob_up", "0.005", 0);
 	bob_pitch = gi.cvar ("bob_pitch", "0.002", 0);
 	bob_roll = gi.cvar ("bob_roll", "0.002", 0);
+#else
+	run_pitch = gi.cvar ("run_pitch", "0", 0);
+	run_roll = gi.cvar ("run_roll", "0", 0);
+	bob_up  = gi.cvar ("bob_up", "0", 0);
+	bob_pitch = gi.cvar ("bob_pitch", "0", 0);
+	bob_roll = gi.cvar ("bob_roll", "0", 0);
+#endif
 
 	// flood control
 	flood_msgs = gi.cvar ("flood_msgs", "4", 0);
@@ -654,7 +664,7 @@ void WriteLevel (char *filename)
 =================
 ReadLevel
 
-SpawnEntities will allready have been called on the
+SpawnEntities will already have been called on the
 level the same way it was when the level was saved.
 
 That is necessary to get the baselines

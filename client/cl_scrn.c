@@ -37,7 +37,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 float		scr_con_current;	// aproaches scr_conlines at scr_conspeed
 float		scr_conlines;		// 0.0 to 1.0 lines of console to display
 
-qboolean	scr_initialized;		// ready to draw
+qboolean	scr_initialized;	// ready to draw
 
 int			scr_draw_loading;
 
@@ -59,6 +59,7 @@ cvar_t		*scr_graphheight;
 cvar_t		*scr_graphscale;
 cvar_t		*scr_graphshift;
 cvar_t		*scr_drawall;
+cvar_t		*scr_debugloading;
 
 typedef struct
 {
@@ -67,7 +68,7 @@ typedef struct
 
 dirty_t		scr_dirty, scr_old_dirty[2];
 
-char		crosshair_pic[MAX_QPATH];
+struct shader_s *crosshair_shader;
 int			crosshairX, crosshairY;
 
 void SCR_TimeRefresh_f (void);
@@ -101,10 +102,10 @@ void CL_AddNetgraph (void)
 		return;
 
 	for (i=0 ; i<cls.netchan.dropped ; i++)
-		SCR_DebugGraph (30, 0x40);
+		SCR_DebugGraph (30, 0.655, 0.231, 0.169);
 
-	for (i=0 ; i<cl.surpressCount ; i++)
-		SCR_DebugGraph (30, 0xdf);
+	for (i=0 ; i<cl.suppressCount ; i++)
+		SCR_DebugGraph (30, 0.0f, 1.0f, 0.0);
 
 	// see what the latency was on this packet
 	in = cls.netchan.incoming_acknowledged & (CMD_BACKUP-1);
@@ -112,14 +113,14 @@ void CL_AddNetgraph (void)
 	ping /= 30;
 	if (ping > 30)
 		ping = 30;
-	SCR_DebugGraph (ping, 0xd0);
+	SCR_DebugGraph (ping, 1.0f, 0.75, 0.06);
 }
 
 
 typedef struct
 {
 	float	value;
-	int		color;
+	vec4_t	color;
 } graphsamp_t;
 
 static	int			current;
@@ -130,11 +131,16 @@ static	graphsamp_t	values[1024];
 SCR_DebugGraph
 ==============
 */
-void SCR_DebugGraph (float value, int color)
+void SCR_DebugGraph (float value, float r, float g, float b)
 {
-	values[current&1023].value = value;
-	values[current&1023].color = color;
+	values[current].value = value;
+	values[current].color[0] = r;
+	values[current].color[1] = g;
+	values[current].color[2] = b;
+	values[current].color[3] = 1.0f;
+
 	current++;
+	current &= 1023;
 }
 
 /*
@@ -146,7 +152,6 @@ void SCR_DrawDebugGraph (void)
 {
 	int		a, x, y, w, i, h;
 	float	v;
-	int		color;
 
 	//
 	// draw the graph
@@ -155,20 +160,19 @@ void SCR_DrawDebugGraph (void)
 
 	x = scr_vrect.x;
 	y = scr_vrect.y+scr_vrect.height;
-	Draw_Fill (x, y-scr_graphheight->value,
-		w, scr_graphheight->value, 8);
+	Draw_FillRect (x, y-scr_graphheight->value,
+		w, scr_graphheight->value, colorMdGrey);
 
 	for (a=0 ; a<w ; a++)
 	{
 		i = (current-1-a+1024) & 1023;
 		v = values[i].value;
-		color = values[i].color;
 		v = v*scr_graphscale->value + scr_graphshift->value;
 		
 		if (v < 0)
 			v += scr_graphheight->value * (1+(int)(-v/scr_graphheight->value));
 		h = (int)v % (int)scr_graphheight->value;
-		Draw_Fill (x+w-1-a, y - h, 1, h, color);
+		Draw_FillRect (x+w-1-a, y - h, 1, h, values[i].color);
 	}
 }
 
@@ -200,7 +204,7 @@ void SCR_CenterPrint (char *str)
 	char	line[64];
 	int		i, j, l;
 
-	strncpy (scr_centerstring, str, sizeof(scr_centerstring)-1);
+	Q_strncpyz (scr_centerstring, str, sizeof(scr_centerstring));
 	scr_centertime_off = scr_centertime->value;
 	scr_centertime_start = cl.time;
 
@@ -253,9 +257,8 @@ void SCR_DrawCenterString (void)
 {
 	char	*start;
 	int		l;
-	int		j;
 	int		x, y;
-	int		remaining;
+	int		remaining, c;
 
 // the finale prints the characters one at a time
 	remaining = 9999;
@@ -276,13 +279,11 @@ void SCR_DrawCenterString (void)
 				break;
 		x = (viddef.width - l*SMALL_CHAR_WIDTH)/2;
 		SCR_AddDirtyPoint (x, y);
-		for (j=0 ; j<l ; j++, x+=SMALL_CHAR_WIDTH)
-		{
-			Draw_Char ( x, y, start[j], FONT_SMALL, colorWhite );	
-			if (!remaining--)
-				return;
-		}
-		SCR_AddDirtyPoint (x, y+SMALL_CHAR_HEIGHT);
+		c = start[l];
+		start[l] = 0;
+		Draw_PropString ( x, y, start, FONT_SMALL|FONT_SHADOWED, colorWhite );
+		start[l] = c;
+		SCR_AddDirtyPoint (x, y+27);
 			
 		y += SMALL_CHAR_HEIGHT;
 
@@ -346,7 +347,7 @@ Keybinding command
 */
 void SCR_SizeUp_f (void)
 {
-	Cvar_SetValue ("viewsize",scr_viewsize->value+10);
+	Cvar_SetValue ("viewsize", scr_viewsize->value+10);
 }
 
 
@@ -359,7 +360,7 @@ Keybinding command
 */
 void SCR_SizeDown_f (void)
 {
-	Cvar_SetValue ("viewsize",scr_viewsize->value-10);
+	Cvar_SetValue ("viewsize", scr_viewsize->value-10);
 }
 
 //============================================================================
@@ -385,6 +386,7 @@ void SCR_Init (void)
 	scr_graphscale = Cvar_Get ("graphscale", "1", 0);
 	scr_graphshift = Cvar_Get ("graphshift", "0", 0);
 	scr_drawall = Cvar_Get ("scr_drawall", "0", 0);
+	scr_debugloading = Cvar_Get ("scr_debugloading", "0", 0);
 
 //
 // register our commands
@@ -409,7 +411,7 @@ void SCR_DrawNet (void)
 		< CMD_BACKUP-1)
 		return;
 
-	Draw_Pic (scr_vrect.x+64, scr_vrect.y, "gfx/2d/net");
+	Draw_StretchPic (scr_vrect.x+64, scr_vrect.y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("gfx/2d/net") );
 }
 
 /*
@@ -425,7 +427,7 @@ void SCR_DrawPause (void)
 	if (!cl_paused->value)
 		return;
 
-	Draw_StringLen ( viddef.width / 2, viddef.height / 2, "PAUSED", -1, FONT_BIG, colorRed );
+	Draw_CenteredPropString ( viddef.height / 2, "PAUSED", FONT_BIG, colorRed );
 }
 
 /*
@@ -436,18 +438,36 @@ SCR_DrawFPS
 */
 void SCR_DrawFPS (void)
 {
-	int fps;
+	static int fps;
+	static double oldtime;
+	static int oldframecount;
+	double t;
 	char s[32];
+	int x, width;
 
-	if ( !cls.frametime )
+	if ( !cls.frametime || cls.state < ca_connected )
 		return;
 	if ( !scr_showfps->value )
 		return;
 
-	fps = (int)(1.0f / cls.frametime);
+	if ( scr_showfps->value == 2 )
+	{
+		t = curtime * 0.001;
+		if ((t - oldtime) >= 0.25) {	// updates 4 times a second
+			fps = (cls.framecount - oldframecount) / (t - oldtime) + 0.5;
+			oldframecount = cls.framecount;
+			oldtime = t;
+		}
+	}
+	else
+		fps = (int)(1.0f / cls.frametime);
 
-	Com_sprintf ( s, sizeof( s ), S_COLOR_CYAN "%3d FPS", fps );
-	Draw_StringLen ( viddef.width-8*BIG_CHAR_WIDTH, 0, s, -1, FONT_BIG, colorWhite );
+	Com_sprintf ( s, sizeof( s ), "%3dfps", fps );
+	width = strlen(s)*BIG_CHAR_WIDTH;
+	x = viddef.width - 5 - width;
+	Draw_String ( x, 2, s, FONT_BIG|FONT_SHADOWED, colorWhite );
+	SCR_AddDirtyPoint (x, 2);
+	SCR_AddDirtyPoint (x + width - 1, 2 + BIG_CHAR_HEIGHT - 1);
 }
 
 
@@ -492,40 +512,171 @@ SCR_DrawConsole
 void SCR_DrawConsole (void)
 {
 	Con_CheckResize ();
-	
-	if ( cls.state == ca_disconnected )
-	{	// forced full screen console
-		Con_DrawConsole (1.0);
+
+	if ( cls.state == ca_disconnected ) {
+		if ( scr_con_current )
+			Con_DrawConsole (scr_con_current);
 		return;
 	}
 
-	if ( cls.state != ca_active || !cl.refresh_prepped )
-	{
-		if ( cl.levelshot[0] ) {
-			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, cl.levelshot );
-			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, "levelShotDetail" );
-		} else {
-			Draw_StretchPic ( 0, 0, viddef.width, viddef.height, "menuback" );
-		}
-
+	if ( cls.state == ca_active && !cl.refresh_prepped )
 		return;
-	}
 
-	if (scr_con_current)
+	if ( scr_con_current )
 	{
 		Con_DrawConsole (scr_con_current);
 		return;
 	}
-	else
-	{
-		if (cls.key_dest == key_game || cls.key_dest == key_message) {
-			Con_DrawNotify ();	// only draw notify in game
-			return;
-		}
+
+	if ( cls.state == ca_active && (cls.key_dest == key_game
+		|| cls.key_dest == key_message) ) {
+		Con_DrawNotify ();	// only draw notify in game
 	}
 }
 
+/*
+==============
+SCR_DrawLoading
+==============
+*/
+void SCR_DrawLoading (void)
+{
+	static char str[64];
+
+	if ( cls.state != ca_connecting && cl.levelshot[0]
+		&& cl.configstrings[CS_MAPNAME][0])
+	{	// draw a level shot
+		Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
+			0, 0, 1, 1, colorWhite, R_RegisterPic ( cl.levelshot ) );
+		Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
+			0, 0, 2.5, 2, colorWhite, R_RegisterPic ( "levelShotDetail" ) );
+	} else {	// draw menu background
+		Draw_StretchPic ( 0, 0, viddef.width, viddef.height, 
+			0, 0, 1, 1, colorWhite, R_RegisterPic ( "menuback" ) );
+	}
+
+	Com_sprintf ( str, sizeof(str), "Connecting to %s", cls.servername );
+	Draw_CenteredPropString ( 64, str, FONT_SMALL|FONT_SHADOWED, colorWhite );
+
+	if ( cls.state != ca_connecting && cl.configstrings[CS_MAPNAME][0] ) {
+		// draw map name
+		Com_sprintf ( str, sizeof(str), "Loading %s", cl.configstrings[CS_MAPNAME] );
+		Draw_CenteredPropString ( 16, str, FONT_BIG|FONT_SHADOWED, colorWhite );
+
+		// what we're loading at the moment
+		if (cl.loadingstring[0]) {
+			if (cl.loadingstring[0] == '-' && !cl.loadingstring[1])
+				strcpy (str, "awaiting snapshot...");
+			else
+				Com_sprintf ( str, sizeof(str), "loading... %s", cl.loadingstring);
+			Draw_CenteredPropString ( 96, str, FONT_SMALL|FONT_SHADOWED, colorWhite );
+		}
+
+		if ( cl.checkname[0] && !cls.download ) {
+			int maxlen;
+			char prefix[] = "filename: ";
+
+			maxlen = (viddef.width - 32)/BIG_CHAR_WIDTH - (sizeof(prefix)-1);
+			clamp (maxlen, 3, sizeof(str)-1 - (sizeof(prefix)-1));
+
+			strcpy (str, prefix);
+			if ( strlen(cl.checkname) > maxlen ) {
+				strcat (str, "...");
+				strcat (str, cl.checkname + strlen(cl.checkname) - maxlen + 3);
+			} else {
+				strcat (str, cl.checkname);
+			}
+
+			Draw_String ( 16, viddef.height - 20, str, FONT_BIG|FONT_SHADOWED, colorWhite );
+		}
+
+		// level name ("message")
+		Draw_CenteredPropString ( 150, cl.configstrings[CS_MESSAGE], FONT_SMALL|FONT_SHADOWED, colorWhite );
+	}
+
+//ZOID
+	// draw the download bar
+	// figure out width
+	if (cls.download) {
+		char	*text;
+		int		i, x, y, j, n;
+		char	dlbar[1024];
+
+		if ((text = strrchr(cls.downloadname, '/')) != NULL)
+			text++;
+		else
+			text = cls.downloadname;
+
+		x = con.linewidth - ((con.linewidth * 7) / 40);
+		y = x - strlen(text) - SMALL_CHAR_WIDTH;
+		i = con.linewidth / 3;
+
+		if (strlen(text) > i) {
+			y = x - i - 11;
+			strncpy (dlbar, text, i);
+			dlbar[i] = 0;
+			strcat (dlbar, "...");
+		} else {
+			strcpy (dlbar, text);
+		}
+
+		strcat (dlbar, ": ");
+		i = strlen (dlbar);
+		dlbar[i++] = '\x80';
+
+		// where's the dot go?
+		if (cls.downloadpercent == 0)
+			n = 0;
+		else
+			n = y * cls.downloadpercent / 100;
+			
+		for (j = 0; j < y; j++)
+		{
+			if (j == n)
+				dlbar[i++] = '\x83';
+			else
+				dlbar[i++] = '\x81';
+		}
+
+		dlbar[i++] = '\x82';
+		dlbar[i] = 0;
+
+		sprintf (dlbar + strlen(dlbar), " %02d%%", cls.downloadpercent);
+
+		// draw it
+		Draw_String (16, viddef.height - 20, dlbar, FONT_SMALL, colorWhite);
+	}
+//ZOID
+}
+
 //=============================================================================
+
+/*
+================
+CL_LoadingString
+================
+*/
+void CL_LoadingString (char *str)
+{
+	Q_strncpyz (cl.loadingstring, str, sizeof(cl.loadingstring));
+	SCR_UpdateScreen ();
+}
+
+/*
+================
+CL_LoadingFilename
+================
+*/
+void CL_LoadingFilename (char *str)
+{
+	if (!scr_debugloading->value) {
+		cl.checkname[0] = 0;
+		return;
+	}
+
+	Q_strncpyz (cl.checkname, str, sizeof(cl.checkname));
+	SCR_UpdateScreen ();
+}
 
 /*
 ================
@@ -545,7 +696,7 @@ void SCR_BeginLoadingPlaque (void)
 		return;	// if at console, don't bring up the plaque
 	if (cls.key_dest == key_console)
 		return;
-	if (cl.cinematictime > 0)
+	if (cl.cin.time > 0)
 		scr_draw_loading = 2;	// clear to black first
 	else
 		scr_draw_loading = 1;
@@ -580,21 +731,6 @@ void SCR_Loading_f (void)
 SCR_TimeRefresh_f
 ================
 */
-int entitycmpfnc( const entity_t *a, const entity_t *b )
-{
-	/*
-	** all other models are sorted by model then skin
-	*/
-	if ( a->model == b->model )
-	{
-		return ( ( int ) a->skin - ( int ) b->skin );
-	}
-	else
-	{
-		return ( ( int ) a->model - ( int ) b->model );
-	}
-}
-
 void SCR_TimeRefresh_f (void)
 {
 	int		i;
@@ -676,7 +812,7 @@ void SCR_TileClear (void)
 		return;		// full screen console
 	if (scr_viewsize->value == 100)
 		return;		// full screen rendering
-	if (cl.cinematictime > 0)
+	if (cl.cin.time > 0)
 		return;		// full screen cinematic
 
 	// erase rect will be the union of the past three frames
@@ -750,20 +886,14 @@ void SCR_TileClear (void)
 
 
 #define STAT_MINUS		10	// num frame for '-' stats digit
-char		*sb_nums[2][11] = 
+char		*sb_nums[11] = 
 {
-	{"gfx/2d/numbers/zero_32b", "gfx/2d/numbers/one_32b", 
+	"gfx/2d/numbers/zero_32b", "gfx/2d/numbers/one_32b", 
 	"gfx/2d/numbers/two_32b", "gfx/2d/numbers/three_32b", 
 	"gfx/2d/numbers/four_32b", "gfx/2d/numbers/five_32b",
 	"gfx/2d/numbers/six_32b", "gfx/2d/numbers/seven_32b",
 	"gfx/2d/numbers/eight_32b", "gfx/2d/numbers/nine_32b", 
-	"gfx/2d/numbers/minus_32b"},
-	{"gfx/2d/numbers/zero_32b", "gfx/2d/numbers/one_32b", 
-	"gfx/2d/numbers/two_32b", "gfx/2d/numbers/three_32b", 
-	"gfx/2d/numbers/four_32b", "gfx/2d/numbers/five_32b",
-	"gfx/2d/numbers/six_32b", "gfx/2d/numbers/seven_32b",
-	"gfx/2d/numbers/eight_32b", "gfx/2d/numbers/nine_32b", 
-	"gfx/2d/numbers/minus_32b"},
+	"gfx/2d/numbers/minus_32b"
 };
 
 #define	ICON_WIDTH	24
@@ -808,7 +938,7 @@ void SizeHUDString (char *string, int *w, int *h)
 	*h = lines * SMALL_CHAR_HEIGHT;
 }
 
-void DrawHUDString (char *string, int x, int y, int centerwidth, vec4_t colour)
+void DrawHUDString (char *string, int x, int y, int centerwidth, vec4_t color)
 {
 	int		margin;
 	char	line[1024];
@@ -829,7 +959,7 @@ void DrawHUDString (char *string, int x, int y, int centerwidth, vec4_t colour)
 		else
 			x = margin;
 
-		Draw_StringLen ( x, y, line, width, FONT_SMALL, colour );
+		Draw_StringLen ( x, y, line, width, FONT_SMALL, color );
 
 		if (*string)
 		{
@@ -846,7 +976,7 @@ void DrawHUDString (char *string, int x, int y, int centerwidth, vec4_t colour)
 SCR_DrawField
 ==============
 */
-void SCR_DrawField (int x, int y, int color, int width, int value)
+void SCR_DrawField (int x, int y, float *color, int width, int value)
 {
 	char	num[16], *ptr;
 	int		l;
@@ -876,7 +1006,7 @@ void SCR_DrawField (int x, int y, int color, int width, int value)
 		else
 			frame = *ptr -'0';
 
-		Draw_Pic (x, y, sb_nums[color][frame]);
+		Draw_StretchPic ( x, y, 32, 32, 0, 0, 1, 1, color, R_RegisterPic(sb_nums[frame]) );
 		x += CHAR_WIDTH;
 		ptr++;
 		l--;
@@ -893,24 +1023,23 @@ Allows rendering code to cache all needed sbar graphics
 */
 void SCR_TouchPics (void)
 {
-	int		i, j;
+	int		i;
 
-	for (i = 0; i < 2; i++)
-		for (j = 0; j < 11; j++)
-			R_RegisterShaderNoMip (sb_nums[i][j]);
+	for (i = 0; i < 11; i++)
+		R_RegisterPic (sb_nums[i]);
 
 	if (crosshair->value)
 	{
 		if (crosshair->value > NUM_CROSSHAIRS || crosshair->value < 0)
 			crosshair->value = NUM_CROSSHAIRS;
 
-		Com_sprintf (crosshair_pic, sizeof(crosshair_pic), "gfx/2d/crosshair%c", 'a'+(int)(crosshair->value));
-
 		crosshairX = max (0, (int)crosshair_x->value);
 		crosshairY = max (0, (int)crosshair_y->value);
 
 		if (crosshair_size->value <= 0)
-			crosshair_pic[0] = 0;
+			crosshair_shader = NULL;
+		else
+			crosshair_shader = R_RegisterShader( va( "gfx/2d/crosshair%c", 'a'+(int)(crosshair->value) ) );
 	}
 }
 
@@ -989,15 +1118,16 @@ void SCR_ExecuteLayoutString (char *s)
 			if (cl.configstrings[CS_IMAGES+value])
 			{
 				SCR_AddDirtyPoint (x, y);
-				SCR_AddDirtyPoint (x+23, y+23);
-				Draw_Pic (x, y, cl.configstrings[CS_IMAGES+value]);
+				SCR_AddDirtyPoint (x+31, y+31);
+				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic(cl.configstrings[CS_IMAGES+value]) );
 			}
 			continue;
 		}
 
 		if (!strcmp(token, "client"))
 		{	// draw a deathmatch client block
-			int		score, ping, time;
+			int		tag, score, ping, time;
+			float	*color;
 
 			token = COM_Parse (&s);
 			x = viddef.width/2 - 160 + atoi(token);
@@ -1005,6 +1135,9 @@ void SCR_ExecuteLayoutString (char *s)
 			y = viddef.height/2 - 120 + atoi(token);
 			SCR_AddDirtyPoint (x, y);
 			SCR_AddDirtyPoint (x+159, y+31);
+
+			token = COM_Parse (&s);
+			tag = atoi(token);
 
 			token = COM_Parse (&s);
 			value = atoi(token);
@@ -1021,15 +1154,23 @@ void SCR_ExecuteLayoutString (char *s)
 			token = COM_Parse (&s);
 			time = atoi(token);
 
-			Draw_StringLen ( x+32, y, ci->name, -1, FONT_SMALL, colorYellow );
-			Draw_StringLen ( x+32, y+SMALL_CHAR_HEIGHT, "Score: ", -1, FONT_SMALL, colorYellow );
-			Draw_StringLen ( x+32+7*SMALL_CHAR_WIDTH, y+SMALL_CHAR_HEIGHT, va("%i", score), -1, FONT_SMALL, colorYellow );
-			Draw_StringLen ( x+32, y+SMALL_CHAR_HEIGHT*2, va("Ping:  %i", ping), -1, FONT_SMALL, colorWhite );
-			Draw_StringLen ( x+32, y+SMALL_CHAR_HEIGHT*3, va("Time:  %i", time), -1, FONT_SMALL, colorWhite );
+			if ( tag == 0 ) {			// player
+				color = colorYellow;
+			} else if ( tag == 1 ) {	// killer
+				color = colorRed;
+			} else {
+				color = colorWhite;
+			}
+
+			Draw_String ( x+32, y, ci->name, FONT_SMALL, color );
+			Draw_String ( x+32, y+SMALL_CHAR_HEIGHT, "Score: ", FONT_SMALL, color );
+			Draw_String ( x+32+7*SMALL_CHAR_WIDTH, y+SMALL_CHAR_HEIGHT, va("%i", score), FONT_SMALL, color );
+			Draw_String ( x+32, y+SMALL_CHAR_HEIGHT*2, va("Ping:  %i", ping), FONT_SMALL, color );
+			Draw_String ( x+32, y+SMALL_CHAR_HEIGHT*3, va("Time:  %i", time), FONT_SMALL, color );
 
 			if (!ci->icon)
 				ci = &cl.baseclientinfo;
-			Draw_Pic (x, y, ci->iconname);
+			Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic(ci->iconname) );
 			continue;
 		}
 
@@ -1062,9 +1203,9 @@ void SCR_ExecuteLayoutString (char *s)
 			sprintf(block, "%3d %3d %-12.12s", score, ping, ci->name);
 		
 			if (value == cl.playernum)
-				Draw_StringLen ( x, y, block, -1, FONT_SMALL, colorRed );
+				Draw_String ( x, y, block, FONT_SMALL, colorRed );
 			else
-				Draw_StringLen ( x, y, block, -1, FONT_SMALL, colorWhite );
+				Draw_String ( x, y, block, FONT_SMALL, colorWhite );
 
 			continue;
 		}
@@ -1073,8 +1214,8 @@ void SCR_ExecuteLayoutString (char *s)
 		{	// draw a pic from a name
 			token = COM_Parse (&s);
 			SCR_AddDirtyPoint (x, y);
-			SCR_AddDirtyPoint (x+23, y+23);
-			Draw_Pic (x, y, token);
+			SCR_AddDirtyPoint (x+31, y+31);
+			Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic(token) );
 			continue;
 		}
 
@@ -1084,25 +1225,26 @@ void SCR_ExecuteLayoutString (char *s)
 			width = atoi(token);
 			token = COM_Parse (&s);
 			value = cl.frame.playerstate.stats[atoi(token)];
-			SCR_DrawField (x, y, 0, width, value);
+			SCR_DrawField (x, y, colorWhite, width, value);
 			continue;
 		}
 
 		if (!strcmp(token, "hnum"))
 		{	// health number
-			int		color;
+			float	*color;
 
 			width = 3;
 			value = cl.frame.playerstate.stats[STAT_HEALTH];
+
 			if (value > 25)
-				color = 0;	// green
+				color = colorWhite;							// green
 			else if (value > 0)
-				color = (cl.frame.serverframe>>2) & 1;		// flash
+				color = (cl.frame.serverframe>>2) & 1 ? colorRed : colorWhite;		// flash
 			else
-				color = 1;
+				color = colorRed;
 
 			if (cl.frame.playerstate.stats[STAT_FLASHES] & 1)
-				Draw_Pic (x, y, "field_3");
+				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("field_3") );
 
 			SCR_DrawField (x, y, color, width, value);
 			continue;
@@ -1110,19 +1252,19 @@ void SCR_ExecuteLayoutString (char *s)
 
 		if (!strcmp(token, "anum"))
 		{	// ammo number
-			int		color;
+			float *color;
 
 			width = 3;
 			value = cl.frame.playerstate.stats[STAT_AMMO];
 			if (value > 5)
-				color = 0;	// green
+				color = colorWhite;	// green
 			else if (value >= 0)
-				color = (cl.frame.serverframe>>2) & 1;		// flash
+				color = (cl.frame.serverframe>>2) & 1 ? colorRed : colorWhite;		// flash
 			else
 				continue;	// negative number = don't show
 
 			if (cl.frame.playerstate.stats[STAT_FLASHES] & 4)
-				Draw_Pic (x, y, "field_3");
+				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("field_3") );
 
 			SCR_DrawField (x, y, color, width, value);
 			continue;
@@ -1130,19 +1272,35 @@ void SCR_ExecuteLayoutString (char *s)
 
 		if (!strcmp(token, "rnum"))
 		{	// armor number
-			int		color;
-
 			width = 3;
 			value = cl.frame.playerstate.stats[STAT_ARMOR];
 			if (value < 1)
 				continue;
 
-			color = 0;	// green
-
 			if (cl.frame.playerstate.stats[STAT_FLASHES] & 2)
-				Draw_Pic (x, y, "field_3");
+				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("field_3") );
 
-			SCR_DrawField (x, y, color, width, value);
+			SCR_DrawField (x, y, colorWhite, width, value);
+			continue;
+		}
+
+		if (!strcmp(token, "frags"))
+		{	// frags number in a box
+			vec4_t color;
+			char str[32];
+
+			Com_sprintf (str, 32, "%2i", cl.frame.playerstate.stats[STAT_FRAGS]);
+			width = strlen(str)*BIG_CHAR_WIDTH + 8;
+
+			color[0] = 0;
+			color[1] = 0;
+			color[2] = 1;
+			color[3] = 0.33;
+			Draw_FillRect (x - width, y, width, 24, color);
+			Draw_StretchPic (x - width, y, width, 24, 0, 0, 1, 1, colorWhite, R_RegisterPic("gfx/2d/select") );
+			Draw_String (x - width + 4, y + 4, str, FONT_SHADOWED|FONT_BIG, colorWhite);
+			SCR_AddDirtyPoint (x - width, y);
+			SCR_AddDirtyPoint (x - 1, y + BIG_CHAR_HEIGHT - 1);
 			continue;
 		}
 
@@ -1155,7 +1313,7 @@ void SCR_ExecuteLayoutString (char *s)
 			index = cl.frame.playerstate.stats[index];
 			if (index < 0 || index >= MAX_CONFIGSTRINGS)
 				Com_Error (ERR_DROP, "Bad stat_string index");
-			Draw_StringLen ( x, y, cl.configstrings[index], -1, FONT_SMALL, colorWhite );
+			Draw_String ( x, y, cl.configstrings[index], FONT_SMALL, colorWhite );
 			continue;
 		}
 
@@ -1169,7 +1327,7 @@ void SCR_ExecuteLayoutString (char *s)
 		if (!strcmp(token, "string"))
 		{
 			token = COM_Parse (&s);
-			Draw_StringLen ( x, y, token, -1, FONT_SMALL, colorWhite );
+			Draw_String ( x, y, token, FONT_SMALL, colorWhite );
 			continue;
 		}
 
@@ -1183,7 +1341,7 @@ void SCR_ExecuteLayoutString (char *s)
 		if (!strcmp(token, "string2"))
 		{
 			token = COM_Parse (&s);
-			Draw_StringLen ( x, y, token, -1, FONT_SMALL, colorYellow );
+			Draw_String ( x, y, token, FONT_SMALL, colorYellow );
 			continue;
 		}
 
@@ -1198,11 +1356,8 @@ void SCR_ExecuteLayoutString (char *s)
 					token = COM_Parse (&s);
 				}
 			}
-
 			continue;
 		}
-
-
 	}
 }
 
@@ -1217,23 +1372,26 @@ is based on the stats array
 */
 void SCR_DrawStats (void)
 {
-	SCR_ExecuteLayoutString (cl.configstrings[CS_STATUSBAR]);
+	if ( !cl.statusbar ) {
+		return;
+	}
+
+	SCR_ExecuteLayoutString ( cl.statusbar );
 }
 
 
 /*
 ================
 SCR_DrawLayout
-
 ================
 */
-#define	STAT_LAYOUTS		13
-
 void SCR_DrawLayout (void)
 {
-	if (!cl.frame.playerstate.stats[STAT_LAYOUTS])
+	if ( !cl.frame.playerstate.stats[STAT_LAYOUTS] ) {
 		return;
-	SCR_ExecuteLayoutString (cl.layout);
+	}
+
+	SCR_ExecuteLayoutString ( cl.layout );
 }
 
 //=======================================================
@@ -1250,7 +1408,7 @@ void SCR_UpdateScreen (void)
 {
 	int numframes;
 	int i;
-	float separation[2] = { 0, 0 };
+	float separation[2];
 
 	// if the screen is disabled (loading plaque is up, or vid mode changing)
 	// do nothing at all
@@ -1289,50 +1447,44 @@ void SCR_UpdateScreen (void)
 		numframes = 1;
 	}
 
+	GLimp_EndFrame();
+
 	for ( i = 0; i < numframes; i++ )
 	{
 		R_BeginFrame( separation[i] );
 
 		if (scr_draw_loading == 2)
-		{	//  loading plaque over black screen
-			R_SetPalette(NULL);
-		} 
+		{	// loading plaque over black screen
+			scr_draw_loading = false;
+		}
 		// if a cinematic is supposed to be running, handle menus
 		// and console specially
-		else if (cl.cinematictime > 0)
+		else if (cl.cin.time > 0)
 		{
 			if (cls.key_dest == key_menu)
 			{
-				if (cl.cinematicpalette_active)
-				{
-					R_SetPalette(NULL);
-					cl.cinematicpalette_active = false;
-				}
-				UI_Draw ();
+				UI_Refresh ( cls.frametime );
 			}
 			else if (cls.key_dest == key_console)
 			{
-				if (cl.cinematicpalette_active)
-				{
-					R_SetPalette(NULL);
-					cl.cinematicpalette_active = false;
-				}
+				UI_Refresh ( cls.frametime );
+
 				SCR_DrawConsole ();
 			}
 			else
 			{
-				SCR_DrawCinematic();
+				SCR_DrawCinematic ();
 			}
 		}
-		else 
+		else if ( cls.state != ca_disconnected &&
+			(cls.state != ca_active || !cl.refresh_prepped) )
 		{
-			// make sure the game palette is active
-			if (cl.cinematicpalette_active)
-			{
-				R_SetPalette(NULL);
-				cl.cinematicpalette_active = false;
-			}
-
+			UI_Refresh ( cls.frametime );
+			SCR_DrawLoading ();
+			SCR_DrawConsole ();
+		}
+		else
+		{
 			// do 3D refresh drawing, and then update the screen
 			SCR_CalcVrect ();
 
@@ -1353,18 +1505,20 @@ void SCR_UpdateScreen (void)
 			SCR_DrawFPS ();
 
 			if (scr_timegraph->value)
-				SCR_DebugGraph (cls.frametime*300, 0);
+				SCR_DebugGraph (cls.frametime*300, 0, 0, 0);
 
 			if (scr_debuggraph->value || scr_timegraph->value || scr_netgraph->value)
 				SCR_DrawDebugGraph ();
 
 			SCR_DrawPause ();
 
-			SCR_DrawConsole ();
+			UI_Refresh ( cls.frametime );
 
-			UI_Draw ();
+			SCR_DrawConsole ();
 		}
 	}
 
-	GLimp_EndFrame();
+	R_ApplySoftwareGamma ();
+
+	R_Flush ();
 }

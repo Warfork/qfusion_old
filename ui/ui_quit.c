@@ -19,7 +19,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "ui_local.h"
-#include "ui_keycodes.h"
 
 /*
 =======================================================================
@@ -48,26 +47,27 @@ void NoFunc ( void *unused )
 void M_QuitInit( void )
 {
 	int y = 0;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
 	s_quit_menu.x = trap_GetWidth() * 0.50;
 	s_quit_menu.nitems = 0;
 
-	s_quit_title.generic.type = MTYPE_SEPARATOR;
-	s_quit_title.generic.name = "Are you sure?";
-	s_quit_title.generic.x    = 0;
-	s_quit_title.generic.y	  = y;
-	y += y_offset * 2;
+	s_quit_title.generic.type		= MTYPE_SEPARATOR;
+	s_quit_title.generic.name		= "Are you sure?";
+	s_quit_title.generic.flags		= QMF_CENTERED;
+	s_quit_title.generic.x			= 0;
+	s_quit_title.generic.y			= y;
+	y += y_offset;
 
 	s_yes_action.generic.type		= MTYPE_ACTION;
-	s_yes_action.generic.flags		= QMF_LEFT_JUSTIFY;
+	s_yes_action.generic.flags		= QMF_CENTERED;
 	s_yes_action.generic.x			= 0;
 	s_yes_action.generic.y			= y+=y_offset;
 	s_yes_action.generic.name		= "YES";
 	s_yes_action.generic.callback	= YesFunc;
 
 	s_no_action.generic.type		= MTYPE_ACTION;
-	s_no_action.generic.flags		= QMF_LEFT_JUSTIFY;
+	s_no_action.generic.flags		= QMF_CENTERED;
 	s_no_action.generic.x			= 0;
 	s_no_action.generic.y			= y+=y_offset;
 	s_no_action.generic.name		= "NO";
@@ -78,6 +78,8 @@ void M_QuitInit( void )
 	Menu_AddItem( &s_quit_menu, ( void *) &s_no_action );
 
 	Menu_Center( &s_quit_menu );
+
+	Menu_Init ( &s_quit_menu );
 }
 
 const char *M_Quit_Key (int key)
@@ -88,13 +90,13 @@ const char *M_Quit_Key (int key)
 	case 'n':
 	case 'N':
 		M_PopMenu ();
-		break;
+		return NULL;
 
 	case 'Y':
 	case 'y':
 		trap_CL_SetKeyDest_f ( key_console );
 		trap_CL_Quit_f ();
-		break;
+		return NULL;
 
 	default:
 		break;
@@ -113,6 +115,6 @@ void M_Quit_Draw (void)
 void M_Menu_Quit_f (void)
 {
 	M_QuitInit ();
-	M_PushMenu (M_Quit_Draw, M_Quit_Key);
+	M_PushMenu ( &s_quit_menu, M_Quit_Draw, M_Quit_Key );
 }
 

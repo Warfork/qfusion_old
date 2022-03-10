@@ -37,11 +37,12 @@ pmenuhnd_t *PMenu_Open(edict_t *ent, pmenu_t *entries, int cur, int num, void *a
 		PMenu_Close(ent);
 	}
 
-	hnd = Q_malloc(sizeof(*hnd));
+	hnd = G_malloc(sizeof(*hnd));
 
 	hnd->arg = arg;
-	hnd->entries = Q_malloc(sizeof(pmenu_t) * num);
-	memcpy(hnd->entries, entries, sizeof(pmenu_t) * num);
+	hnd->entries = G_malloc(sizeof(pmenu_t) * num);
+	memcpy (hnd->entries, entries, sizeof(pmenu_t) * num);
+
 	// duplicate the strings since they may be from static memory
 	for (i = 0; i < num; i++)
 		if (entries[i].text)
@@ -81,12 +82,12 @@ void PMenu_Close(edict_t *ent)
 
 	hnd = ent->client->menu;
 	for (i = 0; i < hnd->num; i++)
-		if (hnd->entries[i].text)
-			free(hnd->entries[i].text);
-	free(hnd->entries);
-	if (hnd->arg)
-		free(hnd->arg);
-	free(hnd);
+		G_free (hnd->entries[i].text);
+
+	G_free (hnd->entries);
+	G_free (hnd->arg);
+	G_free (hnd);
+
 	ent->client->menu = NULL;
 	ent->client->showscores = false;
 }
@@ -94,8 +95,8 @@ void PMenu_Close(edict_t *ent)
 // only use on pmenu's that have been called with PMenu_Open
 void PMenu_UpdateEntry(pmenu_t *entry, const char *text, int align, SelectFunc_t SelectFunc)
 {
-	if (entry->text)
-		free(entry->text);
+	G_free (entry->text);
+
 	entry->text = strdup(text);
 	entry->align = align;
 	entry->SelectFunc = SelectFunc;
@@ -118,17 +119,19 @@ void PMenu_Do_Update(edict_t *ent)
 
 	hnd = ent->client->menu;
 
-	strcpy(string, "xv 32 yv 8 picn inventory ");
+	strcpy (string, "xv 32 yv 8 picn inventory ");
 
 	for (i = 0, p = hnd->entries; i < hnd->num; i++, p++) {
 		if (!p->text || !*(p->text))
 			continue; // blank line
+
 		t = p->text;
 		if (*t == '*') {
 			alt = true;
 			t++;
 		}
-		sprintf(string + strlen(string), "yv %d ", 32 + i * SMALL_CHAR_HEIGHT);
+
+		sprintf (string + strlen(string), "yv %d ", 32 + i * SMALL_CHAR_HEIGHT);
 		if (p->align == PMENU_ALIGN_CENTER)
 			x = 196/2 - strlen(t)*4 + 64;
 		else if (p->align == PMENU_ALIGN_RIGHT)
@@ -166,6 +169,7 @@ void PMenu_Update(edict_t *ent)
 		ent->client->menutime = level.time;
 		ent->client->menudirty = false;
 	}
+
 	ent->client->menutime = level.time + 0.2;
 	ent->client->menudirty = true;
 }

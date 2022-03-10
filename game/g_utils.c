@@ -21,6 +21,34 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "g_local.h"
 
+#define NUMVERTEXNORMALS	162
+vec3_t	bytedirs[NUMVERTEXNORMALS] =
+{
+#include "anorms.h"
+};
+
+int G_DirToByte (vec3_t dir)
+{
+	int		i, best;
+	float	d, bestd;
+	
+	if (!dir)
+		return 0;
+
+	bestd = 0;
+	best = 0;
+	for (i=0 ; i<NUMVERTEXNORMALS ; i++)
+	{
+		d = DotProduct (dir, bytedirs[i]);
+		if (d > bestd)
+		{
+			bestd = d;
+			best = i;
+		}
+	}
+
+	return best;
+}
 
 void G_ProjectSource (vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result)
 {
@@ -233,11 +261,6 @@ void G_UseTargets (edict_t *ent, edict_t *activator)
 		t = NULL;
 		while ((t = G_Find (t, FOFS(targetname), ent->target)))
 		{
-			// doors fire area portals in a specific way
-			if (!Q_stricmp(t->classname, "func_areaportal") &&
-				(!Q_stricmp(ent->classname, "func_door") || !Q_stricmp(ent->classname, "func_door_rotating")))
-				continue;
-
 			if (t == ent)
 			{
 				gi.dprintf ("WARNING: Entity used itself.\n");
@@ -299,6 +322,38 @@ void G_AimAtTarget (edict_t *self)
 	VectorScale (self->movedir, forward, self->movedir);
 
 	self->movedir[2] = time * gravity;
+}
+
+/*
+=================
+G_malloc
+=================
+*/
+void *G_malloc (int cnt)
+{
+	void *buf = (void *)malloc (cnt);
+
+	if (!buf) {
+		gi.dprintf ("G_malloc: failed on allocation of %i bytes.\n", cnt);
+		return NULL;
+	}
+
+	memset (buf, 0, cnt);
+	return buf;
+}
+
+/*
+=================
+G_free
+=================
+*/
+void G_free (void *buf)
+{
+	if (!buf) {
+		return;
+	}
+
+	free (buf);
 }
 
 /*
@@ -589,7 +644,41 @@ void G_InitMover ( edict_t *ent )
 	if ( ent->model2 ) {
 		ent->s.modelindex2 = gi.modelindex( ent->model2 );
 	}
+
+	if (ent->light || !VectorCompare(ent->color, vec3_origin))
+	{
+		int r, g, b, i;
+
+		if ( !ent->light )
+			i = 100;
+		else 
+			i = ent->light;
+
+		i /= 4;
+		i = min (i, 255);
+
+		r = ent->color[0];
+		if ( r <= 1.0 ) {
+			r *= 255;
+		}
+		r = bound ( 0, r, 255 );
+
+		g = ent->color[0];
+		if ( g <= 1.0 ) {
+			g *= 255;
+		}
+		g = bound ( 0, g, 255 );
+
+		b = ent->color[0];
+		if ( b <= 1.0 ) {
+			b *= 255;
+		}
+		b = bound ( 0, b, 255 );
+
+		ent->s.skinnum = (r << 0) | (g << 8) | (b << 16) | (i << 24);
+	}
 }
+
 /*
 ==============================================================================
 
@@ -629,20 +718,19 @@ qboolean KillBox (edict_t *ent)
 
 /*
 ============
-Q_PlayerGender
+G_PlayerGender
 
 ============
 */
-int Q_PlayerGender ( void *player )
+int G_PlayerGender ( edict_t *player )
 {
 	char		*info;
-	edict_t		*ent = ( edict_t * )player;
 
-	if ( !ent->client ) {
+	if ( !player->client ) {
 		return GENDER_NEUTRAL;
 	}
 
-	info = Info_ValueForKey ( ent->client->pers.userinfo, "skin" );
+	info = Info_ValueForKey ( player->client->pers.userinfo, "skin" );
 
 	if ( info[0] == 'm' || info[0] == 'M' ) {
 		return GENDER_MALE;
@@ -652,3 +740,4 @@ int Q_PlayerGender ( void *player )
 
 	return GENDER_NEUTRAL;
 }
+

@@ -26,7 +26,7 @@ char *svc_strings[256] =
 	"svc_bad",
 
 	"svc_muzzleflash",
-	"svc_muzzlflash2",
+	"svc_muzzleflash2",
 	"svc_temp_entity",
 	"svc_layout",
 	"svc_inventory",
@@ -46,7 +46,8 @@ char *svc_strings[256] =
 	"svc_packetentities",
 	"svc_deltapacketentities",
 	"svc_frame",
-	"svc_obituary"
+	"svc_obituary",
+	"svc_stringcmd"
 };
 
 //=============================================================================
@@ -183,6 +184,11 @@ void CL_RegisterSounds (void)
 
 	CL_RegisterMediaSounds ();
 
+	if ( cl.configstrings[CS_AUDIOTRACK][0] )
+		cl.music_precache = S_RegisterSound (cl.configstrings[CS_AUDIOTRACK]);
+	else
+		cl.music_precache = NULL;
+
 	for (i=1 ; i<MAX_SOUNDS ; i++)
 	{
 		if (!cl.configstrings[CS_SOUNDS+i][0])
@@ -260,7 +266,7 @@ void CL_ParseDownload (void)
 
 		fclose (cls.download);
 
-		// rename the temp file to it's final name
+		// rename the temp file to its final name
 		CL_DownloadFileName(oldn, sizeof(oldn), cls.downloadtempname);
 		CL_DownloadFileName(newn, sizeof(newn), cls.downloadname);
 		r = rename (oldn, newn);
@@ -301,11 +307,10 @@ void CL_ParseServerData (void)
 // wipe the client_state_t struct
 //
 	CL_ClearState ();
-	cls.state = ca_connected;
+	CL_SetClientState (ca_connected);
 
 // parse protocol version number
 	i = MSG_ReadLong (&net_message);
-	cls.serverProtocol = i;
 
 	if (i != PROTOCOL_VERSION)
 		Com_Error (ERR_DROP, "Server returned version %i, not %i", i, PROTOCOL_VERSION);
@@ -315,7 +320,7 @@ void CL_ParseServerData (void)
 
 	// game directory
 	str = MSG_ReadString (&net_message);
-	strncpy (cl.gamedir, str, sizeof(cl.gamedir)-1);
+	Q_strncpyz (cl.gamedir, str, sizeof(cl.gamedir));
 
 	// set gamedir
 	if ((*str && (!fs_gamedirvar->string || !*fs_gamedirvar->string || strcmp(fs_gamedirvar->string, str))) || (!*str && (fs_gamedirvar->string || *fs_gamedirvar->string))) {
@@ -335,7 +340,7 @@ void CL_ParseServerData (void)
 	}
 	else
 	{
-		// seperate the printfs so the server message can have a color
+		// separate the printfs so the server message can have a color
 		Com_Printf("\n\n\35\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\36\37\n\n");
 		Com_Printf ("%s%s\n", S_COLOR_RED, message);
 
@@ -352,7 +357,7 @@ CL_ParseBaseline
 void CL_ParseBaseline (void)
 {
 	entity_state_t	*es;
-	int				bits;
+	unsigned		bits;
 	int				newnum;
 	entity_state_t	nullstate;
 
@@ -380,12 +385,10 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s)
 	char		skin_filename[MAX_QPATH];
 	char		weapon_filename[MAX_QPATH];
 
-	strncpy(ci->cinfo, s, sizeof(ci->cinfo));
-	ci->cinfo[sizeof(ci->cinfo)-1] = 0;
+	Q_strncpyz (ci->cinfo, s, sizeof(ci->cinfo));
 
 	// isolate the player's name
-	strncpy(ci->name, s, sizeof(ci->name));
-	ci->name[sizeof(ci->name)-1] = 0;
+	Q_strncpyz (ci->name, s, sizeof(ci->name));
 	t = strstr (s, "\\");
 	if (t)
 	{
@@ -402,8 +405,8 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s)
 		ci->model = R_RegisterModel (model_filename);
 		memset(ci->weaponmodel, 0, sizeof(ci->weaponmodel));
 		ci->weaponmodel[0] = R_RegisterModel (weapon_filename);
-		ci->skin = R_RegisterShaderMD3 (skin_filename);
-		ci->icon = R_RegisterShaderNoMip (ci->iconname);
+		ci->skin = R_RegisterSkin (skin_filename);
+		ci->icon = R_RegisterPic (ci->iconname);
 		ci->gender = GENDER_MALE;
 	}
 	else
@@ -432,7 +435,7 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s)
 
 		// skin file
 		Com_sprintf (skin_filename, sizeof(skin_filename), "players/%s/%s.pcx", model_name, skin_name);
-		ci->skin = R_RegisterShaderMD3 (skin_filename);
+		ci->skin = R_RegisterSkin (skin_filename);
 
 		// if we don't have the skin and the model wasn't male,
 		// see if the male has it (this is for CTF's skins)
@@ -445,7 +448,7 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s)
 
 			// see if the skin exists for the male model
 			Com_sprintf (skin_filename, sizeof(skin_filename), "players/%s/%s.pcx", model_name, skin_name);
-			ci->skin = R_RegisterShaderMD3 (skin_filename);
+			ci->skin = R_RegisterSkin (skin_filename);
 		}
 
 		// if we still don't have a skin, it means that the male model didn't have
@@ -453,7 +456,7 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s)
 		if (!ci->skin) {
 			// see if the skin exists for the male model
 			Com_sprintf (skin_filename, sizeof(skin_filename), "players/%s/grunt.pcx", model_name, skin_name);
-			ci->skin = R_RegisterShaderMD3 (skin_filename);
+			ci->skin = R_RegisterSkin (skin_filename);
 		}
 
 		// gender
@@ -480,7 +483,7 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s)
 
 		// icon file
 		Com_sprintf (ci->iconname, sizeof(ci->iconname), "players/%s/%s_i.pcx", model_name, skin_name);
-		ci->icon = R_RegisterShaderNoMip (ci->iconname);
+		ci->icon = R_RegisterPic (ci->iconname);
 	}
 
 	// must have loaded all data types to be valud
@@ -506,6 +509,48 @@ void CL_ParseClientinfo (int player)
 	CL_LoadClientinfo (&cl.clientinfo[player], cl.configstrings[player+CS_PLAYERSKINS]);
 }
 
+/*
+================
+CL_LoadStatusbar
+================
+*/
+void CL_LoadStatusbar ( char *s )
+{
+	int length;
+	char *buffer;
+	char path[MAX_QPATH], shortname[MAX_QPATH];
+
+	if ( !s ) {
+		return;
+	}
+
+	// strip extension and add local path
+	COM_StripExtension ( s, shortname );
+	Com_sprintf ( path, sizeof(path), "huds/%s.hud", shortname );
+
+	// load the file
+	length = FS_LoadFile ( path, (void **)&buffer );
+	if ( !buffer ) {
+		Com_DPrintf ( "Bad hud file %s\n", path );
+		return;
+	}
+	if ( !length ) {
+		Com_DPrintf ( "Empty hud file %s\n", path );
+		FS_FreeFile ( buffer );
+		return;
+	}
+
+	// free old status bar if present
+	if ( cl.statusbar ) { 
+		Z_Free ( cl.statusbar );
+	}
+
+	// copy file contents to statusbar string
+	cl.statusbar = Z_Malloc ( length );
+	memcpy ( cl.statusbar, buffer, length );
+
+	FS_FreeFile ( buffer );
+}
 
 /*
 ================
@@ -524,15 +569,26 @@ void CL_ParseConfigString (void)
 
 	s = MSG_ReadString(&net_message);
 
-	strncpy (olds, cl.configstrings[i], sizeof(olds));
-	olds[sizeof(olds) - 1] = 0;
+	Q_strncpyz (olds, cl.configstrings[i], sizeof(olds));
 
 	strcpy (cl.configstrings[i], s);
 
 	// do something apropriate 
 
-	if ( i == CS_AUDIOTRACK ) {
-		S_RegisterSound (cl.configstrings[i]);
+	if ( i == CS_MAPNAME ) {
+		Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "levelshots/%s.jpg", cl.configstrings[CS_MAPNAME] );
+
+		if ( !FS_FileExists ( cl.levelshot ) ) 
+			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "levelshots/%s.tga", cl.configstrings[CS_MAPNAME] );
+
+		if ( !FS_FileExists ( cl.levelshot ) ) 
+			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "menu/art/unknownmap", cl.configstrings[CS_MAPNAME] );
+
+	} else if ( i == CS_AUDIOTRACK ) {
+		if (cl.refresh_prepped)
+			cl.music_precache = S_RegisterSound (cl.configstrings[i]);
+	} else if ( i == CS_STATUSBAR ) { 
+		CL_LoadStatusbar ( cl.configstrings[i] );
 	} else if ( i >= CS_MODELS && i < CS_MODELS+MAX_MODELS ) {
 		if (cl.refresh_prepped)
 		{
@@ -547,7 +603,7 @@ void CL_ParseConfigString (void)
 			cl.sound_precache[i-CS_SOUNDS] = S_RegisterSound (cl.configstrings[i]);
 	} else if ( i >= CS_IMAGES && i < CS_IMAGES+MAX_MODELS ) {
 		if (cl.refresh_prepped)
-			cl.image_precache[i-CS_IMAGES] = R_RegisterShaderNoMip (cl.configstrings[i]);
+			cl.image_precache[i-CS_IMAGES] = R_RegisterPic (cl.configstrings[i]);
 	} else if (i >= CS_PLAYERSKINS && i < CS_PLAYERSKINS+MAX_CLIENTS) {
 		if (cl.refresh_prepped && strcmp(olds, s))
 			CL_ParseClientinfo (i-CS_PLAYERSKINS);
@@ -612,17 +668,10 @@ void CL_ParseStartSoundPacket(void)
 		channel = 0;
 	}
 
-	if (flags & SND_POSL)
+	if (flags & SND_POS)
 	{	// positioned in space
-		MSG_ReadLongPos (&net_message, pos_v);
- 
-		pos = pos_v;
-	}
-	else if (flags & SND_POSS)
-	{	// positioned in space
-		MSG_ReadShortPos (&net_message, pos_v);
- 
-		pos = pos_v;
+		MSG_ReadPos (&net_message, pos_v);
+ 		pos = pos_v;
 	}
 	else	// use entity number
 		pos = NULL;
@@ -631,19 +680,13 @@ void CL_ParseStartSoundPacket(void)
 		return;
 
 	S_StartSound (pos, ent, channel, cl.sound_precache[sound_num], volume, attenuation, ofs);
-}       
+}
 
 
 void SHOWNET(char *s)
 {
 	if (cl_shownet->value>=2)
 		Com_Printf ("%3i:%s\n", net_message.readcount-1, s);
-}
-
-int Q_PlayerGender ( void *player )
-{
-	clientinfo_t *ci = ( clientinfo_t * )player;
-	return ci->gender;
 }
 
 /*
@@ -664,9 +707,11 @@ void CL_ParseObituary (void)
 
 	if ( attackerNum ) {
 		attacker = &cl.clientinfo[attackerNum - 1];
+	} else {
+		attacker = NULL;
 	}
 
-	Q_Obituary ( victim, attacker, mod, message, message2 );
+	Q_Obituary ( victim, victim->gender, attacker, mod, message, message2 );
 
 	if ( attackerNum ) {
 		if ( victimNum != attackerNum ) {
@@ -677,6 +722,49 @@ void CL_ParseObituary (void)
 	} else {
 		Com_Printf ( "%s %s%s\n", victim->name, S_COLOR_WHITE, message );
 	}
+}
+
+
+void CL_Reconnect_f (void);
+void CL_Changing_f (void);
+void CL_Precache_f (void);
+void CL_ForwardToServer_f (void);
+
+typedef struct {
+	char	*name;
+	void	(*func) (void);
+} svcmd_t;
+
+svcmd_t svcmds[] =
+{
+	{"reconnect", CL_Reconnect_f},
+	{"changing", CL_Changing_f},
+	{"precache", CL_Precache_f},
+	{"cmd", CL_ForwardToServer_f},
+	{NULL}
+};
+
+/*
+==================
+CL_ParseStringCmd
+==================
+*/
+void CL_ParseStringCmd (void)
+{
+	char *text, *s;
+	svcmd_t *cmd;
+
+	text = MSG_ReadString (&net_message);
+	Cmd_TokenizeString (text, false);
+	s = Cmd_Argv (0);
+
+	for (cmd = svcmds; cmd->name; cmd++)
+		if (!strcmp (s, cmd->name) ) {
+			cmd->func ();
+			return;
+		}
+
+	Com_Printf ("CL_ParseStringCmd: bad cmd \"%s\"\n", s);
 }
 
 /*
@@ -730,7 +818,7 @@ void CL_ParseServerMessage (void)
 		switch (cmd)
 		{
 		default:
-			Com_Error (ERR_DROP,"CL_ParseServerMessage: Illegible server message\n");
+			Com_Error (ERR_DROP,"CL_ParseServerMessage: Illegible server message");
 			break;
 			
 		case svc_nop:
@@ -738,7 +826,7 @@ void CL_ParseServerMessage (void)
 			break;
 			
 		case svc_disconnect:
-			Com_Error (ERR_DISCONNECT,"Server disconnected\n");
+			Com_Error (ERR_DISCONNECT,"Server disconnected");
 			break;
 
 		case svc_reconnect:
@@ -748,7 +836,7 @@ void CL_ParseServerMessage (void)
 				fclose (cls.download);
 				cls.download = NULL;
 			}
-			cls.state = ca_connecting;
+			CL_SetClientState (ca_connecting);
 			cls.connect_time = -99999;	// CL_CheckForResend() will fire immediately
 			break;
 
@@ -756,7 +844,7 @@ void CL_ParseServerMessage (void)
 			i = MSG_ReadByte (&net_message);
 
 			if (i == PRINT_CHAT)
-				S_StartLocalSound ("misc/talk.wav");
+				S_StartLocalSound ("sound/player/talk.wav");
 
 			Com_Printf ("%s", MSG_ReadString (&net_message));
 			break;
@@ -818,13 +906,17 @@ void CL_ParseServerMessage (void)
 
 		case svc_layout:
 			s = MSG_ReadString (&net_message);
-			strncpy (cl.layout, s, sizeof(cl.layout)-1);
+			Q_strncpyz (cl.layout, s, sizeof(cl.layout));
 			break;
 
 		case svc_playerinfo:
 		case svc_packetentities:
 		case svc_deltapacketentities:
 			Com_Error (ERR_DROP, "Out of place frame data");
+			break;
+
+		case svc_stringcmd:
+			CL_ParseStringCmd ();
 			break;
 		}
 	}

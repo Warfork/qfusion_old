@@ -25,7 +25,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 CL_ItemRespawn
 ==============
 */
-void CL_ItemRespawn ( entity_state_t *ent ) {
+void CL_ItemRespawn ( entity_state_t *ent ) 
+{
 	cl_entities[ent->number].respawnTime = cl.time;
 
 	S_StartSound ( NULL, ent->number, CHAN_WEAPON, cl.media.sfxItemRespawn, 1, ATTN_IDLE, 0 );
@@ -37,7 +38,8 @@ void CL_ItemRespawn ( entity_state_t *ent ) {
 CL_Footstep
 ==============
 */
-void CL_Footstep ( entity_state_t *ent, int footstep ) {
+void CL_Footstep ( entity_state_t *ent, int footstep ) 
+{
 	if ( cl_footsteps->value ) {
 		S_StartSound ( NULL, ent->number, CHAN_BODY, cl.media.sfxFootsteps[footstep][rand()&3], 1, ATTN_NORM, 0 );
 	}
@@ -48,7 +50,8 @@ void CL_Footstep ( entity_state_t *ent, int footstep ) {
 CL_GrenadeBounce
 ==============
 */
-void CL_GrenadeBounce ( entity_state_t *ent ) {
+void CL_GrenadeBounce ( entity_state_t *ent ) 
+{
 	if ( rand() & 1) {
 		S_StartSound ( NULL, ent->number, CHAN_VOICE, cl.media.sfxGrenBounce1, 1, ATTN_NORM, 0 );
 	} else {
@@ -61,7 +64,8 @@ void CL_GrenadeBounce ( entity_state_t *ent ) {
 CL_JumpPad
 ==============
 */
-void CL_JumpPad ( entity_state_t *ent ) {
+void CL_JumpPad ( entity_state_t *ent ) 
+{
 	S_StartSound ( NULL, ent->number, CHAN_AUTO, cl.media.sfxJumpPad, 1, ATTN_NORM, 0 );
 	S_StartSound ( NULL, ent->number, CHAN_VOICE, S_RegisterSound ("*jump1.wav"), 1, ATTN_NORM, 0 );
 }
@@ -71,7 +75,8 @@ void CL_JumpPad ( entity_state_t *ent ) {
 CL_Jump
 ==============
 */
-void CL_Jump ( entity_state_t *ent ) {
+void CL_Jump ( entity_state_t *ent ) 
+{
 	S_StartSound ( NULL, ent->number, CHAN_VOICE, S_RegisterSound ("*jump1.wav"), 1, ATTN_NORM, 0 );
 }
 
@@ -80,7 +85,8 @@ void CL_Jump ( entity_state_t *ent ) {
 CL_FallShort
 ==============
 */
-void CL_FallShort ( entity_state_t *ent ) {
+void CL_FallShort ( entity_state_t *ent ) 
+{
 	S_StartSound ( NULL, ent->number, CHAN_AUTO, cl.media.sfxLand, 1, ATTN_NORM, 0 );
 }
 
@@ -89,7 +95,8 @@ void CL_FallShort ( entity_state_t *ent ) {
 CL_FallMedium
 ==============
 */
-void CL_FallMedium ( entity_state_t *ent ) {
+void CL_FallMedium ( entity_state_t *ent ) 
+{
 	S_StartSound ( NULL, ent->number, CHAN_AUTO, S_RegisterSound ("*fall1.wav"), 1, ATTN_NORM, 0 );
 }
 
@@ -98,7 +105,8 @@ void CL_FallMedium ( entity_state_t *ent ) {
 CL_FallFar
 ==============
 */
-void CL_FallFar ( entity_state_t *ent ) {
+void CL_FallFar ( entity_state_t *ent ) 
+{
 	S_StartSound ( NULL, ent->number, CHAN_AUTO, S_RegisterSound ("*fall1.wav"), 1, ATTN_NORM, 0 );
 }
 
@@ -107,7 +115,8 @@ void CL_FallFar ( entity_state_t *ent ) {
 CL_Pain
 ==============
 */
-void CL_Pain ( entity_state_t *ent, int percent ) {
+void CL_Pain ( entity_state_t *ent, int percent ) 
+{
 	int r = 1 + (rand()&1);
 	S_StartSound ( NULL, ent->number, CHAN_VOICE, S_RegisterSound(va("*pain%i_%i.wav", percent, r)), 1, ATTN_NORM, 0 );
 }
@@ -117,7 +126,8 @@ void CL_Pain ( entity_state_t *ent, int percent ) {
 CL_Die
 ==============
 */
-void CL_Die ( entity_state_t *ent ) {
+void CL_Die ( entity_state_t *ent ) 
+{
 	int r = ( rand()%4 ) + 1;
 	S_StartSound ( NULL, ent->number, CHAN_BODY, S_RegisterSound (va("*death%i.wav", r)), 1, ATTN_NORM, 0 );
 }
@@ -127,10 +137,23 @@ void CL_Die ( entity_state_t *ent ) {
 CL_Gib
 ==============
 */
-void CL_Gib ( entity_state_t *ent ) {
+void CL_Gib ( entity_state_t *ent ) 
+{
+	vec3_t		mins, maxs;
+	int			x, zd, zu;
+
+	x = 8 * (ent->solid & 31);
+	zd = 8 * ((ent->solid>>5) & 31);
+	zu = 8 * ((ent->solid>>10) & 63) - 32;
+
+	mins[0] = mins[1] = -x;
+	maxs[0] = maxs[1] = x;
+	mins[2] = -zd;
+	maxs[2] = zu;
+
 	S_StartSound ( NULL, ent->number, CHAN_VOICE, cl.media.sfxGibSound, 1, ATTN_NORM, 0 );
 
-	CL_GibPlayer ( ent );
+	CL_GibPlayer ( ent->origin, mins, maxs );
 }
 
 /*

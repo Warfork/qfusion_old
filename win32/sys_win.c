@@ -19,7 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 // sys_win.h
 
-#include "qcommon.h"
+#include "../qcommon/qcommon.h"
 #include "winquake.h"
 #include "resource.h"
 #include <errno.h>
@@ -34,12 +34,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MINIMUM_WIN_MEMORY	0x0a00000
 #define MAXIMUM_WIN_MEMORY	0x1000000
 
-//#define DEMO
-
 qboolean s_win95;
 
 int			starttime;
-int			ActiveApp;
+qboolean	ActiveApp;
 qboolean	Minimized;
 
 static HANDLE		hinput, houtput;
@@ -73,7 +71,7 @@ void Sys_Error (char *error, ...)
 	Qcommon_Shutdown ();
 
 	va_start (argptr, error);
-	vsprintf (text, error, argptr);
+	vsnprintf (text, sizeof(text), error, argptr);
 	va_end (argptr);
 
 	MessageBox(NULL, text, "Error", 0 /* MB_OK */ );
@@ -125,75 +123,6 @@ void WinError (void)
 	LocalFree( lpMsgBuf );
 }
 
-//================================================================
-
-
-/*
-================
-Sys_ScanForCD
-
-================
-*/
-char *Sys_ScanForCD (void)
-{
-	static char	cddir[MAX_OSPATH];
-	static qboolean	done;
-#ifndef DEMO
-	char		drive[4];
-	FILE		*f;
-	char		test[MAX_QPATH];
-
-	if (done)		// don't re-check
-		return cddir;
-
-	// no abort/retry/fail errors
-	SetErrorMode (SEM_FAILCRITICALERRORS);
-
-	drive[0] = 'c';
-	drive[1] = ':';
-	drive[2] = '\\';
-	drive[3] = 0;
-
-	done = true;
-
-	// scan the drives
-	for (drive[0] = 'c' ; drive[0] <= 'z' ; drive[0]++)
-	{
-		// where activision put the stuff...
-		sprintf (cddir, "%sinstall\\data", drive);
-		sprintf (test, "%sinstall\\data\\quake2.exe", drive);
-		f = fopen(test, "r");
-		if (f)
-		{
-			fclose (f);
-			if (GetDriveType (drive) == DRIVE_CDROM)
-				return cddir;
-		}
-	}
-#endif
-
-	cddir[0] = 0;
-	
-	return NULL;
-}
-
-/*
-================
-Sys_CopyProtect
-
-================
-*/
-void	Sys_CopyProtect (void)
-{
-#ifndef DEMO
-	char	*cddir;
-
-	cddir = Sys_ScanForCD();
-	if (!cddir[0])
-		Com_Error (ERR_FATAL, "You must have the Quake2 CD in the drive to play.");
-#endif
-}
-
 
 //================================================================
 
@@ -207,26 +136,6 @@ void Sys_Init (void)
 {
 	OSVERSIONINFO	vinfo;
 
-#if 0
-	// allocate a named semaphore on the client so the
-	// front end can tell if it is alive
-
-	// mutex will fail if semephore already exists
-    qwclsemaphore = CreateMutex(
-        NULL,         /* Security attributes */
-        0,            /* owner       */
-        "qwcl"); /* Semaphore name      */
-	if (!qwclsemaphore)
-		Sys_Error ("QWCL is already running on this system");
-	CloseHandle (qwclsemaphore);
-
-    qwclsemaphore = CreateSemaphore(
-        NULL,         /* Security attributes */
-        0,            /* Initial count       */
-        1,            /* Maximum count       */
-        "qwcl"); /* Semaphore name      */
-#endif
-
 	timeBeginPeriod( 1 );
 
 	vinfo.dwOSVersionInfoSize = sizeof(vinfo);
@@ -235,14 +144,16 @@ void Sys_Init (void)
 		Sys_Error ("Couldn't get OS info");
 
 	if (vinfo.dwMajorVersion < 4)
-		Sys_Error ("Quake2 requires windows version 4 or greater");
+		Sys_Error ("%s requires windows version 4 or greater", APPLICATION);
 	if (vinfo.dwPlatformId == VER_PLATFORM_WIN32s)
-		Sys_Error ("Quake2 doesn't run on Win32s");
+		Sys_Error ("%s doesn't run on Win32s", APPLICATION);
 	else if ( vinfo.dwPlatformId == VER_PLATFORM_WIN32_WINDOWS )
 		s_win95 = true;
 
 	if (dedicated->value)
 	{
+		SetPriorityClass (GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
 		if (!AllocConsole ())
 			Sys_Error ("Couldn't create dedicated server console");
 		hinput = GetStdHandle (STD_INPUT_HANDLE);
@@ -447,61 +358,90 @@ GAME DLL
 ========================================================================
 */
 
-static HINSTANCE	game_library;
+static HINSTANCE	game_library, cgame_library, ui_library;
 
 /*
 =================
-Sys_UnloadGame
+Sys_UnloadLibrary
 =================
 */
-void Sys_UnloadGame (void)
+void Sys_UnloadLibrary ( gamelib_t gamelib )
 {
-	if (!FreeLibrary (game_library))
-		Com_Error (ERR_FATAL, "FreeLibrary failed for game library");
-	game_library = NULL;
+	HINSTANCE *lib;
+
+	switch ( gamelib ) {
+		case LIB_GAME: lib = &game_library; break;
+		case LIB_CGAME: lib = &cgame_library; break;
+		case LIB_UI: lib = &ui_library; break;
+		default: assert( false );
+	}
+
+	if (!FreeLibrary (*lib))
+		Com_Error (ERR_FATAL, "FreeLibrary failed");
+	*lib = NULL;
 }
 
 /*
 =================
-Sys_GetGameAPI
+Sys_LoadLibrary
 
 Loads the game dll
 =================
 */
-void *Sys_GetGameAPI (void *parms)
+void *Sys_LoadLibrary (gamelib_t gamelib, void *parms)
 {
-	void	*(*GetGameAPI) (void *);
 	char	name[MAX_OSPATH];
-	char	*path;
 	char	cwd[MAX_OSPATH];
-#if defined _M_IX86
-	const char *gamename = "gamex86.dll";
+	char	*path;
+	void	*(*APIfunc) (void *);
+	HINSTANCE *lib;
+	char	*libname;
+	char	*apifuncname;
 
+#if defined _M_IX86
+#define ARCH	"x86"
 #ifdef NDEBUG
 	const char *debugdir = "release";
 #else
 	const char *debugdir = "debug";
 #endif
-
 #elif defined _M_ALPHA
-	const char *gamename = "gameaxp.dll";
-
+#define ARCH	"axp"
 #ifdef NDEBUG
 	const char *debugdir = "releaseaxp";
 #else
 	const char *debugdir = "debugaxp";
 #endif
-
 #endif
 
-	if (game_library)
-		Com_Error (ERR_FATAL, "Sys_GetGameAPI without Sys_UnloadingGame");
+	switch ( gamelib ) {
+		case LIB_GAME:
+			lib = &game_library;
+			libname = "game_" ARCH ".dll";
+			apifuncname = "GetGameAPI";
+			break;
+		case LIB_CGAME:
+			lib = &cgame_library;
+			libname = "cgame_" ARCH ".dll";
+			apifuncname = "GetCGameAPI";
+			break;
+		case LIB_UI:
+			lib = &ui_library;
+			libname = "ui_" ARCH ".dll";
+			apifuncname = "GetUIAPI";
+			break;
+		default: assert( false );
+	}
+
+	if (*lib)
+		Com_Error (ERR_FATAL, "Sys_LoadLibrary without Sys_UnloadLibrary");
 
 	// check the current debug directory first for development purposes
 	_getcwd (cwd, sizeof(cwd));
-	Com_sprintf (name, sizeof(name), "%s/%s/%s", cwd, debugdir, gamename);
-	game_library = LoadLibrary ( name );
-	if (game_library)
+	Com_sprintf (name, sizeof(name), "%s/%s/%s", cwd, debugdir, libname);
+
+	*lib = LoadLibrary ( name );
+	if (*lib)
 	{
 		Com_DPrintf ("LoadLibrary (%s)\n", name);
 	}
@@ -510,8 +450,8 @@ void *Sys_GetGameAPI (void *parms)
 #ifdef DEBUG
 		// check the current directory for other development purposes
 		Com_sprintf (name, sizeof(name), "%s/%s", cwd, gamename);
-		game_library = LoadLibrary ( name );
-		if (game_library)
+		*lib = LoadLibrary ( name );
+		if (*lib)
 		{
 			Com_DPrintf ("LoadLibrary (%s)\n", name);
 		}
@@ -525,9 +465,9 @@ void *Sys_GetGameAPI (void *parms)
 				path = FS_NextPath (path);
 				if (!path)
 					return NULL;		// couldn't find one anywhere
-				Com_sprintf (name, sizeof(name), "%s/%s", path, gamename);
-				game_library = LoadLibrary (name);
-				if (game_library)
+				Com_sprintf (name, sizeof(name), "%s/%s", path, libname);
+				*lib = LoadLibrary (name);
+				if (*lib)
 				{
 					Com_DPrintf ("LoadLibrary (%s)\n",name);
 					break;
@@ -536,14 +476,14 @@ void *Sys_GetGameAPI (void *parms)
 		}
 	}
 
-	GetGameAPI = (void *)GetProcAddress (game_library, "GetGameAPI");
-	if (!GetGameAPI)
+	APIfunc = (void *)GetProcAddress (*lib, apifuncname);
+	if (!APIfunc)
 	{
-		Sys_UnloadGame ();		
+		Sys_UnloadLibrary (gamelib);
 		return NULL;
 	}
 
-	return GetGameAPI (parms);
+	return APIfunc (parms);
 }
 
 //=======================================================================
@@ -598,7 +538,6 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 {
     MSG				msg;
 	int				time, oldtime, newtime;
-	char			*cddir;
 
     /* previous instances do not exist in Win32 */
     if (hPrevInstance)
@@ -607,24 +546,6 @@ int WINAPI WinMain (HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLin
 	global_hInstance = hInstance;
 
 	ParseCommandLine (lpCmdLine);
-
-	// if we find the CD, add a +set cddir xxx command line
-	cddir = Sys_ScanForCD ();
-	if (cddir && argc < MAX_NUM_ARGVS - 3)
-	{
-		int		i;
-
-		// don't override a cddir on the command line
-		for (i=0 ; i<argc ; i++)
-			if (!strcmp(argv[i], "cddir"))
-				break;
-		if (i == argc)
-		{
-			argv[argc++] = "+set";
-			argv[argc++] = "cddir";
-			argv[argc++] = cddir;
-		}
-	}
 
 	Qcommon_Init (argc, argv);
 

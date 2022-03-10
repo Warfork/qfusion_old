@@ -46,7 +46,7 @@ int SV_FindIndex (char *name, int start, int max, qboolean create)
 	if (i == max)
 		Com_Error (ERR_DROP, "*Index: overflow");
 
-	strncpy (sv.configstrings[start+i], name, sizeof(sv.configstrings[i]));
+	Q_strncpyz (sv.configstrings[start+i], name, sizeof(sv.configstrings[i]));
 
 	if (sv.state != ss_loading)
 	{	// send the update to everyone
@@ -175,13 +175,14 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 		Cvar_Set ("paused", "0");
 
 	if (devmap)
-		Cvar_ForceSet ("cheats", "1");
+		Cvar_ForceSet ("sv_cheats", "1");
+	Cvar_FixCheatVars ();
 
 	Com_Printf ("------- Server Initialization -------\n");
 
 	Com_DPrintf ("SpawnServer: %s\n",server);
 	if (sv.demofile)
-		fclose (sv.demofile);
+		FS_FCloseFile (sv.demofile);
 
 	svs.spawncount++;		// any partially connected client will be
 							// restarted
@@ -197,20 +198,14 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 	// save name for levels that don't set message
 	strcpy (sv.configstrings[CS_MESSAGE], server);
 
-	if (Cvar_VariableValue ("deathmatch"))
-	{
-		sprintf(sv.configstrings[CS_AIRACCEL], "%g", sv_airaccelerate->value);
-		pm_airaccelerate = sv_airaccelerate->value;
-	}
-	else
-	{
-		strcpy(sv.configstrings[CS_AIRACCEL], "0");
-		pm_airaccelerate = 0;
-	}
+	Com_sprintf (sv.configstrings[CS_AIRACCEL], sizeof(sv.configstrings[0]),
+		"%g", sv_airaccelerate->value);
+	pm_airaccelerate = sv_airaccelerate->value;
 
 	SZ_Init (&sv.multicast, sv.multicast_buf, sizeof(sv.multicast_buf));
 
 	strcpy (sv.name, server);
+	strcpy (sv.configstrings[CS_MAPNAME], server);
 
 	// leave slots at start for clients only
 	for (i=0 ; i<sv_maxclients->value ; i++)
@@ -223,9 +218,6 @@ void SV_SpawnServer (char *server, char *spawnpoint, server_state_t serverstate,
 
 	sv.time = 1000;
 	
-	strcpy (sv.name, server);
-//	strcpy (sv.configstrings[CS_MESSAGE], server);
-
 	if (serverstate != ss_game)
 	{
 		sv.models[1] = CM_LoadMap ("", false, &checksum);	// no real map
@@ -300,16 +292,18 @@ void SV_InitGame (void)
 	{
 		// cause any connected clients to reconnect
 		SV_Shutdown ("Server restarted\n", true);
+
+		// SV_Shutdown will also call Cvar_GetLatchedVars
 	}
 	else
 	{
 		// make sure the client is down
 		CL_Drop ();
 		SCR_BeginLoadingPlaque ();
-	}
 
-	// get any latched variable changes (sv_maxclients, etc)
-	Cvar_GetLatchedVars ();
+		// get any latched variable changes (sv_maxclients, etc)
+		Cvar_GetLatchedVars (CVAR_LATCH);
+	}
 
 	svs.initialized = true;
 
@@ -331,26 +325,18 @@ void SV_InitGame (void)
 	if (Cvar_VariableValue ("deathmatch"))
 	{
 		if (sv_maxclients->value <= 1)
-			Cvar_FullSet ("maxclients", "8", CVAR_SERVERINFO | CVAR_LATCH);
+			Cvar_FullSet ("sv_maxclients", "8", CVAR_SERVERINFO | CVAR_LATCH);
 		else if (sv_maxclients->value > MAX_CLIENTS)
-			Cvar_FullSet ("maxclients", va("%i", MAX_CLIENTS), CVAR_SERVERINFO | CVAR_LATCH);
+			Cvar_FullSet ("sv_maxclients", va("%i", MAX_CLIENTS), CVAR_SERVERINFO | CVAR_LATCH);
 	}
 	else if (Cvar_VariableValue ("coop"))
 	{
 		if (sv_maxclients->value <= 1 || sv_maxclients->value > 4)
-			Cvar_FullSet ("maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
-#ifdef COPYPROTECT
-		if (!sv.attractloop && !dedicated->value)
-			Sys_CopyProtect ();
-#endif
+			Cvar_FullSet ("sv_maxclients", "4", CVAR_SERVERINFO | CVAR_LATCH);
 	}
 	else	// non-deathmatch, non-coop is one player
 	{
-		Cvar_FullSet ("maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
-#ifdef COPYPROTECT
-		if (!sv.attractloop)
-			Sys_CopyProtect ();
-#endif
+		Cvar_FullSet ("sv_maxclients", "1", CVAR_SERVERINFO | CVAR_LATCH);
 	}
 
 	svs.spawncount = rand();
@@ -387,11 +373,11 @@ SV_Map
   map [*]<map>$<startspot>+<nextserver>
 
 command from the console or progs.
-Map can also be a.cin, .pcx, or .dm2 file
+Map can also be a .roq, or .dqf file
 Nextserver is used to allow a cinematic to play, then proceed to
 another level:
 
-	map tram.cin+jail_e3
+	map intro.roq+q3dm0
 ======================
 */
 void SV_Map (qboolean attractloop, char *levelstring, qboolean loadgame, qboolean devmap)
@@ -420,7 +406,7 @@ void SV_Map (qboolean attractloop, char *levelstring, qboolean loadgame, qboolea
 		Cvar_Set ("nextserver", "");
 
 	//ZOID special hack for end game screen in coop mode
-	if (Cvar_VariableValue ("coop") && !Q_stricmp(level, "victory.pcx"))
+	if (Cvar_VariableValue ("coop"))
 		Cvar_Set ("nextserver", "gamemap \"*q3dm0\"");
 
 	// if there is a $, use the remainder as a spawnpoint
@@ -438,32 +424,26 @@ void SV_Map (qboolean attractloop, char *levelstring, qboolean loadgame, qboolea
 		strcpy (level, level+1);
 
 	l = strlen(level);
-	if (l > 4 && !strcmp (level+l-4, ".cin") )
+	if (l > 4 && !Q_stricmp (level+l-4, ".roq") )
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing\n");
+		SV_BroadcastCommand ("changing");
 		SV_SpawnServer (level, spawnpoint, ss_cinematic, attractloop, loadgame, devmap);
 	}
-	else if (l > 4 && !strcmp (level+l-4, ".dm2") )
+	else if (l > 4 && !Q_stricmp (level+l-4, ".dqf") )
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing\n");
+		SV_BroadcastCommand ("changing");
 		SV_SpawnServer (level, spawnpoint, ss_demo, attractloop, loadgame, devmap);
-	}
-	else if (l > 4 && !strcmp (level+l-4, ".pcx") )
-	{
-		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing\n");
-		SV_SpawnServer (level, spawnpoint, ss_pic, attractloop, loadgame, devmap);
 	}
 	else
 	{
 		SCR_BeginLoadingPlaque ();			// for local system
-		SV_BroadcastCommand ("changing\n");
+		SV_BroadcastCommand ("changing");
 		SV_SendClientMessages ();
 		SV_SpawnServer (level, spawnpoint, ss_game, attractloop, loadgame, devmap);
 		Cbuf_CopyToDefer ();
 	}
 
-	SV_BroadcastCommand ("reconnect\n");
+	SV_BroadcastCommand ("reconnect");
 }

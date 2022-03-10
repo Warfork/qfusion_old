@@ -41,7 +41,7 @@ SV_CalcRoll
 
 ===============
 */
-float SV_CalcRoll (vec3_t angles, vec3_t velocity)
+float SV_CalcRoll (vec3_t velocity)
 {
 	float	sign;
 	float	side;
@@ -128,7 +128,7 @@ void P_DamageFeedback (edict_t *player)
 
 	realcount = count;
 	if (count < 10)
-		count = 10;	// allways make a visible effect
+		count = 10;	// always make a visible effect
 
 	// play an apropriate pain sound
 	if ((level.time > player->pain_debounce_time) && !(player->flags & FL_GODMODE) && (client->invincible_framenum <= level.framenum))
@@ -145,7 +145,7 @@ void P_DamageFeedback (edict_t *player)
 			player->s.event = EV_PAIN100;
 	}
 
-	// the total alpha of the blend is allways proportional to count
+	// the total alpha of the blend is always proportional to count
 	if (client->damage_alpha < 0)
 		client->damage_alpha = 0;
 	client->damage_alpha += count*0.01;
@@ -421,7 +421,7 @@ void SV_CalcBlend (edict_t *ent)
 	else
 		ent->client->ps.rdflags &= ~RDF_UNDERWATER;
 
-	if (contents & (CONTENTS_SOLID|CONTENTS_LAVA))
+	if (contents & CONTENTS_LAVA)
 		SV_AddBlend (1.0, 0.3, 0.0, 0.6, ent->client->ps.blend);
 	else if (contents & CONTENTS_SLIME)
 		SV_AddBlend (0.0, 0.1, 0.05, 0.6, ent->client->ps.blend);
@@ -528,7 +528,7 @@ void P_FallingDamage (edict_t *ent)
 			return;
 		delta = ent->velocity[2] - ent->client->oldvelocity[2];
 	}
-	delta = delta*delta * 0.0001;
+	delta = delta * delta * 0.0001;
 
 //ZOID
 	// never take damage if just release grapple or on grapple
@@ -538,10 +538,10 @@ void P_FallingDamage (edict_t *ent)
 		return;
 //ZOID
 
-	// reset state if was pushed by jump pad
-	if ( ent->client->jumppad_time < level.time ) {
+	// scale delta if was pushed by jump pad
+	if ( ent->client->jumppad_time && ent->client->jumppad_time < level.time ) {
+		delta /= (1 + level.time - ent->client->jumppad_time) * 0.5;
 		ent->client->jumppad_time = 0;
-		ent->client->ps.pmove.pm_flags &= ~PMF_NO_PREDICTION;
 	}
 
 	// never take falling damage if completely underwater
@@ -562,8 +562,11 @@ void P_FallingDamage (edict_t *ent)
 	}
 
 	// never take damage
-	if ( pmtrace.surface->flags & SURF_NODAMAGE )
+	if ( pmtrace.surface->flags & SURF_NODAMAGE ) {
+		if ( !ent->s.event )
+			ent->s.event = EV_FALL_SHORT;
 		return;
+	}
 
 	ent->client->fall_value = delta*0.5;
 	if (ent->client->fall_value > 40)
@@ -592,7 +595,6 @@ void P_FallingDamage (edict_t *ent)
 	{
 		if ( !ent->s.event )		// lower priority than jump for example
 			ent->s.event = EV_FALL_SHORT;
-
 		return;
 	}
 }
@@ -792,7 +794,6 @@ void G_SetClientEffects (edict_t *ent)
 		}
 		else if (pa_type == POWER_ARMOR_SHIELD)
 		{
-			ent->s.effects |= EF_COLOR_SHELL;
 			ent->s.renderfx |= RF_SHELL_GREEN;
 		}
 	}
@@ -820,7 +821,6 @@ void G_SetClientEffects (edict_t *ent)
 	// show cheaters!!!
 	if (ent->flags & FL_GODMODE)
 	{
-		ent->s.effects |= EF_COLOR_SHELL;
 		ent->s.renderfx |= (RF_SHELL_RED|RF_SHELL_GREEN|RF_SHELL_BLUE);
 	}
 }
@@ -1066,7 +1066,7 @@ void ClientEndServerFrame (edict_t *ent)
 		ent->s.angles[PITCH] = ent->client->v_angle[PITCH]/3;
 	ent->s.angles[YAW] = ent->client->v_angle[YAW];
 	ent->s.angles[ROLL] = 0;
-	ent->s.angles[ROLL] = SV_CalcRoll (ent->s.angles, ent->velocity)*4;
+	ent->s.angles[ROLL] = SV_CalcRoll (ent->velocity)*4;
 
 	//
 	// calculate speed and cycle to be used for

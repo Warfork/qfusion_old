@@ -27,22 +27,22 @@ key up events are sent even if in console mode
 
 
 #define		MAXCMDLINE	256
-char	key_lines[32][MAXCMDLINE];
-int		key_linepos;
-int		key_insert = 1;
+char		key_lines[32][MAXCMDLINE];
+int			key_linepos;
+qboolean	key_insert = true;
 
-int		shift_down = false;
-int		anykeydown;
+int			shift_down = false;
+int			anykeydown;
 
-int		edit_line = 0;
-int		history_line = 0;
+int			edit_line = 0;
+int			history_line = 0;
 
-int		key_waiting;
-char	*keybindings[256];
+int			key_waiting;
+char		*keybindings[256];
 qboolean	consolekeys[256];	// if true, can't be rebound while in console
-qboolean	menubound[256];	// if true, can't be rebound while in menu
-int		keyshift[256];		// key to map to if shift held down in console
-int		key_repeats[256];	// if > 1, it is autorepeating
+qboolean	menubound[256];		// if true, can't be rebound while in menu
+int			keyshift[256];		// key to map to if shift held down in console
+int			key_repeats[256];	// if > 1, it is autorepeating
 qboolean	keydown[256];
 
 typedef struct
@@ -57,6 +57,9 @@ keyname_t keynames[] =
 	{"ENTER", K_ENTER},
 	{"ESCAPE", K_ESCAPE},
 	{"SPACE", K_SPACE},
+	{"CAPSLOCK", K_CAPSLOCK},
+	{"NUMLOCK", K_NUMLOCK},
+	{"KP_NUMLOCK", K_NUMLOCK},
 	{"BACKSPACE", K_BACKSPACE},
 	{"UPARROW", K_UPARROW},
 	{"DOWNARROW", K_DOWNARROW},
@@ -150,7 +153,7 @@ keyname_t keynames[] =
 
 	{"PAUSE", K_PAUSE},
 
-	{"SEMICOLON", ';'},	// because a raw semicolon seperates commands
+	{"SEMICOLON", ';'},	// because a raw semicolon separates commands
 
 	{NULL,0}
 };
@@ -186,6 +189,9 @@ void CompleteCommand (void)
 	}
 }
 
+int Q_ColorCharCount (char *s, int byteofs);
+int Q_ColorCharOffset (char *s, int charcount);
+
 /*
 ====================
 Key_Console
@@ -195,7 +201,6 @@ Interactive line editing and console scrollback
 */
 void Key_Console (int key)
 {
-
 	switch ( key )
 	{
 	case K_KP_SLASH:
@@ -263,7 +268,7 @@ void Key_Console (int key)
 				strcat( key_lines[edit_line], cbd );
 				key_linepos += i;
 			}
-			free( cbd );
+			Q_free( cbd );
 		}
 
 		return;
@@ -306,8 +311,11 @@ void Key_Console (int key)
 	
 	if ( ( key == K_LEFTARROW ) || ( key == K_KP_LEFTARROW ) || ( ( key == 'h' ) && ( keydown[K_CTRL] ) ) )
 	{
-		if (key_linepos > 1)
-			key_linepos--;
+		int charcount;
+		// jump over invisible color sequences
+		charcount = Q_ColorCharCount (key_lines[edit_line], key_linepos);
+		if (charcount > 1)
+			key_linepos = Q_ColorCharOffset (key_lines[edit_line], charcount - 1);
 		return;
 	}
 
@@ -315,6 +323,10 @@ void Key_Console (int key)
 	{
 		if (key_linepos > 1)
 		{
+			// skip to the end of color sequence
+			while (Q_IsColorString(key_lines[edit_line] + key_linepos))
+				key_linepos += 2;
+
 			strcpy (key_lines[edit_line] + key_linepos - 1, key_lines[edit_line] + key_linepos);
 			key_linepos--;
 		}
@@ -331,7 +343,7 @@ void Key_Console (int key)
 	
 	if ( key == K_INS )
 	{ // toggle insert mode
-		key_insert ^= 1;
+		key_insert = !key_insert;
 		return;
 	}
 
@@ -347,7 +359,12 @@ void Key_Console (int key)
 			key_lines[edit_line][key_linepos] = 0;
 		}
 		else
-			key_linepos++;
+		{
+			int charcount;
+			// jump over invisible color sequences
+			charcount = Q_ColorCharCount (key_lines[edit_line], key_linepos);
+			key_linepos = Q_ColorCharOffset (key_lines[edit_line], charcount + 1);
+		}
 		return;
 	}
 
@@ -405,13 +422,19 @@ void Key_Console (int key)
 
 	if (key == K_HOME || key == K_KP_HOME )
 	{
-		con.display = con.current - con.totallines + 10;
+		if (keydown[K_CTRL])
+			con.display = con.current - con.totallines + 10;
+		else
+			key_linepos = 1;
 		return;
 	}
 
 	if (key == K_END || key == K_KP_END )
 	{
-		con.display = con.current;
+		if (keydown[K_CTRL])
+			con.display = con.current;
+		else
+			key_linepos = strlen(key_lines[edit_line]);
 		return;
 	}
 	
@@ -452,7 +475,6 @@ int			chat_bufferlen = 0;
 
 void Key_Message (int key)
 {
-
 	if ( key == K_ENTER || key == K_KP_ENTER )
 	{
 		if (chat_team)
@@ -515,11 +537,11 @@ int Key_StringToKeynum (char *str)
 	if (!str || !str[0])
 		return -1;
 	if (!str[1])
-		return str[0];
+		return (int)(unsigned char)str[0];
 
 	for (kn=keynames ; kn->name ; kn++)
 	{
-		if (!Q_strcasecmp(str,kn->name))
+		if (!Q_stricmp(str, kn->name))
 			return kn->keynum;
 	}
 	return -1;
@@ -563,7 +585,7 @@ Key_SetBinding
 */
 void Key_SetBinding (int keynum, char *binding)
 {
-	char	*new;
+	char	*newbinding;
 	int		l;
 			
 	if (keynum == -1)
@@ -575,13 +597,16 @@ void Key_SetBinding (int keynum, char *binding)
 		Z_Free (keybindings[keynum]);
 		keybindings[keynum] = NULL;
 	}
-			
+
+	if (!binding)
+		return;
+
 // allocate memory for new binding
 	l = strlen (binding);	
-	new = Z_Malloc (l+1);
-	strcpy (new, binding);
-	new[l] = 0;
-	keybindings[keynum] = new;	
+	newbinding = Z_Malloc (l+1);
+	strcpy (newbinding, binding);
+	newbinding[l] = 0;
+	keybindings[keynum] = newbinding;	
 }
 
 /*
@@ -600,13 +625,13 @@ void Key_Unbind_f (void)
 	}
 	
 	b = Key_StringToKeynum (Cmd_Argv(1));
-	if (b==-1)
+	if (b == -1)
 	{
 		Com_Printf ("\"%s\" isn't a valid key\n", Cmd_Argv(1));
 		return;
 	}
 
-	Key_SetBinding (b, "");
+	Key_SetBinding (b, NULL);
 }
 
 void Key_Unbindall_f (void)
@@ -615,7 +640,7 @@ void Key_Unbindall_f (void)
 	
 	for (i=0 ; i<256 ; i++)
 		if (keybindings[i])
-			Key_SetBinding (i, "");
+			Key_SetBinding (i, NULL);
 }
 
 
@@ -630,14 +655,14 @@ void Key_Bind_f (void)
 	char		cmd[1024];
 	
 	c = Cmd_Argc();
-
 	if (c < 2)
 	{
 		Com_Printf ("bind <key> [command] : attach a command to a key\n");
 		return;
 	}
+
 	b = Key_StringToKeynum (Cmd_Argv(1));
-	if (b==-1)
+	if (b == -1)
 	{
 		Com_Printf ("\"%s\" isn't a valid key\n", Cmd_Argv(1));
 		return;
@@ -815,17 +840,15 @@ void Key_Event (int key, qboolean down, unsigned time)
 	if (down)
 	{
 		key_repeats[key]++;
-		if (key != K_BACKSPACE 
-			&& key != K_PAUSE 
-			&& key != K_PGUP 
-			&& key != K_KP_PGUP 
-			&& key != K_PGDN
-			&& key != K_KP_PGDN
-			&& key_repeats[key] > 1)
-			return;	// ignore most autorepeats
-			
-		if (key >= 200 && !keybindings[key])
-			Com_Printf ("%s is unbound, hit F4 to set.\n", Key_KeynumToString (key) );
+		if (key_repeats[key] > 1)
+		{
+			if ((key != K_BACKSPACE && key != K_DEL
+				&& key != K_LEFTARROW && key != K_RIGHTARROW
+				&& key != K_UPARROW && key != K_DOWNARROW
+				&& key != K_PGUP && key != K_PGDN && (key < 32 || key > 126 || key == '`'))
+				|| cls.key_dest == key_game)
+				return;
+		}
 	}
 	else
 	{
@@ -845,9 +868,9 @@ void Key_Event (int key, qboolean down, unsigned time)
 	}
 
 	// any key during the attract mode will bring up the menu
-	if (cl.attractloop && cls.key_dest != key_menu &&
+/*	if (cl.attractloop && cls.key_dest != key_menu &&
 		!(key >= K_F1 && key <= K_F12))
-		key = K_ESCAPE;
+		key = K_ESCAPE; */
 
 	// menu key is hardcoded, so the user can never unbind it
 	if (key == K_ESCAPE)
@@ -869,8 +892,10 @@ void Key_Event (int key, qboolean down, unsigned time)
 			UI_Keydown (key);
 			break;
 		case key_game:
-		case key_console:
 			UI_Menu_Main_f ();
+			break;
+		case key_console:
+			Con_ToggleConsole_f();
 			break;
 		default:
 			Com_Error (ERR_FATAL, "Bad cls.key_dest");

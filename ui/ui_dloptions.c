@@ -73,14 +73,15 @@ void DownloadOptions_MenuInit( void )
 		"no", "yes", 0
 	};
 	int y = 0;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
 	s_downloadoptions_menu.x = trap_GetWidth() * 0.50;
 	s_downloadoptions_menu.nitems = 0;
 
 	s_download_title.generic.type = MTYPE_SEPARATOR;
 	s_download_title.generic.name = "Download Options";
-	s_download_title.generic.x    = 48;
+	s_download_title.generic.flags = QMF_CENTERED|QMF_GIANT;
+	s_download_title.generic.x    = 0;
 	s_download_title.generic.y	 = y;
 
 	s_allow_download_box.generic.type = MTYPE_SPINCONTROL;
@@ -90,6 +91,7 @@ void DownloadOptions_MenuInit( void )
 	s_allow_download_box.generic.callback = DownloadCallback;
 	s_allow_download_box.itemnames = yes_no_names;
 	s_allow_download_box.curvalue = (trap_Cvar_VariableValue("allow_download") != 0);
+	clamp ( s_allow_download_box.curvalue, 0, 1 );
 
 	s_allow_download_maps_box.generic.type = MTYPE_SPINCONTROL;
 	s_allow_download_maps_box.generic.x	= 0;
@@ -98,6 +100,7 @@ void DownloadOptions_MenuInit( void )
 	s_allow_download_maps_box.generic.callback = DownloadCallback;
 	s_allow_download_maps_box.itemnames = yes_no_names;
 	s_allow_download_maps_box.curvalue = (trap_Cvar_VariableValue("allow_download_maps") != 0);
+	clamp ( s_allow_download_maps_box.curvalue, 0, 1 );
 
 	s_allow_download_players_box.generic.type = MTYPE_SPINCONTROL;
 	s_allow_download_players_box.generic.x	= 0;
@@ -106,6 +109,7 @@ void DownloadOptions_MenuInit( void )
 	s_allow_download_players_box.generic.callback = DownloadCallback;
 	s_allow_download_players_box.itemnames = yes_no_names;
 	s_allow_download_players_box.curvalue = (trap_Cvar_VariableValue("allow_download_players") != 0);
+	clamp ( s_allow_download_players_box.curvalue, 0, 1 );
 
 	s_allow_download_models_box.generic.type = MTYPE_SPINCONTROL;
 	s_allow_download_models_box.generic.x	= 0;
@@ -114,6 +118,7 @@ void DownloadOptions_MenuInit( void )
 	s_allow_download_models_box.generic.callback = DownloadCallback;
 	s_allow_download_models_box.itemnames = yes_no_names;
 	s_allow_download_models_box.curvalue = (trap_Cvar_VariableValue("allow_download_models") != 0);
+	clamp ( s_allow_download_models_box.curvalue, 0, 1 );
 
 	s_allow_download_sounds_box.generic.type = MTYPE_SPINCONTROL;
 	s_allow_download_sounds_box.generic.x	= 0;
@@ -122,6 +127,7 @@ void DownloadOptions_MenuInit( void )
 	s_allow_download_sounds_box.generic.callback = DownloadCallback;
 	s_allow_download_sounds_box.itemnames = yes_no_names;
 	s_allow_download_sounds_box.curvalue = (trap_Cvar_VariableValue("allow_download_sounds") != 0);
+	clamp ( s_allow_download_sounds_box.curvalue, 0, 1 );
 
 	Menu_AddItem( &s_downloadoptions_menu, &s_download_title );
 	Menu_AddItem( &s_downloadoptions_menu, &s_allow_download_box );
@@ -131,6 +137,8 @@ void DownloadOptions_MenuInit( void )
 	Menu_AddItem( &s_downloadoptions_menu, &s_allow_download_sounds_box );
 
 	Menu_Center( &s_downloadoptions_menu );
+
+	Menu_Init ( &s_downloadoptions_menu );
 
 	// skip over title
 	if (s_downloadoptions_menu.cursor == 0)
@@ -150,5 +158,5 @@ const char *DownloadOptions_MenuKey( int key )
 void M_Menu_DownloadOptions_f (void)
 {
 	DownloadOptions_MenuInit();
-	M_PushMenu( DownloadOptions_MenuDraw, DownloadOptions_MenuKey );
+	M_PushMenu( &s_downloadoptions_menu, DownloadOptions_MenuDraw, DownloadOptions_MenuKey );
 }

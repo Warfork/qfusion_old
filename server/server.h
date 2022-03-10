@@ -22,7 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //define	PARANOID			// speed sapping error checking
 
-#include "qcommon.h"
+#include "../qcommon/qcommon.h"
 #include "../game/game.h"
 
 //=============================================================================
@@ -34,8 +34,7 @@ typedef enum {
 	ss_loading,			// spawning level edicts
 	ss_game,			// actively running
 	ss_cinematic,
-	ss_demo,
-	ss_pic
+	ss_demo
 } server_state_t;
 // some qc commands are only valid before the server has finished
 // initializing (precache commands, static sounds / objects, etc)
@@ -62,7 +61,8 @@ typedef struct
 	byte		multicast_buf[MAX_MSGLEN];
 
 	// demo server information
-	FILE		*demofile;
+	int			demofile;
+	int			demolen;
 	qboolean	timedemo;		// don't time sync
 } server_t;
 
@@ -109,7 +109,7 @@ typedef struct client_s
 
 	int				message_size[RATE_MESSAGES];	// used to rate drop packets
 	int				rate;
-	int				surpressCount;		// number of messages rate supressed
+	int				suppressCount;		// number of messages rate suppressed
 
 	edict_t			*edict;				// EDICT_NUM(clientnum+1)
 	char			name[32];			// extracted from userinfo, high bits masked

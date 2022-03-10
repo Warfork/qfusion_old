@@ -253,9 +253,9 @@ void NoAmmoWeaponChange (gclient_t *client)
 		return;
 	}
 	if ( client->pers.inventory[ITEM_INDEX(FindItem("cells"))]
-		&& client->pers.inventory[ITEM_INDEX(FindItem("hyperblaster"))] )
+		&& client->pers.inventory[ITEM_INDEX(FindItem("plasma gun"))] )
 	{
-		client->newweapon = FindItem ("hyperblaster");
+		client->newweapon = FindItem ("plasma gun");
 		return;
 	}
 	if ( client->pers.inventory[ITEM_INDEX(FindItem("bullets"))]
@@ -557,7 +557,7 @@ void Weapon_Generic (edict_t *ent, int FRAME_ACTIVATE_LAST, int FRAME_FIRE_LAST,
 		fire_frames, fire);
 
 	// run the weapon frame again if hasted
-	if (stricmp(ent->client->pers.weapon->pickup_name, "Grapple") == 0 &&
+	if (Q_stricmp(ent->client->pers.weapon->pickup_name, "Grapple") == 0 &&
 		ent->client->weaponstate == WEAPON_FIRING)
 		return;
 
@@ -756,7 +756,7 @@ void weapon_grenadelauncher_fire (edict_t *ent)
 	VectorScale (forward, -2, ent->client->kick_origin);
 	ent->client->kick_angles[0] = -1;
 
-	fire_grenade (ent, start, forward, damage, 600, 2.5, radius);
+	fire_grenade (ent, start, forward, damage, 650, 2.5, radius);
 
 	gi.WriteByte (svc_muzzleflash);
 	gi.WriteShort (ent-g_edicts);
@@ -789,11 +789,12 @@ ROCKET
 
 void Weapon_RocketLauncher_Fire (edict_t *ent)
 {
-	vec3_t	offset, start;
+	vec3_t	offset, start, end;
 	vec3_t	forward, right;
 	int		damage;
 	float	damage_radius;
 	int		radius_damage;
+	trace_t	tr;
 
 	damage = 100 + (int)(random() * 20.0);
 	radius_damage = 120;
@@ -811,7 +812,10 @@ void Weapon_RocketLauncher_Fire (edict_t *ent)
 
 	VectorSet(offset, 8, 8, ent->viewheight-8);
 	P_ProjectSource (ent->client, ent->s.origin, offset, forward, right, start);
-	fire_rocket (ent, start, forward, damage, 650, damage_radius, radius_damage);
+	VectorMA (start, 14, forward, end);
+	tr = gi.trace (start, vec3_origin, vec3_origin, end, ent, MASK_SOLID);
+
+	fire_rocket (ent, tr.endpos, forward, damage, 700, damage_radius, radius_damage);
 
 	// send muzzle flash
 	gi.WriteByte (svc_muzzleflash);
@@ -1152,10 +1156,11 @@ void Chaingun_Fire (edict_t *ent)
 		ent->client->kick_angles[i] = crandom() * 0.7;
 	}
 
+	AngleVectors (ent->client->v_angle, forward, right, up);
+
 	for (i=0 ; i<shots ; i++)
 	{
 		// get start / end positions
-		AngleVectors (ent->client->v_angle, forward, right, up);
 		r = 7 + crandom()*4;
 		u = crandom()*4;
 		VectorSet(offset, 0, r, u + ent->viewheight-8);

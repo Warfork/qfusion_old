@@ -21,11 +21,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "g_local.h"
 
-
 /*QUAKED func_group (0 0 0) ?
 Used to group brushes together just for editor convenience.
 */
-
 
 //=====================================================
 
@@ -290,13 +288,13 @@ void BecomeExplosion1 (edict_t *self)
 {
 //ZOID
 	//flags are important
-	if (strcmp(self->classname, "item_flag_team1") == 0) {
+	if (strcmp(self->classname, "team_CTF_redflag") == 0) {
 		CTFResetFlag(CTF_TEAM1); // this will free self!
 		gi.bprintf(PRINT_HIGH, "The %s flag has returned!\n",
 			CTFTeamName(CTF_TEAM1));
 		return;
 	}
-	if (strcmp(self->classname, "item_flag_team2") == 0) {
+	if (strcmp(self->classname, "team_CTF_blueflag") == 0) {
 		CTFResetFlag(CTF_TEAM2); // this will free self!
 		gi.bprintf(PRINT_HIGH, "The %s flag has returned!\n",
 			CTFTeamName(CTF_TEAM1));
@@ -482,7 +480,7 @@ void SP_point_combat (edict_t *self)
 	VectorSet (self->maxs, 8, 8, 16);
 	self->svflags = SVF_NOCLIENT;
 	gi.linkentity (self);
-};
+}
 
 
 /*QUAKED viewthing (0 .5 .8) (-8 -8 -8) (8 8 8)
@@ -532,7 +530,7 @@ Used as a positional target for spotlights, etc.
 void SP_info_null (edict_t *self)
 {
 	G_FreeEdict (self);
-};
+}
 
 
 /*QUAKED info_notnull (0 0.5 0) (-4 -4 -4) (4 4 4)
@@ -542,7 +540,7 @@ void SP_info_notnull (edict_t *self)
 {
 	VectorCopy (self->s.origin, self->absmin);
 	VectorCopy (self->s.origin, self->absmax);
-};
+}
 
 /*QUAKED info_camp (0 0.5 0) (-4 -4 -4) (4 4 4)
 Used as a positional target for calculations in the utilities (spotlights, etc), but removed during gameplay.
@@ -572,7 +570,7 @@ This is just a solid wall if not inhibited
 
 TRIGGER_SPAWN	the wall will not be present until triggered
 				it will then blink in to existance; it will
-				kill anything that was in it's way
+				kill anything that was in its way
 
 TOGGLE			only valid for TRIGGER_SPAWN walls
 				this allows the wall to be turned on and off
@@ -655,14 +653,13 @@ A bmodel that just sits there, doing nothing.  Can be used for conditional walls
 */
 void SP_func_static (edict_t *ent)
 {
-	ent->solid = SOLID_BSP;
+	G_InitMover ( ent );
 	ent->movetype = MOVETYPE_NONE;
-	gi.setmodel (ent, ent->model);
 	gi.linkentity (ent);
 }
 
 /*QUAKED func_object (0 .5 .8) ? TRIGGER_SPAWN ANIMATED ANIMATED_FAST
-This is solid bmodel that will fall if it's support it removed.
+This is solid bmodel that will fall if its support it removed.
 */
 
 void func_object_touch (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *surf)
@@ -1050,7 +1047,7 @@ void SP_misc_blackhole (edict_t *ent)
 	VectorSet (ent->mins, -64, -64, 0);
 	VectorSet (ent->maxs, 64, 64, 8);
 	ent->s.modelindex = gi.modelindex ("models/objects/black/tris.md2");
-	ent->s.renderfx = RF_TRANSLUCENT;
+//	ent->s.renderfx = RF_TRANSLUCENT;
 	ent->use = misc_blackhole_use;
 	ent->think = misc_blackhole_think;
 	ent->nextthink = level.time + 2 * FRAMETIME;
@@ -1143,7 +1140,7 @@ void SP_misc_easterchick2 (edict_t *ent)
 
 /*QUAKED monster_commander_body (1 .5 0) (-32 -32 0) (32 32 48)
 Not really a monster, this is the Tank Commander's decapitated body.
-There should be a item_commander_head that has this as it's target.
+There should be a item_commander_head that has this as its target.
 */
 
 void commander_body_think (edict_t *self)
@@ -1795,4 +1792,104 @@ void SP_misc_teleporter_dest (edict_t *ent)
 void SP_misc_model (edict_t *ent)
 {
 	G_FreeEdict (ent);
+}
+
+//===========================================================
+
+void misc_portal_surface_think (edict_t *ent)
+{
+	VectorCopy ( ent->pos1, ent->s.old_origin );
+	ent->nextthink = level.time + FRAMETIME;
+}
+
+void locateCamera (edict_t *ent) 
+{
+	vec3_t		dir;
+	edict_t		*target;
+	edict_t		*owner;
+
+	owner = G_PickTarget (ent->target);
+	if ( !owner ) {
+		gi.dprintf ( "Couldn't find target for misc_partal_surface\n" );
+		G_FreeEdict (ent);
+		return;
+	}
+
+	ent->s.modelindex = owner->s.number;
+
+	// modelindex2 holds the rotate speed
+	if ( owner->spawnflags & 1 ) {
+		ent->s.modelindex2 = 25;
+	} else if ( owner->spawnflags & 2 ) {
+		ent->s.modelindex2 = 75;
+	}
+
+	// swing camera ?
+	if ( owner->spawnflags & 4 ) {
+		// set to 0 for no rotation at all
+		ent->s.modelindex3 = 0;
+	}
+	else {
+		ent->s.modelindex3 = 1;
+	}
+
+	// clientNum holds the rotate offset
+	ent->s.modelindex = owner->s.number;
+
+	ent->think = misc_portal_surface_think;
+	ent->nextthink = level.time + FRAMETIME;
+	VectorCopy ( owner->s.origin, ent->pos1 );
+	VectorCopy( owner->s.origin, ent->s.old_origin );
+
+	// see if the portal_camera has a target
+	if ( owner->target ) {
+		target = G_PickTarget ( owner->target );
+	} else {
+		target = NULL;
+	}
+
+	if ( target ) {
+		VectorSubtract( target->s.origin, owner->s.origin, dir );
+		VectorNormalize( dir );
+	} else {
+		G_SetMovedir( owner->s.angles, dir );
+	}
+
+	ent->s.skinnum = G_DirToByte( dir );
+	ent->s.frame = owner->count;
+}
+
+/*QUAKED misc_portal_surface (0 0 1) (-8 -8 -8) (8 8 8)
+The portal surface nearest this entity will show a view from the targeted misc_portal_camera, or a mirror view if untargeted.
+This must be within 64 world units of the surface!
+*/
+void SP_misc_portal_surface(edict_t *ent) 
+{
+	VectorClear( ent->mins );
+	VectorClear( ent->maxs );
+	gi.linkentity ( ent );
+
+	ent->s.modelindex = 1;
+	ent->s.renderfx = RF_PORTALSURFACE;
+
+	// mirror
+	if ( !ent->target ) {
+		ent->think = misc_portal_surface_think;
+		ent->nextthink = level.time + FRAMETIME;
+		VectorCopy ( ent->s.origin, ent->pos1 );
+		VectorCopy( ent->s.origin, ent->s.old_origin );
+	} else {
+		ent->think = locateCamera;
+		ent->nextthink = level.time + 1;
+	}
+}
+
+void SP_misc_portal_camera(edict_t *ent) 
+{
+	VectorClear( ent->mins );
+	VectorClear( ent->maxs );
+	gi.linkentity ( ent );
+
+	ent->svflags = SVF_NOCLIENT;
+	ent->count = (int)(st.roll / 360.0f * 256.0f);
 }

@@ -19,11 +19,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "ui_local.h"
-#include "ui_keycodes.h"
 
 void M_Menu_LoadGame_f (void);
 void M_Menu_SaveGame_f (void);
-void M_Menu_Credits_f (void);
 
 /*
 =============================================================================
@@ -41,7 +39,6 @@ static menuaction_s		s_medium_game_action;
 static menuaction_s		s_hard_game_action;
 static menuaction_s		s_load_game_action;
 static menuaction_s		s_save_game_action;
-static menuaction_s		s_credits_action;
 static menuseparator_s	s_blankline;
 
 static void StartGame( void )
@@ -86,15 +83,12 @@ static void SaveGameFunc( void *unused )
 	M_Menu_SaveGame_f();
 }
 
-static void CreditsFunc( void *unused )
-{
-	M_Menu_Credits_f();
-}
 
 void Game_MenuInit( void )
 {
+	int w, h;
 	int y = 0;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
 	static const char *difficulty_names[] =
 	{
@@ -104,25 +98,29 @@ void Game_MenuInit( void )
 		0
 	};
 
-	s_game_menu.x = trap_GetWidth() * 0.50;
+	w = uis.vidWidth;
+	h = uis.vidHeight;
+
+	s_game_menu.x = w / 2;
+	s_game_menu.y = h / 2 - 88;
 	s_game_menu.nitems = 0;
 
 	s_easy_game_action.generic.type	= MTYPE_ACTION;
-	s_easy_game_action.generic.flags  = QMF_LEFT_JUSTIFY;
+	s_easy_game_action.generic.flags  = QMF_CENTERED;
 	s_easy_game_action.generic.x		= 0;
 	s_easy_game_action.generic.y		= y;
 	s_easy_game_action.generic.name	= "easy";
 	s_easy_game_action.generic.callback = EasyGameFunc;
 
 	s_medium_game_action.generic.type	= MTYPE_ACTION;
-	s_medium_game_action.generic.flags  = QMF_LEFT_JUSTIFY;
+	s_medium_game_action.generic.flags  = QMF_CENTERED;
 	s_medium_game_action.generic.x		= 0;
 	s_medium_game_action.generic.y		= y+=y_offset;
 	s_medium_game_action.generic.name	= "medium";
 	s_medium_game_action.generic.callback = MediumGameFunc;
 
 	s_hard_game_action.generic.type	= MTYPE_ACTION;
-	s_hard_game_action.generic.flags  = QMF_LEFT_JUSTIFY;
+	s_hard_game_action.generic.flags  = QMF_CENTERED;
 	s_hard_game_action.generic.x		= 0;
 	s_hard_game_action.generic.y		= y+=y_offset;
 	s_hard_game_action.generic.name	= "hard";
@@ -132,25 +130,18 @@ void Game_MenuInit( void )
 	y+=y_offset;
 
 	s_load_game_action.generic.type	= MTYPE_ACTION;
-	s_load_game_action.generic.flags  = QMF_LEFT_JUSTIFY;
+	s_load_game_action.generic.flags  = QMF_CENTERED;
 	s_load_game_action.generic.x		= 0;
 	s_load_game_action.generic.y		= y+=y_offset;
 	s_load_game_action.generic.name	= "load game";
 	s_load_game_action.generic.callback = LoadGameFunc;
 
 	s_save_game_action.generic.type	= MTYPE_ACTION;
-	s_save_game_action.generic.flags  = QMF_LEFT_JUSTIFY;
+	s_save_game_action.generic.flags  = QMF_CENTERED;
 	s_save_game_action.generic.x		= 0;
 	s_save_game_action.generic.y		= y+=y_offset;
 	s_save_game_action.generic.name	= "save game";
 	s_save_game_action.generic.callback = SaveGameFunc;
-
-	s_credits_action.generic.type	= MTYPE_ACTION;
-	s_credits_action.generic.flags  = QMF_LEFT_JUSTIFY;
-	s_credits_action.generic.x		= 0;
-	s_credits_action.generic.y		= y+=y_offset;
-	s_credits_action.generic.name	= "credits";
-	s_credits_action.generic.callback = CreditsFunc;
 
 	Menu_AddItem( &s_game_menu, ( void * ) &s_easy_game_action );
 	Menu_AddItem( &s_game_menu, ( void * ) &s_medium_game_action );
@@ -159,9 +150,10 @@ void Game_MenuInit( void )
 	Menu_AddItem( &s_game_menu, ( void * ) &s_load_game_action );
 	Menu_AddItem( &s_game_menu, ( void * ) &s_save_game_action );
 	Menu_AddItem( &s_game_menu, ( void * ) &s_blankline );
-	Menu_AddItem( &s_game_menu, ( void * ) &s_credits_action );
 
 	Menu_Center( &s_game_menu );
+
+	Menu_Init ( &s_game_menu );
 }
 
 void Game_MenuDraw( void )
@@ -178,7 +170,7 @@ const char *Game_MenuKey( int key )
 void M_Menu_Game_f (void)
 {
 	Game_MenuInit();
-	M_PushMenu( Game_MenuDraw, Game_MenuKey );
+	M_PushMenu( &s_game_menu, Game_MenuDraw, Game_MenuKey );
 	m_game_cursor = 1;
 }
 
@@ -193,6 +185,7 @@ LOADGAME MENU
 #define	MAX_SAVEGAMES	15
 
 static menuframework_s	s_savegame_menu;
+static menuaction_s		s_savegame_actions[MAX_SAVEGAMES];
 
 static menuframework_s	s_loadgame_menu;
 static menuaction_s		s_loadgame_actions[MAX_SAVEGAMES];
@@ -237,12 +230,13 @@ void LoadGame_MenuInit( void )
 {
 	int i;
 	int w, h;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
+	w = uis.vidWidth;
+	h = uis.vidHeight;
 
-	s_loadgame_menu.x = w / 2 - 120;
-	s_loadgame_menu.y = h / 2 - 58;
+	s_loadgame_menu.x = w / 2;
+	s_loadgame_menu.y = h / 2 - 88;
 	s_loadgame_menu.nitems = 0;
 
 	Create_Savestrings();
@@ -250,7 +244,7 @@ void LoadGame_MenuInit( void )
 	for ( i = 0; i < MAX_SAVEGAMES; i++ )
 	{
 		s_loadgame_actions[i].generic.name			= m_savestrings[i];
-		s_loadgame_actions[i].generic.flags			= QMF_LEFT_JUSTIFY;
+		s_loadgame_actions[i].generic.flags			= QMF_CENTERED;
 		s_loadgame_actions[i].generic.localdata[0]	= i;
 		s_loadgame_actions[i].generic.callback		= LoadGameCallback;
 
@@ -263,6 +257,8 @@ void LoadGame_MenuInit( void )
 
 		Menu_AddItem( &s_loadgame_menu, &s_loadgame_actions[i] );
 	}
+
+	Menu_Init ( &s_loadgame_menu );
 }
 
 void LoadGame_MenuDraw( void )
@@ -273,7 +269,7 @@ void LoadGame_MenuDraw( void )
 
 const char *LoadGame_MenuKey( int key )
 {
-	if ( key == K_ESCAPE || key == K_ENTER )
+	if ( key == K_ESCAPE || key == K_ENTER || key == K_MOUSE1 || key == K_MOUSE2 )
 	{
 		s_savegame_menu.cursor = s_loadgame_menu.cursor - 1;
 		if ( s_savegame_menu.cursor < 0 )
@@ -285,7 +281,7 @@ const char *LoadGame_MenuKey( int key )
 void M_Menu_LoadGame_f (void)
 {
 	LoadGame_MenuInit();
-	M_PushMenu( LoadGame_MenuDraw, LoadGame_MenuKey );
+	M_PushMenu( &s_loadgame_menu, LoadGame_MenuDraw, LoadGame_MenuKey );
 }
 
 
@@ -296,8 +292,6 @@ SAVEGAME MENU
 
 =============================================================================
 */
-static menuframework_s	s_savegame_menu;
-static menuaction_s		s_savegame_actions[MAX_SAVEGAMES];
 
 void SaveGameCallback( void *self )
 {
@@ -317,12 +311,13 @@ void SaveGame_MenuInit( void )
 {
 	int i;
 	int w, h;
-	int y_offset = BIG_CHAR_HEIGHT - 2;
+	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	trap_Vid_GetCurrentInfo ( &w, &h );
+	w = uis.vidWidth;
+	h = uis.vidHeight;
 
-	s_savegame_menu.x = w / 2 - 120;
-	s_savegame_menu.y = h / 2 - 58;
+	s_savegame_menu.x = w / 2;
+	s_savegame_menu.y = h / 2 - 88;
 	s_savegame_menu.nitems = 0;
 
 	Create_Savestrings();
@@ -332,7 +327,7 @@ void SaveGame_MenuInit( void )
 	{
 		s_savegame_actions[i].generic.name = m_savestrings[i+1];
 		s_savegame_actions[i].generic.localdata[0] = i+1;
-		s_savegame_actions[i].generic.flags = QMF_LEFT_JUSTIFY;
+		s_savegame_actions[i].generic.flags = QMF_CENTERED;
 		s_savegame_actions[i].generic.callback = SaveGameCallback;
 
 		s_savegame_actions[i].generic.x = 0;
@@ -342,11 +337,13 @@ void SaveGame_MenuInit( void )
 
 		Menu_AddItem( &s_savegame_menu, &s_savegame_actions[i] );
 	}
+
+	Menu_Init ( &s_savegame_menu );
 }
 
 const char *SaveGame_MenuKey( int key )
 {
-	if ( key == K_ENTER || key == K_ESCAPE )
+	if ( key == K_ENTER || key == K_ESCAPE || key == K_MOUSE1 || key == K_MOUSE2 )
 	{
 		s_loadgame_menu.cursor = s_savegame_menu.cursor - 1;
 		if ( s_loadgame_menu.cursor < 0 )
@@ -357,10 +354,10 @@ const char *SaveGame_MenuKey( int key )
 
 void M_Menu_SaveGame_f (void)
 {
-	if (!trap_Com_ServerState())
+	if (!trap_GetServerState())
 		return;		// not playing a game
 
 	SaveGame_MenuInit();
-	M_PushMenu( SaveGame_MenuDraw, SaveGame_MenuKey );
+	M_PushMenu( &s_savegame_menu, SaveGame_MenuDraw, SaveGame_MenuKey );
 	Create_Savestrings ();
 }

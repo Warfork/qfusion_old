@@ -21,8 +21,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "winsock.h"
 #include "wsipx.h"
-#include "qcommon.h"
-#include "huff.h"
+#include "../qcommon/qcommon.h"
 
 #define	MAX_LOOPBACK	4
 
@@ -316,7 +315,7 @@ qboolean	NET_GetLoopPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_me
 }
 
 
-void NET_SendLoopPacket (netsrc_t sock, int length, void *data, netadr_t to)
+void NET_SendLoopPacket (netsrc_t sock, int length, void *data)
 {
 	int		i;
 	loopback_t	*loop;
@@ -387,7 +386,7 @@ qboolean	NET_GetPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_messag
 			continue;
 		}
 
-		HuffDecode (huffbuff, net_message->data, ret, &net_message->cursize);
+		net_message->cursize = ret;
 		return true;
 	}
 
@@ -401,11 +400,10 @@ void NET_SendPacket (netsrc_t sock, int length, void *data, netadr_t to)
 	int		ret;
 	struct sockaddr	addr;
 	int		net_socket;
-	int		outlen;
 
 	if ( to.type == NA_LOOPBACK )
 	{
-		NET_SendLoopPacket (sock, length, data, to);
+		NET_SendLoopPacket (sock, length, data);
 		return;
 	}
 
@@ -438,9 +436,7 @@ void NET_SendPacket (netsrc_t sock, int length, void *data, netadr_t to)
 
 	NetadrToSockadr (&to, &addr);
 
-	HuffEncode (data, huffbuff, length, &outlen);
-
-    ret = sendto (net_socket, huffbuff, outlen, 0, &addr, sizeof(addr) );
+    ret = sendto (net_socket, huffbuff, length, 0, &addr, sizeof(addr) );
 
 	if (ret == -1)
 	{
@@ -468,7 +464,7 @@ void NET_SendPacket (netsrc_t sock, int length, void *data, netadr_t to)
 			}
 			else
 			{
-				Com_Error (ERR_DROP, "NET_SendPacket ERROR: %s to %s\n", 
+				Com_Error (ERR_DROP, "NET_SendPacket ERROR: %s to %s", 
 						NET_ErrorString(), NET_AdrToString (&to));
 			}
 		}
@@ -514,7 +510,7 @@ int NET_IPSocket (char *net_interface, int port)
 		return 0;
 	}
 
-	if (!net_interface || !net_interface[0] || !stricmp(net_interface, "localhost"))
+	if (!net_interface || !net_interface[0] || !Q_stricmp(net_interface, "localhost"))
 		address.sin_addr.s_addr = INADDR_ANY;
 	else
 		NET_StringToSockaddr (net_interface, (struct sockaddr *)&address);
@@ -578,6 +574,7 @@ void NET_OpenIP (void)
 		port = Cvar_Get("ip_clientport", "0", CVAR_NOSET)->value;
 		if (!port)
 		{
+			srand(Sys_Milliseconds());
 			port = Cvar_Get("clientport", va("%i", PORT_CLIENT), CVAR_NOSET)->value;
 			if (!port)
 				port = PORT_ANY;
@@ -677,6 +674,7 @@ void NET_OpenIPX (void)
 		port = Cvar_Get("ipx_clientport", "0", CVAR_NOSET)->value;
 		if (!port)
 		{
+			srand(Sys_Milliseconds());
 			port = Cvar_Get("clientport", va("%i", PORT_CLIENT), CVAR_NOSET)->value;
 			if (!port)
 				port = PORT_ANY;
@@ -785,8 +783,6 @@ void NET_Init (void)
 	noipx = Cvar_Get ("noipx", "0", CVAR_NOSET);
 
 	net_shownet = Cvar_Get ("net_shownet", "0", 0);
-
-	HuffInit ();
 }
 
 

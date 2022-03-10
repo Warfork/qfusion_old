@@ -42,7 +42,7 @@ int			s_registration_sequence;
 channel_t   channels[MAX_CHANNELS];
 
 qboolean	snd_initialized = false;
-int			sound_started=0;
+int			sound_started = 0;
 
 dma_t		dma;
 
@@ -77,7 +77,7 @@ cvar_t		*s_testsound;
 cvar_t		*s_khz;
 cvar_t		*s_show;
 cvar_t		*s_mixahead;
-cvar_t		*s_primary;
+cvar_t		*s_swapstereo;
 
 
 int		s_rawend;
@@ -97,13 +97,13 @@ void S_SoundInfo_f(void)
 		return;
 	}
 	
-    Com_Printf("%5d stereo\n", dma.channels - 1);
-    Com_Printf("%5d samples\n", dma.samples);
-    Com_Printf("%5d samplepos\n", dma.samplepos);
-    Com_Printf("%5d samplebits\n", dma.samplebits);
-    Com_Printf("%5d submission_chunk\n", dma.submission_chunk);
-    Com_Printf("%5d speed\n", dma.speed);
-    Com_Printf("0x%x dma buffer\n", dma.buffer);
+    Com_Printf ("%5d stereo\n", dma.channels - 1);
+    Com_Printf ("%5d samples\n", dma.samples);
+    Com_Printf ("%5d samplepos\n", dma.samplepos);
+    Com_Printf ("%5d samplebits\n", dma.samplebits);
+    Com_Printf ("%5d submission_chunk\n", dma.submission_chunk);
+    Com_Printf ("%5d speed\n", dma.speed);
+    Com_Printf ("0x%x dma buffer\n", dma.buffer);
 }
 
 
@@ -117,7 +117,7 @@ void S_Init (void)
 {
 	cvar_t	*cv;
 
-	Com_Printf("\n------- sound initialization -------\n");
+	Com_Printf ("\n------- sound initialization -------\n");
 
 	cv = Cvar_Get ("s_initsound", "1", 0);
 	if (!cv->value)
@@ -128,14 +128,14 @@ void S_Init (void)
 		s_musicvolume = Cvar_Get ("s_musicvolume", "0.25", CVAR_ARCHIVE);
 		s_khz = Cvar_Get ("s_khz", "11", CVAR_ARCHIVE);
 		s_mixahead = Cvar_Get ("s_mixahead", "0.2", CVAR_ARCHIVE);
-		s_show = Cvar_Get ("s_show", "0", 0);
+		s_show = Cvar_Get ("s_show", "0", CVAR_CHEAT);
 		s_testsound = Cvar_Get ("s_testsound", "0", 0);
-		s_primary = Cvar_Get ("s_primary", "0", CVAR_ARCHIVE);	// win32 specific
+		s_swapstereo = Cvar_Get ("s_swapstereo", "0", CVAR_ARCHIVE);
 
-		Cmd_AddCommand("play", S_Play);
-		Cmd_AddCommand("stopsound", S_StopAllSounds);
-		Cmd_AddCommand("soundlist", S_SoundList);
-		Cmd_AddCommand("soundinfo", S_SoundInfo_f);
+		Cmd_AddCommand ("play", S_Play);
+		Cmd_AddCommand ("stopsound", S_StopAllSounds);
+		Cmd_AddCommand ("soundlist", S_SoundList);
+		Cmd_AddCommand ("soundinfo", S_SoundInfo_f);
 
 		if (!SNDDMA_Init())
 			return;
@@ -154,7 +154,7 @@ void S_Init (void)
 		S_StopAllSounds ();
 	}
 
-	Com_Printf("------------------------------------\n");
+	Com_Printf ("------------------------------------\n");
 }
 
 
@@ -174,10 +174,10 @@ void S_Shutdown(void)
 
 	sound_started = 0;
 
-	Cmd_RemoveCommand("play");
-	Cmd_RemoveCommand("stopsound");
-	Cmd_RemoveCommand("soundlist");
-	Cmd_RemoveCommand("soundinfo");
+	Cmd_RemoveCommand ("play");
+	Cmd_RemoveCommand ("stopsound");
+	Cmd_RemoveCommand ("soundlist");
+	Cmd_RemoveCommand ("soundinfo");
 
 	// free all sounds
 	for (i=0, sfx=known_sfx ; i < num_sfx ; i++,sfx++)
@@ -209,9 +209,9 @@ sfx_t *S_FindName (char *name, qboolean create)
 	sfx_t	*sfx;
 
 	if (!name)
-		Com_Error (ERR_FATAL, "S_FindName: NULL\n");
+		Com_Error (ERR_FATAL, "S_FindName: NULL");
 	if (!name[0])
-		Com_Error (ERR_FATAL, "S_FindName: empty name\n");
+		Com_Error (ERR_FATAL, "S_FindName: empty name");
 
 	if (strlen(name) >= MAX_QPATH)
 		Com_Error (ERR_FATAL, "Sound name too long: %s", name);
@@ -380,8 +380,8 @@ channel_t *S_PickChannel(int entnum, int entchannel)
     int			life_left;
 	channel_t	*ch;
 
-	if (entchannel<0)
-		Com_Error (ERR_DROP, "S_PickChannel: entchannel<0");
+	if (entchannel < 0)
+		Com_Error (ERR_DROP, "S_PickChannel: entchannel < 0");
 
 // Check for replacement sound, or find the best one to replace
     first_to_die = -1;
@@ -437,15 +437,15 @@ void S_SpatializeOrigin (vec3_t origin, float master_vol, float dist_mult, int *
 	}
 
 // calculate stereo seperation and distance attenuation
-	VectorSubtract(origin, listener_origin, source_vec);
+	VectorSubtract (origin, listener_origin, source_vec);
 
-	dist = VectorNormalize(source_vec);
+	dist = VectorNormalize (source_vec);
 	dist -= SOUND_FULLVOLUME;
 	if (dist < 0)
 		dist = 0;			// close enough to be at full volume
 	dist *= dist_mult;		// different attenuation levels
 	
-	dot = DotProduct(listener_right, source_vec);
+	dot = DotProduct (listener_right, source_vec);
 
 	if (dma.channels == 1 || !dist_mult)
 	{ // no attenuation = no spatialization
@@ -455,7 +455,7 @@ void S_SpatializeOrigin (vec3_t origin, float master_vol, float dist_mult, int *
 	else
 	{
 		rscale = 0.5 * (1.0 + dot);
-		lscale = 0.5*(1.0 - dot);
+		lscale = 0.5 * (1.0 - dot);
 	}
 
 	// add in distance effect
@@ -562,6 +562,12 @@ void S_IssuePlaysound (playsound_t *ps)
 		S_FreePlaysound (ps);
 		return;
 	}
+	sc = S_LoadSound (ps->sfx);
+	if (!sc)
+	{
+		S_FreePlaysound (ps);
+		return;
+	}
 
 	// spatialize
 	if (ps->attenuation == ATTN_STATIC)
@@ -578,7 +584,6 @@ void S_IssuePlaysound (playsound_t *ps)
 	S_Spatialize(ch);
 
 	ch->pos = 0;
-	sc = S_LoadSound (ch->sfx);
     ch->end = paintedtime + sc->length;
 
 	// free the playsound
@@ -707,7 +712,7 @@ void S_StartSound(vec3_t origin, int entnum, int entchannel, sfx_t *sfx, float f
 	}
 	else
 	{
-		s_beginofs-=10;
+		s_beginofs -= 10;
 	}
 
 	if (!timeofs)
@@ -1032,10 +1037,10 @@ void S_Update(vec3_t origin, vec3_t forward, vec3_t right, vec3_t up)
 	if (s_musicvolume->modified)
 		S_InitMusicScaletable ();
 
-	VectorCopy(origin, listener_origin);
-	VectorCopy(forward, listener_forward);
-	VectorCopy(right, listener_right);
-	VectorCopy(up, listener_up);
+	VectorCopy (origin, listener_origin);
+	VectorCopy (forward, listener_forward);
+	VectorCopy (right, listener_right);
+	VectorCopy (up, listener_up);
 
 	combine = NULL;
 
@@ -1201,14 +1206,14 @@ void S_SoundList(void)
 				Com_Printf ("L");
 			else
 				Com_Printf (" ");
-			Com_Printf("(%2db) %6i : %s\n",sc->width*8,  size, sfx->name);
+			Com_Printf ("(%2db) %6i : %s\n",sc->width*8,  size, sfx->name);
 		}
 		else
 		{
 			if (sfx->name[0] == '*')
-				Com_Printf("  placeholder : %s\n", sfx->name);
+				Com_Printf ("  placeholder : %s\n", sfx->name);
 			else
-				Com_Printf("  not loaded  : %s\n", sfx->name);
+				Com_Printf ("  not loaded  : %s\n", sfx->name);
 		}
 	}
 	Com_Printf ("Total resident: %i\n", total);

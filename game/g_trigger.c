@@ -219,7 +219,7 @@ Acts as an intermediary for an action that takes multiple inputs.
 
 If nomessage is not set, t will print "1 more.. " etc when triggered and "sequence complete" when finished.
 
-After the counter has been triggered "count" times (default 2), it will fire all of it's targets and remove itself.
+After the counter has been triggered "count" times (default 2), it will fire all of its targets and remove itself.
 */
 
 void trigger_counter_use(edict_t *self, edict_t *other, edict_t *activator)
@@ -305,8 +305,7 @@ void trigger_push_touch (edict_t *self, edict_t *other, cplane_t *plane, csurfac
 	}
 
 	// no prediction
-	other->client->ps.pmove.pm_flags |= PMF_NO_PREDICTION;
-	other->client->jumppad_time = level.time + FRAMETIME*2;
+	other->client->jumppad_time = level.time;
 
 	VectorCopy ( self->movedir, other->velocity );
 
@@ -347,7 +346,7 @@ Any entity that touches this will be hurt.
 
 It does dmg points of damage each server frame
 
-SILENT			supresses playing the sound
+SILENT			suppresses playing the sound
 SLOW			changes the damage rate to once per second
 NO_PROTECTION	*nothing* stops the damage
 

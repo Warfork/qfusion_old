@@ -81,13 +81,11 @@ void CL_DrawInventory (void)
 	// repaint everything next frame
 	SCR_DirtyScreen ();
 
-	Draw_Pic (x, y+SMALL_CHAR_WIDTH, "inventory");
-
 	y += 24;
 	x += 24;
 
-	Draw_StringLen ( x, y,   "hotkey ### item", -1, FONT_SMALL, colorWhite );
-	Draw_StringLen ( x, y+SMALL_CHAR_HEIGHT, "------ --- ----", -1, FONT_SMALL, colorWhite );
+	Draw_String ( x, y,   "hotkey ### item", FONT_SMALL, colorWhite );
+	Draw_String ( x, y+SMALL_CHAR_HEIGHT, "------ --- ----", FONT_SMALL, colorWhite );
 
 	y += SMALL_CHAR_HEIGHT * 2;
 	for (i=top ; i<num && i < top+DISPLAY_ITEMS ; i++)
@@ -107,13 +105,13 @@ void CL_DrawInventory (void)
 			cl.configstrings[CS_ITEMS+item] );
 
 		if (item != selected)
-			Draw_StringLen ( x, y, string, -1, FONT_SMALL, colorYellow );
+			Draw_String ( x, y, string, FONT_SMALL, colorYellow );
 		else	// draw a blinky cursor by the selected item
 		{
 			if ( (int)(cls.realtime*10) & 1)
 				Draw_Char ( x-SMALL_CHAR_WIDTH, y, FONT_SMALL, 15, colorWhite );
 
-			Draw_StringLen ( x, y, string, -1, FONT_SMALL, colorWhite );
+			Draw_String ( x, y, string, FONT_SMALL, colorWhite );
 		}
 
 		y += SMALL_CHAR_HEIGHT;

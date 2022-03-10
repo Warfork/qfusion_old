@@ -22,97 +22,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 void SP_misc_teleporter_dest (edict_t *ent);
 
-//
-// Gross, ugly, disgustuing hack section
-//
-
-// this function is an ugly as hell hack to fix some map flaws
-//
-// the coop spawn spots on some maps are SNAFU.  There are coop spots
-// with the wrong targetname as well as spots with no name at all
-//
-// we use carnal knowledge of the maps to fix the coop spot targetnames to match
-// that of the nearest named single player spot
-
-static void SP_FixCoopSpots (edict_t *self)
-{
-	edict_t	*spot;
-	vec3_t	d;
-
-	spot = NULL;
-
-	while(1)
-	{
-		spot = G_Find(spot, FOFS(classname), "info_player_start");
-		if (!spot)
-			return;
-		if (!spot->targetname)
-			continue;
-		VectorSubtract(self->s.origin, spot->s.origin, d);
-		if (VectorLength(d) < 384)
-		{
-			if ((!self->targetname) || stricmp(self->targetname, spot->targetname) != 0)
-			{
-//				gi.dprintf("FixCoopSpots changed %s at %s targetname from %s to %s\n", self->classname, vtos(self->s.origin), self->targetname, spot->targetname);
-				self->targetname = spot->targetname;
-			}
-			return;
-		}
-	}
-}
-
-// now if that one wasn't ugly enough for you then try this one on for size
-// some maps don't have any coop spots at all, so we need to create them
-// where they should have been
-
-static void SP_CreateCoopSpots (edict_t *self)
-{
-	edict_t	*spot;
-
-	if(stricmp(level.mapname, "security") == 0)
-	{
-		spot = G_Spawn();
-		spot->classname = "info_player_coop";
-		spot->s.origin[0] = 188 - 64;
-		spot->s.origin[1] = -164;
-		spot->s.origin[2] = 80;
-		spot->targetname = "jail3";
-		spot->s.angles[1] = 90;
-
-		spot = G_Spawn();
-		spot->classname = "info_player_coop";
-		spot->s.origin[0] = 188 + 64;
-		spot->s.origin[1] = -164;
-		spot->s.origin[2] = 80;
-		spot->targetname = "jail3";
-		spot->s.angles[1] = 90;
-
-		spot = G_Spawn();
-		spot->classname = "info_player_coop";
-		spot->s.origin[0] = 188 + 128;
-		spot->s.origin[1] = -164;
-		spot->s.origin[2] = 80;
-		spot->targetname = "jail3";
-		spot->s.angles[1] = 90;
-
-		return;
-	}
-}
-
 
 /*QUAKED info_player_start (1 0 0) (-16 -16 -24) (16 16 32)
 The normal starting point for a level.
 */
 void SP_info_player_start(edict_t *self)
 {
-	if (!coop->value)
-		return;
-	if(stricmp(level.mapname, "security") == 0)
-	{
-		// invoke one of our gross, ugly, disgusting hacks
-		self->think = SP_CreateCoopSpots;
-		self->nextthink = level.time + FRAMETIME;
-	}
 }
 
 /*QUAKED info_player_deathmatch (1 0 1) (-16 -16 -24) (16 16 32)
@@ -135,30 +50,7 @@ potential spawning position for coop games
 void SP_info_player_coop(edict_t *self)
 {
 	if (!coop->value)
-	{
 		G_FreeEdict (self);
-		return;
-	}
-
-	if((stricmp(level.mapname, "jail2") == 0)   ||
-	   (stricmp(level.mapname, "jail4") == 0)   ||
-	   (stricmp(level.mapname, "mine1") == 0)   ||
-	   (stricmp(level.mapname, "mine2") == 0)   ||
-	   (stricmp(level.mapname, "mine3") == 0)   ||
-	   (stricmp(level.mapname, "mine4") == 0)   ||
-	   (stricmp(level.mapname, "lab") == 0)     ||
-	   (stricmp(level.mapname, "boss1") == 0)   ||
-	   (stricmp(level.mapname, "fact3") == 0)   ||
-	   (stricmp(level.mapname, "biggun") == 0)  ||
-	   (stricmp(level.mapname, "space") == 0)   ||
-	   (stricmp(level.mapname, "command") == 0) ||
-	   (stricmp(level.mapname, "power2") == 0) ||
-	   (stricmp(level.mapname, "strike") == 0))
-	{
-		// invoke one of our gross, ugly, disgusting hacks
-		self->think = SP_FixCoopSpots;
-		self->nextthink = level.time + FRAMETIME;
-	}
 }
 
 
@@ -166,7 +58,7 @@ void SP_info_player_coop(edict_t *self)
 The deathmatch intermission point will be at one of these
 Use 'angles' instead of 'angle', so you can set pitch or roll as well as yaw.  'pitch yaw roll'
 */
-void SP_info_player_intermission(void)
+void SP_info_player_intermission(edict_t *ent)
 {
 }
 
@@ -185,7 +77,6 @@ void ClientObituary (edict_t *self, edict_t *inflictor, edict_t *attacker)
 	char		message[64];
 	char		message2[64];
 	qboolean	ff;
-	int			gender = Q_PlayerGender ( self );
 
 	if (coop->value && attacker->client)
 		meansOfDeath |= MOD_FRIENDLY_FIRE;
@@ -195,7 +86,7 @@ void ClientObituary (edict_t *self, edict_t *inflictor, edict_t *attacker)
 		ff = meansOfDeath & MOD_FRIENDLY_FIRE;
 		mod = meansOfDeath & ~MOD_FRIENDLY_FIRE;
 
-		Q_Obituary ( self, attacker, mod, message, message2 );
+		Q_Obituary ( self, G_PlayerGender ( self ), attacker, mod, message, message2 );
 
 		// duplicate message at server console for logging
 		if ( attacker && attacker->client ) {
@@ -488,6 +379,12 @@ void InitClientPersistant (gclient_t *client)
 	memset (&client->pers, 0, sizeof(client->pers));
 
 	item = FindItem("Blaster");
+	client->pers.inventory[ITEM_INDEX(item)] = 1;
+
+	item = FindItem("Bullets");
+	client->pers.inventory[ITEM_INDEX(item)] = 50;
+
+	item = FindItem("Machinegun");
 	client->pers.selected_item = ITEM_INDEX(item);
 	client->pers.inventory[client->pers.selected_item] = 1;
 
@@ -497,8 +394,10 @@ void InitClientPersistant (gclient_t *client)
 //ZOID
 
 //ZOID
-	item = FindItem("Grapple");
-	client->pers.inventory[ITEM_INDEX(item)] = 1;
+	if ( ctf->value ) {
+		item = FindItem("Grapple");
+		client->pers.inventory[ITEM_INDEX(item)] = 1;
+	}
 //ZOID
 
 	client->pers.health			= 100;
@@ -666,7 +565,12 @@ edict_t *SelectRandomDeathmatchSpawnPoint (void)
 		spot1 = spot2 = NULL;
 	}
 	else
-		count -= 2;
+	{
+		if (spot1)
+			count--;
+		if (spot2 && spot2 != spot1)
+			count--;
+	}
 
 	selection = rand() % count;
 
@@ -927,8 +831,8 @@ a deathmatch.
 */
 void PutClientInServer (edict_t *ent)
 {
-	vec3_t	mins = {-16, -16, -24};
-	vec3_t	maxs = {16, 16, 32};
+	vec3_t	mins = {-15, -15, -24};
+	vec3_t	maxs = {15, 15, 32};
 	int		index;
 	vec3_t	spawn_origin, spawn_angles;
 	gclient_t	*client;
@@ -1195,7 +1099,7 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo)
 
 	// set name
 	s = Info_ValueForKey (userinfo, "name");
-	strncpy (ent->client->pers.netname, s, sizeof(ent->client->pers.netname)-1);
+	Q_strncpyz (ent->client->pers.netname, s, sizeof(ent->client->pers.netname));
 
 	// set skin
 	s = Info_ValueForKey (userinfo, "skin");
@@ -1237,7 +1141,7 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo)
 	}
 
 	// save off the userinfo in case we want to check something later
-	strncpy (ent->client->pers.userinfo, userinfo, sizeof(ent->client->pers.userinfo)-1);
+	Q_strncpyz (ent->client->pers.userinfo, userinfo, sizeof(ent->client->pers.userinfo));
 }
 
 
@@ -1351,23 +1255,6 @@ trace_t	PM_trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end)
 		return gi.trace (start, mins, maxs, end, pm_passent, MASK_PLAYERSOLID);
 	else
 		return gi.trace (start, mins, maxs, end, pm_passent, MASK_DEADSOLID);
-}
-
-unsigned CheckBlock (void *b, int c)
-{
-	int	v,i;
-	v = 0;
-	for (i=0 ; i<c ; i++)
-		v+= ((byte *)b)[i];
-	return v;
-}
-void PrintPmove (pmove_t *pm)
-{
-	unsigned	c1, c2;
-
-	c1 = CheckBlock (&pm->s, sizeof(pm->s));
-	c2 = CheckBlock (&pm->cmd, sizeof(pm->cmd));
-	Com_Printf ("sv %3i:%i %i\n", pm->cmd.impulse, c1, c2);
 }
 
 /*

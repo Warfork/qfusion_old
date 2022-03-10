@@ -81,6 +81,7 @@ void SP_target_character (edict_t *ent);
 void SP_target_string (edict_t *ent);
 void SP_target_location (edict_t *self);
 void SP_target_position (edict_t *self);
+void SP_target_print (edict_t *self);
 
 void SP_worldspawn (edict_t *ent);
 void SP_viewthing (edict_t *ent);
@@ -113,6 +114,8 @@ void SP_misc_eastertank (edict_t *self);
 void SP_misc_easterchick (edict_t *self);
 void SP_misc_easterchick2 (edict_t *self);
 void SP_misc_model (edict_t *ent);
+void SP_misc_portal_surface (edict_t *ent);
+void SP_misc_portal_camera (edict_t *ent);
 
 void SP_monster_berserk (edict_t *self);
 void SP_monster_gladiator (edict_t *self);
@@ -206,6 +209,7 @@ spawn_t	spawns[] = {
 	{"target_string", SP_target_string},
 	{"target_location", SP_target_location},
 	{"target_position", SP_target_position},
+	{"target_print", SP_target_print},
 
 	{"worldspawn", SP_worldspawn},
 	{"viewthing", SP_viewthing},
@@ -248,6 +252,8 @@ spawn_t	spawns[] = {
 	{"misc_easterchick", SP_misc_easterchick},
 	{"misc_easterchick2", SP_misc_easterchick2},
 	{"misc_model", SP_misc_model},
+	{"misc_portal_surface", SP_misc_portal_surface},
+	{"misc_portal_camera", SP_misc_portal_camera},
 
 #if 0 // remove monster code
 	{"monster_berserk", SP_monster_berserk},
@@ -452,7 +458,7 @@ char *ED_ParseEdict (char *data, edict_t *ent)
 		if (!data)
 			gi.error ("ED_ParseEntity: EOF without closing brace");
 
-		strncpy (keyname, com_token, sizeof(keyname)-1);
+		Q_strncpyz (keyname, com_token, sizeof(keyname));
 		
 	// parse value	
 		com_token = COM_Parse (&data);
@@ -549,10 +555,7 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 	float		skill_level;
 
 	skill_level = floor (skill->value);
-	if (skill_level < 0)
-		skill_level = 0;
-	if (skill_level > 3)
-		skill_level = 3;
+	clamp (skill_level, 0, 3);
 	if (skill->value != skill_level)
 		gi.cvar_forceset("skill", va("%f", skill_level));
 
@@ -563,8 +566,8 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 	memset (&level, 0, sizeof(level));
 	memset (g_edicts, 0, game.maxentities * sizeof (g_edicts[0]));
 
-	strncpy (level.mapname, mapname, sizeof(level.mapname)-1);
-	strncpy (game.spawnpoint, spawnpoint, sizeof(game.spawnpoint)-1);
+	Q_strncpyz (level.mapname, mapname, sizeof(level.mapname));
+	Q_strncpyz (game.spawnpoint, spawnpoint, sizeof(game.spawnpoint));
 
 	// set client fields on player ents
 	for (i=0 ; i<game.maxclients ; i++)
@@ -589,10 +592,6 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 			ent = G_Spawn ();
 		entities = ED_ParseEdict (entities, ent);
 		
-		// yet another map hack
-		if (!stricmp(level.mapname, "command") && !stricmp(ent->classname, "trigger_once") && !stricmp(ent->model, "*27"))
-			ent->spawnflags &= ~SPAWNFLAG_NOT_HARD;
-
 		// remove things (except the world) from different skill levels or deathmatch
 		if (ent != g_edicts)
 		{
@@ -672,127 +671,9 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 
 #endif
 
-char *single_statusbar = 
-"yb	-24 "
+char *single_statusbar = "single";
 
-// health
-"xv	0 "
-"hnum "
-"xv	50 "
-"pic 0 "
-
-// ammo
-"if 2 "
-"	xv	100 "
-"	anum "
-"	xv	150 "
-"	pic 2 "
-"endif "
-
-// armor
-"if 4 "
-"	xv	200 "
-"	rnum "
-"	xv	250 "
-"	pic 4 "
-"endif "
-
-// selected item
-"if 6 "
-"	xv	296 "
-"	pic 6 "
-"endif "
-
-"yb	-50 "
-
-// picked up item
-"if 7 "
-"	xv	0 "
-"	pic 7 "
-"	xv	26 "
-"	yb	-42 "
-"	stat_string 8 "
-"	yb	-50 "
-"endif "
-
-// timer
-"if 9 "
-"	xv	262 "
-"	num	2	10 "
-"	xv	296 "
-"	pic	9 "
-"endif "
-
-//  help / weapon icon 
-"if 11 "
-"	xv	148 "
-"	pic	11 "
-"endif "
-;
-
-char *dm_statusbar =
-"yb	-24 "
-
-// health
-"xv	0 "
-"hnum "
-"xv	50 "
-"pic 0 "
-
-// ammo
-"if 2 "
-"	xv	100 "
-"	anum "
-"	xv	150 "
-"	pic 2 "
-"endif "
-
-// armor
-"if 4 "
-"	xv	200 "
-"	rnum "
-"	xv	250 "
-"	pic 4 "
-"endif "
-
-// selected item
-"if 6 "
-"	xv	296 "
-"	pic 6 "
-"endif "
-
-"yb	-50 "
-
-// picked up item
-"if 7 "
-"	xv	0 "
-"	pic 7 "
-"	xv	26 "
-"	yb	-42 "
-"	stat_string 8 "
-"	yb	-50 "
-"endif "
-
-// timer
-"if 9 "
-"	xv	246 "
-"	num	2	10 "
-"	xv	296 "
-"	pic	9 "
-"endif "
-
-//  help / weapon icon 
-"if 11 "
-"	xv	148 "
-"	pic	11 "
-"endif "
-
-//  frags
-"xr	-50 "
-"yt 2 "
-"num 3 14"
-;
-
+char *dm_statusbar = "dm";
 
 /*QUAKED worldspawn (0 0 0) ?
 
@@ -826,17 +707,10 @@ void SP_worldspawn (edict_t *ent)
 	if (ent->message && ent->message[0])
 	{
 		gi.configstring ( CS_MESSAGE, ent->message );
-		strncpy ( level.level_name, ent->message, sizeof(level.level_name) );
+		Q_strncpyz ( level.level_name, ent->message, sizeof(level.level_name) );
 	}
 	else
-		strncpy ( level.level_name, level.mapname, sizeof(level.level_name) );
-
-	// send gridsize
-	if (st.gridsize && st.gridsize[0]) {
-		gi.configstring ( CS_GRIDSIZE, st.gridsize );
-	} else {
-		gi.configstring ( CS_GRIDSIZE, "64.0 64.0 128.0" );
-	}
+		Q_strncpyz ( level.level_name, level.mapname, sizeof(level.level_name) );
 
 	// send music
 	if ( st.music ) {
@@ -862,7 +736,7 @@ void SP_worldspawn (edict_t *ent)
 
 	// help icon for statusbar
 	gi.imageindex ("i_help");
-	level.pic_health = gi.imageindex ("i_health");
+	level.pic_health = gi.imageindex ("icons/iconh_red");
 	gi.imageindex ("help");
 	gi.imageindex ("field_3");
 
@@ -881,7 +755,7 @@ void SP_worldspawn (edict_t *ent)
 	gi.soundindex ("sound/misc/pc_up.wav");
 	gi.soundindex ("sound/misc/talk1.wav");
 
-	gi.soundindex ("misc/udeath.wav");
+	gi.soundindex ("sound/misc/udeath.wav");
 
 	// sexed sounds
 	gi.soundindex ("*death1.wav");

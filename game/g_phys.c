@@ -72,17 +72,15 @@ SV_CheckVelocity
 */
 void SV_CheckVelocity (edict_t *ent)
 {
-	int		i;
+	float	scale;
 
 //
 // bound velocity
 //
-	for (i=0 ; i<3 ; i++)
-	{
-		if (ent->velocity[i] > sv_maxvelocity->value)
-			ent->velocity[i] = sv_maxvelocity->value;
-		else if (ent->velocity[i] < -sv_maxvelocity->value)
-			ent->velocity[i] = -sv_maxvelocity->value;
+	scale = VectorLength ( ent->velocity );
+	if ( (scale > sv_maxvelocity->value) && (scale) ) {
+		scale = sv_maxvelocity->value / scale;
+		VectorScale ( ent->velocity, scale, ent->velocity );
 	}
 }
 
@@ -215,7 +213,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 
 		if (trace.allsolid)
 		{	// entity is trapped in another solid
-			VectorCopy (vec3_origin, ent->velocity);
+			VectorClear (ent->velocity);
 			return 3;
 		}
 
@@ -258,7 +256,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 	// cliped to another plane
 		if (numplanes >= MAX_CLIP_PLANES)
 		{	// this shouldn't really happen
-			VectorCopy (vec3_origin, ent->velocity);
+			VectorClear (ent->velocity);
 			return 3;
 		}
 
@@ -289,8 +287,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 		{	// go along the crease
 			if (numplanes != 2)
 			{
-//				gi.dprintf ("clip velocity, numplanes == %i\n",numplanes);
-				VectorCopy (vec3_origin, ent->velocity);
+				VectorClear (ent->velocity);
 				return 7;
 			}
 			CrossProduct (planes[0], planes[1], dir);
@@ -304,7 +301,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 //
 		if (DotProduct (ent->velocity, primal_velocity) <= 0)
 		{
-			VectorCopy (vec3_origin, ent->velocity);
+			VectorClear (ent->velocity);
 			return blocked;
 		}
 	}
@@ -429,7 +426,7 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 	}
 
 // we need this for pushing things later
-	VectorSubtract (vec3_origin, amove, org);
+	VectorNegate (amove, org);
 	AngleVectors (org, forward, right, up);
 
 // save the pusher's original position
@@ -440,7 +437,7 @@ qboolean SV_Push (edict_t *pusher, vec3_t move, vec3_t amove)
 		pushed_p->deltayaw = pusher->client->ps.pmove.delta_angles[YAW];
 	pushed_p++;
 
-// move the pusher to it's final position
+// move the pusher to its final position
 	VectorAdd (pusher->s.origin, move, pusher->s.origin);
 	VectorAdd (pusher->s.angles, amove, pusher->s.angles);
 	gi.linkentity (pusher);
@@ -718,6 +715,8 @@ void SV_Physics_Toss (edict_t *ent)
 	{
 		if (ent->movetype == MOVETYPE_BOUNCE)
 			backoff = 1.5;
+		else if (ent->movetype == MOVETYPE_BOUNCEGRENADE)
+			backoff = 1.5;
 		else
 			backoff = 1;
 
@@ -726,12 +725,13 @@ void SV_Physics_Toss (edict_t *ent)
 	// stop if on ground
 		if (trace.plane.normal[2] > 0.7)
 		{		
-			if (ent->velocity[2] < 60 || ent->movetype != MOVETYPE_BOUNCE )
+			if (ent->velocity[2] < 60 ||
+				(ent->movetype != MOVETYPE_BOUNCE && ent->movetype != MOVETYPE_BOUNCEGRENADE) )
 			{
 				ent->groundentity = trace.ent;
 				ent->groundentity_linkcount = trace.ent->linkcount;
-				VectorCopy (vec3_origin, ent->velocity);
-				VectorCopy (vec3_origin, ent->avelocity);
+				VectorClear (ent->velocity);
+				VectorClear (ent->avelocity);
 			}
 		}
 
@@ -949,6 +949,7 @@ void G_RunEntity (edict_t *ent)
 		break;
 	case MOVETYPE_TOSS:
 	case MOVETYPE_BOUNCE:
+	case MOVETYPE_BOUNCEGRENADE:
 	case MOVETYPE_FLY:
 	case MOVETYPE_FLYMISSILE:
 		SV_Physics_Toss (ent);

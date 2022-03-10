@@ -18,7 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "qcommon.h"
+#include "../qcommon/qcommon.h"
 #include "winquake.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -48,44 +48,46 @@ void *Hunk_Begin (int maxsize)
 	// reserve a huge chunk of memory, but don't commit any yet
 	cursize = 0;
 	hunkmaxsize = maxsize;
+
 #ifdef VIRTUAL_ALLOC
 	membase = VirtualAlloc (NULL, maxsize, MEM_RESERVE, PAGE_NOACCESS);
 #else
 	membase = malloc (maxsize);
 	memset (membase, 0, maxsize);
 #endif
+
 	if (!membase)
 		Sys_Error ("VirtualAlloc reserve failed");
+
 	return (void *)membase;
 }
 
-void *Hunk_Alloc (int size)
+void *Hunk_AllocName (int size, char *name)
 {
 	void	*buf;
 
 	// round to cacheline
-	size = (size+31)&~31;
+	size = (size + 31) & ~31;
 
 #ifdef VIRTUAL_ALLOC
 	// commit pages as needed
-//	buf = VirtualAlloc (membase+cursize, size, MEM_COMMIT, PAGE_READWRITE);
 	buf = VirtualAlloc (membase, cursize+size, MEM_COMMIT, PAGE_READWRITE);
 	if (!buf)
 	{
 		FormatMessage(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM, NULL, GetLastError(), MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), (LPTSTR) &buf, 0, NULL);
-		Sys_Error ("VirtualAlloc commit failed.\n%s", buf);
+		Sys_Error ("VirtualAlloc commit failed for %s.\n%s", name, buf);
 	}
 #endif
+
 	cursize += size;
 	if (cursize > hunkmaxsize)
-		Sys_Error ("Hunk_Alloc overflow");
+		Sys_Error ("Hunk_Alloc overflow (%s)", name);
 
 	return (void *)(membase+cursize-size);
 }
 
 int Hunk_End (void)
 {
-
 	// free the remaining unused virtual memory
 #if 0
 	void	*buf;
@@ -97,7 +99,7 @@ int Hunk_End (void)
 #endif
 
 	hunkcount++;
-//Com_Printf ("hunkcount: %i\n", hunkcount);
+
 	return cursize;
 }
 
@@ -121,14 +123,18 @@ void Hunk_Free (void *base)
 Sys_Milliseconds
 ================
 */
-int	curtime;
-qboolean hwtimer;
-double	pfreq;
+int			curtime;
+qboolean	hwtimer;
+double		pfreq;
 
 void Sys_InitTimer (void)
 {
 #if 0
+#if _MSC_VER || __BORLANDC__
 	__int64			freq;
+#else
+	long long		freq;
+#endif
 
 	if (QueryPerformanceFrequency ((LARGE_INTEGER *)&freq) && freq > 0)
 	{
@@ -143,8 +149,13 @@ int Sys_Milliseconds (void)
 {
 	static int		base;
 	static qboolean	initialized = false;
-	__int64			pcount;
-	static __int64	startcount;
+#if _MSC_VER || __BORLANDC__
+	__int64				pcount;
+	static __int64		startcount;
+#else
+	long long			pcount;
+	static long long	startcount;
+#endif
 
 	if (hwtimer)
 	{
@@ -258,7 +269,11 @@ void Sys_FindClose (void)
 //============================================
 
 #pragma warning(disable: 4035)
-__inline __int64 GetCycleNumber()
+#if _MSC_VER || __BORLANDC__
+inline __int64 GetCycleNumber()
+#else
+inline long long GetCycleNumber()
+#endif
 {
 	__asm 
 	{
@@ -268,12 +283,16 @@ __inline __int64 GetCycleNumber()
 
 static void GetMHz (void)
 {
-	LARGE_INTEGER t1,t2,tf;
-	__int64 c1,c2;
+	LARGE_INTEGER t1, t2, tf;
+#if _MSC_VER || __BORLANDC__
+	__int64     c1, c2;
+#else
+	long long   c1, c2;
+#endif
 
-	QueryPerformanceFrequency(&tf);
-	QueryPerformanceCounter(&t1);
-	c1 = GetCycleNumber();
+	QueryPerformanceFrequency (&tf);
+	QueryPerformanceCounter (&t1);
+	c1 = GetCycleNumber ();
 
 	_asm {
 		MOV  EBX, 5000000
@@ -282,15 +301,16 @@ static void GetMHz (void)
 		JNZ	WaitAlittle
 	}
 
-	QueryPerformanceCounter(&t2);
-	c2 = GetCycleNumber();
+	QueryPerformanceCounter (&t2);
+	c2 = GetCycleNumber ();
 	
-	Com_Printf("Detecting CPU Speed: %d MHz\n", (int) ((c2 - c1) * tf.QuadPart / (t2.QuadPart - t1.QuadPart) / 1000000));
+	Com_Printf ("Detecting CPU Speed: %d MHz\n", (int) ((c2 - c1) * tf.QuadPart / (t2.QuadPart - t1.QuadPart) / 1000000));
 }
 
 static void GetSysInfo (void)
 {
 	MEMORYSTATUS ms;
+
 	ms.dwLength = sizeof(MEMORYSTATUS);
 	GlobalMemoryStatus(&ms);
 	Mem = ms.dwTotalPhys >> 10;
@@ -418,14 +438,14 @@ void Sys_PrintCPUInfo (void)
 {
 	GetSysInfo ();
 
-	Com_Printf( "CPU Vendor: %s\n", VendorID );
-	Com_Printf( "Detecting CPU extensions:" );
+	Com_Printf ( "CPU Vendor: %s\n", VendorID );
+	Com_Printf ( "Detecting CPU extensions:" );
 
 	if ( Support3DNow ) {
-		Com_Printf( " 3DNow!\n" );
+		Com_Printf ( " 3DNow!\n" );
 	}
 	if ( SupportMMX ) {
-		Com_Printf( " MMX" );
+		Com_Printf ( " MMX" );
 	}
 
 	Com_Printf ( "\n" );

@@ -198,7 +198,8 @@ typedef enum
 	MOVETYPE_FLY,
 	MOVETYPE_TOSS,			// gravity
 	MOVETYPE_FLYMISSILE,	// extra size to monsters
-	MOVETYPE_BOUNCE
+	MOVETYPE_BOUNCE,
+	MOVETYPE_BOUNCEGRENADE
 } movetype_t;
 
 
@@ -238,6 +239,20 @@ typedef struct
 #define WEAP_RAILGUN			10
 #define WEAP_BFG				11
 #define WEAP_GRAPPLE			12
+
+// gitem_t->tag for "weapon x" command
+#define WP_BLASTER				101
+#define WP_MACHINEGUN			102
+#define WP_SHOTGUN				103
+#define WP_GRENADELAUNCHER		104
+#define WP_ROCKETLAUNCHER		105
+#define WP_CHAINGUN				106
+#define WP_RAILGUN				107
+#define WP_PLASMAGUN			108
+#define WP_BFG					109
+#define WP_GRAPPLE				110
+#define WP_SUPERSHOTGUN			111
+//#define WP_GRENADES				112
 
 #define MAX_ITEM_MODELS 4
 
@@ -362,12 +377,10 @@ typedef struct
 
 	char		*music;
 
-	char		*fog;
-	char		*gridsize;
-
 	int			lip;
 	int			distance;
 	int			height;
+	float		roll;
 	float		radius;
 	float		phase;
 	char		*noise;
@@ -479,10 +492,6 @@ extern	spawn_temp_t	st;
 extern	int	sm_meat_index;
 extern	int	snd_fry;
 
-extern	int	jacket_armor_index;
-extern	int	combat_armor_index;
-extern	int	body_armor_index;
-
 extern	int	meansOfDeath;
 
 
@@ -535,10 +544,6 @@ extern	cvar_t	*flood_persecond;
 extern	cvar_t	*flood_waitdelay;
 
 extern	cvar_t	*sv_maplist;
-
-//ZOID
-extern	qboolean	is_quad;
-//ZOID
 
 #define world	(&g_edicts[0])
 
@@ -632,6 +637,13 @@ void	G_TouchSolids (edict_t *ent);
 
 char	*G_CopyString (char *in);
 
+int		G_DirToByte (vec3_t dir);
+
+int		G_PlayerGender (edict_t *player);
+
+void	*G_malloc (int cnt);
+void	G_free (void *buf);
+
 float	*tv (float x, float y, float z);
 char	*vtos (vec3_t v);
 
@@ -682,7 +694,7 @@ void swimmonster_start (edict_t *self);
 void flymonster_start (edict_t *self);
 void AttackFinished (edict_t *self, float time);
 void monster_death_use (edict_t *self);
-void M_CatagorizePosition (edict_t *ent);
+void M_CategorizePosition (edict_t *ent);
 qboolean M_CheckAttack (edict_t *self);
 void M_FlyCheck (edict_t *self);
 void M_CheckGround (edict_t *ent);
@@ -755,6 +767,11 @@ void ClientUserinfoChanged (edict_t *ent, char *userinfo);
 //
 void player_pain (edict_t *self, edict_t *other, float kick, int damage);
 void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point);
+
+//
+// g_target.c
+//
+void target_laser_start (edict_t *self);
 
 //
 // g_svcmds.c
@@ -1066,14 +1083,13 @@ struct edict_s
 	float		touch_debounce_time;		// are all these legit?  do we need more/less of them?
 	float		pain_debounce_time;
 	float		damage_debounce_time;
-	float		fly_sound_debounce_time;	//move to clientinfo
 	float		last_move_time;
 
 	int			health;
 	int			max_health;
 	int			gib_health;
 	int			deadflag;
-	qboolean	show_hostile;
+	float		show_hostile;
 
 	float		powerarmor_time;
 
@@ -1121,6 +1137,9 @@ struct edict_s
 	int			light_level;
 
 	int			style;			// also used as areaportal number
+
+	float		light;
+	vec3_t		color;
 
 	gitem_t		*item;			// for bonus items
 

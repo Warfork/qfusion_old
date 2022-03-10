@@ -76,7 +76,7 @@ void BeginIntermission (edict_t *targ)
 	edict_t	*ent, *client;
 
 	if (level.intermissiontime)
-		return;		// allready activated
+		return;		// already activated
 
 //ZOID
 	if (deathmatch->value && ctf->value)
@@ -161,7 +161,7 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 	int		x, y;
 	gclient_t	*cl;
 	edict_t		*cl_ent;
-	char	*tag;
+	int		tag;
 
 //ZOID
 	if (ctf->value) {
@@ -213,26 +213,16 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 
 		// add a dogtag
 		if (cl_ent == ent)
-			tag = "tag1";
+			tag = 0;
 		else if (cl_ent == killer)
-			tag = "tag2";
+			tag = 1;
 		else
-			tag = NULL;
-		if (tag)
-		{
-			Com_sprintf (entry, sizeof(entry),
-				"xv %i yv %i picn %s ",x+32, y, tag);
-			j = strlen(entry);
-			if (stringlength + j > 1024)
-				break;
-			strcpy (string + stringlength, entry);
-			stringlength += j;
-		}
+			tag = 2;
 
 		// send the layout
 		Com_sprintf (entry, sizeof(entry),
-			"client %i %i %i %i %i %i ",
-			x, y, sorted[i], cl->resp.score, cl->ping, (level.framenum - cl->resp.enterframe)/600);
+			"client %i %i %i %i %i %i %i ",
+			x, y, tag, sorted[i], cl->resp.score, cl->ping, (level.framenum - cl->resp.enterframe)/600);
 		j = strlen(entry);
 		if (stringlength + j > 1024)
 			break;

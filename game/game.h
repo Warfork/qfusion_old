@@ -28,14 +28,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define	SVF_CORPSE				0x00000002	// treat as CONTENTS_CORPSE for collision
 #define	SVF_MONSTER				0x00000004	// treat as CONTENTS_MONSTER for collision
 
-//ZOID
-#define SVF_PROJECTILE			0x00000008  // entity is simple projectile, used for network optimization
-// if an entity is projectile, the model index/x/y/z/pitch/yaw are sent, encoded into
-// seven (or eight) bytes.  This is to speed up projectiles.  Currently, only the
-// hyperblaster makes use of this.  use for items that are moving with a constant
-// velocity that don't change direction or model
-//ZOID
-
 // edict->solid values
 
 typedef enum
@@ -181,8 +173,6 @@ typedef struct
 	// add commands to the server console as if they were typed in
 	// for map changing, etc
 	void	(*AddCommandString) (char *text);
-
-	void	(*DebugGraph) (float value, int color);
 } game_import_t;
 
 //

@@ -60,9 +60,6 @@ kbutton_t	in_lookup, in_lookdown, in_moveleft, in_moveright;
 kbutton_t	in_strafe, in_speed, in_use, in_attack;
 kbutton_t	in_up, in_down;
 
-int			in_impulse;
-
-
 void KeyDown (kbutton_t *b)
 {
 	int		k;
@@ -173,8 +170,6 @@ void IN_AttackUp(void) {KeyUp(&in_attack);}
 void IN_UseDown (void) {KeyDown(&in_use);}
 void IN_UseUp (void) {KeyUp(&in_use);}
 
-void IN_Impulse (void) {in_impulse=atoi(Cmd_Argv(1));}
-
 /*
 ===============
 CL_KeyState
@@ -198,20 +193,9 @@ float CL_KeyState (kbutton_t *key)
 		key->downtime = sys_frame_time;
 	}
 
-#if 0
-	if (msec)
-	{
-		Com_Printf ("%i ", msec);
-	}
-#endif
-
 	val = (float)msec / frame_msec;
-	if (val < 0)
-		val = 0;
-	if (val > 1)
-		val = 1;
 
-	return val;
+	return bound ( 0, val, 1 );
 }
 
 
@@ -335,6 +319,7 @@ CL_FinishMove
 */
 void CL_FinishMove (usercmd_t *cmd)
 {
+	static double extramsec = 0;
 	int		ms;
 	int		i;
 
@@ -353,7 +338,9 @@ void CL_FinishMove (usercmd_t *cmd)
 		cmd->buttons |= BUTTON_ANY;
 
 	// send milliseconds of time to apply the move
-	ms = cls.frametime * 1000;
+	extramsec += cls.frametime * 1000;
+	ms = extramsec;
+	extramsec -= ms;	// fractional part is left for next frame
 	if (ms > 250)
 		ms = 100;		// time was unreasonable
 	cmd->msec = ms;
@@ -361,9 +348,6 @@ void CL_FinishMove (usercmd_t *cmd)
 	CL_ClampPitch ();
 	for (i=0 ; i<3 ; i++)
 		cmd->angles[i] = ANGLE2SHORT(cl.viewangles[i]);
-
-	cmd->impulse = in_impulse;
-	in_impulse = 0;
 }
 
 /*
@@ -376,10 +360,7 @@ usercmd_t CL_CreateCmd (void)
 	usercmd_t	cmd;
 
 	frame_msec = sys_frame_time - old_sys_frame_time;
-	if (frame_msec < 1)
-		frame_msec = 1;
-	if (frame_msec > 200)
-		frame_msec = 200;
+	clamp ( frame_msec, 1, 200 );
 	
 	// get basic movement from keyboard
 	CL_BaseMove (&cmd);
@@ -390,8 +371,6 @@ usercmd_t CL_CreateCmd (void)
 	CL_FinishMove (&cmd);
 
 	old_sys_frame_time = sys_frame_time;
-
-//cmd.impulse = cls.framecount;
 
 	return cmd;
 }
@@ -439,7 +418,6 @@ void CL_InitInput (void)
 	Cmd_AddCommand ("-attack", IN_AttackUp);
 	Cmd_AddCommand ("+use", IN_UseDown);
 	Cmd_AddCommand ("-use", IN_UseUp);
-	Cmd_AddCommand ("impulse", IN_Impulse);
 	Cmd_AddCommand ("+klook", IN_KLookDown);
 	Cmd_AddCommand ("-klook", IN_KLookUp);
 
@@ -479,7 +457,7 @@ void CL_SendCmd (void)
 	if (cls.state == ca_connected)
 	{
 		if (cls.netchan.message.cursize	|| curtime - cls.netchan.last_sent > 1000)
-			Netchan_Transmit (&cls.netchan, 0, buf.data);
+			Netchan_Transmit (&cls.netchan, 0, data);
 		return;
 	}
 
@@ -494,8 +472,8 @@ void CL_SendCmd (void)
 
 	SZ_Init (&buf, data, sizeof(data));
 
-	if (cmd->buttons && cl.cinematictime > 0 && !cl.attractloop 
-		&& cls.realtime - cl.cinematictime > 1000)
+	if (cmd->buttons && cl.cin.time > 0 && !cl.attractloop 
+		&& cls.realtime - cl.cin.time > 1000)
 	{	// skip the rest of the cinematic
 		SCR_FinishCinematic ();
 	}
