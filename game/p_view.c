@@ -839,7 +839,7 @@ G_SetClientSound
 */
 void G_SetClientSound (edict_t *ent)
 {
-	char		*weap;
+	const char	*weap;
 	gclient_t	*client = ent->r.client;
 
 	if (client->resp.game_helpchanged != game.helpchanged)

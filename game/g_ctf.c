@@ -3625,7 +3625,7 @@ void CTFWarp(edict_t *ent)
 		return;
 	}
 
-	G_LevelFree (mlist);
+	G_Free (mlist);
 
 	if (ent->r.client->resp.admin) {
 		G_PrintMsg (NULL, PRINT_HIGH, "%s%s is warping to level %s.\n", 

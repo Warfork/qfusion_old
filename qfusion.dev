@@ -9,7 +9,7 @@ CppCompiler=-D__GNUWIN32__ -mcpu=pentium -D_M_IX86=500 -W -DWIN32 -DNDEBUG -D_WI
 Includes=qcommon;.\win32/include
 Linker=-lwinmm -lwsock32 -lkernel32 -luser32 -lgdi32 -ldxguid -lzstat -ljpegstat_@@_
 Libs=.\win32/lib/mingw
-UnitCount=92
+UnitCount=95
 Folders="Header Files","Resource Files","Source Files"
 ObjFiles=
 PrivateResource=qfusion_private.rc
@@ -800,16 +800,6 @@ OverrideBuildCmd=0
 BuildCmd=
 
 [Unit80]
-FileName=ref_gl\render.h
-Folder="Header Files"
-Compile=1
-CompileCpp=1
-Link=1
-Priority=1000
-OverrideBuildCmd=0
-BuildCmd=
-
-[Unit81]
 FileName=server\server.h
 Folder="Header Files"
 Compile=1
@@ -819,8 +809,8 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit83]
-FileName=client\sound.h
+[Unit81]
+FileName=client\snd_loc.h
 Folder="Header Files"
 Compile=1
 CompileCpp=1
@@ -829,7 +819,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit84]
+[Unit83]
 FileName=client\vid.h
 Folder="Header Files"
 Compile=1
@@ -839,7 +829,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit85]
+[Unit84]
 FileName=win32\winquake.h
 Folder="Header Files"
 Compile=1
@@ -849,7 +839,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit86]
+[Unit85]
 FileName=win32\qfusion.ico
 Folder="Resource Files"
 Compile=0
@@ -859,7 +849,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit87]
+[Unit86]
 FileName=ref_gl\r_skin.c
 Folder=Source Files
 Compile=1
@@ -869,7 +859,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=$(CC) -c r_skin.c -o ./release/r_skin.o $(CFLAGS)
 
-[Unit88]
+[Unit87]
 FileName=client\cl_vid.c
 Folder=Source Files
 Compile=1
@@ -879,7 +869,7 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit89]
+[Unit88]
 FileName=client\snd_oal.c
 Folder=Source Files
 Compile=1
@@ -889,8 +879,18 @@ Priority=1000
 OverrideBuildCmd=0
 BuildCmd=
 
-[Unit90]
+[Unit89]
 FileName=ref_gl\r_bloom.c
+Folder=Source Files
+Compile=1
+CompileCpp=0
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit90]
+FileName=ref_gl\r_program.c
 Folder=Source Files
 Compile=1
 CompileCpp=0
@@ -918,7 +918,7 @@ ProductVersion=0.1
 AutoIncBuildNr=0
 
 [Unit82]
-FileName=client\snd_loc.h
+FileName=client\sound.h
 CompileCpp=1
 Folder="Header Files"
 Compile=1
@@ -928,7 +928,7 @@ OverrideBuildCmd=0
 BuildCmd=
 
 [Unit91]
-FileName=ref_gl\r_program.c
+FileName=ref_gl\r_skm.c
 CompileCpp=0
 Folder=Source Files
 Compile=1
@@ -938,9 +938,9 @@ OverrideBuildCmd=0
 BuildCmd=
 
 [Unit92]
-FileName=ref_gl\r_skm.c
+FileName=ref_gl\r_public.h
 CompileCpp=0
-Folder=Source Files
+Folder=Header Files
 Compile=1
 Link=1
 Priority=1000
@@ -961,6 +961,36 @@ BuildCmd=
 FileName=qcommon\qcommon.h
 CompileCpp=1
 Folder="Header Files"
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit93]
+FileName=ref_gl\r_glimp.h
+CompileCpp=0
+Folder=Header Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit94]
+FileName=ref_gl\r_register.c
+CompileCpp=0
+Folder=Source Files
+Compile=1
+Link=1
+Priority=1000
+OverrideBuildCmd=0
+BuildCmd=
+
+[Unit95]
+FileName=ref_gl\r_cull.c
+CompileCpp=0
+Folder=Source Files
 Compile=1
 Link=1
 Priority=1000

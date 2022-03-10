@@ -276,6 +276,21 @@ void AnglesToAxis( const vec3_t angles, vec3_t axis[3] )
 	VectorInverse( axis[1] );
 }
 
+// similar to MakeNormalVectors but for rotational matrices
+// (FIXME: weird, what's the diff between this and MakeNormalVectors?)
+void NormalVectorToAxis( const vec3_t forward, vec3_t axis[3] )
+{
+	VectorCopy( forward, axis[0] );
+	if( forward[0] || forward[1] ) {
+		VectorSet( axis[1], forward[1], -forward[0], 0 );
+		VectorNormalize( axis[1] );
+		CrossProduct( axis[0], axis[1], axis[2] );
+	} else {
+		VectorSet( axis[1], 1, 0, 0 );
+		VectorSet( axis[2], 0, 1, 0 );
+	}
+}
+
 void ProjectPointOnPlane( vec3_t dst, const vec3_t p, const vec3_t normal )
 {
 	float d;
@@ -395,6 +410,35 @@ float	anglemod(float a)
 }
 
 /*
+====================
+AdjustFov
+====================
+*/
+void AdjustFov( float *fov_x, float *fov_y, float width, float height, qboolean lock_x )
+{
+	float x, y;
+
+	if( width*3 == 4*height || width*4 == height*5 ) {		// 4:3 or 5:4 ratio
+		return;
+	}
+
+	if( lock_x ) {
+		*fov_y = 2 * atan( (width * 3) / (height * 4) * tan (*fov_y * M_PI / 360.0 * 0.5) )*360/M_PI;
+		return;
+	}
+
+	y = CalcFov( *fov_x, 640, 480 );
+	x = *fov_x;
+
+	*fov_x = CalcFov( y, height, width );
+	if( *fov_x < x )
+		*fov_x = x;
+	else
+		*fov_y = y;
+}
+
+
+/*
 ==================
 BoxOnPlaneSide
 
@@ -405,16 +449,6 @@ int BoxOnPlaneSide (const vec3_t emins, const vec3_t emaxs, const cplane_t *p)
 {
 	float	dist1, dist2;
 	int		sides;
-
-// fast axial cases
-	if (p->type < 3)
-	{
-		if (p->dist <= emins[p->type])
-			return 1;
-		if (p->dist >= emaxs[p->type])
-			return 2;
-		return 3;
-	}
 
 // general case
 	switch (p->signbits)
@@ -512,7 +546,8 @@ int	PlaneTypeForNormal ( const vec3_t normal )
 =================
 CategorizePlane
 
-A slightly simplier version of SignbitsForPlane and PlaneTypeForNormal
+A slightly more complex version of SignbitsForPlane and PlaneTypeForNormal,
+which also tries to fix possible floating point glitches (like -0.00000 cases)
 =================
 */
 void CategorizePlane ( cplane_t *plane )
@@ -524,9 +559,24 @@ void CategorizePlane ( cplane_t *plane )
 	for (i = 0; i < 3; i++)
 	{
 		if (plane->normal[i] < 0)
+		{
 			plane->signbits |= 1<<i;
-		if (plane->normal[i] == 1.0f)
+			if (plane->normal[i] == -1.0f)
+			{
+				plane->signbits = (1<<i);
+				VectorClear (plane->normal);
+				plane->normal[i] = -1.0f;
+				break;
+			}
+		}
+		else if (plane->normal[i] == 1.0f)
+		{
 			plane->type = i;
+			plane->signbits = 0;
+			VectorClear (plane->normal);
+			plane->normal[i] = 1.0f;
+			break;
+		}
 	}
 }
 
@@ -535,7 +585,7 @@ void CategorizePlane ( cplane_t *plane )
 PlaneFromPoints
 =================
 */
-void PlaneFromPoints (  vec3_t verts[3], cplane_t *plane )
+void PlaneFromPoints ( vec3_t verts[3], cplane_t *plane )
 {
 	vec3_t	v1, v2;
 
@@ -671,7 +721,7 @@ vec_t VectorNormalize (vec3_t v)
 	return length;
 }
 
-vec_t VectorNormalize2 (vec3_t v, vec3_t out)
+vec_t VectorNormalize2 (const vec3_t v, vec3_t out)
 {
 	float	length, ilength;
 
@@ -702,7 +752,7 @@ void VectorNormalizeFast (vec3_t v)
 	v[2] *= ilength;
 }
 
-void _VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc)
+void _VectorMA (const vec3_t veca, float scale, const vec3_t vecb, vec3_t vecc)
 {
 	vecc[0] = veca[0] + scale*vecb[0];
 	vecc[1] = veca[1] + scale*vecb[1];
@@ -710,26 +760,26 @@ void _VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc)
 }
 
 
-vec_t _DotProduct (vec3_t v1, vec3_t v2)
+vec_t _DotProduct (const vec3_t v1, const vec3_t v2)
 {
 	return v1[0]*v2[0] + v1[1]*v2[1] + v1[2]*v2[2];
 }
 
-void _VectorSubtract (vec3_t veca, vec3_t vecb, vec3_t out)
+void _VectorSubtract (const vec3_t veca, const vec3_t vecb, vec3_t out)
 {
 	out[0] = veca[0]-vecb[0];
 	out[1] = veca[1]-vecb[1];
 	out[2] = veca[2]-vecb[2];
 }
 
-void _VectorAdd (vec3_t veca, vec3_t vecb, vec3_t out)
+void _VectorAdd (const vec3_t veca, const vec3_t vecb, vec3_t out)
 {
 	out[0] = veca[0]+vecb[0];
 	out[1] = veca[1]+vecb[1];
 	out[2] = veca[2]+vecb[2];
 }
 
-void _VectorCopy (vec3_t in, vec3_t out)
+void _VectorCopy (const vec3_t in, vec3_t out)
 {
 	out[0] = in[0];
 	out[1] = in[1];
@@ -818,28 +868,24 @@ void Matrix_EulerAngles( vec3_t m[3], vec3_t angles )
 	vec_t	pitch, yaw, roll;
 
 	pitch = -asin( m[0][2] );
-	c = cos ( pitch );
-	pitch = RAD2DEG( pitch );
-
-	if ( fabs( c ) > 0.005 )             // Gimball lock?
-	{
+	c = cos( pitch );
+	if ( fabs( c ) > 5*10e-6 )			// Gimball lock?
+	{	// no
 		c = 1.0f / c;
+		pitch = RAD2DEG( pitch );
 		yaw = RAD2DEG( atan2 ( m[0][1] * c, m[0][0] * c ) );
 		roll = RAD2DEG( atan2 ( -m[1][2] * c, m[2][2] * c ) );
 	}
 	else
-	{
-		if (m[0][2] > 0)
-			pitch = -90;
-		else
-			pitch = 90;
+	{	// yes
+		pitch = m[0][2] > 0 ? -90 : 90;
 		yaw = RAD2DEG( atan2 ( m[1][0], -m[1][1] ) );
-		roll = 0;
+		roll = 180;
 	}
 
-	angles[PITCH] = anglemod( pitch );
-	angles[YAW] = anglemod( yaw );
-	angles[ROLL] = anglemod( roll );
+	angles[PITCH] = pitch;
+	angles[YAW] = yaw;
+	angles[ROLL] = roll;
 }
 
 void Matrix_Rotate( vec3_t m[3], vec_t angle, vec_t x, vec_t y, vec_t z )
@@ -872,7 +918,7 @@ void Matrix_Rotate( vec3_t m[3], vec_t angle, vec_t x, vec_t y, vec_t z )
 	Matrix_Multiply( b, t, m );
 }
 
-void Matrix_FromPoints( const vec3_t v1, const vec3_t v2, const vec3_t v3, vec3_t m[3] )
+void Matrix_FromPoints( vec3_t v1, vec3_t v2, vec3_t v3, vec3_t m[3] )
 {
 	float		d;
 

@@ -1,4 +1,4 @@
-# Qfusion makefile for the ui DLL
+# Qfusion makefile for the ui module
 
 include ../Makefile.inc
 
@@ -12,25 +12,26 @@ include ../Makefile.inc
 # Variables
 
 OBJS_UI=\
-	$(BUILDDIR)/baseqf/ui/ui_dloptions.o \
-	$(BUILDDIR)/baseqf/ui/ui_keys.o \
-	$(BUILDDIR)/baseqf/ui/ui_options.o \
-	$(BUILDDIR)/baseqf/ui/ui_splayer.o \
 	$(BUILDDIR)/baseqf/ui/ui_atoms.o \
+	$(BUILDDIR)/baseqf/ui/ui_boneposes.o \
+	$(BUILDDIR)/baseqf/ui/ui_connect.o \
+	$(BUILDDIR)/baseqf/ui/ui_credits.o \
+	$(BUILDDIR)/baseqf/ui/ui_dloptions.o \
 	$(BUILDDIR)/baseqf/ui/ui_dmoptions.o \
+	$(BUILDDIR)/baseqf/ui/ui_gfx.o \
+	$(BUILDDIR)/baseqf/ui/ui_glext.o \
+	$(BUILDDIR)/baseqf/ui/ui_keys.o \
 	$(BUILDDIR)/baseqf/ui/ui_main.o \
+	$(BUILDDIR)/baseqf/ui/ui_menu.o \
+	$(BUILDDIR)/baseqf/ui/ui_mplayer.o \
+	$(BUILDDIR)/baseqf/ui/ui_options.o \
 	$(BUILDDIR)/baseqf/ui/ui_playerconfig.o \
 	$(BUILDDIR)/baseqf/ui/ui_pmodels.o \
-	$(BUILDDIR)/baseqf/ui/ui_startserver.o \
-	$(BUILDDIR)/baseqf/ui/ui_connect.o \
-	$(BUILDDIR)/baseqf/ui/ui_gfx.o \
-	$(BUILDDIR)/baseqf/ui/ui_menu.o \
 	$(BUILDDIR)/baseqf/ui/ui_quit.o \
-	$(BUILDDIR)/baseqf/ui/ui_syscalls.o \
-	$(BUILDDIR)/baseqf/ui/ui_credits.o \
-	$(BUILDDIR)/baseqf/ui/ui_glext.o \
-	$(BUILDDIR)/baseqf/ui/ui_mplayer.o \
 	$(BUILDDIR)/baseqf/ui/ui_sound.o \
+	$(BUILDDIR)/baseqf/ui/ui_splayer.o \
+	$(BUILDDIR)/baseqf/ui/ui_startserver.o \
+	$(BUILDDIR)/baseqf/ui/ui_syscalls.o \
 	$(BUILDDIR)/baseqf/ui/ui_video.o \
 	\
 	$(BUILDDIR)/baseqf/ui/q_math.o \

@@ -31,7 +31,7 @@ cvar_t	*cvar_vars_hash[CVAR_HASH_SIZE];
 Cvar_InfoValidate
 ============
 */
-static qboolean Cvar_InfoValidate (char *s, qboolean name)
+static qboolean Cvar_InfoValidate (const char *s, qboolean name)
 {
 	if (strstr (s, "\\"))
 		return qfalse;
@@ -49,7 +49,7 @@ static qboolean Cvar_InfoValidate (char *s, qboolean name)
 Cvar_FindVar
 ============
 */
-static cvar_t *Cvar_FindVar (char *var_name)
+static cvar_t *Cvar_FindVar (const char *var_name)
 {
 	unsigned hash;
 	cvar_t	*var;
@@ -67,7 +67,7 @@ static cvar_t *Cvar_FindVar (char *var_name)
 Cvar_VariableValue
 ============
 */
-float Cvar_VariableValue (char *var_name)
+float Cvar_VariableValue (const char *var_name)
 {
 	cvar_t	*var;
 
@@ -83,7 +83,7 @@ float Cvar_VariableValue (char *var_name)
 Cvar_VariableString
 ============
 */
-char *Cvar_VariableString (char *var_name)
+char *Cvar_VariableString (const char *var_name)
 {
 	cvar_t *var;
 
@@ -99,7 +99,7 @@ char *Cvar_VariableString (char *var_name)
 Cvar_CompleteVariable
 ============
 */
-char *Cvar_CompleteVariable (char *partial)
+char *Cvar_CompleteVariable (const char *partial)
 {
 	cvar_t		*cvar;
 	int			len;
@@ -131,7 +131,7 @@ If the variable already exists, the value will not be set
 The flags will be or'ed and default value overwritten in if the variable exists.
 ============
 */
-cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
+cvar_t *Cvar_Get (const char *var_name, const char *var_value, int flags)
 {
 	unsigned hash;
 	cvar_t	*var;
@@ -204,7 +204,7 @@ cvar_t *Cvar_Get (char *var_name, char *var_value, int flags)
 Cvar_Set2
 ============
 */
-cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
+cvar_t *Cvar_Set2 (const char *var_name, const char *value, qboolean force)
 {
 	cvar_t	*var;
 
@@ -317,7 +317,7 @@ cvar_t *Cvar_Set2 (char *var_name, char *value, qboolean force)
 Cvar_ForceSet
 ============
 */
-cvar_t *Cvar_ForceSet (char *var_name, char *value)
+cvar_t *Cvar_ForceSet (const char *var_name, const char *value)
 {
 	return Cvar_Set2 (var_name, value, qtrue);
 }
@@ -327,7 +327,7 @@ cvar_t *Cvar_ForceSet (char *var_name, char *value)
 Cvar_Set
 ============
 */
-cvar_t *Cvar_Set (char *var_name, char *value)
+cvar_t *Cvar_Set (const char *var_name, const char *value)
 {
 	return Cvar_Set2 (var_name, value, qfalse);
 }
@@ -337,7 +337,7 @@ cvar_t *Cvar_Set (char *var_name, char *value)
 Cvar_FullSet
 ============
 */
-cvar_t *Cvar_FullSet (char *var_name, char *value, int flags, qboolean overwriteFlags)
+cvar_t *Cvar_FullSet (const char *var_name, const char *value, int flags, qboolean overwriteFlags)
 {
 	cvar_t	*var;
 
@@ -369,7 +369,7 @@ cvar_t *Cvar_FullSet (char *var_name, char *value, int flags, qboolean overwrite
 Cvar_SetValue
 ============
 */
-void Cvar_SetValue (char *var_name, float value)
+void Cvar_SetValue (const char *var_name, float value)
 {
 	char	val[32];
 
@@ -671,7 +671,7 @@ char	*Cvar_Serverinfo (void)
 
 */
 int
-Cvar_CompleteCountPossible (char *partial)
+Cvar_CompleteCountPossible (const char *partial)
 {
 	cvar_t	*v;
 	int		len, h = 0;
@@ -698,7 +698,7 @@ Cvar_CompleteCountPossible (char *partial)
 	Thanks to taniwha
 
 */
-char **Cvar_CompleteBuildList (char *partial)
+char **Cvar_CompleteBuildList (const char *partial)
 {
 	cvar_t		*v;
 	int			len;

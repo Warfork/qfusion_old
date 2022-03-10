@@ -299,6 +299,48 @@ void SCR_DrawFPS( void )
 }
 
 /*
+================
+SCR_DrawRSpeeds
+================
+*/
+void SCR_DrawRSpeeds( void )
+{
+	char msg[1024];
+	int x, y;
+	vec4_t color;
+
+	x = 5;
+	y = cgs.vidHeight / 2;
+	Vector4Copy( colorWhite, color );
+
+	trap_R_SpeedsMessage( msg, sizeof( msg ) );
+
+	if( msg[0] )
+	{
+		int height;
+		char *p, *start, *end;
+
+		height = SMALL_CHAR_HEIGHT;
+
+		p = start = msg;
+		do
+		{
+			end = strchr( p, '\n' );
+			if( end )
+				msg[end-start] = '\0';
+
+			CG_DrawString( x, y, p, FONT_SMALL, color );
+			y += height;
+
+			if( end )
+				p = end + 1;
+			else
+				break;
+		} while( 1 );
+	}
+}
+
+/*
 =================
 SCR_DrawCrosshair
 =================
@@ -860,6 +902,8 @@ SCR_Draw2D
 */
 void SCR_Draw2D( void )
 {
+	SCR_DrawRSpeeds ();
+
 	SCR_DrawCrosshair ();
 
 	SCR_DrawStats ();

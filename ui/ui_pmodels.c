@@ -795,7 +795,7 @@ void ui_DrawPModel( char *name, int originz, int originx, int originy, int angle
 		refdef.fov_y = 30;
 	}
 
-	refdef.time = uis.time * 0.001f;
+	refdef.time = uis.time;
 	refdef.areabits = 0;
 	refdef.rdflags = RDF_NOWORLDMODEL;
 

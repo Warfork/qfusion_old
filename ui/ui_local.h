@@ -75,22 +75,15 @@ typedef struct
 
 extern ui_local_t uis;
 
-extern struct mempool_s *uipool;
-
 void UI_Error ( char *fmt, ... );
 void UI_Printf ( char *fmt, ... );
 void UI_FillRect ( int x, int y, int w, int h, vec4_t color );
 
-#define UI_MemAlloc(pool,size) trap_Mem_Alloc(pool, size, __FILE__, __LINE__)
-#define UI_MemFree(mem) trap_Mem_Free(mem, __FILE__, __LINE__)
-#define UI_MemAllocPool(name) trap_Mem_AllocPool(name, __FILE__, __LINE__)
-#define UI_MemFreePool(pool) trap_Mem_FreePool(pool, __FILE__, __LINE__)
-#define UI_MemEmptyPool(pool) trap_Mem_EmptyPool(pool, __FILE__, __LINE__)
+#define UI_Malloc(size) trap_MemAlloc(size, __FILE__, __LINE__)
+#define UI_Free(data) trap_MemFree(data, __FILE__, __LINE__)
 
-#define UI_Malloc(size) UI_MemAlloc(uipool,size)
-#define UI_Free(data) UI_MemFree(data)
-
-char *UI_CopyString (char *in);
+char *_UI_CopyString (const char *in, const char *filename, int fileline);
+#define UI_CopyString(in) _UI_CopyString(in,__FILE__,__LINE__)
 
 #define NUM_CURSOR_FRAMES 15
 

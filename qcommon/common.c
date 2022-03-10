@@ -303,7 +303,7 @@ Com_HashKey
 Returns hash key for a string
 ==========
 */
-unsigned int Com_HashKey (char *name, int hashsize)
+unsigned int Com_HashKey (const char *name, int hashsize)
 {
 	int i;
 	unsigned int v;
@@ -398,7 +398,7 @@ void MSG_WriteFloat (sizebuf_t *sb, float f)
 	SZ_Write (sb, &dat.l, 4);
 }
 
-void MSG_WriteString (sizebuf_t *sb, char *s)
+void MSG_WriteString (sizebuf_t *sb, const char *s)
 {
 	if (!s)
 		SZ_Write (sb, "", 1);
@@ -925,12 +925,12 @@ void *SZ_GetSpace (sizebuf_t *buf, int length)
 	return data;
 }
 
-void SZ_Write (sizebuf_t *buf, void *data, int length)
+void SZ_Write (sizebuf_t *buf, const void *data, int length)
 {
 	memcpy (SZ_GetSpace(buf, length), data, length);		
 }
 
-void SZ_Print (sizebuf_t *buf, char *data)
+void SZ_Print (sizebuf_t *buf, const char *data)
 {
 	int		len;
 
@@ -1031,11 +1031,11 @@ void COM_AddParm (char *parm)
 	com_argv[com_argc++] = parm;
 }
 
-char *CopyString (char *in)
+char *_CopyString (const char *in, const char *filename, int fileline)
 {
 	char	*out;
 
-	out = Mem_ZoneMallocExt (strlen(in)+1, 0);
+	out = _Mem_Alloc (zoneMemPool, strlen(in)+1, 0, 0, filename, fileline);
 	strcpy (out, in);
 
 	return out;

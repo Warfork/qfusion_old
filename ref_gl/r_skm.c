@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2002-2003 Victor Luchits
+Copyright (C) 2002-2007 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -8,7 +8,7 @@ of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 See the GNU General Public License for more details.
 
@@ -17,15 +17,16 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 // r_skm.c: skeletal animation model format
 
 #include "r_local.h"
 
-static  mesh_t	skm_mesh;
+static mesh_t skm_mesh;
 
-static	vec3_t	skm_mins;
-static	vec3_t	skm_maxs;
-static	float	skm_radius;
+static vec3_t skm_mins;
+static vec3_t skm_maxs;
+static float skm_radius;
 
 /*
 ==============================================================================
@@ -42,55 +43,68 @@ Mod_LoadSkeletalPose
 */
 void Mod_LoadSkeletalPose( char *name, model_t *mod, void *buffer )
 {
-	unsigned int	i, j, k;
-	mskmodel_t		*poutmodel;
-	dskpheader_t	*pinmodel;
-	dskpbone_t		*pinbone;
-	mskbone_t		*poutbone;
-	dskpframe_t		*pinframe;
-	mskframe_t		*poutframe;
-	dskpbonepose_t	*pinbonepose;
-	bonepose_t		*poutbonepose;
+	unsigned int i, j, k;
+	mskmodel_t *poutmodel;
+	dskpheader_t *pinmodel;
+	dskpbone_t *pinbone;
+	mskbone_t *poutbone;
+	dskpframe_t *pinframe;
+	mskframe_t *poutframe;
+	dskpbonepose_t *pinbonepose;
+	bonepose_t *poutbonepose;
+	qbyte *membuffer;
+	size_t memBufferSize;
 
 	if( strncmp( (const char *)buffer, SKMHEADER, 4 ) )
 		Com_Error( ERR_DROP, "uknown fileid for %s", name );
 
 	pinmodel = ( dskpheader_t * )buffer;
-	poutmodel = mod->skmodel;
+	poutmodel = ( mskmodel_t * )mod->extradata;
 
 	if( LittleLong( pinmodel->type ) != SKM_MODELTYPE )
 		Com_Error( ERR_DROP, "%s has wrong type number (%i should be %i)",
-				 name, LittleLong (pinmodel->type), SKM_MODELTYPE );
+		name, LittleLong( pinmodel->type ), SKM_MODELTYPE );
 	if( LittleLong( pinmodel->filesize ) > SKM_MAX_FILESIZE )
 		Com_Error( ERR_DROP, "%s has has wrong filesize (%i should be less than %i)",
-				 name, LittleLong (pinmodel->filesize), SKM_MAX_FILESIZE );
+		name, LittleLong( pinmodel->filesize ), SKM_MAX_FILESIZE );
 	if( LittleLong( pinmodel->num_bones ) != poutmodel->numbones )
 		Com_Error( ERR_DROP, "%s has has wrong number of bones (%i should be less than %i)",
-				 name, LittleLong (pinmodel->num_bones), poutmodel->numbones );
+		name, LittleLong( pinmodel->num_bones ), poutmodel->numbones );
 
-	poutmodel->numframes = LittleLong ( pinmodel->num_frames );
+	poutmodel->numframes = LittleLong( pinmodel->num_frames );
 	if( poutmodel->numframes <= 0 )
 		Com_Error( ERR_DROP, "%s has no frames", name );
-	else if ( poutmodel->numframes > SKM_MAX_FRAMES )
+	else if( poutmodel->numframes > SKM_MAX_FRAMES )
 		Com_Error( ERR_DROP, "%s has too many frames", name );
 
-	pinbone = ( dskpbone_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_bones ) );
-	poutbone = poutmodel->bones = Mod_Malloc ( mod, sizeof( mskbone_t ) * poutmodel->numbones );
+	memBufferSize = 0;
+	memBufferSize += sizeof( mskbone_t ) * poutmodel->numbones;
+	memBufferSize += sizeof( mskframe_t ) * poutmodel->numframes;
+	memBufferSize += sizeof( bonepose_t ) * poutmodel->numbones * poutmodel->numframes;
+	membuffer = Mod_Malloc( mod, memBufferSize );
 
-	for( i = 0; i < poutmodel->numbones; i++, pinbone++, poutbone++ ) {
-		Q_strncpyz ( poutbone->name, pinbone->name, SKM_MAX_NAME );
+	pinbone = ( dskpbone_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_bones ) );
+	poutbone = poutmodel->bones = ( mskbone_t * )membuffer; membuffer += sizeof( mskbone_t ) * poutmodel->numbones;
+
+	for( i = 0; i < poutmodel->numbones; i++, pinbone++, poutbone++ )
+	{
+		Q_strncpyz( poutbone->name, pinbone->name, SKM_MAX_NAME );
 		poutbone->flags = LittleLong( pinbone->flags );
 		poutbone->parent = LittleLong( pinbone->parent );
 	}
 
 	pinframe = ( dskpframe_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_frames ) );
-	poutframe = poutmodel->frames = Mod_Malloc( mod, sizeof( mskframe_t ) * poutmodel->numframes );
+	poutframe = poutmodel->frames = ( mskframe_t * )membuffer; membuffer += sizeof( mskframe_t ) * poutmodel->numframes;
 
-	for( i = 0; i < poutmodel->numframes; i++, pinframe++, poutframe++ ) {
+	for( i = 0; i < poutmodel->numframes; i++, pinframe++, poutframe++ )
+	{
 		pinbonepose = ( dskpbonepose_t * )( ( qbyte * )pinmodel + LittleLong( pinframe->ofs_bonepositions ) );
-		poutbonepose = poutframe->boneposes = Mod_Malloc ( mod, sizeof( bonepose_t ) * poutmodel->numbones );
+		poutbonepose = poutframe->boneposes = ( bonepose_t * )membuffer; membuffer += sizeof( bonepose_t ) * poutmodel->numbones;
 
-		for( j = 0; j < poutmodel->numbones; j++, pinbonepose++, poutbonepose++ ) {
+		ClearBounds( poutframe->mins, poutframe->maxs );
+
+		for( j = 0; j < poutmodel->numbones; j++, pinbonepose++, poutbonepose++ )
+		{
 			for( k = 0; k < 4; k++ )
 				poutbonepose->quat[k] = LittleFloat( pinbonepose->quat[k] );
 			for( k = 0; k < 3; k++ )
@@ -106,30 +120,34 @@ Mod_LoadSkeletalModel
 */
 void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 {
-	unsigned int	i, j, k, l, m;
-	vec_t			*v, *n;
-	dskmheader_t	*pinmodel;
-	mskmodel_t		*poutmodel;
-	dskmmesh_t		*pinmesh;
-	mskmesh_t		*poutmesh;
-	dskmvertex_t	*pinskmvert;
-	dskmbonevert_t	*pinbonevert;
-	dskmcoord_t		*pinstcoord;
-	vec2_t			*poutstcoord;
-	index_t			*pintris, *pouttris;
-	unsigned int	*pinreferences, *poutreferences;
-	bonepose_t		*bp, *basepose, *poutbonepose;
+	unsigned int i, j, k, l, m;
+	vec_t *v, *n;
+	dskmheader_t *pinmodel;
+	mskmodel_t *poutmodel;
+	dskmmesh_t *pinmesh;
+	mskmesh_t *poutmesh;
+	dskmvertex_t *pinskmvert;
+	dskmbonevert_t *pinbonevert;
+	dskmcoord_t *pinstcoord;
+	vec2_t *poutstcoord;
+	elem_t	*pintris, *pouttris;
+	unsigned int *pinreferences, *poutreferences;
+	bonepose_t *bp, *basepose, *poutbonepose;
+	mskframe_t *pframe;
+	vec3_t ebbox = { 0, 0, 0 };
+	size_t alignment = 16;
+	qbyte *buf;
 
 	pinmodel = ( dskmheader_t * )buffer;
 
 	if( LittleLong( pinmodel->type ) != SKM_MODELTYPE )
 		Com_Error( ERR_DROP, "%s has wrong type number (%i should be %i)",
-				 mod->name, LittleLong (pinmodel->type), SKM_MODELTYPE );
+		mod->name, LittleLong( pinmodel->type ), SKM_MODELTYPE );
 	if( LittleLong( pinmodel->filesize ) > SKM_MAX_FILESIZE )
 		Com_Error( ERR_DROP, "%s has has wrong filesize (%i should be less than %i)",
-				 mod->name, LittleLong (pinmodel->filesize), SKM_MAX_FILESIZE );
+		mod->name, LittleLong( pinmodel->filesize ), SKM_MAX_FILESIZE );
 
-	poutmodel = mod->skmodel = Mod_Malloc( mod, sizeof( mskmodel_t ) );
+	poutmodel = mod->extradata = Mod_Malloc( mod, sizeof( mskmodel_t ) );
 	poutmodel->nummeshes = LittleLong( pinmodel->num_meshes );
 	if( poutmodel->nummeshes <= 0 )
 		Com_Error( ERR_DROP, "%s has no meshes", mod->name );
@@ -143,43 +161,53 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 		Com_Error( ERR_DROP, "%s has too many bones", mod->name );
 
 	// if we have a parent model then we are a LOD file and should use parent model's pose data
-	if( parent ) {
-		if( !parent->skmodel )
-			Com_Error ( ERR_DROP, "%s is not a LOD model for %s",
-					 mod->name, parent->name );
-		if( poutmodel->numbones != parent->skmodel->numbones )
-			Com_Error ( ERR_DROP, "%s has has wrong number of bones (%i should be less than %i)",
-					 mod->name, poutmodel->numbones, parent->skmodel->numbones );
-		poutmodel->bones = parent->skmodel->bones;
-		poutmodel->frames = parent->skmodel->frames;
-		poutmodel->numframes = parent->skmodel->numframes;
-	} else {		// load a config file
-		qbyte *buf;
+	if( parent )
+	{
+		mskmodel_t *parentskm = ( mskmodel_t * )parent->extradata;
+
+		if( !parentskm )
+			Com_Error( ERR_DROP, "%s is not a LOD model for %s",
+			mod->name, parent->name );
+
+		if( poutmodel->numbones != parentskm->numbones )
+			Com_Error( ERR_DROP, "%s has has wrong number of bones (%i should be less than %i)",
+			mod->name, poutmodel->numbones, parentskm->numbones );
+
+		poutmodel->bones = parentskm->bones;
+		poutmodel->frames = parentskm->frames;
+		poutmodel->numframes = parentskm->numframes;
+	}
+	else
+	{	// load a config file
 		char temp[MAX_QPATH];
 		char poseName[MAX_QPATH], configName[MAX_QPATH];
 
 		COM_StripExtension( mod->name, temp );
-		Q_snprintfz( configName, sizeof(configName), "%s.cfg", temp );
+		Q_snprintfz( configName, sizeof( configName ), "%s.cfg", temp );
 
-		memset( poseName, 0, sizeof(poseName) );
+		memset( poseName, 0, sizeof( poseName ) );
 
 		FS_LoadFile( configName, (void **)&buf, NULL, 0 );
-		if( !buf ) {
-			Q_snprintfz( poseName, sizeof(poseName), "%s.skp", temp );
-		} else {
+		if( !buf )
+		{
+			Q_snprintfz( poseName, sizeof( poseName ), "%s.skp", temp );
+		}
+		else
+		{
 			char *ptr, *token;
 
 			ptr = ( char * )buf;
-			while( ptr ) {
+			while( ptr )
+			{
 				token = COM_ParseExt( &ptr, qtrue );
-				if( !token )
+				if( !token[0] )
 					break;
 
-				if( !Q_stricmp( token, "import" ) ) {
+				if( !Q_stricmp( token, "import" ) )
+				{
 					token = COM_ParseExt( &ptr, qfalse );
-
 					COM_StripExtension( token, temp );
-					Q_snprintfz( poseName, sizeof(poseName), "%s.skp", temp );
+					Q_snprintfz( poseName, sizeof( poseName ), "%s.skp", temp );
 					break;
 				}
 			}
@@ -192,6 +220,8 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 			Com_Error( ERR_DROP, "Could not find pose file for %s", mod->name );
 
 		Mod_LoadSkeletalPose( poseName, mod, buf );
+
+		FS_FreeFile( buf );
 	}
 
 	// clear model's bounding box
@@ -202,19 +232,16 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 	basepose = Mod_Malloc( mod, sizeof( *basepose ) * poutmodel->numbones );
 	poutmodel->invbaseposes = Mod_Malloc( mod, sizeof( *poutmodel->invbaseposes ) * poutmodel->numbones );
 
-	for( i = 0, bp = basepose; i < poutmodel->numbones; i++, bp++ ) {
+	for( i = 0, bp = basepose; i < poutmodel->numbones; i++, bp++ )
+	{
 		int parent = poutmodel->bones[i].parent;
 		bonepose_t *obp = &poutmodel->frames[0].boneposes[i], *ibp = &poutmodel->invbaseposes[i];
 
-		if (parent >= 0)
-		{
+		if( parent >= 0 )
 			Quat_ConcatTransforms( basepose[parent].quat, basepose[parent].origin,
 				obp->quat, obp->origin, bp->quat, bp->origin );
-		}
 		else
-		{
 			*bp = *obp;
-		}
 
 		// reconstruct invserse bone pose
 		Quat_Conjugate( bp->quat, ibp->quat );
@@ -225,7 +252,8 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 	pinmesh = ( dskmmesh_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_meshes ) );
 	poutmesh = poutmodel->meshes = Mod_Malloc( mod, sizeof( mskmesh_t ) * poutmodel->nummeshes );
 
-	for( i = 0; i < poutmodel->nummeshes; i++, pinmesh++, poutmesh++ ) {
+	for( i = 0; i < poutmodel->nummeshes; i++, pinmesh++, poutmesh++ )
+	{
 		float *influences;
 		unsigned int size, *bones;
 
@@ -251,30 +279,36 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 		Mod_StripLODSuffix( poutmesh->name );
 
 		poutmesh->skin.shader = R_RegisterSkin( pinmesh->shadername );
+		R_DeformvBBoxForShader( poutmesh->skin.shader, ebbox );
 
-		pinreferences = ( index_t *)( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_references ) );
+		pinreferences = ( elem_t *)( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_references ) );
 		poutreferences = poutmesh->references = Mod_Malloc( mod, sizeof( unsigned int ) * poutmesh->numreferences );
 		for( j = 0; j < poutmesh->numreferences; j++, pinreferences++, poutreferences++ )
 			*poutreferences = LittleLong( *pinreferences );
 
 		pinskmvert = ( dskmvertex_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_verts ) );
 
-		poutmesh->influences = ( float * )Mod_Malloc( mod, (sizeof( *poutmesh->influences ) + sizeof( *poutmesh->bones )) * SKM_MAX_WEIGHTS * poutmesh->numverts );
-		poutmesh->bones = ( unsigned int * )(( qbyte * )poutmesh->influences + sizeof( *poutmesh->influences ) * SKM_MAX_WEIGHTS * poutmesh->numverts);
+		poutmesh->influences = ( float * )Mod_Malloc( mod, ( sizeof( *poutmesh->influences ) + sizeof( *poutmesh->bones ) ) * SKM_MAX_WEIGHTS * poutmesh->numverts );
+		poutmesh->bones = ( unsigned int * )( ( qbyte * )poutmesh->influences + sizeof( *poutmesh->influences ) * SKM_MAX_WEIGHTS * poutmesh->numverts );
 
-		size = sizeof( vec3_t ) * 2;		// xyz and normals
-		if( glConfig.GLSL )
-			size += sizeof( vec4_t );		// s-vectors
-		size *= poutmesh->numverts;
+		size = sizeof( vec4_t ) + sizeof( vec4_t ); // xyz and normals
+		if( glConfig.ext.GLSL )
+			size += sizeof( vec4_t );       // s-vectors
 
-		poutmesh->xyzArray = ( vec3_t * )(Mod_Malloc( mod, size ));
-		poutmesh->normalsArray = ( vec3_t * )(( qbyte * )poutmesh->xyzArray + sizeof( vec3_t ) * poutmesh->numverts);
+		size *= ( poutmesh->numverts+1 );       // pad by one additional vertex for prefetching
 
-		v = ( vec_t * )poutmesh->xyzArray;
-		n = ( vec_t * )poutmesh->normalsArray;
+		// align poutmesh->xyzArray on a 16-byte boundary (we leak 16 bytes at most though)
+		buf = ( qbyte * )( Mod_Malloc( mod, size+alignment ) );
+		poutmesh->xyzArray = ( vec4_t * )( buf+alignment-( (size_t)buf % alignment ) );
+		poutmesh->normalsArray = ( vec4_t * )( ( qbyte * )poutmesh->xyzArray + sizeof( vec4_t ) * ( poutmesh->numverts+1 ) );
+
+		v = ( vec_t * )poutmesh->xyzArray[0];
+		n = ( vec_t * )poutmesh->normalsArray[0];
 		influences = poutmesh->influences;
 		bones = poutmesh->bones;
-		for( j = 0; j < poutmesh->numverts; j++, v += 3, n += 3, influences += SKM_MAX_WEIGHTS, bones += SKM_MAX_WEIGHTS ) {
+		pframe = &poutmodel->frames[0];
+		for( j = 0; j < poutmesh->numverts; j++, v += 4, n += 4, influences += SKM_MAX_WEIGHTS, bones += SKM_MAX_WEIGHTS )
+		{
 			float sum, influence;
 			unsigned int bonenum, numweights;
 			vec3_t origin, normal, t, matrix[3];
@@ -282,11 +316,13 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 			pinbonevert = ( dskmbonevert_t * )( ( qbyte * )pinskmvert + sizeof( pinskmvert->numweights ) );
 			numweights = LittleLong( pinskmvert->numweights );
 
-			for( l = 0; l < numweights; l++, pinbonevert++ ) {
+			for( l = 0; l < numweights; l++, pinbonevert++ )
+			{
 				bonenum = LittleLong( pinbonevert->bonenum );
 				influence = LittleFloat( pinbonevert->influence );
 				poutbonepose = basepose + bonenum;
-				for( k = 0; k < 3; k++ ) {
+				for( k = 0; k < 3; k++ )
+				{
 					origin[k] = LittleFloat( pinbonevert->origin[k] );
 					normal[k] = LittleFloat( pinbonevert->normal[k] );
 				}
@@ -297,19 +333,27 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 				Matrix_TransformVector( matrix, origin, t );
 				VectorAdd( v, t, v );
 				VectorMA( v, influence, poutbonepose->origin, v );
+				v[3] = 1;
 
 				Matrix_TransformVector( matrix, normal, t );
 				VectorAdd( n, t, n );
+				n[3] = 0;
 
-				if( !l ) {		// store the first influence
+				if( !l )
+				{ // store the first influence
 					bones[0] = bonenum;
 					influences[0] = influence;
-				} else {		// store the new influence if needed
-					for( k = 0; k < SKM_MAX_WEIGHTS; k++ ) {
-						if( influence > influences[k] ) {
+				}
+				else
+				{ // store the new influence if needed
+					for( k = 0; k < SKM_MAX_WEIGHTS; k++ )
+					{
+						if( influence > influences[k] )
+						{
 							// pop the most weak influences out of the array,
 							// shifting the rest of them to the beginning
-							for( m = SKM_MAX_WEIGHTS-1; m > k; m-- ) {
+							for( m = SKM_MAX_WEIGHTS-1; m > k; m-- )
+							{
 								bones[m] = bones[m-1];
 								influences[m] = influences[m-1];
 							}
@@ -326,81 +370,89 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 			// normalize influences if needed
 			for( l = 0, sum = 0; l < SKM_MAX_WEIGHTS && influences[l]; l++ )
 				sum += influences[l];
-			if( sum > 1.0f - 1.0/256.0f ) {
+			if( sum > 1.0f - 1.0/256.0f )
+			{
 				for( l = 0, sum = 1.0f / sum; l < SKM_MAX_WEIGHTS && influences[l]; l++ )
 					influences[l] *= sum;
 			}
 
+			for( l = 0; l < SKM_MAX_WEIGHTS; l++ )
+			{
+				if( influences[l] == 1.0f )
+				{
+					assert( l < SKM_MAX_WEIGHTS-1 );
+					influences[l] = 1;
+					influences[l+1] = 0;
+					break;
+				}
+			}
+
 			// test vertex against the bounding box
-			AddPointToBounds( v, mod->mins, mod->maxs );
+			AddPointToBounds( v, pframe->mins, pframe->maxs );
 
 			pinskmvert = ( dskmvertex_t * )( ( qbyte * )pinbonevert );
 		}
 
 		pinstcoord = ( dskmcoord_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_texcoords ) );
-		poutstcoord = poutmesh->stArray = Mod_Malloc( mod, poutmesh->numverts * sizeof(vec2_t) );
-		for( j = 0; j < poutmesh->numverts; j++, pinstcoord++ ) {
+		poutstcoord = poutmesh->stArray = Mod_Malloc( mod, poutmesh->numverts * sizeof( vec2_t ) );
+		for( j = 0; j < poutmesh->numverts; j++, pinstcoord++ )
+		{
 			poutstcoord[j][0] = LittleFloat( pinstcoord->st[0] );
 			poutstcoord[j][1] = LittleFloat( pinstcoord->st[1] );
 		}
 
-		pintris = ( index_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_indices ) );
-		pouttris = poutmesh->indexes = Mod_Malloc( mod, sizeof( index_t ) * poutmesh->numtris * 3 );
-		for( j = 0; j < poutmesh->numtris; j++, pintris += 3, pouttris += 3 ) {
-			pouttris[0] = (index_t)LittleLong( pintris[0] );
-			pouttris[1] = (index_t)LittleLong( pintris[1] );
-			pouttris[2] = (index_t)LittleLong( pintris[2] );
+		pintris = ( elem_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_indices ) );
+		pouttris = poutmesh->elems = Mod_Malloc( mod, sizeof( elem_t ) * poutmesh->numtris * 3 );
+		for( j = 0; j < poutmesh->numtris; j++, pintris += 3, pouttris += 3 )
+		{
+			pouttris[0] = (elem_t)LittleLong( pintris[0] );
+			pouttris[1] = (elem_t)LittleLong( pintris[1] );
+			pouttris[2] = (elem_t)LittleLong( pintris[2] );
 		}
 
-	//
-	// build S and T vectors
-	//
-		if( glConfig.GLSL ) {
-			vec3_t tempTVectorsArray[MAX_ARRAY_VERTS];
-
-			poutmesh->sVectorsArray = ( vec4_t * )(( qbyte * )poutmesh->normalsArray + sizeof( vec3_t ) * poutmesh->numverts);
-			R_BuildTangentVectors( poutmesh->numverts, poutmesh->xyzArray, poutmesh->normalsArray, poutmesh->stArray, 
-				poutmesh->numtris, poutmesh->indexes, poutmesh->sVectorsArray, tempTVectorsArray );
+		//
+		// build S and T vectors
+		//
+		if( glConfig.ext.GLSL )
+		{
+			poutmesh->sVectorsArray = ( vec4_t * )( ( qbyte * )poutmesh->normalsArray + sizeof( vec4_t ) * ( poutmesh->numverts+1 ) );
+			R_BuildTangentVectors( poutmesh->numverts, poutmesh->xyzArray, poutmesh->normalsArray, poutmesh->stArray,
+				poutmesh->numtris, poutmesh->elems, poutmesh->sVectorsArray );
 		}
-
-	//
-	// build triangle neighbors
-	//
-#if SHADOW_VOLUMES
-		poutmesh->trneighbors = Mod_Malloc( mod, sizeof(int) * poutmesh->numtris * 3 );
-		R_BuildTriangleNeighbors( poutmesh->trneighbors, poutmesh->indexes, poutmesh->numtris );
-#endif
 	}
 
 #if 0
 	// enable this to speed up loading
-	for( j = 0; j < 3; j++ ) {
+	for( j = 0; j < 3; j++ )
+	{
 		mod->mins[j] -= 48;
 		mod->maxs[j] += 48;
 	}
 #else
 	// so much work just to calc the model's bounds, doh
-	for( j = 1; j < poutmodel->numframes; j++ ) {
-		for( i = 0, bp = basepose; i < poutmodel->numbones; i++, bp++ ) {
-			int parent = poutmodel->bones[i].parent;
-			bonepose_t *obp = &poutmodel->frames[j].boneposes[i];
+	for( j = 1; j < poutmodel->numframes; j++ )
+	{
+		pframe = &poutmodel->frames[j];
 
-			if (parent >= 0)
-			{
+		for( i = 0, bp = basepose; i < poutmodel->numbones; i++, bp++ )
+		{
+			int parent = poutmodel->bones[i].parent;
+			bonepose_t *obp = &pframe->boneposes[i];
+
+			if( parent >= 0 )
 				Quat_ConcatTransforms( basepose[parent].quat, basepose[parent].origin,
 					obp->quat, obp->origin, bp->quat, bp->origin );
-			}
 			else
-			{
 				*bp = *obp;
-			}
 		}
 
 		pinmesh = ( dskmmesh_t * )( ( qbyte * )pinmodel + LittleLong( pinmodel->ofs_meshes ) );
-		for( i = 0, poutmesh = poutmodel->meshes; i < poutmodel->nummeshes; i++, pinmesh++, poutmesh++ ) {
+		for( i = 0, poutmesh = poutmodel->meshes; i < poutmodel->nummeshes; i++, pinmesh++, poutmesh++ )
+		{
 			pinskmvert = ( dskmvertex_t * )( ( qbyte * )pinmodel + LittleLong( pinmesh->ofs_verts ) );
 
-			for( k = 0; k < poutmesh->numverts; k++ ) {
+			for( k = 0; k < poutmesh->numverts; k++ )
+			{
 				float influence;
 				unsigned int numweights, bonenum;
 				vec3_t v;
@@ -409,7 +461,8 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 				numweights = LittleLong( pinskmvert->numweights );
 
 				VectorClear( v );
-				for( l = 0; l < numweights; l++, pinbonevert++ ) {
+				for( l = 0; l < numweights; l++, pinbonevert++ )
+				{
 					vec3_t origin, t;
 
 					bonenum = LittleLong( pinbonevert->bonenum );
@@ -425,7 +478,7 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 				}
 
 				// test vertex against the bounding box
-				AddPointToBounds( v, mod->mins, mod->maxs );
+				AddPointToBounds( v, pframe->mins, pframe->maxs );
 
 				pinskmvert = ( dskmvertex_t * )( ( qbyte * )pinbonevert );
 			}
@@ -434,6 +487,15 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 	}
 #endif
 
+	ClearBounds( mod->mins, mod->maxs );
+	for( j = 0, pframe = poutmodel->frames; j < poutmodel->numframes; j++, pframe++ )
+	{
+		VectorSubtract( pframe->mins, ebbox, pframe->mins );
+		VectorAdd( pframe->maxs, ebbox, pframe->maxs );
+		pframe->radius = RadiusFromBounds( pframe->mins, pframe->maxs );
+		AddPointToBounds( pframe->mins, mod->mins, mod->maxs );
+		AddPointToBounds( pframe->maxs, mod->mins, mod->maxs );
+	}
 	mod->radius = RadiusFromBounds( mod->mins, mod->maxs );
 
 	Mem_Free( basepose );
@@ -445,14 +507,17 @@ void Mod_LoadSkeletalModel( model_t *mod, model_t *parent, void *buffer )
 R_SkeletalGetNumBones
 ================
 */
-int R_SkeletalGetNumBones( model_t *mod, int *numFrames )
+int R_SkeletalGetNumBones( const model_t *mod, int *numFrames )
 {
+	mskmodel_t *skmodel;
+
 	if( !mod || mod->type != mod_skeletal )
 		return 0;
 
+	skmodel = ( mskmodel_t * )mod->extradata;
 	if( numFrames )
-		*numFrames = mod->skmodel->numframes;
-	return mod->skmodel->numbones;
+		*numFrames = skmodel->numframes;
+	return skmodel->numbones;
 }
 
 /*
@@ -460,18 +525,21 @@ int R_SkeletalGetNumBones( model_t *mod, int *numFrames )
 R_SkeletalGetBoneInfo
 ================
 */
-int R_SkeletalGetBoneInfo( model_t *mod, int bonenum, char *name, int size, int *flags )
+int R_SkeletalGetBoneInfo( const model_t *mod, int bonenum, char *name, size_t name_size, int *flags )
 {
-	mskbone_t *bone;
+	const mskbone_t *bone;
+	const mskmodel_t *skmodel;
 
 	if( !mod || mod->type != mod_skeletal )
 		return 0;
-	if( (unsigned int)bonenum >= (int)mod->skmodel->numbones )
+
+	skmodel = ( mskmodel_t * )mod->extradata;
+	if( (unsigned int)bonenum >= (int)skmodel->numbones )
 		Com_Error( ERR_DROP, "R_SkeletalGetBone: bad bone number" );
 
-	bone = &mod->skmodel->bones[bonenum];
-	if( name && size )
-		Q_strncpyz( name, bone->name, size );
+	bone = &skmodel->bones[bonenum];
+	if( name && name_size )
+		Q_strncpyz( name, bone->name, name_size );
 	if( flags )
 		*flags = bone->flags;
 	return bone->parent;
@@ -482,97 +550,155 @@ int R_SkeletalGetBoneInfo( model_t *mod, int bonenum, char *name, int size, int 
 R_SkeletalGetBonePose
 ================
 */
-void R_SkeletalGetBonePose( model_t *mod, int bonenum, int frame, bonepose_t *bonepose )
+void R_SkeletalGetBonePose( const model_t *mod, int bonenum, int frame, bonepose_t *bonepose )
 {
+	const mskmodel_t *skmodel;
+
 	if( !mod || mod->type != mod_skeletal )
 		return;
-	if( bonenum < 0 || bonenum >= (int)mod->skmodel->numbones )
+
+	skmodel = ( mskmodel_t * )mod->extradata;
+	if( bonenum < 0 || bonenum >= (int)skmodel->numbones )
 		Com_Error( ERR_DROP, "R_SkeletalGetBonePose: bad bone number" );
-	if( frame < 0 || frame >= (int)mod->skmodel->numframes )
+	if( frame < 0 || frame >= (int)skmodel->numframes )
 		Com_Error( ERR_DROP, "R_SkeletalGetBonePose: bad frame number" );
 
 	if( bonepose )
-		*bonepose = mod->skmodel->frames[frame].boneposes[bonenum];
+		*bonepose = skmodel->frames[frame].boneposes[bonenum];
 }
 
 /*
 ================
-R_SkeletalModelLODForDistance
+R_SkeletalModelLOD
 ================
 */
-static model_t *R_SkeletalModelLODForDistance( entity_t *e )
+static model_t *R_SkeletalModelLOD( entity_t *e )
 {
 	int lod;
 	float dist;
 
-	if( !e->model->numlods || (e->flags & RF_FORCENOLOD) )
+	if( !e->model->numlods || ( e->flags & RF_FORCENOLOD ) )
 		return e->model;
 
-	dist = Distance( e->origin, ri.viewOrigin );
+	dist = DistanceFast( e->origin, ri.viewOrigin );
 	dist *= ri.lod_dist_scale_for_fov;
 
-	lod = (int)(dist / e->model->radius);
-	if (r_lodscale->integer)
+	lod = (int)( dist / e->model->radius );
+	if( r_lodscale->integer )
 		lod /= r_lodscale->integer;
 	lod += r_lodbias->integer;
 
 	if( lod < 1 )
 		return e->model;
-	return e->model->lods[min(lod, e->model->numlods)-1];
+	return e->model->lods[min( lod, e->model->numlods )-1];
 }
 
 /*
 ================
-R_SkeletalModelBBox
+R_SkeletalModelLerpBBox
 ================
 */
-static void R_SkeletalModelBBox( entity_t *e, model_t *mod )
+static void R_SkeletalModelLerpBBox( entity_t *e, model_t *mod )
 {
-	VectorCopy( mod->mins, skm_mins );
-	VectorCopy( mod->maxs, skm_maxs );
-	skm_radius = mod->radius;
+	int i;
+	mskframe_t *pframe, *poldframe;
+	float *thismins, *oldmins, *thismaxs, *oldmaxs;
+	mskmodel_t *skmodel = ( mskmodel_t * )mod->extradata;
 
-	if( e->scale != 1.0f ) {
+	if( !skmodel->nummeshes )
+	{
+		skm_radius = 0;
+		ClearBounds( skm_mins, skm_maxs );
+		return;
+	}
+
+	if( ( e->frame >= (int)skmodel->numframes ) || ( e->frame < 0 ) )
+	{
+#ifndef WSW_RELEASE
+		Com_DPrintf( "R_SkeletalModelBBox %s: no such frame %d\n", mod->name, e->frame );
+#endif
+		e->frame = 0;
+	}
+	if( ( e->oldframe >= (int)skmodel->numframes ) || ( e->oldframe < 0 ) )
+	{
+#ifndef WSW_RELEASE
+		Com_DPrintf( "R_SkeletalModelBBox %s: no such oldframe %d\n", mod->name, e->oldframe );
+#endif
+		e->oldframe = 0;
+	}
+
+	pframe = skmodel->frames + e->frame;
+	poldframe = skmodel->frames + e->oldframe;
+
+	// compute axially aligned mins and maxs
+	if( pframe == poldframe )
+	{
+		VectorCopy( pframe->mins, skm_mins );
+		VectorCopy( pframe->maxs, skm_maxs );
+		skm_radius = pframe->radius;
+	}
+	else
+	{
+		thismins = pframe->mins;
+		thismaxs = pframe->maxs;
+
+		oldmins = poldframe->mins;
+		oldmaxs = poldframe->maxs;
+
+		for( i = 0; i < 3; i++ )
+		{
+			skm_mins[i] = min( thismins[i], oldmins[i] );
+			skm_maxs[i] = max( thismaxs[i], oldmaxs[i] );
+		}
+		skm_radius = RadiusFromBounds( thismins, thismaxs );
+	}
+
+	if( e->scale != 1.0f )
+	{
 		VectorScale( skm_mins, e->scale, skm_mins );
 		VectorScale( skm_maxs, e->scale, skm_maxs );
 		skm_radius *= e->scale;
 	}
 }
 
-typedef float fl12_t[12];
+//=======================================================================
 
 /*
 ================
 R_SkeletalTransformVerts
-
-FIXME: Optimize for SSE/SSE2
 ================
 */
-static void R_SkeletalTransformVerts( int numverts, unsigned int *bones, float *influences, fl12_t *relbonepose, vec_t *v, vec_t *ov )
+static void R_SkeletalTransformVerts( int numverts, const unsigned int *bones, const float *influences, mat4x4_t *relbonepose, const vec_t *v, vec_t *ov )
 {
 	int j;
-	float i, *pose;
+	float i;
+	const float *pose;
 
-	for( ; numverts; numverts--, v += 3, ov += 3, bones += SKM_MAX_WEIGHTS, influences += SKM_MAX_WEIGHTS ) {
+	for( ; numverts; numverts--, v += 4, ov += 4, bones += SKM_MAX_WEIGHTS, influences += SKM_MAX_WEIGHTS )
+	{
 		i = *influences;
 		pose = relbonepose[*bones];
 
-		if( i == 1 ) {	// most common case
-			ov[0] = v[0] * pose[0] + v[1] * pose[1] + v[2] * pose[2] + pose[3];
-			ov[1] = v[0] * pose[4] + v[1] * pose[5] + v[2] * pose[6] + pose[7];
-			ov[2] = v[0] * pose[8] + v[1] * pose[9] + v[2] * pose[10] + pose[11];
-		} else {
-			ov[0] = i * (v[0] * pose[0] + v[1] * pose[1] + v[2] * pose[2] + pose[3]);
-			ov[1] = i * (v[0] * pose[4] + v[1] * pose[5] + v[2] * pose[6] + pose[7]);
-			ov[2] = i * (v[0] * pose[8] + v[1] * pose[9] + v[2] * pose[10] + pose[11]);
+		if( i == 1 )
+		{       // most common case
+			ov[0] = v[0] * pose[0] + v[1] * pose[4] + v[2] * pose[8] + pose[12];
+			ov[1] = v[0] * pose[1] + v[1] * pose[5] + v[2] * pose[9] + pose[13];
+			ov[2] = v[0] * pose[2] + v[1] * pose[6] + v[2] * pose[10] + pose[14];
+		}
+		else
+		{
+			ov[0] = i * ( v[0] * pose[0] + v[1] * pose[4] + v[2] * pose[8] + pose[12] );
+			ov[1] = i * ( v[0] * pose[1] + v[1] * pose[5] + v[2] * pose[9] + pose[13] );
+			ov[2] = i * ( v[0] * pose[2] + v[1] * pose[6] + v[2] * pose[10] + pose[14] );
 
-			for( j = 1; j < SKM_MAX_WEIGHTS && influences[j]; j++ ) {
+			for( j = 1; j < SKM_MAX_WEIGHTS && influences[j]; j++ )
+			{
 				i = influences[j];
 				pose = relbonepose[bones[j]];
 
-				ov[0] += i * (v[0] * pose[0] + v[1] * pose[1] + v[2] * pose[2] + pose[3]);
-				ov[1] += i * (v[0] * pose[4] + v[1] * pose[5] + v[2] * pose[6] + pose[7]);
-				ov[2] += i * (v[0] * pose[8] + v[1] * pose[9] + v[2] * pose[10] + pose[11]);
+				ov[0] += i * ( v[0] * pose[0] + v[1] * pose[4] + v[2] * pose[8] + pose[12] );
+				ov[1] += i * ( v[0] * pose[1] + v[1] * pose[5] + v[2] * pose[9] + pose[13] );
+				ov[2] += i * ( v[0] * pose[2] + v[1] * pose[6] + v[2] * pose[10] + pose[14] );
 			}
 		}
 	}
@@ -581,74 +707,351 @@ static void R_SkeletalTransformVerts( int numverts, unsigned int *bones, float *
 /*
 ================
 R_SkeletalTransformNormals
-
-FIXME: Optimize for SSE/SSE2
 ================
 */
-static void R_SkeletalTransformNormals( int numverts, unsigned int *bones, float *influences, fl12_t *relbonepose, vec_t *n, vec_t *on, int nstride )
+static void R_SkeletalTransformNormals( int numverts, const unsigned int *bones, const float *influences, mat4x4_t *relbonepose, const vec_t *v, vec_t *ov )
 {
 	int j;
-	float i, *pose;
+	float i;
+	const float *pose;
 
-	for( ; numverts; numverts--, n += nstride, on += nstride, bones += SKM_MAX_WEIGHTS, influences += SKM_MAX_WEIGHTS ) {
+	for( ; numverts; numverts--, v += 4, ov += 4, bones += SKM_MAX_WEIGHTS, influences += SKM_MAX_WEIGHTS )
+	{
 		i = *influences;
 		pose = relbonepose[*bones];
 
-		if( i == 1 ) {	// most common case
-			on[0] = n[0] * pose[0] + n[1] * pose[1] + n[2] * pose[2];
-			on[1] = n[0] * pose[4] + n[1] * pose[5] + n[2] * pose[6];
-			on[2] = n[0] * pose[8] + n[1] * pose[9] + n[2] * pose[10];
-		} else {
-			on[0] = i * (n[0] * pose[0] + n[1] * pose[1] + n[2] * pose[2]);
-			on[1] = i * (n[0] * pose[4] + n[1] * pose[5] + n[2] * pose[6]);
-			on[2] = i * (n[0] * pose[8] + n[1] * pose[9] + n[2] * pose[10]);
+		if( i == 1 )
+		{       // most common case
+			ov[0] = v[0] * pose[0] + v[1] * pose[4] + v[2] * pose[8];
+			ov[1] = v[0] * pose[1] + v[1] * pose[5] + v[2] * pose[9];
+			ov[2] = v[0] * pose[2] + v[1] * pose[6] + v[2] * pose[10];
+			ov[3] = v[3];
+		}
+		else
+		{
+			ov[0] = i * ( v[0] * pose[0] + v[1] * pose[4] + v[2] * pose[8] );
+			ov[1] = i * ( v[0] * pose[1] + v[1] * pose[5] + v[2] * pose[9] );
+			ov[2] = i * ( v[0] * pose[2] + v[1] * pose[6] + v[2] * pose[10] );
+			ov[3] = v[3];
 
-			for( j = 1; j < SKM_MAX_WEIGHTS && influences[j]; j++ ) {
+			for( j = 1; j < SKM_MAX_WEIGHTS && influences[j]; j++ )
+			{
 				i = influences[j];
 				pose = relbonepose[bones[j]];
 
-				on[0] += i * (n[0] * pose[0] + n[1] * pose[1] + n[2] * pose[2]);
-				on[1] += i * (n[0] * pose[4] + n[1] * pose[5] + n[2] * pose[6]);
-				on[2] += i * (n[0] * pose[8] + n[1] * pose[9] + n[2] * pose[10]);
+				ov[0] += i * ( v[0] * pose[0] + v[1] * pose[4] + v[2] * pose[8] );
+				ov[1] += i * ( v[0] * pose[1] + v[1] * pose[5] + v[2] * pose[9] );
+				ov[2] += i * ( v[0] * pose[2] + v[1] * pose[6] + v[2] * pose[10] );
 			}
 		}
 	}
 }
+
+#if defined ( id386 ) && !defined ( __MACOSX__ )
+
+#if defined ( __GNUC__ )
+
+#define R_SkeletalTransformVerts_SSE R_SkeletalTransformVerts
+#define R_SkeletalTransformNormals_SSE R_SkeletalTransformNormals
+
+#elif defined ( _WIN32 ) && ( _MSC_VER >= 1400 )
+#pragma optimize( "", off )
+
+/*
+================
+R_SkeletalTransformVerts_SSE
+================
+*/
+static void R_SkeletalTransformVerts_SSE( int numverts, const unsigned int *bones, const float *influences, mat4x4_t *relbonepose, const vec_t *v, vec_t *ov )
+{
+	__asm {
+		mov eax, numverts;
+		test eax, eax;
+		jz done;
+
+		imul eax, 0x10;
+		mov numverts, eax;
+		xor eax, eax;
+
+		mov ebx, v;
+		mov edi, ov;
+		mov ecx, relbonepose;
+
+sl1:
+		movaps xmm0, ds : dword ptr[ebx+eax];
+		movaps xmm1, ds : dword ptr[ebx+eax];
+		movaps xmm2, ds : dword ptr[ebx+eax];
+		//		prefetchnta [ebx+eax+0x10];
+
+		// loop init
+		xor edx, edx;
+
+		//i = influence[0];
+		mov esi, influences;
+		cmp ds : dword ptr[esi], 0x3F800000; // IEEE-format representation of 1.0f
+
+		movss xmm7, ds : dword ptr[esi]; // xmm7 contains influence
+		shufps xmm7, xmm7, 0x00;
+
+		shufps xmm0, xmm0, 0x00;
+		shufps xmm1, xmm1, 0x55;
+		shufps xmm2, xmm2, 0xAA;
+
+		mov esi, bones;
+		mov esi, ds : dword ptr[esi];
+		lea esi,[esi *8];
+		lea esi,[esi *8+ecx];
+
+		jne slowCase;
+
+		//	fastCase:
+		// copying pose[0], pose[1], pose[2], pose[3] into xmm3
+		movaps xmm3, ds : dword ptr[esi+0x00];
+		// copying pose[4], pose[5], pose[6], pose[7] into xmm4
+		movaps xmm4, ds : dword ptr[esi+0x10];
+		// copying pose[8], pose[9], pose[10], pose[11] into xmm5
+		movaps xmm5, ds : dword ptr[esi+0x20];
+		// copying pose[12], pose[13], pose[14], pose[15] into xmm5
+		movaps xmm6, ds : dword ptr[esi+0x30];
+
+		mulps xmm3, xmm0; // xmm3 * v[0]
+		mulps xmm4, xmm1; // xmm4 * v[1]
+		mulps xmm5, xmm2; // xmm5 * v[2]
+
+		// adding each column vector into xmm6
+		addps xmm6, xmm3;
+		addps xmm6, xmm4;
+		addps xmm6, xmm5;
+		jmp endOfLoop;
+
+		// loop start
+slowCase:
+		xorps xmm6, xmm6;
+
+continueSlowLoop:
+		// copying pose[0], pose[1], pose[2], pose[3] into xmm4
+		movaps xmm3, ds : dword ptr[esi+0x00];
+		// copying pose[4], pose[5], pose[6], pose[7] into xmm5
+		movaps xmm4, ds : dword ptr[esi+0x10];
+		// copying pose[8], pose[9], pose[10], pose[11] into xmm4
+		movaps xmm5, ds : dword ptr[esi+0x20];
+
+		mulps xmm3, xmm0; // xmm3 * v[0]
+		mulps xmm4, xmm1; // xmm4 * v[1]
+		mulps xmm5, xmm2; // xmm5 * v[2]
+
+		// adding each column vector into xmm5
+		addps xmm5, ds : dword ptr[esi+0x30]; // adding pose[12], pose[13], pose[14], pose[15] into xmm5
+
+		mulps xmm3, xmm7; // i * v[0] * pos
+		mulps xmm4, xmm7; // i * v[1] * pos
+		mulps xmm5, xmm7; // i * v[2] * pos
+
+		addps xmm6, xmm3;
+		addps xmm6, xmm4;
+		addps xmm6, xmm5; // adding the result to ov vector
+
+		inc edx;
+		cmp edx, SKM_MAX_WEIGHTS;
+
+		// loop condition
+		je endOfLoop;
+
+		mov esi, influences;
+		cmp ds : dword ptr[esi+edx*0x04], 0;
+		je endOfLoop;
+
+		//i = influence[j];
+		movss xmm7, ds : dword ptr[esi+edx*0x04]; // xmm6 contains i
+		shufps xmm7, xmm7, 0x00;
+
+		mov esi, bones;
+		mov esi, ds : dword ptr[esi+edx*0x04];
+		lea esi,[esi *8];
+		lea esi,[esi *8+ecx];
+
+		jmp continueSlowLoop;
+
+endOfLoop:
+		movaps ds : dword ptr[edi+eax], xmm6;
+
+		add bones, SKM_MAX_WEIGHTS *0x04;
+		add influences, SKM_MAX_WEIGHTS *0x04;
+
+		add eax, 0x10;
+		cmp eax, numverts;
+
+		jl sl1;
+done:
+		;
+	}
+}
+
+/*
+================
+R_SkeletalTransformNormals_SSE
+================
+*/
+static void R_SkeletalTransformNormals_SSE( int numverts, const unsigned int *bones, const float *influences, mat4x4_t *relbonepose, const vec_t *v, vec_t *ov )
+{
+	__asm {
+		mov eax, numverts;
+		test eax, eax;
+		jz done;
+
+		imul eax, 0x10;
+		mov numverts, eax;
+		xor eax, eax;
+
+		mov ebx, v;
+		mov edi, ov;
+		mov ecx, relbonepose;
+
+sl1:
+		movaps xmm0, ds : dword ptr[ebx+eax];
+		movaps xmm1, ds : dword ptr[ebx+eax];
+		movaps xmm2, ds : dword ptr[ebx+eax];
+		//		prefetchnta [ebx+eax+0x10];
+
+		// loop init
+		xor edx, edx;
+
+		//i = influence[0];
+		mov esi, influences;
+		cmp ds : dword ptr[esi], 0x3F800000; // IEEE-format representation of 1.0f
+
+		movss xmm7, ds : dword ptr[esi]; // xmm7 contains influence
+		shufps xmm7, xmm7, 0x00;
+
+		shufps xmm0, xmm0, 0x00;
+		shufps xmm1, xmm1, 0x55;
+		shufps xmm2, xmm2, 0xAA;
+
+		mov esi, bones;
+		mov esi, ds : dword ptr[esi];
+		lea esi,[esi *8];
+		lea esi,[esi *8+ecx];
+
+		jne slowCase;
+
+		//	fastCase:
+		xorps xmm6, xmm6;
+
+		// copying pose[0], pose[1], pose[2], pose[3] into xmm3
+		movaps xmm3, ds : dword ptr[esi+0x00];
+		// copying pose[4], pose[5], pose[6], pose[7] into xmm4
+		movaps xmm4, ds : dword ptr[esi+0x10];
+		// copying pose[8], pose[9], pose[10], pose[11] into xmm5
+		movaps xmm5, ds : dword ptr[esi+0x20];
+
+		mulps xmm3, xmm0; // xmm3 * v[0]
+		mulps xmm4, xmm1; // xmm4 * v[1]
+		mulps xmm5, xmm2; // xmm5 * v[2]
+
+		// adding each column vector into xmm6
+		addps xmm6, xmm3;
+		addps xmm6, xmm4;
+		addps xmm6, xmm5;
+		jmp endOfLoop;
+
+		// loop start
+slowCase:
+		xorps xmm6, xmm6;
+
+continueSlowLoop:
+		// copying pose[0], pose[1], pose[2], pose[3] into xmm4
+		movaps xmm3, ds : dword ptr[esi+0x00];
+		// copying pose[4], pose[5], pose[6], pose[7] into xmm5
+		movaps xmm4, ds : dword ptr[esi+0x10];
+		// copying pose[8], pose[9], pose[10], pose[11] into xmm4
+		movaps xmm5, ds : dword ptr[esi+0x20];
+
+		mulps xmm3, xmm0; // xmm3 * v[0]
+		mulps xmm4, xmm1; // xmm4 * v[1]
+		mulps xmm5, xmm2; // xmm5 * v[2]
+
+		mulps xmm3, xmm7; // i * v[0] * pos
+		mulps xmm4, xmm7; // i * v[1] * pos
+		mulps xmm5, xmm7; // i * v[2] * pos
+
+		addps xmm6, xmm3;
+		addps xmm6, xmm4;
+		addps xmm6, xmm5; // adding the result to ov vector
+
+		inc edx;
+		cmp edx, SKM_MAX_WEIGHTS;
+
+		// loop condition
+		je endOfLoop;
+
+		mov esi, influences;
+		cmp ds : dword ptr[esi+edx*0x04], 0;
+		je endOfLoop;
+
+		//i = influence[j];
+		movss xmm7, ds : dword ptr[esi+edx*0x04]; // xmm6 contains i
+		shufps xmm7, xmm7, 0x00;
+
+		mov esi, bones;
+		mov esi, ds : dword ptr[esi+edx*0x04];
+		lea esi,[esi *8];
+		lea esi,[esi *8+ecx];
+
+		jmp continueSlowLoop;
+
+endOfLoop:
+		movaps ds : dword ptr[edi+eax], xmm6;
+
+		add bones, SKM_MAX_WEIGHTS *0x04;
+		add influences, SKM_MAX_WEIGHTS *0x04;
+
+		add eax, 0x10;
+		cmp eax, numverts;
+
+		jl sl1;
+done:
+		;
+	}
+}
+
+#pragma optimize( "", on )
+#else
+#define R_SkeletalTransformVerts_SSE R_SkeletalTransformVerts
+#define R_SkeletalTransformNormals_SSE R_SkeletalTransformNormals
+#endif
+#else
+#define R_SkeletalTransformVerts_SSE R_SkeletalTransformVerts
+#define R_SkeletalTransformNormals_SSE R_SkeletalTransformNormals
+#endif
+
+//=======================================================================
+
+static ALIGN( 16 ) mat4x4_t relbonepose[SKM_MAX_BONES];
 
 /*
 ================
 R_DrawBonesFrameLerp
 ================
 */
-void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
+static void R_DrawBonesFrameLerp( const meshbuffer_t *mb, float backlerp )
 {
-	unsigned int	i, j, meshnum;
-	int				features;
-	float			frontlerp = 1.0 - backlerp, *pose;
-	mskmesh_t		*mesh;
-	bonepose_t		*bonepose, *oldbonepose, tempbonepose[SKM_MAX_BONES], *lerpedbonepose;
-	bonepose_t		*bp, *oldbp, *out, tp;
-	entity_t		*e = ri.currententity;
-	mskmodel_t		*skmodel = mod->skmodel;
-	fl12_t			relbonepose[SKM_MAX_BONES];
-	shader_t		*shader;
-	mskbone_t		*bone;
-	vec3_t			*xyzArray, *normalsArray;
-	vec4_t			*sVectorsArray;
+	unsigned int i, j, meshnum;
+	int features;
+	float frontlerp = 1.0 - backlerp, *pose;
+	mskmesh_t *mesh;
+	bonepose_t *bonepose, *oldbonepose, tempbonepose[SKM_MAX_BONES], *lerpedbonepose;
+	bonepose_t *bp, *oldbp, *out, tp;
+	entity_t *e = ri.currententity;
+	model_t	*mod = Mod_ForHandle( mb->LODModelHandle );
+	mskmodel_t *skmodel = ( mskmodel_t * )mod->extradata;
+	shader_t *shader;
+	mskbone_t *bone;
+	vec4_t *xyzArray, *normalsArray, *sVectorsArray;
 
-	if( !shadow && (e->flags & RF_VIEWERMODEL) && !(ri.params & (RP_MIRRORVIEW|RP_PORTALVIEW|RP_SKYPORTALVIEW)) )
-		return;
-
-	meshnum = -(mb->infokey + 1);
+	meshnum = -( mb->infokey + 1 );
 	if( meshnum >= skmodel->nummeshes )
 		return;
-
 	mesh = skmodel->meshes + meshnum;
-
-#if SHADOW_VOLUMES
-	if( shadow && !mesh->trneighbors )
-		return;
-#endif
 
 	xyzArray = inVertsArray;
 	normalsArray = inNormalsArray;
@@ -657,20 +1060,25 @@ void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp,
 	MB_NUM2SHADER( mb->shaderkey, shader );
 
 	features = MF_NONBATCHED | shader->features;
-	if( (features && (MF_SVECTORS)) || r_shownormals->integer && !shadow )
-		features |= MF_NORMALS;
-	if( shader->flags & SHADER_AUTOSPRITE )
-		features |= MF_NOCULL;
-	if( shadow )
+	if( ri.params & RP_SHADOWMAPVIEW )
 	{
-		features |= MF_DEFORMVS;
-		features &= ~MF_SVECTORS;
-		if( !(shader->features & SHADER_DEFORMV_NORMAL) )
+		features &= ~( MF_COLORS|MF_SVECTORS|MF_ENABLENORMALS );
+		if( !( shader->features & MF_DEFORMVS ) )
 			features &= ~MF_NORMALS;
+	}
+	else
+	{
+		if( ( features & MF_SVECTORS ) || r_shownormals->integer )
+			features |= MF_NORMALS;
+#ifdef HARDWARE_OUTLINES
+		if( e->outlineHeight )
+			features |= MF_NORMALS|(glConfig.ext.GLSL ? MF_ENABLENORMALS : 0);
+#endif
 	}
 
 	// not sure if it's really needed
-	if( e->boneposes == skmodel->frames[0].boneposes ) {
+	if( e->boneposes == skmodel->frames[0].boneposes )
+	{
 		e->boneposes = NULL;
 		e->frame = e->oldframe = 0;
 	}
@@ -686,12 +1094,18 @@ void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp,
 	}
 	else
 	{
-		if( ( e->frame >= (int)skmodel->numframes ) || ( e->frame < 0 ) ) {
+		if( ( e->frame >= (int)skmodel->numframes ) || ( e->frame < 0 ) )
+		{
+#ifndef WSW_RELEASE
 			Com_DPrintf( "R_DrawBonesFrameLerp %s: no such frame %d\n", mod->name, e->frame );
+#endif
 			e->frame = 0;
 		}
-		if( ( e->oldframe >= (int)skmodel->numframes ) || ( e->oldframe < 0 ) ) {
+		if( ( e->oldframe >= (int)skmodel->numframes ) || ( e->oldframe < 0 ) )
+		{
+#ifndef WSW_RELEASE
 			Com_DPrintf( "R_DrawBonesFrameLerp %s: no such oldframe %d\n", mod->name, e->oldframe );
+#endif
 			e->oldframe = 0;
 		}
 
@@ -709,17 +1123,8 @@ void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp,
 		else
 		{	// transform
 			if( !e->frame )
-			{	// fastpath: render frame 0 as is (with possible scaling)
-				if( e->scale == 1 )
-				{
-					xyzArray = mesh->xyzArray;
-				}
-				else
-				{
-					for( i = 0; i < mesh->numverts; i++ )
-						VectorScale( mesh->xyzArray[i], e->scale, inVertsArray[i] );
-				}
-
+			{	// fastpath: render frame 0 as is
+				xyzArray = mesh->xyzArray;
 				normalsArray = mesh->normalsArray;
 				sVectorsArray = mesh->sVectorsArray;
 
@@ -753,9 +1158,9 @@ void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp,
 			for( i = 0, out = lerpedbonepose, bonepose = bp, oldbonepose = oldbp, bone = skmodel->bones; i < skmodel->numbones; i++, out++, bonepose++, oldbonepose++, bone++ )
 			{
 				Quat_Lerp( oldbonepose->quat, bonepose->quat, frontlerp, out->quat );
-				out->origin[0] = oldbonepose->origin[0] + (bonepose->origin[0] - oldbonepose->origin[0]) * frontlerp;
-				out->origin[1] = oldbonepose->origin[1] + (bonepose->origin[1] - oldbonepose->origin[1]) * frontlerp;
-				out->origin[2] = oldbonepose->origin[2] + (bonepose->origin[2] - oldbonepose->origin[2]) * frontlerp;
+				out->origin[0] = oldbonepose->origin[0] + ( bonepose->origin[0] - oldbonepose->origin[0] ) * frontlerp;
+				out->origin[1] = oldbonepose->origin[1] + ( bonepose->origin[1] - oldbonepose->origin[1] ) * frontlerp;
+				out->origin[2] = oldbonepose->origin[2] + ( bonepose->origin[2] - oldbonepose->origin[2] ) * frontlerp;
 			}
 		}
 		else
@@ -769,15 +1174,15 @@ void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp,
 				bone = skmodel->bones + j;
 
 				Quat_Lerp( oldbonepose->quat, bonepose->quat, frontlerp, tp.quat );
-				tp.origin[0] = oldbonepose->origin[0] + (bonepose->origin[0] - oldbonepose->origin[0]) * frontlerp;
-				tp.origin[1] = oldbonepose->origin[1] + (bonepose->origin[1] - oldbonepose->origin[1]) * frontlerp;
-				tp.origin[2] = oldbonepose->origin[2] + (bonepose->origin[2] - oldbonepose->origin[2]) * frontlerp;
+				tp.origin[0] = oldbonepose->origin[0] + ( bonepose->origin[0] - oldbonepose->origin[0] ) * frontlerp;
+				tp.origin[1] = oldbonepose->origin[1] + ( bonepose->origin[1] - oldbonepose->origin[1] ) * frontlerp;
+				tp.origin[2] = oldbonepose->origin[2] + ( bonepose->origin[2] - oldbonepose->origin[2] ) * frontlerp;
 
 				if( bone->parent >= 0 )
 				{
 					Quat_ConcatTransforms( tempbonepose[bone->parent].quat, tempbonepose[bone->parent].origin,
 						tp.quat, tp.origin, out->quat, out->origin );
-				} 
+				}
 				else
 				{
 					Quat_Copy( tp.quat, out->quat );
@@ -787,70 +1192,60 @@ void R_DrawBonesFrameLerp( const meshbuffer_t *mb, model_t *mod, float backlerp,
 		}
 	}
 
-	for( i = 0; i < mesh->numreferences; i++ ) {
+	for( i = 0; i < mesh->numreferences; i++ )
+	{
 		j = mesh->references[i];
 		pose = relbonepose[j];
 
 		Quat_ConcatTransforms( lerpedbonepose[j].quat, lerpedbonepose[j].origin,
-			skmodel->invbaseposes[j].quat, skmodel->invbaseposes[j].origin, tp.quat, tp.origin );
+			skmodel->invbaseposes[j].quat, skmodel->invbaseposes[j].origin, tp.quat, &pose[12] );
+		pose[15] = 1.0f;
 
 		// make origin the forth column instead of row so that
 		// things can be optimized more easily
-		Quat_Vectors( tp.quat, &pose[0], &pose[4], &pose[8] );
-		if( e->scale == 1 ) {
-			pose[3] = tp.origin[0];
-			pose[7] = tp.origin[1];
-			pose[11] = tp.origin[2];
-		} else {
-			pose[3] = tp.origin[0] * e->scale;
-			pose[7] = tp.origin[1] * e->scale;
-			pose[11] = tp.origin[2] * e->scale;
-
-			VectorScale( &pose[0], e->scale, &pose[0] );
-			VectorScale( &pose[4], e->scale, &pose[4] );
-			VectorScale( &pose[8], e->scale, &pose[8] );
-		}
+		Matrix_FromQuaternion( tp.quat, pose );
 	}
 
-	R_SkeletalTransformVerts( mesh->numverts, mesh->bones, mesh->influences, relbonepose, 
-		( vec_t *)mesh->xyzArray, ( vec_t * )inVertsArray );
+	if( 0 )
+	{
+		R_SkeletalTransformVerts_SSE( mesh->numverts, mesh->bones, mesh->influences, relbonepose,
+			( vec_t * )mesh->xyzArray[0], ( vec_t * )inVertsArray );
 
-	if( features & MF_NORMALS )
-		R_SkeletalTransformNormals( mesh->numverts, mesh->bones, mesh->influences, relbonepose, 
-			( vec_t * )mesh->normalsArray, ( vec_t * )inNormalsArray, 3 );
+		if( features & MF_NORMALS )
+			R_SkeletalTransformNormals_SSE( mesh->numverts, mesh->bones, mesh->influences, relbonepose,
+			( vec_t * )mesh->normalsArray[0], ( vec_t * )inNormalsArray );
 
-	if( features & MF_SVECTORS ) 
-		R_SkeletalTransformNormals( mesh->numverts, mesh->bones, mesh->influences, relbonepose, 
-			( vec_t * )mesh->sVectorsArray, ( vec_t * )inSVectorsArray, 4 );
+		if( features & MF_SVECTORS )
+			R_SkeletalTransformNormals_SSE( mesh->numverts, mesh->bones, mesh->influences, relbonepose,
+			( vec_t * )mesh->sVectorsArray[0], ( vec_t * )inSVectorsArray );
+	}
+	else
+	{
+		R_SkeletalTransformVerts( mesh->numverts, mesh->bones, mesh->influences, relbonepose,
+			( vec_t * )mesh->xyzArray[0], ( vec_t * )inVertsArray );
+
+		if( features & MF_NORMALS )
+			R_SkeletalTransformNormals( mesh->numverts, mesh->bones, mesh->influences, relbonepose,
+			( vec_t * )mesh->normalsArray[0], ( vec_t * )inNormalsArray );
+
+		if( features & MF_SVECTORS )
+			R_SkeletalTransformNormals( mesh->numverts, mesh->bones, mesh->influences, relbonepose,
+			( vec_t * )mesh->sVectorsArray[0], ( vec_t * )inSVectorsArray );
+	}
 
 pushmesh:
-	skm_mesh.indexes = mesh->indexes;
-	skm_mesh.numIndexes = mesh->numtris * 3;
+	skm_mesh.elems = mesh->elems;
+	skm_mesh.numElems = mesh->numtris * 3;
 	skm_mesh.numVertexes = mesh->numverts;
 	skm_mesh.xyzArray = xyzArray;
 	skm_mesh.stArray = mesh->stArray;
 	skm_mesh.normalsArray = normalsArray;
 	skm_mesh.sVectorsArray = sVectorsArray;
-#if SHADOW_VOLUMES
-	skm_mesh.trneighbors = mesh->trneighbors;
-	skm_mesh.trnormals = NULL;
-#endif
 
 	R_RotateForEntity( e );
 
 	R_PushMesh( &skm_mesh, features );
-	R_RenderMeshBuffer( mb, shadow );
-
-	if ( shadow ) {
-		if ( r_shadows->integer == SHADOW_PLANAR ) {
-			R_Draw_SimpleShadow( e );
-		} else {
-#if SHADOW_VOLUMES
-			R_SkeletalModelBBox( e, mod );
-			R_DrawShadowVolumes( &skm_mesh, skm_mins, skm_maxs, skm_radius );
-#endif
-		}
-	}
+	R_RenderMeshBuffer( mb );
 }
 
 /*
@@ -858,28 +1253,118 @@ pushmesh:
 R_DrawSkeletalModel
 =================
 */
-void R_DrawSkeletalModel( const meshbuffer_t *mb, qboolean shadow )
+void R_DrawSkeletalModel( const meshbuffer_t *mb )
 {
 	entity_t *e = ri.currententity;
 
+	if( OCCLUSION_QUERIES_ENABLED( ri ) && OCCLUSION_TEST_ENTITY( e ) )
+	{
+		shader_t *shader;
+
+		MB_NUM2SHADER( mb->shaderkey, shader );
+		if( !R_GetOcclusionQueryResultBool( shader->type == SHADER_PLANAR_SHADOW ? OQ_PLANARSHADOW : OQ_ENTITY,
+			e - r_entities, qtrue ) )
+			return;
+	}
+
 	// hack the depth range to prevent view model from poking into walls
 	if( e->flags & RF_WEAPONMODEL )
-		qglDepthRange( gldepthmin, gldepthmin + 0.3 * (gldepthmax - gldepthmin) );
+		qglDepthRange( gldepthmin, gldepthmin + 0.3 * ( gldepthmax - gldepthmin ) );
 
 	// backface culling for left-handed weapons
 	if( e->flags & RF_CULLHACK )
-		qglFrontFace( GL_CW );
+		GL_FrontFace( !glState.frontFace );
 
 	if( !r_lerpmodels->integer )
 		e->backlerp = 0;
 
-	R_DrawBonesFrameLerp( mb, R_SkeletalModelLODForDistance( e ), e->backlerp, shadow );
+	R_DrawBonesFrameLerp( mb, e->backlerp );
 
 	if( e->flags & RF_WEAPONMODEL )
 		qglDepthRange( gldepthmin, gldepthmax );
 
 	if( e->flags & RF_CULLHACK )
-		qglFrontFace( GL_CCW );
+		GL_FrontFace( !glState.frontFace );
+}
+
+/*
+=================
+R_SkeletalModelBBox
+=================
+*/
+float R_SkeletalModelBBox( entity_t *e, vec3_t mins, vec3_t maxs )
+{
+	model_t	*mod;
+
+	mod = R_SkeletalModelLOD( e );
+	if( !mod )
+		return 0;
+
+	R_SkeletalModelLerpBBox( e, mod );
+
+	VectorCopy( skm_mins, mins );
+	VectorCopy( skm_maxs, maxs );
+	return skm_radius;
+}
+
+/*
+=================
+R_CullSkeletalModel
+=================
+*/
+qboolean R_CullSkeletalModel( entity_t *e )
+{
+	int i, clipped;
+	qboolean frustum, query;
+	unsigned int modhandle;
+	model_t	*mod;
+	shader_t *shader;
+	mskmesh_t *mesh;
+	mskmodel_t *skmodel;
+	meshbuffer_t *mb;
+
+	mod = R_SkeletalModelLOD( e );
+	if( !( skmodel = ( ( mskmodel_t * )mod->extradata ) ) || !skmodel->nummeshes )
+		return qtrue;
+
+	R_SkeletalModelLerpBBox( e, mod );
+	modhandle = Mod_Handle( mod );
+
+	clipped = R_CullModel( e, skm_mins, skm_maxs, skm_radius );
+	frustum = clipped & 1;
+	if( clipped & 2 )
+		return qtrue;
+
+	query =  OCCLUSION_QUERIES_ENABLED( ri ) && OCCLUSION_TEST_ENTITY( e ) ? qtrue : qfalse;
+	if( !frustum && query )
+	{
+		R_IssueOcclusionQuery( R_GetOcclusionQueryNum( OQ_ENTITY, e - r_entities ), e, skm_mins, skm_maxs );
+	}
+
+	if( ri.refdef.rdflags & RDF_NOWORLDMODEL
+		|| ( r_shadows->integer != SHADOW_PLANAR && !( r_shadows->integer == SHADOW_MAPPING && ( e->flags & RF_PLANARSHADOW ) ) )
+		|| R_CullPlanarShadow( e, skm_mins, skm_maxs, query ) )
+		return frustum; // entity is not in PVS or shadow is culled away by frustum culling
+
+	for( i = 0, mesh = skmodel->meshes; i < (int)skmodel->nummeshes; i++, mesh++ )
+	{
+		shader = NULL;
+		if( e->customSkin )
+			shader = R_FindShaderForSkinFile( e->customSkin, mesh->name );
+		else if( e->customShader )
+			shader = e->customShader;
+		else if( mesh->skin.shader )
+			shader = mesh->skin.shader;
+
+		if( shader && ( shader->sort <= SHADER_SORT_ALPHATEST ) )
+		{
+			mb = R_AddMeshToList( MB_MODEL, NULL, R_PlanarShadowShader(), -( i+1 ) );
+			if( mb )
+				mb->LODModelHandle = modhandle;
+		}
+	}
+
+	return frustum;
 }
 
 /*
@@ -889,35 +1374,59 @@ R_AddSkeletalModelToList
 */
 void R_AddSkeletalModelToList( entity_t *e )
 {
-	int				i;
-	mfog_t			*fog;
-	model_t			*mod;
-	shader_t		*shader;
-	mskmesh_t		*mesh;
-	mskmodel_t		*skmodel;
+	int i;
+	unsigned int modhandle, entnum = e - r_entities;
+	mfog_t *fog = NULL;
+	model_t	*mod;
+	shader_t *shader;
+	mskmesh_t *mesh;
+	mskmodel_t *skmodel;
 
-	mod = R_SkeletalModelLODForDistance ( e );
-	if( !(skmodel = mod->skmodel) )
-		return;
+	mod = R_SkeletalModelLOD( e );
+	skmodel = ( mskmodel_t * )mod->extradata;
+	modhandle = Mod_Handle( mod );
 
-	R_SkeletalModelBBox ( e, mod );
-	if( !(r_shadows->integer >= SHADOW_PLANAR) && R_CullModel( e, skm_mins, skm_maxs, skm_radius ) )
-		return;
-
-	fog = R_FogForSphere ( e->origin, skm_radius );
-	if( !(e->flags & RF_WEAPONMODEL) && R_CompletelyFogged( fog, e->origin, skm_radius ) )
-		return;
-
-	mesh = skmodel->meshes;
-	for( i = 0; i < (int)skmodel->nummeshes; i++, mesh++ ) {
-		if( e->customSkin ) {
-			shader = R_FindShaderForSkinFile( e->customSkin, mesh->name );
-			if( shader )
-				R_AddMeshToList( MB_MODEL, fog, shader, -(i+1) );
-		} else if( e->customShader ) {
-			R_AddMeshToList( MB_MODEL, fog, e->customShader, -(i+1) );
-		} else {
-			R_AddMeshToList( MB_MODEL, fog, mesh->skin.shader, -(i+1) );
+	if( ri.params & RP_SHADOWMAPVIEW )
+	{
+		if( r_entShadowBits[entnum] & ri.shadowGroup->bit )
+		{
+			if( !r_shadows_self_shadow->integer )
+				r_entShadowBits[entnum] &= ~ri.shadowGroup->bit;
+			if( e->flags & RF_WEAPONMODEL )
+				return;
 		}
+		else
+		{
+			R_SkeletalModelLerpBBox( e, mod );
+			if( !R_CullModel( e, skm_mins, skm_maxs, skm_radius ) )
+				r_entShadowBits[entnum] |= ri.shadowGroup->bit;
+			return; // mark as shadowed, proceed with caster otherwise
+		}
+	}
+	else
+	{
+		fog = R_FogForSphere( e->origin, skm_radius );
+#if 0
+		if( !( e->flags & RF_WEAPONMODEL ) && fog )
+		{
+			R_SkeletalModelLerpBBox( e, mod );
+			if( R_CompletelyFogged( fog, e->origin, skm_radius ) )
+				return;
+		}
+#endif
+	}
+
+	for( i = 0, mesh = skmodel->meshes; i < (int)skmodel->nummeshes; i++, mesh++ )
+	{
+		shader = NULL;
+		if( e->customSkin )
+			shader = R_FindShaderForSkinFile( e->customSkin, mesh->name );
+		else if( e->customShader )
+			shader = e->customShader;
+		else
+			shader = mesh->skin.shader;
+
+		if( shader )
+			R_AddModelMeshToList( modhandle, fog, shader, i );
 	}
 }

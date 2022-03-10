@@ -134,22 +134,24 @@ static int CM_CreateFacetFromPoints( cbrush_t *facet, vec3_t *verts, int numvert
 
 	// test a quad case
 	if( numverts > 3 ) {
-		vec3_t v[3];
-		cplane_t plane;
-
 		d = DotProduct( verts[3], mainplane.normal ) - mainplane.dist;
 		if( d < -0.1 || d > 0.1 )
 			return 0;
 
-		// try different combinations of planes
-		for( i = 1; i < 4; i++ ) {
-			VectorCopy( verts[i], v[0] );
-			VectorCopy( verts[(i+1)%4], v[1] );
-			VectorCopy( verts[(i+2)%4], v[2] );
-			PlaneFromPoints ( verts, &plane );
+		if( 0 ) {
+			vec3_t v[3];
+			cplane_t plane;
 
-			if( DotProduct( mainplane.normal, plane.normal ) < 0.9 )
-				return 0;
+			// try different combinations of planes
+			for( i = 1; i < 4; i++ ) {
+				VectorCopy( verts[i], v[0] );
+				VectorCopy( verts[(i+1)%4], v[1] );
+				VectorCopy( verts[(i+2)%4], v[2] );
+				PlaneFromPoints( v, &plane );
+
+				if( fabs( DotProduct( mainplane.normal, plane.normal ) ) < 0.9 )
+					return 0;
+			}
 		}
 	}
 
@@ -272,7 +274,7 @@ static void CM_CreatePatch( cface_t *patch, cshaderref_t *shaderref, vec3_t *ver
 	vec3_t tverts[4];
 
 	// find the degree of subdivision in the u and v directions
-	Patch_GetFlatness( CM_SUBDIV_LEVEL, verts, patch_cp, flat );
+	Patch_GetFlatness( CM_SUBDIV_LEVEL, (vec_t *)verts[0], 3, patch_cp, flat );
 
 	step[0] = 1 << flat[0];
 	step[1] = 1 << flat[1];

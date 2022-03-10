@@ -32,7 +32,7 @@ PF_Layout
 Sends the layout to a single client
 ===============
 */
-static void PF_Layout (edict_t *ent, char *string)
+static void PF_Layout (edict_t *ent, const char *string)
 {
 	int			p;
 	client_t	*client;
@@ -80,7 +80,7 @@ Sends the server command to clients.
 if ent is NULL the command will be sent to all connected clients
 ===============
 */
-static void PF_ServerCmd (edict_t *ent, char *cmd)
+static void PF_ServerCmd (edict_t *ent, const char *cmd)
 {
 	if (!cmd || !cmd[0])
 		return;
@@ -118,7 +118,7 @@ PF_dprint
 Debug print to server console
 ===============
 */
-static void PF_dprint (char *msg)
+static void PF_dprint (const char *msg)
 {
 	int		i;
 	char	copy[MAX_PRINTMSG];
@@ -141,7 +141,7 @@ PF_error
 Abort the server with a game error
 ===============
 */
-static void PF_error (char *msg)
+static void PF_error (const char *msg)
 {
 	int		i;
 	char	copy[MAX_PRINTMSG];
@@ -165,7 +165,7 @@ static void PF_error (char *msg)
 PF_StuffCmd
 ===============
 */
-static void PF_StuffCmd (edict_t *ent, char *string)
+static void PF_StuffCmd (edict_t *ent, const char *string)
 {
 	int			p;
 	client_t	*client;
@@ -191,7 +191,7 @@ PF_SetBrushModel
 Also sets mins and maxs for inline bmodels
 =================
 */
-static void PF_SetBrushModel (edict_t *ent, char *name)
+static void PF_SetBrushModel (edict_t *ent, const char *name)
 {
 	struct cmodel_s *cmodel;
 
@@ -263,7 +263,7 @@ static qboolean PF_EntityContact( vec3_t mins, vec3_t maxs, edict_t *ent )
 PF_Configstring
 ===============
 */
-static void PF_Configstring (int index, char *val)
+static void PF_Configstring (int index, const char *val)
 {
 	if (index < 0 || index >= MAX_CONFIGSTRINGS)
 		Com_Error (ERR_DROP, "configstring: bad index %i", index);
@@ -349,8 +349,8 @@ static qboolean PF_inPHS (vec3_t p1, vec3_t p2)
 PF_MemAlloc
 ===============
 */
-static void *PF_MemAlloc ( mempool_t *pool, int size, const char *filename, int fileline ) {
-	return _Mem_Alloc ( pool, size, MEMPOOL_GAMEPROGS, 0, filename, fileline );
+static void *PF_MemAlloc( size_t size, const char *filename, int fileline ) {
+	return _Mem_Alloc( sv_gameprogspool, size, MEMPOOL_GAMEPROGS, 0, filename, fileline );
 }
 
 /*
@@ -358,36 +358,10 @@ static void *PF_MemAlloc ( mempool_t *pool, int size, const char *filename, int 
 PF_MemFree
 ===============
 */
-static void PF_MemFree ( void *data, const char *filename, int fileline ) {
-	_Mem_Free ( data, MEMPOOL_GAMEPROGS, 0, filename, fileline );
+static void PF_MemFree( void *data, const char *filename, int fileline ) {
+	_Mem_Free( data, MEMPOOL_GAMEPROGS, 0, filename, fileline );
 }
 
-/*
-===============
-PF_MemAllocPool
-===============
-*/
-static mempool_t *PF_MemAllocPool ( const char *name, const char *filename, int fileline ) {
-	return _Mem_AllocPool ( sv_gameprogspool, name, MEMPOOL_GAMEPROGS, filename, fileline );
-}
-
-/*
-===============
-PF_MemFreePool
-===============
-*/
-static void PF_MemFreePool ( mempool_t **pool, const char *filename, int fileline ) {
-	_Mem_FreePool ( pool, MEMPOOL_GAMEPROGS, 0, filename, fileline );
-}
-
-/*
-===============
-PF_MemEmptyPool
-===============
-*/
-static void PF_MemEmptyPool ( mempool_t *pool, const char *filename, int fileline ) {
-	_Mem_EmptyPool ( pool, MEMPOOL_GAMEPROGS, 0, filename, fileline );
-}
 
 //==============================================
 
@@ -443,7 +417,7 @@ void SV_InitGameProgs (void)
 	if (ge)
 		SV_ShutdownGameProgs ();
 
-	sv_gameprogspool = Mem_AllocPool ( NULL, "Game Progs" );
+	sv_gameprogspool = _Mem_AllocPool( NULL, "Game Progs", MEMPOOL_GAMEPROGS, __FILE__, __LINE__ );
 
 	// load a new game dll
 	import.Print = PF_dprint;
@@ -484,9 +458,6 @@ void SV_InitGameProgs (void)
 
 	import.Mem_Alloc = PF_MemAlloc;
 	import.Mem_Free = PF_MemFree;
-	import.Mem_AllocPool = PF_MemAllocPool;
-	import.Mem_FreePool = PF_MemFreePool;
-	import.Mem_EmptyPool = PF_MemEmptyPool;
 
 	import.Cvar_Get = Cvar_Get;
 	import.Cvar_Set = Cvar_Set;

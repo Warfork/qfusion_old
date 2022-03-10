@@ -17,16 +17,52 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
+/*
+	Copyright (C) 1999-2000  Brian Paul, All Rights Reserved.
+
+	Permission is hereby granted, free of charge, to any person obtaining a
+	copy of this software and associated documentation files (the "Software"),
+	to deal in the Software without restriction, including without limitation
+	the rights to use, copy, modify, merge, publish, distribute, sublicense,
+	and/or sell copies of the Software, and to permit persons to whom the
+	Software is furnished to do so, subject to the following conditions:
+
+	The above copyright notice and this permission notice shall be included
+	in all copies or substantial portions of the Software.
+	
+	THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+	IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+	FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+	BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+	AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+	CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+
+	The Mesa OpenGL headers were originally adapted in 2001 for dynamic OpenGL
+	binding by Zephaniah E. Hull and later rewritten by Joseph Carter.  This
+	version of the file is for the generation 3 DynGL code, and has been
+	adapted by Joseph Carter.  He and Zeph have decided to hereby disclaim all
+	Copyright of this work.  It is released to the Public Domain WITHOUT ANY
+	WARRANTY whatsoever, express or implied, in the hopes that others will use
+	it instead of other less-evolved hacks which usually don't work right.  ;)
+*/
+
+/*
+	The following code is loosely based on DynGL code by Joseph Carter 
+	and Zephaniah E. Hull. Adapted by Victor Luchits for qfusion project.
+*/
+
 /*
 ** QGL.H
 */
-#ifndef QGL_H
-#define QGL_H
+#ifndef __QGL_H__
+#define __QGL_H__
 
 #define GL_GLEXT_LEGACY
 #define GLX_GLXEXT_LEGACY
 
-#if !defined (__APPLE__) && !defined (MACOSX)
+#if !defined (__MACOSX__)
 #include <GL/gl.h>
 #endif
 
@@ -34,7 +70,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include <GL/glx.h>
 #endif
 
-#if defined (__APPLE__) || defined (MACOSX)
+#if defined (__MACOSX__)
 # include <OpenGL/gl.h>
 # include <OpenGL/glext.h>
 #endif
@@ -42,16 +78,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #undef GL_GLEXT_LEGACY
 #undef GLX_GLXEXT_LEGACY
 
-QGL_EXTERN	qboolean QGL_Init( const char *dllname );
-QGL_EXTERN	void     QGL_Shutdown( void );
+QGL_EXTERN	qboolean	QGL_Init( const char *dllname );
+QGL_EXTERN	void		QGL_Shutdown( void );
 
-QGL_EXTERN	void	*qglGetProcAddress( const GLubyte * );
-
-#endif
-
-#ifndef APIENTRY
-# define APIENTRY
-#endif
+QGL_EXTERN	void		*qglGetProcAddress( const GLubyte * );
+QGL_EXTERN	const char	*(*qglGetGLWExtensionsString)( void );
 
 /*
 ** extension constants
@@ -66,9 +97,9 @@ QGL_EXTERN	void	*qglGetProcAddress( const GLubyte * );
 
 #ifndef GL_POLYGON_OFFSET
 #define GL_POLYGON_OFFSET									0x8037
+#endif
 
-#endif /* GL_POLYGON_OFFSET */
-
+/* GL_ARB_texture_env_combine */
 #ifndef GL_ARB_texture_env_combine
 #define GL_ARB_texture_env_combine
 
@@ -93,20 +124,7 @@ QGL_EXTERN	void	*qglGetProcAddress( const GLubyte * );
 #define GL_OPERAND0_ALPHA_ARB								0x8598
 #define GL_OPERAND1_ALPHA_ARB								0x8599
 #define GL_OPERAND2_ALPHA_ARB								0x859A
-
 #endif /* GL_ARB_texture_env_combine */
-
-/* NV_texture_env_combine4 */
-#ifndef GL_NV_texture_env_combine4
-#define GL_NV_texture_env_combine4
-
-#define GL_COMBINE4_NV										0x8503
-#define GL_SOURCE3_RGB_NV									0x8583
-#define GL_SOURCE3_ALPHA_NV									0x858B
-#define GL_OPERAND3_RGB_NV									0x8593
-#define GL_OPERAND3_ALPHA_NV								0x859B
-
-#endif /* NV_texture_env_combine4 */
 
 /* GL_ARB_texture_compression */
 #ifndef GL_ARB_texture_compression
@@ -229,7 +247,6 @@ typedef int GLsizeiptrARB;
 typedef char GLcharARB;
 typedef unsigned int GLhandleARB;
 
-#ifndef GL_PROGRAM_OBJECT_ARB
 #define GL_PROGRAM_OBJECT_ARB								0x8B40
 #define GL_OBJECT_TYPE_ARB									0x8B4E
 #define GL_OBJECT_SUBTYPE_ARB								0x8B4F
@@ -266,70 +283,131 @@ typedef unsigned int GLhandleARB;
 #define GL_SAMPLER_2D_SHADOW_ARB							0x8B62
 #define GL_SAMPLER_2D_RECT_ARB								0x8B63
 #define GL_SAMPLER_2D_RECT_SHADOW_ARB						0x8B64
-#endif
-
 #endif /* GL_ARB_shader_objects */
 
 /* GL_ARB_vertex_shader */
 #ifndef GL_ARB_vertex_shader
 #define GL_ARB_vertex_shader
 
-#ifndef GL_VERTEX_SHADER_ARB
-#define GL_VERTEX_SHADER_ARB						0x8B31
-#define GL_MAX_VERTEX_UNIFORM_COMPONENTS_ARB		0x8B4A
-#define GL_MAX_VARYING_FLOATS_ARB					0x8B4B
-#define GL_MAX_VERTEX_ATTRIBS_ARB					0x8869
-#define GL_MAX_TEXTURE_IMAGE_UNITS_ARB				0x8872
-#define GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS_ARB		0x8B4C
-#define GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS_ARB		0x8B4D
-#define GL_MAX_TEXTURE_COORDS_ARB					0x8871
-#define GL_VERTEX_PROGRAM_POINT_SIZE_ARB			0x8642
-#define GL_VERTEX_PROGRAM_TWO_SIDE_ARB				0x8643
-#define GL_OBJECT_ACTIVE_ATTRIBUTES_ARB				0x8B89
-#define GL_OBJECT_ACTIVE_ATTRIBUTE_MAX_LENGTH_ARB	0x8B8A
-#define GL_VERTEX_ATTRIB_ARRAY_ENABLED_ARB			0x8622
-#define GL_VERTEX_ATTRIB_ARRAY_SIZE_ARB				0x8623
-#define GL_VERTEX_ATTRIB_ARRAY_STRIDE_ARB			0x8624
-#define GL_VERTEX_ATTRIB_ARRAY_TYPE_ARB				0x8625
-#define GL_VERTEX_ATTRIB_ARRAY_NORMALIZED_ARB		0x886A
-#define GL_CURRENT_VERTEX_ATTRIB_ARB				0x8626
-#define GL_VERTEX_ATTRIB_ARRAY_POINTER_ARB			0x8645
-#define GL_FLOAT									0x1406
-#define GL_FLOAT_VEC2_ARB							0x8B50
-#define GL_FLOAT_VEC3_ARB							0x8B51
-#define GL_FLOAT_VEC4_ARB							0x8B52
-#define GL_FLOAT_MAT2_ARB							0x8B5A
-#define GL_FLOAT_MAT3_ARB							0x8B5B
-#define GL_FLOAT_MAT4_ARB							0x8B5C
-#endif
-
+#define GL_VERTEX_SHADER_ARB								0x8B31
+#define GL_MAX_VERTEX_UNIFORM_COMPONENTS_ARB				0x8B4A
+#define GL_MAX_VARYING_FLOATS_ARB							0x8B4B
+#define GL_MAX_VERTEX_ATTRIBS_ARB							0x8869
+#define GL_MAX_TEXTURE_IMAGE_UNITS_ARB						0x8872
+#define GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS_ARB				0x8B4C
+#define GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS_ARB				0x8B4D
+#define GL_MAX_TEXTURE_COORDS_ARB							0x8871
+#define GL_VERTEX_PROGRAM_POINT_SIZE_ARB					0x8642
+#define GL_VERTEX_PROGRAM_TWO_SIDE_ARB						0x8643
+#define GL_OBJECT_ACTIVE_ATTRIBUTES_ARB						0x8B89
+#define GL_OBJECT_ACTIVE_ATTRIBUTE_MAX_LENGTH_ARB			0x8B8A
+#define GL_VERTEX_ATTRIB_ARRAY_ENABLED_ARB					0x8622
+#define GL_VERTEX_ATTRIB_ARRAY_SIZE_ARB						0x8623
+#define GL_VERTEX_ATTRIB_ARRAY_STRIDE_ARB					0x8624
+#define GL_VERTEX_ATTRIB_ARRAY_TYPE_ARB						0x8625
+#define GL_VERTEX_ATTRIB_ARRAY_NORMALIZED_ARB				0x886A
+#define GL_CURRENT_VERTEX_ATTRIB_ARB						0x8626
+#define GL_VERTEX_ATTRIB_ARRAY_POINTER_ARB					0x8645
+#define GL_FLOAT											0x1406
+#define GL_FLOAT_VEC2_ARB									0x8B50
+#define GL_FLOAT_VEC3_ARB									0x8B51
+#define GL_FLOAT_VEC4_ARB									0x8B52
+#define GL_FLOAT_MAT2_ARB									0x8B5A
+#define GL_FLOAT_MAT3_ARB									0x8B5B
+#define GL_FLOAT_MAT4_ARB									0x8B5C
 #endif /* GL_ARB_vertex_shader */
 
 /* GL_ARB_fragment_shader */
 #ifndef GL_ARB_fragment_shader
 #define GL_ARB_fragment_shader
 
-#ifndef GL_FRAGMENT_SHADER_ARB
 #define GL_FRAGMENT_SHADER_ARB								0x8B30
 #define GL_MAX_FRAGMENT_UNIFORM_COMPONENTS_ARB				0x8B49
 #define GL_MAX_TEXTURE_COORDS_ARB							0x8871
 #define GL_MAX_TEXTURE_IMAGE_UNITS_ARB						0x8872
 #define GL_FRAGMENT_SHADER_DERIVATIVE_HINT_ARB				0x8B8B
-#endif
-
 #endif /* GL_ARB_fragment_shader */
 
 /* GL_ARB_shading_language_100 */
 #ifndef GL_ARB_shading_language_100
 #define GL_ARB_shading_language_100
 
-#ifndef GL_SHADING_LANGUAGE_VERSION_ARB
 #define GL_SHADING_LANGUAGE_VERSION_ARB						0x8B8C
-#endif
-
 #endif /* GL_ARB_shading_language_100 */
 
+/* ARB_depth_texture */
+#ifndef ARB_depth_texture
+#define ARB_depth_texture
 
+#define GL_DEPTH_COMPONENT16								0x81A5
+#define GL_DEPTH_COMPONENT24								0x81A6
+#define GL_DEPTH_COMPONENT32								0x81A7
+#define GL_TEXTURE_DEPTH_SIZE								0x884A
+#define GL_DEPTH_TEXTURE_MODE								0x884B
+#endif /* ARB_depth_texture */
+
+/* GL_ARB_shadow */
+#ifndef GL_ARB_shadow
+#define GL_ARB_shadow
+
+#define	GL_DEPTH_TEXTURE_MODE_ARB							0x884B
+#define GL_TEXTURE_COMPARE_MODE_ARB							0x884C
+#define GL_TEXTURE_COMPARE_FUNC_ARB							0x884D
+#define GL_COMPARE_R_TO_TEXTURE_ARB							0x884E
+#define GL_TEXTURE_COMPARE_FAIL_VALUE_ARB					0x80BF
+#endif /* GL_ARB_shadow */
+
+/* GL_ARB_occlusion_query */
+#ifndef GL_ARB_occlusion_query
+#define GL_ARB_occlusion_query
+
+#define GL_QUERY_COUNTER_BITS_ARB							0x8864
+#define GL_CURRENT_QUERY_ARB								0x8865
+#define GL_QUERY_RESULT_ARB									0x8866
+#define GL_QUERY_RESULT_AVAILABLE_ARB						0x8867
+#define GL_SAMPLES_PASSED_ARB								0x8914
+#endif /* GL_ARB_occlusion_query */
+
+/* GL_SGIS_generate_mipmap */
+#ifndef GL_SGIS_generate_mipmap
+#define GL_SGIS_generate_mipmap
+
+#define GL_GENERATE_MIPMAP_SGIS								0x8191
+#define GL_GENERATE_MIPMAP_HINT_SGIS						0x8192
+#endif /* GL_SGIS_generate_mipmap */
+
+#endif /*__QGL_H__*/
+
+#ifndef APIENTRY
+#define APIENTRY
+#endif
+
+#ifndef QGL_FUNC
+#define QGL_FUNC
+#endif
+
+// WGL Functions
+QGL_WGL(PROC, wglGetProcAddress, (LPCSTR));
+QGL_WGL(int, wglChoosePixelFormat, (HDC, CONST PIXELFORMATDESCRIPTOR *));
+QGL_WGL(int, wglDescribePixelFormat, (HDC, int, UINT, LPPIXELFORMATDESCRIPTOR));
+QGL_WGL(BOOL, wglSetPixelFormat, (HDC, int, CONST PIXELFORMATDESCRIPTOR *));
+QGL_WGL(BOOL, wglSwapBuffers, (HDC));
+QGL_WGL(HGLRC, wglCreateContext, (HDC));
+QGL_WGL(BOOL, wglDeleteContext, (HGLRC));
+QGL_WGL(BOOL, wglMakeCurrent, (HDC, HGLRC));
+
+// GLX Functions
+QGL_GLX(void *, glXGetProcAddressARB, (const GLubyte *procName));
+QGL_GLX(XVisualInfo *, glXChooseVisual, (Display *dpy, int screen, int *attribList));
+QGL_GLX(GLXContext, glXCreateContext, (Display *dpy, XVisualInfo *vis, GLXContext shareList, Bool direct));
+QGL_GLX(void, glXDestroyContext, (Display *dpy, GLXContext ctx));
+QGL_GLX(Bool, glXMakeCurrent, (Display *dpy, GLXDrawable drawable, GLXContext ctx));
+QGL_GLX(Bool, glXCopyContext, (Display *dpy, GLXContext src, GLXContext dst, GLuint mask));
+QGL_GLX(Bool, glXSwapBuffers, (Display *dpy, GLXDrawable drawable));
+QGL_GLX(Bool, glXQueryVersion, (Display *dpy, int *major, int *minor));
+QGL_GLX(const char *, glXQueryExtensionsString, (Display *dpy, int screen));
+
+// GL Functions
 QGL_FUNC(void, glAlphaFunc, (GLenum func, GLclampf ref));
 QGL_FUNC(void, glArrayElement, (GLint i));
 QGL_FUNC(void, glBegin, (GLenum mode));
@@ -453,28 +531,20 @@ QGL_EXT(void, glBindAttribLocationARB, (GLhandleARB programObj, GLuint index, co
 QGL_EXT(void, glGetActiveAttribARB, (GLhandleARB programObj, GLuint index, GLsizei maxLength, GLsizei *length, GLint *size, GLenum *type, GLcharARB *name));
 QGL_EXT(GLint, glGetAttribLocationARB, (GLhandleARB programObj, const GLcharARB *name));
 
-// WGL Functions
-QGL_WGL(int, wglChoosePixelFormat, (HDC, CONST PIXELFORMATDESCRIPTOR *));
-QGL_WGL(int, wglDescribePixelFormat, (HDC, int, UINT, LPPIXELFORMATDESCRIPTOR));
-QGL_WGL(BOOL, wglSetPixelFormat, (HDC, int, CONST PIXELFORMATDESCRIPTOR *));
-QGL_WGL(BOOL, wglSwapBuffers, (HDC));
-QGL_WGL(HGLRC, wglCreateContext, (HDC));
-QGL_WGL(BOOL, wglDeleteContext, (HGLRC));
-QGL_WGL(BOOL, wglMakeCurrent, (HDC, HGLRC));
-QGL_WGL(PROC, wglGetProcAddress, (LPCSTR));
+QGL_EXT(void, glGenQueriesARB, (GLsizei n, GLuint *ids));
+QGL_EXT(void, glDeleteQueriesARB, (GLsizei n, const GLuint *ids));
+QGL_EXT(GLboolean, glIsQueryARB, (GLuint id));
+QGL_EXT(void, glBeginQueryARB, (GLenum target, GLuint id));
+QGL_EXT(void, glEndQueryARB, (GLenum target));
+QGL_EXT(void, glGetQueryivARB, (GLenum target, GLenum pname, GLint *params));
+QGL_EXT(void, glGetQueryObjectivARB, (GLuint id, GLenum pname, GLint *params));
+QGL_EXT(void, glGetQueryObjectuivARB, (GLuint id, GLenum pname, GLuint *params));
+
+QGL_EXT(void, glSwapInterval, (int interval));
 
 // WGL_EXT Functions
-QGL_WGL_EXT(BOOL, wglSwapIntervalEXT, (int interval));
+QGL_WGL_EXT(const char *, wglGetExtensionsStringEXT, (void));
 QGL_WGL_EXT(BOOL, wglGetDeviceGammaRamp3DFX, (HDC, WORD *));
 QGL_WGL_EXT(BOOL, wglSetDeviceGammaRamp3DFX, (HDC, WORD *));
-
-// GLX Functions
-QGL_GLX(XVisualInfo *, glXChooseVisual, (Display *dpy, int screen, int *attribList));
-QGL_GLX(GLXContext, glXCreateContext, (Display *dpy, XVisualInfo *vis, GLXContext shareList, Bool direct));
-QGL_GLX(void, glXDestroyContext, (Display *dpy, GLXContext ctx));
-QGL_GLX(Bool, glXMakeCurrent, (Display *dpy, GLXDrawable drawable, GLXContext ctx));
-QGL_GLX(Bool, glXCopyContext, (Display *dpy, GLXContext src, GLXContext dst, GLuint mask));
-QGL_GLX(Bool, glXSwapBuffers, (Display *dpy, GLXDrawable drawable));
-QGL_GLX(void *, glXGetProcAddressARB, (const GLubyte *procName));
 
 // GLX_EXT Functions

@@ -27,8 +27,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 VID_Sys_Init
 ============
 */
-int	VID_Sys_Init( void ) {
-	return R_Init( NULL, NULL );
+int	VID_Sys_Init( qboolean verbose ) {
+	return R_Init( NULL, NULL, verbose );
 }
 
 /*

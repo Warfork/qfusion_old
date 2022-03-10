@@ -409,6 +409,11 @@ LONG WINAPI MainWndProc (
 		break;
 
 	case WM_SYSKEYUP:
+		if ( wParam == 18 )
+		{	// ALT-key
+			Key_Event( MapKey( lParam ), qfalse, sys_msg_time);
+			return 0;
+		}
 	case WM_KEYUP:
 		Key_Event( MapKey( lParam ), qfalse, sys_msg_time);
 		break;
@@ -429,9 +434,9 @@ LONG WINAPI MainWndProc (
 /*
 ** VID_Sys_Init
 */
-int VID_Sys_Init( void )
+int VID_Sys_Init( qboolean verbose )
 {
-	return R_Init( global_hInstance, MainWndProc );
+	return R_Init( global_hInstance, MainWndProc, verbose );
 }
 
 /*

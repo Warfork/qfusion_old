@@ -17,8 +17,25 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 /*
-** QGL_WIN.C
+	This code is part of DynGL, a method of dynamically loading an OpenGL
+	library without much pain designed by Joseph Carter and is based
+	loosely on previous work done both by Zephaniah E. Hull and Joseph.
+
+	Both contributors have decided to disclaim all Copyright to this work.
+	It is released to the Public Domain WITHOUT ANY WARRANTY whatsoever,
+	express or implied, in the hopes that others will use it instead of
+	other less-evolved hacks which usually don't work right.  ;)
+*/
+
+/*
+	The following code is loosely based on DynGL code by Joseph Carter 
+	and Zephaniah E. Hull. Adapted by Victor Luchits for qfusion project.
+*/
+
+/*
+** QGL_LINUX.C
 **
 ** This file implements the operating system binding of GL to QGL function
 ** pointers.  When doing a port of Qfusion you must implement the following
@@ -29,7 +46,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include <dlfcn.h>
 #include <GL/gl.h>
-#include <GL/glx.h>
+#include "linux/x11.h"
 #include "../qcommon/qcommon.h"
 #include "glw_linux.h"
 
@@ -51,6 +68,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #undef QGL_EXT
 #undef QGL_FUNC
 
+static const char *_qglGetGLWExtensionsString( void );
+static const char *_qglGetGLWExtensionsStringInit( void );
 
 /*
 ** QGL_Shutdown
@@ -62,6 +81,8 @@ void QGL_Shutdown( void )
 	if( glw_state.OpenGLLib )
 		dlclose( glw_state.OpenGLLib );
 	glw_state.OpenGLLib = NULL;
+
+	qglGetGLWExtensionsString = NULL;
 
 #define QGL_FUNC(type,name,params) (q##name) = NULL;
 #define QGL_EXT(type,name,params) (q##name) = NULL;
@@ -92,7 +113,7 @@ void QGL_Shutdown( void )
 */
 qboolean QGL_Init( const char *dllname )
 {
-	if( (glw_state.OpenGLLib = dlopen( dllname, RTLD_LAZY ))  == 0 ) {
+	if( (glw_state.OpenGLLib = dlopen( dllname, RTLD_LAZY|RTLD_GLOBAL ))  == 0 ) {
 		cvar_t *basedir;
 		char	fn[MAX_OSPATH];
 		char	*path;
@@ -102,7 +123,7 @@ qboolean QGL_Init( const char *dllname )
 		path = basedir->string;
 		Q_snprintfz( fn, MAX_OSPATH, "%s/%s", path, dllname );
 
-		if( (glw_state.OpenGLLib = dlopen( fn, RTLD_LAZY )) == 0 ) {
+		if( (glw_state.OpenGLLib = dlopen( fn, RTLD_LAZY|RTLD_GLOBAL )) == 0 ) {
 			Com_Printf( "%s\n", dlerror() );
 			return qfalse;
 		}
@@ -111,7 +132,7 @@ qboolean QGL_Init( const char *dllname )
 		Com_Printf( "Using %s for OpenGL...", dllname );
 	}
 
-#define QGL_FUNC(type,name,params) (q##name) = ( void * )dlsym( glw_state.OpenGLLib, #name ); \
+#define QGL_FUNC(type,name,params) (q##name) = ( void * )qglGetProcAddress( (const GLubyte *)#name ); \
 	if( !(q##name) ) { Com_Printf( "QGL_Init: Failed to get address for %s\n", #name ); return qfalse; }
 #define QGL_EXT(type,name,params) (q##name) = NULL;
 #define QGL_WGL(type,name,params)
@@ -129,6 +150,8 @@ qboolean QGL_Init( const char *dllname )
 #undef QGL_EXT
 #undef QGL_FUNC
 
+	qglGetGLWExtensionsString = _qglGetGLWExtensionsStringInit;
+
 	return qtrue;
 }
 
@@ -137,12 +160,33 @@ qboolean QGL_Init( const char *dllname )
 */
 void *qglGetProcAddress( const GLubyte *procName )
 {
-#if 0
-	// check for broken driver
-	if( glConfig.versionString && strcmp( glConfig.versionString, "1.3.1 NVIDIA 28.80" ) && qglXGetProcAddressARB )
+#if 1
+	if( qglXGetProcAddressARB )
 		return qglXGetProcAddressARB( procName );
 #endif
 	if( glw_state.OpenGLLib )
 		return (void *)dlsym( glw_state.OpenGLLib, procName );
 	return NULL;
 }
+
+/*
+** qglGetGLWExtensionsString
+*/
+static const char *_qglGetGLWExtensionsStringInit( void )
+{
+	int major = 0, minor = 0;
+
+	if( !qglXQueryVersion || !qglXQueryVersion( x11display.dpy, &major, &minor ) || !(minor > 0 || major > 1) )
+		qglXQueryExtensionsString = NULL;
+	qglGetGLWExtensionsString = _qglGetGLWExtensionsString;	
+
+	return qglGetGLWExtensionsString ();
+}
+
+static const char *_qglGetGLWExtensionsString( void )
+{
+	if( qglXQueryExtensionsString )
+		return qglXQueryExtensionsString( x11display.dpy, x11display.scr );
+	return NULL;
+}
+

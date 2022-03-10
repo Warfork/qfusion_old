@@ -110,6 +110,18 @@ recommended under any circunstance
 */
 void CG_AddEntityToScene( entity_t *ent ) 
 {
+	if( cg_outlineModels->integer )
+	{
+		if( ent->flags & RF_WEAPONMODEL )
+			ent->outlineHeight = 0.1;
+		else
+			ent->outlineHeight = 0.5;
+	}
+	else
+	{
+		ent->outlineHeight = 0;
+	}
+
 	if( ent->model && trap_R_SkeletalGetNumBones( ent->model, NULL ) ) {
 		if( !ent->boneposes || !ent->oldboneposes )
 			CG_SetBoneposesForTemporaryEntity( ent );

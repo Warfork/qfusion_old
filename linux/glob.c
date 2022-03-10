@@ -22,7 +22,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../linux/glob.h"
 
 /* Like glob_match, but match PATTERN against any final segment of TEXT.  */
-static int glob_match_after_star (char *pattern, char *text)
+static int glob_match_after_star (char *pattern, char *text, int casecmp)
 {
 	register char *p = pattern, *t = text;
 	register char c, c1;
@@ -40,7 +40,7 @@ static int glob_match_after_star (char *pattern, char *text)
 		c1 = c;
 
 	while (1) {
-		if ((c == '[' || *t == c1) && glob_match(p - 1, t))
+		if ((c == '[' || (casecmp ? (*t == c1) : (tolower(*t) == tolower(c1)))) && glob_match(p - 1, t, casecmp))
 			return 1;
 		if (*t++ == '\0')
 			return 0;
@@ -96,7 +96,7 @@ static int glob_pattern_p (char *pattern)
    and match the character exactly, precede it with a `\'.
 */
 
-int glob_match (char *pattern, char *text)
+int glob_match (char *pattern, char *text, int casecmp)
 {
 	register char *p = pattern, *t = text;
 	register char c;
@@ -116,7 +116,7 @@ int glob_match (char *pattern, char *text)
 			break;
 
 		case '*':
-			return glob_match_after_star(p, t);
+			return glob_match_after_star(p, t, casecmp);
 
 		case '[':
 			{
@@ -176,8 +176,17 @@ int glob_match (char *pattern, char *text)
 			}
 
 		default:
-			if (c != *t++)
-				return 0;
+			if( casecmp )
+			{
+				if (c != *t++)
+					return 0;
+			}
+			else
+			{
+				if (tolower(c) != tolower(*t))
+					return 0;
+				t++;
+			}
 		}
 
 	return *t == '\0';

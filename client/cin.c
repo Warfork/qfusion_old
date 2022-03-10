@@ -19,6 +19,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 
 #include "client.h"
+#include "cin.h"
 
 static short snd_sqr_arr[256];
 
@@ -89,12 +90,13 @@ void RoQ_ReadInfo( cinematics_t *cin )
 		cin->height = LittleShort( t[1] );
 
 		if( cin->vid_buffer )
-			Mem_ZoneFree( cin->vid_buffer );
-
-		cin->vid_buffer = Mem_ZoneMallocExt( cin->width * cin->height * 4 * 2, 0 );
+			Mem_Free( cin->vid_buffer );
 
 		// default to 255 for alpha
-		memset( cin->vid_buffer, 0xFF, cin->width * cin->height * 4 * 2 );
+		if( cin->mempool )
+			cin->vid_buffer = Mem_AllocExt( cin->mempool, cin->width * cin->height * 4 * 2, 0xFF );
+		else
+			cin->vid_buffer = Mem_ZoneMallocExt( cin->width * cin->height * 4 * 2, 0xFF );
 
 		cin->vid_pic[0] = cin->vid_buffer;
 		cin->vid_pic[1] = cin->vid_buffer + cin->width * cin->height * 4;

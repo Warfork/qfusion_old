@@ -353,7 +353,7 @@ char *ED_NewString (char *string)
 	
 	l = strlen(string) + 1;
 
-	newb = G_Malloc (l);
+	newb = G_LevelMalloc (l);
 
 	new_p = newb;
 
@@ -567,7 +567,7 @@ void SpawnEntities (char *mapname, char *entities, char *spawnpoint)
 
 	SaveClientData ();
 
-	G_EmptyLevelPool ();
+	G_LevelInitPool( strlen(mapname) + 1 + strlen(entities) + 1 + G_LEVEL_DEFAULT_POOL_SIZE );
 
 	memset (&level, 0, sizeof(level));
 	memset (game.edicts, 0, game.maxentities * sizeof (game.edicts[0]));
@@ -710,7 +710,7 @@ void SP_worldspawn (edict_t *ent)
 	trap_ConfigString (CS_MAPNAME, level.mapname);
 	trap_ConfigString (CS_MAXCLIENTS, va("%i", sv_maxclients->integer ) );
 	trap_ConfigString (CS_AIRACCEL, va("%g", sv_airaccelerate->integer) );
-	trap_ConfigString (CS_SKYBOXORG, "");
+	trap_ConfigString (CS_SKYBOX, "");
 
 	// status bar program
 	if (deathmatch->integer)

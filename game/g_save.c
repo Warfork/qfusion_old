@@ -280,7 +280,7 @@ void ReadField (FILE *f, field_t *field, qbyte *base)
 			*(char **)p = NULL;
 		else
 		{
-			*(char **)p = G_GameMalloc (len);
+			*(char **)p = G_LevelMalloc (len);
 			fread (*(char **)p, len, 1, f);
 		}
 		break;
@@ -291,7 +291,7 @@ void ReadField (FILE *f, field_t *field, qbyte *base)
 			*(char **)p = NULL;
 		else
 		{
-			*(char **)p = G_GameMalloc (len);
+			*(char **)p = G_Malloc (len);
 			fread (*(char **)p, len, 1, f);
 		}
 		break;
@@ -453,12 +453,12 @@ void ReadGame (char *filename)
 		G_Error ("Savegame from an older version.\n");
 	}
 
-	G_EmptyGamePool ();
+	G_LevelInitPool( 0 );
 
 	fread (&game, sizeof(game), 1, f);
 
-	game.edicts = G_GameMalloc (game.maxentities * sizeof(game.edicts[0]));
-	game.clients = G_GameMalloc (game.maxclients * sizeof(game.clients[0]));
+	game.edicts = G_Malloc (game.maxentities * sizeof(game.edicts[0]));
+	game.clients = G_Malloc (game.maxclients * sizeof(game.clients[0]));
 
 	trap_LocateEntities (game.edicts, sizeof(game.edicts[0]), game.numentities, game.maxentities);
 
@@ -638,6 +638,7 @@ void ReadLevel (char *filename)
 	int		entnum;
 	FILE	*f;
 	int		i;
+	size_t	pos, end;
 	void	*base;
 	edict_t	*ent;
 
@@ -645,8 +646,13 @@ void ReadLevel (char *filename)
 	if (!f)
 		G_Error ("Couldn't open %s", filename);
 
+	pos = ftell( f );
+	fseek( f, 0, SEEK_END );
+	end = ftell( f );
+	fseek( f, pos, SEEK_SET );
+
 	// free any dynamic memory allocated by loading the level base state
-	G_EmptyLevelPool ();
+	G_LevelInitPool( end + G_LEVEL_DEFAULT_POOL_SIZE );
 
 	// wipe all the entities
 	memset (game.edicts, 0, game.maxentities*sizeof(game.edicts[0]));

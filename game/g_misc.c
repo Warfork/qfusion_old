@@ -364,7 +364,7 @@ void path_corner_touch (edict_t *self, edict_t *other, cplane_t *plane, int surf
 
 	if (self->pathtarget)
 	{
-		char *savetarget;
+		const char *savetarget;
 
 		savetarget = self->target;
 		self->target = self->pathtarget;
@@ -468,7 +468,7 @@ void point_combat_touch (edict_t *self, edict_t *other, cplane_t *plane, int sur
 
 	if (self->pathtarget)
 	{
-		char *savetarget;
+		const char *savetarget;
 
 		savetarget = self->target;
 		self->target = self->pathtarget;
@@ -1735,7 +1735,7 @@ void func_clock_think (edict_t *self)
 	{
 		if (self->pathtarget)
 		{
-			char *savetarget;
+			const char *savetarget;
 			char *savemessage;
 
 			savetarget = self->target;
@@ -1918,5 +1918,5 @@ void SP_skyportal(edict_t *ent)
 //		st.fov = 90;
 
 	ent->r.svflags |= SVF_NOCLIENT;
-	trap_ConfigString( CS_SKYBOXORG, va("%.3f %.3f %.3f %.1f", ent->s.origin[0], ent->s.origin[1], ent->s.origin[2], st.fov ) );
+	trap_ConfigString( CS_SKYBOX, va("%.3f %.3f %.3f %.1f", ent->s.origin[0], ent->s.origin[1], ent->s.origin[2], st.fov ) );
 }

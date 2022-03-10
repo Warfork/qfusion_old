@@ -248,22 +248,10 @@ static inline char *trap_Cvar_VariableString( char *name ) {
 	return UI_IMPORT.Cvar_VariableString( name );
 }
 
-static inline struct mempool_s *trap_Mem_AllocPool( const char *name, const char *filename, int fileline ) {
-	return UI_IMPORT.Mem_AllocPool( name, filename, fileline );
+static inline void *trap_MemAlloc( size_t size, const char *filename, int fileline ) {
+	return UI_IMPORT.Mem_Alloc( size, filename, fileline );
 }
 
-static inline void *trap_Mem_Alloc( struct mempool_s *pool, int size, const char *filename, int fileline ) {
-	return UI_IMPORT.Mem_Alloc( pool, size, filename, fileline );
-}
-
-static inline void trap_Mem_Free( void *data, const char *filename, int fileline ) {
+static inline void trap_MemFree( void *data, const char *filename, int fileline ) {
 	UI_IMPORT.Mem_Free( data, filename, fileline );
-}
-
-static inline void trap_Mem_FreePool( struct mempool_s **pool, const char *filename, int fileline ) {
-	UI_IMPORT.Mem_FreePool( pool, filename, fileline );
-}
-
-static inline void trap_Mem_EmptyPool( struct mempool_s *pool, const char *filename, int fileline ) {
-	UI_IMPORT.Mem_EmptyPool( pool, filename, fileline );
 }

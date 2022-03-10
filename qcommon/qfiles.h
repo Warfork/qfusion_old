@@ -187,7 +187,7 @@ typedef struct
     int				num_verts;
     int				num_tris;
 
-    int				ofs_indexes;
+    int				ofs_elems;
     int				ofs_skins;
     int				ofs_tcs;
     int				ofs_verts;
@@ -433,7 +433,7 @@ typedef struct
 #define	LUMP_BRUSHES			8
 #define	LUMP_BRUSHSIDES			9
 #define LUMP_VERTEXES			10
-#define LUMP_INDEXES			11
+#define LUMP_ELEMENTS			11
 #define LUMP_FOGS				12
 #define LUMP_FACES				13
 #define LUMP_LIGHTING			14
@@ -441,7 +441,7 @@ typedef struct
 #define LUMP_VISIBILITY			16
 #define LUMP_LIGHTARRAY			17
 
-#define	HEADER_LUMPS			17		// 16 for IDBSP
+#define	HEADER_LUMPS			18		// 16 for IDBSP
 
 typedef struct
 {
@@ -573,8 +573,8 @@ typedef struct
 
     int				firstvert;
 	int				numverts;
-	unsigned		firstindex;
-	int				numindexes;
+	unsigned		firstelem;
+	int				numelems;
 
     int				lm_texnum;		// lightmap info
     int				lm_offset[2];
@@ -597,8 +597,8 @@ typedef struct
 
     int				firstvert;
 	int				numverts;
-	unsigned		firstindex;
-	int				numindexes;
+	unsigned		firstelem;
+	int				numelems;
 
 	unsigned char	lightmapStyles[MAX_LIGHTMAPS];
 	unsigned char	vertexStyles[MAX_LIGHTMAPS];

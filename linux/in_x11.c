@@ -29,8 +29,6 @@ int mx, my;
 int p_mouse_x, p_mouse_y;
 int old_mouse_x, old_mouse_y;
 
-extern x11display_t x11display;
-
 static qboolean grabs_installed = qfalse;
 
 static cvar_t *in_dgamouse;

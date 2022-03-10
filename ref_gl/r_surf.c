@@ -1,5 +1,6 @@
 /*
 Copyright (C) 1997-2001 Id Software, Inc.
+Copyright (C) 2002-2007 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -8,7 +9,7 @@ of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 See the GNU General Public License for more details.
 
@@ -17,17 +18,19 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 // r_surf.c: surface-related refresh code
+
 #include "r_local.h"
 
-static vec3_t	modelorg;		// relative to viewpoint
-static vec3_t	modelmins;
-static vec3_t	modelmaxs;
+static vec3_t modelorg;       // relative to viewpoint
+static vec3_t modelmins;
+static vec3_t modelmaxs;
 
 /*
 =============================================================
 
-	BRUSH MODELS
+BRUSH MODELS
 
 =============================================================
 */
@@ -48,78 +51,168 @@ qboolean R_SurfPotentiallyVisible( msurface_t *surf )
 	return qtrue;
 }
 
+/*
+=================
+R_CullSurface
+=================
+*/
+qboolean R_CullSurface( msurface_t *surf, unsigned int clipflags )
+{
+	shader_t *shader = surf->shader;
+
+	if( ( shader->flags & SHADER_SKY ) && r_fastsky->integer )
+		return qtrue;
+	if( r_nocull->integer )
+		return qfalse;
+	if( shader->flags & SHADER_AUTOSPRITE )
+		return qfalse;
+
+	// flare
+	if( surf->facetype == FACETYPE_FLARE )
+	{
+		if( r_flares->integer && r_flarefade->value )
+		{
+			vec3_t origin;
+
+			if( ri.currentmodel != r_worldmodel )
+			{
+				Matrix_TransformVector( ri.currententity->axis, surf->origin, origin );
+				VectorAdd( origin, ri.currententity->origin, origin );
+			}
+			else
+			{
+				VectorCopy( surf->origin, origin );
+			}
+
+			// cull it because we don't want to sort unneeded things
+			if( ( origin[0] - ri.viewOrigin[0] ) * ri.vpn[0] +
+				( origin[1] - ri.viewOrigin[1] ) * ri.vpn[1] +
+				( origin[2] - ri.viewOrigin[2] ) * ri.vpn[2] < 0 )
+				return qtrue;
+
+			return ( clipflags && R_CullSphere( origin, 1, clipflags ) );
+		}
+		return qtrue;
+	}
+
+	if( surf->facetype == FACETYPE_PLANAR && r_faceplanecull->integer
+#ifdef HARDWARE_OUTLINES
+		&& !ri.currententity->outlineHeight
+#endif
+		&& ( shader->flags & ( SHADER_CULL_FRONT|SHADER_CULL_BACK ) ) )
+	{
+		// Vic: I hate q3map2. I really do.
+		if( !VectorCompare( surf->plane->normal, vec3_origin ) )
+		{
+			float dist;
+
+			dist = PlaneDiff( modelorg, surf->plane );
+			if( ( shader->flags & SHADER_CULL_FRONT ) || ( ri.params & RP_MIRRORVIEW ) )
+			{
+				if( dist <= BACKFACE_EPSILON )
+					return qtrue;
+			}
+			else
+			{
+				if( dist >= -BACKFACE_EPSILON )
+					return qtrue;
+			}
+		}
+	}
+
+	return ( clipflags && R_CullBox( surf->mins, surf->maxs, clipflags ) );
+}
 
 /*
 =================
 R_AddSurfaceToList
 =================
 */
-meshbuffer_t *R_AddSurfaceToList( msurface_t *surf, int clipflags )
+static meshbuffer_t *R_AddSurfaceToList( msurface_t *surf, unsigned int clipflags )
 {
 	shader_t *shader;
 	meshbuffer_t *mb;
 
-	surf->visframe = r_framecount;
-	shader = surf->shader;
-
-	if( (shader->flags & SHADER_SKY) && r_fastsky->integer )
+	if( R_CullSurface( surf, clipflags ) )
 		return NULL;
 
-	// flare
-	if( surf->facetype == FACETYPE_FLARE ) {
-		if( r_flares->integer && r_flarefade->value ) {
-			if( !r_nocull->integer ) {
-				vec3_t origin;
-
-				if( ri.currentmodel != r_worldmodel ) {
-					Matrix_TransformVector( ri.currententity->axis, surf->origin, origin );
-					VectorAdd( origin, ri.currententity->origin, origin );
-				} else {
-					VectorCopy( surf->origin, origin );
-				}
-
-				// cull it because we don't want to sort unneeded things
-				if( ( origin[0] - ri.viewOrigin[0] ) * ri.vpn[0] +
-					( origin[1] - ri.viewOrigin[1] ) * ri.vpn[1] + 
-					( origin[2] - ri.viewOrigin[2] ) * ri.vpn[2] < 0 )
-					return NULL;
-				if( R_CullSphere( origin, 1, clipflags ) )
-					return NULL;
-			}
-			return R_AddMeshToList( MB_SPRITE, surf->fog, shader, surf - ri.currentmodel->surfaces + 1 );
+	shader = ((r_drawworld->integer == 2) ? R_OcclusionShader() : surf->shader);
+	if( shader->flags & SHADER_SKY )
+	{
+		qboolean vis = R_AddSkySurface( surf );
+		if( ( ri.params & RP_NOSKY ) && vis )
+		{
+			R_AddMeshToList( MB_MODEL, surf->fog, shader, surf - r_worldbrushmodel->surfaces + 1 );
+			ri.params &= ~RP_NOSKY;
 		}
 		return NULL;
 	}
 
-	if( !r_nocull->integer ) {
-		if( surf->facetype == FACETYPE_PLANAR && r_faceplanecull->integer && (shader->flags & (SHADER_CULL_FRONT|SHADER_CULL_BACK)) ) {
-			// Vic: I hate q3map2. I really do.
-			if( !VectorCompare( surf->plane->normal, vec3_origin ) ) {
-				float dist;
-
-				dist = PlaneDiff( modelorg, surf->plane );
-				if( (shader->flags & SHADER_CULL_FRONT) || (ri.params & RP_MIRRORVIEW) ) {
-					if( dist <= BACKFACE_EPSILON )
-						return NULL;
-				} else {
-					if( dist >= -BACKFACE_EPSILON )
-						return NULL;
-				}
-			}
-		}
-
-		if( clipflags && R_CullBox( surf->mins, surf->maxs, clipflags ) )
-			return NULL;
+	if( OCCLUSION_QUERIES_ENABLED( ri ) )
+	{
+		if( shader->flags & SHADER_PORTAL )
+			R_SurfOcclusionQueryKey( ri.currententity, surf );
+		if( OCCLUSION_OPAQUE_SHADER( shader ) )
+			R_AddOccludingSurface( surf, shader );
 	}
 
-	mb = R_AddMeshToList( MB_MODEL, surf->fog, shader, surf - ri.currentmodel->surfaces + 1 );
-	if( mb ) {
-		if( shader->flags & SHADER_SKY )
-			R_AddSkySurface( surf );
-		c_brush_polys++;
-	}
-
+	c_brush_polys++;
+	mb = R_AddMeshToList( surf->facetype == FACETYPE_FLARE ? MB_SPRITE : MB_MODEL,
+		surf->fog, shader, surf - r_worldbrushmodel->surfaces + 1 );
+	ri.surfmbuffers[surf - r_worldbrushmodel->surfaces] = mb;
 	return mb;
+}
+
+/*
+=================
+R_CullBrushModel
+=================
+*/
+qboolean R_CullBrushModel( entity_t *e )
+{
+	int i;
+	qboolean rotated;
+	model_t	*model = e->model;
+	mbrushmodel_t *bmodel = ( mbrushmodel_t * )model->extradata;
+
+	if( bmodel->nummodelsurfaces == 0 )
+		return qtrue;
+
+	if( !Matrix_Compare( e->axis, axis_identity ) )
+	{
+		rotated = qtrue;
+		for( i = 0; i < 3; i++ )
+		{
+			modelmins[i] = e->origin[i] - model->radius * e->scale;
+			modelmaxs[i] = e->origin[i] + model->radius * e->scale;
+		}
+		if( R_CullSphere( e->origin, model->radius * e->scale, ri.clipFlags ) )
+			return qtrue;
+	}
+	else
+	{
+		rotated = qfalse;
+		VectorMA( e->origin, e->scale, model->mins, modelmins );
+		VectorMA( e->origin, e->scale, model->maxs, modelmaxs );
+		if( R_CullBox( modelmins, modelmaxs, ri.clipFlags ) )
+			return qtrue;
+	}
+
+	if( ri.refdef.rdflags & ( RDF_PORTALINVIEW|RDF_SKYPORTALINVIEW ) || ( ri.params & RP_SKYPORTALVIEW ) )
+	{
+		if( rotated )
+		{
+			if( R_VisCullSphere( e->origin, model->radius * e->scale ) )
+				return qtrue;
+		}
+		else
+		{
+			if( R_VisCullBox( modelmins, modelmaxs ) )
+				return qtrue;
+		}
+	}
+
+	return qfalse;
 }
 
 /*
@@ -129,66 +222,69 @@ R_AddBrushModelToList
 */
 void R_AddBrushModelToList( entity_t *e )
 {
-	int			i;
-	qboolean	rotated;
-	model_t		*model = e->model;
-	msurface_t	*psurf;
+	unsigned int i;
+	qboolean rotated;
+	model_t	*model = e->model;
+	mbrushmodel_t *bmodel = ( mbrushmodel_t * )model->extradata;
+	msurface_t *psurf;
 	unsigned int dlightbits;
 	meshbuffer_t *mb;
 
-	if( model->nummodelsurfaces == 0 )
-		return;
+#ifdef HARDWARE_OUTLINES
+	e->outlineHeight = r_worldent->outlineHeight;
+	Vector4Copy( r_worldent->outlineRGBA, e->outlineColor );
+#endif
 
-	if( !Matrix_Compare( e->axis, axis_identity ) ) {
-		rotated = qtrue;
-		for( i = 0; i < 3; i++ ) {
-			modelmins[i] = e->origin[i] - model->radius * e->scale;
-			modelmaxs[i] = e->origin[i] + model->radius * e->scale;
-		}
-
-		if( R_CullSphere( e->origin, model->radius * e->scale, 15 ) )
-			return;
-	}
-	else
-	{
-		rotated = qfalse;
-		VectorMA( e->origin, e->scale, model->mins, modelmins );
-		VectorMA( e->origin, e->scale, model->maxs, modelmaxs );
-
-		if( R_CullBox( modelmins, modelmaxs, 15 ) )
-			return;
-	}
-
-	if( ri.refdef.rdflags & RDF_PORTALINVIEW ) {
-		if( R_VisCullSphere( e->origin, model->radius * e->scale ) )
-			return;
-	}
-
+	rotated = !Matrix_Compare( e->axis, axis_identity );
 	VectorSubtract( ri.refdef.vieworg, e->origin, modelorg );
-	if( rotated ) {
-		vec3_t	temp;
+	if( rotated )
+	{
+		vec3_t temp;
 
 		VectorCopy( modelorg, temp );
 		Matrix_TransformVector( e->axis, temp, modelorg );
 	}
 
 	dlightbits = 0;
-	if( r_dynamiclight->integer && !r_fullbright->integer ) {
-		for( i = 0; i < r_numDlights; i++ ) {
+	if( ( r_dynamiclight->integer == 1 ) && !r_fullbright->integer && !( ri.params & RP_SHADOWMAPVIEW ) )
+	{
+		for( i = 0; i < r_numDlights; i++ )
+		{
 			if( BoundsIntersect( modelmins, modelmaxs, r_dlights[i].mins, r_dlights[i].maxs ) )
-				dlightbits |= (1<<i);
+				dlightbits |= ( 1<<i );
 		}
 	}
 
-	for( i = 0, psurf = model->firstmodelsurface; i < model->nummodelsurfaces; i++, psurf++ ) {
-		if( R_SurfPotentiallyVisible( psurf ) ) {
-			mb = R_AddSurfaceToList( psurf, 0 );
-			if( mb ) {
-				mb->sortkey |= ((psurf->superLightStyle+1) << 10);
+	for( i = 0, psurf = bmodel->firstmodelsurface; i < (unsigned)bmodel->nummodelsurfaces; i++, psurf++ )
+	{
+		if( !R_SurfPotentiallyVisible( psurf ) )
+			continue;
 
-				if( R_SurfPotentiallyLit( psurf ) )
-					mb->dlightbits = dlightbits;
+		if( ri.params & RP_SHADOWMAPVIEW )
+		{
+			if( psurf->visframe != r_framecount )
+				continue;
+			if( ( psurf->shader->sort >= SHADER_SORT_OPAQUE ) && ( psurf->shader->sort <= SHADER_SORT_BANNER ) )
+			{
+				if( prevRI.surfmbuffers[psurf - r_worldbrushmodel->surfaces] )
+				{
+					if( !R_CullSurface( psurf, 0 ) )
+					{
+						ri.params |= RP_WORLDSURFVISIBLE;
+						prevRI.surfmbuffers[psurf - r_worldbrushmodel->surfaces]->shadowbits |= ri.shadowGroup->bit;
+					}
+				}
 			}
+			continue;
+		}
+
+		psurf->visframe = r_framecount;
+		mb = R_AddSurfaceToList( psurf, 0 );
+		if( mb )
+		{
+			mb->sortkey |= ( ( psurf->superLightStyle+1 ) << 10 );
+			if( R_SurfPotentiallyLit( psurf ) )
+				mb->dlightbits = dlightbits;
 		}
 	}
 }
@@ -196,36 +292,75 @@ void R_AddBrushModelToList( entity_t *e )
 /*
 =============================================================
 
-	WORLD MODEL
+WORLD MODEL
 
 =============================================================
 */
 
 /*
 ================
+R_MarkLeafSurfaces
+================
+*/
+static void R_MarkLeafSurfaces( msurface_t **mark, unsigned int clipflags, unsigned int dlightbits )
+{
+	unsigned int newDlightbits;
+	msurface_t *surf;
+	meshbuffer_t *mb;
+
+	do
+	{
+		surf = *mark++;
+
+		// note that R_AddSurfaceToList may set meshBuffer to NULL
+		// for world ALL surfaces to prevent referencing to freed memory region
+		if( surf->visframe != r_framecount )
+		{
+			surf->visframe = r_framecount;
+			mb = R_AddSurfaceToList( surf, clipflags );
+			if( mb )
+				mb->sortkey |= ( ( surf->superLightStyle+1 ) << 10 );
+		}
+		else
+		{
+			mb = ri.surfmbuffers[surf - r_worldbrushmodel->surfaces];
+		}
+
+		newDlightbits = mb ? dlightbits & ~mb->dlightbits : 0;
+		if( newDlightbits && R_SurfPotentiallyLit( surf ) )
+			mb->dlightbits |= R_AddSurfDlighbits( surf, newDlightbits );
+	} while( *mark );
+}
+
+/*
+================
 R_RecursiveWorldNode
 ================
 */
-static void R_RecursiveWorldNode( mnode_t *node, int clipflags, unsigned int dlightbits )
+static void R_RecursiveWorldNode( mnode_t *node, unsigned int clipflags, unsigned int dlightbits )
 {
-	int			i, clipped;
-	unsigned int newDlightbits;
-	cplane_t	*clipplane;
-	msurface_t	**mark, *surf;
-	mleaf_t		*pleaf;
-	meshbuffer_t *mb;
+	unsigned int i, newDlightbits;
+	unsigned int bit;
+	const cplane_t *clipplane;
+	mleaf_t	*pleaf;
 
-	while( 1 ) {
-		if( node->visframe != r_visframecount )
+	while( 1 )
+	{
+		if( node->pvsframe != r_pvsframecount )
 			return;
 
-		if( clipflags ) {
-			for( i = 0, clipplane = ri.frustum; i < 4; i++, clipplane++ ) {
-				clipped = BoxOnPlaneSide( node->mins, node->maxs, clipplane );
-				if( clipped == 2 )
-					return;
-				else if( clipped == 1 )
-					clipflags &= ~(1<<i);	// node is entirely on screen
+		if( clipflags )
+		{
+			for( i = sizeof( ri.frustum )/sizeof( ri.frustum[0] ), bit = 1, clipplane = ri.frustum; i > 0; i--, bit<<=1, clipplane++ )
+			{
+				if( clipflags & bit )
+				{
+					int clipped = BoxOnPlaneSide( node->mins, node->maxs, clipplane );
+					if( clipped == 2 )
+						return;
+					if( clipped == 1 )
+						clipflags &= ~bit; // node is entirely on screen
+				}
 			}
 		}
 
@@ -233,19 +368,19 @@ static void R_RecursiveWorldNode( mnode_t *node, int clipflags, unsigned int dli
 			break;
 
 		newDlightbits = 0;
-		if( dlightbits ) {
-			unsigned int bit;
+		if( dlightbits )
+		{
 			float dist;
 
-			for( i = 0, bit = 1; i < r_numDlights; i++, bit<<=1 ) {
-				if( !(dlightbits & bit) )
+			for( i = 0, bit = 1; i < r_numDlights; i++, bit <<= 1 )
+			{
+				if( !( dlightbits & bit ) )
 					continue;
 
 				dist = PlaneDiff( r_dlights[i].origin, node->plane );
-
 				if( dist < -r_dlights[i].intensity )
 					dlightbits &= ~bit;
-				if( dist <  r_dlights[i].intensity )
+				if( dist < r_dlights[i].intensity )
 					newDlightbits |= bit;
 			}
 		}
@@ -258,32 +393,151 @@ static void R_RecursiveWorldNode( mnode_t *node, int clipflags, unsigned int dli
 
 	// if a leaf node, draw stuff
 	pleaf = ( mleaf_t * )node;
-	if( !pleaf->firstVisSurface )
-		return;
+	pleaf->visframe = r_framecount;
 
-	mark = pleaf->firstVisSurface;
-	do {
-		surf = *mark++;
+	// add leaf bounds to view bounds
+	for( i = 0; i < 3; i++ )
+	{
+		ri.visMins[i] = min( ri.visMins[i], pleaf->mins[i] );
+		ri.visMaxs[i] = max( ri.visMaxs[i], pleaf->maxs[i] );
+	}
 
-		if( !R_SurfPotentiallyVisible( surf ) )
-			continue;
-
-		// note that R_AddSurfaceToList may set meshBuffer to NULL
-		// for world ALL surfaces to prevent referencing to freed memory region
-		if( surf->visframe != r_framecount ) {
-			surf->meshBuffer = R_AddSurfaceToList( surf, clipflags );
-			if( surf->meshBuffer )
-				surf->meshBuffer->sortkey |= ((surf->superLightStyle+1) << 10);
-		}
-		mb = surf->meshBuffer;
-
-		newDlightbits = mb ? dlightbits & ~mb->dlightbits : 0;
-		if( newDlightbits && R_SurfPotentiallyLit( surf ) )
-			mb->dlightbits |= R_AddSurfDlighbits( surf, newDlightbits );
-	} while( *mark );
-
+	R_MarkLeafSurfaces( pleaf->firstVisSurface, clipflags, dlightbits );
 	c_world_leafs++;
 }
+
+/*
+================
+R_MarkShadowLeafSurfaces
+================
+*/
+static void R_MarkShadowLeafSurfaces( msurface_t **mark, unsigned int clipflags )
+{
+	msurface_t *surf;
+	meshbuffer_t *mb;
+	const unsigned int bit = ri.shadowGroup->bit;
+
+	do
+	{
+		surf = *mark++;
+		if( surf->flags & ( SURF_NOIMPACT|SURF_NODRAW ) )
+			continue;
+
+		mb = prevRI.surfmbuffers[surf - r_worldbrushmodel->surfaces];
+		if( !mb || (mb->shadowbits & bit) )
+			continue;
+
+		// this surface is visible in previous RI, not marked as shadowed...
+		if( ( surf->shader->sort >= SHADER_SORT_OPAQUE ) && ( surf->shader->sort <= SHADER_SORT_ALPHATEST ) )
+		{	// ...is opaque
+			if( !R_CullSurface( surf, clipflags ) )
+			{	// and is visible to the light source too
+				ri.params |= RP_WORLDSURFVISIBLE;
+				mb->shadowbits |= bit;
+			}
+		}
+	} while( *mark );
+}
+
+/*
+================
+R_LinearShadowLeafs
+================
+*/
+static void R_LinearShadowLeafs( void )
+{
+	unsigned int i, j;
+	unsigned int cpf, bit;
+	const cplane_t *clipplane;
+	mleaf_t	*pleaf;
+
+	for( j = r_worldbrushmodel->numleafs, pleaf = r_worldbrushmodel->leafs; j > 0; j--, pleaf++ )
+	{
+		if( pleaf->visframe != r_framecount )
+			continue;
+		if( !( ri.shadowGroup->vis[pleaf->cluster>>3] & ( 1<<( pleaf->cluster&7 ) ) ) )
+			continue;
+
+		cpf = ri.clipFlags;
+		for( i = sizeof( ri.frustum )/sizeof( ri.frustum[0] ), bit = 1, clipplane = ri.frustum; i > 0; i--, bit<<=1, clipplane++ )
+		{
+			int clipped = BoxOnPlaneSide( pleaf->mins, pleaf->maxs, clipplane );
+			if( clipped == 2 )
+				break;
+			if( clipped == 1 )
+				cpf &= ~bit;	// leaf is entirely on screen
+		}
+
+		if( !i ) {
+			R_MarkShadowLeafSurfaces( pleaf->firstVisSurface, cpf );
+			c_world_leafs++;
+		}
+	}
+}
+
+//==================================================================================
+
+int r_surfQueryKeys[MAX_SURF_QUERIES];
+
+/*
+===============
+R_ClearSurfOcclusionQueryKeys
+===============
+*/
+void R_ClearSurfOcclusionQueryKeys( void )
+{
+	memset( r_surfQueryKeys, -1, sizeof( r_surfQueryKeys ) );
+}
+
+/*
+===============
+R_SurfOcclusionQueryKey
+===============
+*/
+int R_SurfOcclusionQueryKey( entity_t *e, msurface_t *surf )
+{
+	int i;
+	int *keys = r_surfQueryKeys;
+	int key = surf - r_worldbrushmodel->surfaces;
+
+	if( e != r_worldent )
+		return -1;
+
+	for( i = 0; i < MAX_SURF_QUERIES; i++ )
+	{
+		if( keys[i] >= 0 )
+		{
+			if( keys[i] == key )
+				return i;
+		}
+		else
+		{
+			keys[i] = key;
+			return i;
+		}
+	}
+
+	return -1;
+}
+
+/*
+===============
+R_SurfIssueOcclusionQueries
+===============
+*/
+void R_SurfIssueOcclusionQueries( void )
+{
+	int i, *keys = r_surfQueryKeys;
+	msurface_t *surf;
+
+	for( i = 0; keys[i] >= 0; i++ )
+	{
+		surf = &r_worldbrushmodel->surfaces[keys[i]];
+		R_IssueOcclusionQuery( R_GetOcclusionQueryNum( OQ_CUSTOM, i ), r_worldent, surf->mins, surf->maxs );
+	}
+}
+
+//==================================================================================
 
 /*
 =============
@@ -295,8 +549,8 @@ static void R_CalcDistancesToFogVolumes( void )
 	int i;
 	mfog_t *fog;
 
-	for( i = 0, fog = r_worldmodel->fogs; i < r_worldmodel->numfogs; i++, fog++ )
-		ri.fog_dist_to_eye[fog - r_worldmodel->fogs] = PlaneDiff( ri.viewOrigin, fog->visibleplane );
+	for( i = 0, fog = r_worldbrushmodel->fogs; i < r_worldbrushmodel->numfogs; i++, fog++ )
+		ri.fog_dist_to_eye[fog - r_worldbrushmodel->fogs] = PlaneDiff( ri.viewOrigin, fog->visibleplane );
 }
 
 /*
@@ -306,6 +560,9 @@ R_DrawWorld
 */
 void R_DrawWorld( void )
 {
+	int clipflags, msec = 0;
+	unsigned int dlightbits;
+
 	if( !r_drawworld->integer )
 		return;
 	if( !r_worldmodel )
@@ -318,18 +575,45 @@ void R_DrawWorld( void )
 	ri.previousentity = NULL;
 	ri.currententity = r_worldent;
 	ri.currentmodel = ri.currententity->model;
+#ifdef HARDWARE_OUTLINES
+	if( (ri.refdef.rdflags & RDF_WORLDOUTLINES) && (r_viewcluster != -1) )
+		ri.currententity->outlineHeight = max( 0.0f, r_outlines_world->value );
+	else
+		ri.currententity->outlineHeight = 0.0f;
+	Vector4Copy( mapConfig.outlineColor, ri.currententity->outlineColor );
+#endif
 
-	R_ClearSkyBox ();
+	if( !( ri.params & RP_SHADOWMAPVIEW ) )
+	{
+		R_AllocMeshbufPointers( &ri );
+		memset( ri.surfmbuffers, 0, r_worldbrushmodel->numsurfaces * sizeof( meshbuffer_t * ) );
 
-	R_CalcDistancesToFogVolumes ();
+		R_CalcDistancesToFogVolumes();
+	}
+
+	ClearBounds( ri.visMins, ri.visMaxs );
+
+	R_ClearSkyBox();
+
+	if( r_nocull->integer )
+		clipflags = 0;
+	else
+		clipflags = ri.clipFlags;
+
+	if( r_dynamiclight->integer != 1 || r_fullbright->integer )
+		dlightbits = 0;
+	else
+		dlightbits = r_numDlights < 32 ? ( 1 << r_numDlights ) - 1 : -1;
 
 	if( r_speeds->integer )
-		r_world_node = Sys_Milliseconds ();
-	R_RecursiveWorldNode( ri.currentmodel->nodes, r_nocull->integer ? 0 : 15, (!r_dynamiclight->integer || r_fullbright->integer ? 0 : r_numDlights < 32 ? (1 << r_numDlights) - 1 : -1) );
+		msec = Sys_Milliseconds();
+	if( ri.params & RP_SHADOWMAPVIEW )
+		R_LinearShadowLeafs ();
+	else
+		R_RecursiveWorldNode( r_worldbrushmodel->nodes, clipflags, dlightbits );
 	if( r_speeds->integer )
-		r_world_node = Sys_Milliseconds () - r_world_node;
+		r_world_node += Sys_Milliseconds() - msec;
 }
-
 
 /*
 ===============
@@ -340,15 +624,17 @@ Mark the leaves and nodes that are in the PVS for the current cluster
 */
 void R_MarkLeaves( void )
 {
-	qbyte	*vis;
-	int		i;
-	mleaf_t	*leaf;
+	qbyte *vis;
+	int i;
+	mleaf_t	*leaf, **pleaf;
 	mnode_t *node;
-	int		cluster;
+	int cluster;
 
 	if( ri.refdef.rdflags & RDF_NOWORLDMODEL )
 		return;
-	if( r_oldviewcluster == r_viewcluster && (ri.refdef.rdflags & RDF_OLDAREABITS) && !r_novis->integer && r_viewcluster != -1 )
+	if( r_oldviewcluster == r_viewcluster && ( ri.refdef.rdflags & RDF_OLDAREABITS ) && !r_novis->integer && r_viewcluster != -1 )
+		return;
+	if( ri.params & RP_SHADOWMAPVIEW )
 		return;
 
 	// development aid to let you run around and see exactly where
@@ -356,96 +642,42 @@ void R_MarkLeaves( void )
 	if( r_lockpvs->integer )
 		return;
 
-	r_visframecount++;
+	r_pvsframecount++;
 	r_oldviewcluster = r_viewcluster;
 
-	if( r_novis->integer || r_viewcluster == -1 || !r_worldmodel->vis ) {
+	if( r_novis->integer || r_viewcluster == -1 || !r_worldbrushmodel->vis )
+	{
 		// mark everything
-		for( i = 0; i < r_worldmodel->numleafs; i++ )
-			r_worldmodel->leafs[i].visframe = r_visframecount;
-		for( i = 0; i < r_worldmodel->numnodes; i++ )
-			r_worldmodel->nodes[i].visframe = r_visframecount;
+		for( pleaf = r_worldbrushmodel->visleafs, leaf = *pleaf; leaf; leaf = *pleaf++ )
+			leaf->pvsframe = r_pvsframecount;
+		for( i = 0, node = r_worldbrushmodel->nodes; i < r_worldbrushmodel->numnodes; i++, node++ )
+			node->pvsframe = r_pvsframecount;
 		return;
 	}
 
 	vis = Mod_ClusterPVS( r_viewcluster, r_worldmodel );
-	for( i = 0, leaf = r_worldmodel->leafs; i < r_worldmodel->numleafs; i++, leaf++ ) {
+	for( pleaf = r_worldbrushmodel->visleafs, leaf = *pleaf; leaf; leaf = *pleaf++ )
+	{
 		cluster = leaf->cluster;
-		if( cluster == -1 )
-			continue;
 
 		// check for door connected areas
-		if( ri.refdef.areabits ) {
-			if(! (ri.refdef.areabits[leaf->area>>3] & (1<<(leaf->area&7)) ) )
-				continue;		// not visible
+		if( ri.refdef.areabits )
+		{
+			if( !( ri.refdef.areabits[leaf->area>>3] & ( 1<<( leaf->area&7 ) ) ) )
+				continue; // not visible
 		}
 
-		if( vis[cluster>>3] & (1<<(cluster&7)) ) {
+		if( vis[cluster>>3] & ( 1<<( cluster&7 ) ) )
+		{
 			node = (mnode_t *)leaf;
-			do {
-				if( node->visframe == r_visframecount )
+			do
+			{
+				if( node->pvsframe == r_pvsframecount )
 					break;
-				node->visframe = r_visframecount;
+				node->pvsframe = r_pvsframecount;
 				node = node->parent;
-			} while( node );
-		}
-	}
-}
-
-/*
-=============================================================================
-
-  AUTOSPRITES
-
-=============================================================================
-*/
-
-/*
-================
-R_FixAutosprites
-================
-*/
-void R_FixAutosprites( msurface_t *surf )
-{
-	int i, j;
-	vec2_t *stArray;
-	index_t *quad;
-	mesh_t *mesh;
-	shader_t *shader;
-
-	if( (surf->facetype != FACETYPE_PLANAR && surf->facetype != FACETYPE_TRISURF) || !surf->shader )
-		return;
-
-	mesh = surf->mesh;
-	if( !mesh || !mesh->numIndexes || mesh->numIndexes % 6 )
-		return;
-
-	shader = surf->shader;
-	if( !shader->numdeforms || !(shader->flags & SHADER_AUTOSPRITE) )
-		return;
-
-	for( i = 0; i < shader->numdeforms; i++ )
-		if( shader->deforms[i].type == DEFORMV_AUTOSPRITE )
-			break;
-
-	if( i == shader->numdeforms )
-		return;
-
-	stArray = mesh->stArray;
-	for( i = 0, quad = mesh->indexes; i < mesh->numIndexes; i += 6, quad += 6 ) {
-		for( j = 0; j < 6; j++ ) {
-			if( stArray[quad[j]][0] < -0.1 || stArray[quad[j]][0] > 1.1 ||
-				stArray[quad[j]][1] < -0.1 || stArray[quad[j]][1] > 1.1 ) {
-				stArray[quad[0]][0] = 0;
-				stArray[quad[0]][1] = 1;
-				stArray[quad[1]][0] = 0;
-				stArray[quad[1]][1] = 0;
-				stArray[quad[2]][0] = 1;
-				stArray[quad[2]][1] = 1;
-				stArray[quad[5]][0] = 1;
-				stArray[quad[5]][1] = 0;
-				break;
 			}
+			while( node );
 		}
 	}
 }

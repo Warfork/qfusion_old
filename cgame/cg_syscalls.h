@@ -184,6 +184,10 @@ static inline void trap_R_RenderScene( refdef_t *fd ) {
 	CGAME_IMPORT.R_RenderScene( fd );
 }
 
+static inline const char *trap_R_SpeedsMessage( char *out, size_t size ) {
+	return CGAME_IMPORT.R_SpeedsMessage( out, size );
+}
+
 static inline void trap_R_RegisterWorldModel( char *name ) {
 	CGAME_IMPORT.R_RegisterWorldModel( name );
 }
@@ -300,22 +304,10 @@ static inline void trap_S_StopBackgroundTrack( void ) {
 	CGAME_IMPORT.S_StopBackgroundTrack ();
 }
 
-static inline struct mempool_s *trap_MemAllocPool( const char *name, const char *filename, int fileline ) {
-	return CGAME_IMPORT.Mem_AllocPool( name, filename, fileline );
-}
-
-static inline void *trap_MemAlloc( struct mempool_s *pool, int size, const char *filename, int fileline ) {
-	return CGAME_IMPORT.Mem_Alloc( pool, size, filename, fileline );
+static inline void *trap_MemAlloc( size_t size, const char *filename, int fileline ) {
+	return CGAME_IMPORT.Mem_Alloc( size, filename, fileline );
 }
 
 static inline void trap_MemFree( void *data, const char *filename, int fileline ) {
 	CGAME_IMPORT.Mem_Free( data, filename, fileline );
-}
-
-static inline void trap_MemFreePool( struct mempool_s **pool, const char *filename, int fileline ) {
-	CGAME_IMPORT.Mem_FreePool( pool, filename, fileline );
-}
-
-static inline void trap_MemEmptyPool( struct mempool_s *pool, const char *filename, int fileline ) {
-	CGAME_IMPORT.Mem_EmptyPool( pool, filename, fileline );
 }

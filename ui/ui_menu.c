@@ -49,7 +49,6 @@ ui_local_t	uis;
 
 qboolean	m_entersound;		// play after drawing a frame, so caching
 								// won't disrupt the sound
-struct mempool_s *uipool;
 
 menuframework_s *m_active;
 void	*m_cursoritem;
@@ -369,11 +368,11 @@ float M_ClampCvar( float min, float max, float value )
 UI_CopyString
 =================
 */
-char *UI_CopyString (char *in)
+char *_UI_CopyString (const char *in, const char *filename, int fileline)
 {
 	char	*out;
 	
-	out = UI_Malloc (strlen(in)+1);
+	out = trap_MemAlloc (strlen(in)+1, filename, fileline);
 	strcpy (out, in);
 	return out;
 }
@@ -476,8 +475,6 @@ UI_Init
 */
 void UI_Init ( int vidWidth, int vidHeight )
 {
-	uipool = UI_MemAllocPool ( "UI" );
-
 	m_active = NULL;
 	m_cursoritem = NULL;
 	m_drawfunc = NULL;
@@ -548,8 +545,6 @@ void UI_Shutdown (void)
 	trap_Cmd_RemoveCommand ("menu_options");
 	trap_Cmd_RemoveCommand ("menu_keys");
 	trap_Cmd_RemoveCommand ("menu_quit");
-
-	UI_MemFreePool ( &uipool );
 }
 
 /*

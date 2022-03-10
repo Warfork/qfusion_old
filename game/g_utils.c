@@ -21,6 +21,64 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "g_local.h"
 
+static qbyte	*levelpool = NULL;			// Vic: I'm tempted to rename this to liverpool...
+static size_t	levelpool_size = 0;
+static size_t	levelpool_pointer = 0;
+
+/*
+=============
+G_LevelInitPool
+=============
+*/
+void G_LevelInitPool( size_t size )
+{
+	if( levelpool ) {
+		G_Free( levelpool );
+		levelpool = NULL;
+	}
+
+	if( !size )
+		size = levelpool_size;
+	assert( size );
+
+	levelpool = ( qbyte * )G_Malloc( size );
+	memset( levelpool, 0, size );
+
+	levelpool_size = size;
+	levelpool_pointer = 0;
+}
+
+/*
+=============
+G_LevelMalloc
+Note that we never release allocated memory
+=============
+*/
+void *_G_LevelMalloc( size_t size, const char *filename, int fileline )
+{
+	qbyte *pointer;
+
+	if( levelpool_pointer + size > levelpool_size ) {
+		G_Error( "G_LevelMalloc: out of memory (alloc %i bytes at %s:%i)\n", size, filename, fileline );
+		return NULL;
+	}
+
+	pointer = levelpool + levelpool_pointer;
+	levelpool_pointer += size;
+
+	return ( void * )pointer;
+}
+
+/*
+=============
+G_LevelFree
+=============
+*/
+void _G_LevelFree( void *data, const char *filename, int fileline )
+{
+}
+
+
 void G_ProjectSource ( vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result )
 {
 	result[0] = point[0] + forward[0] * distance[0] + right[0] * distance[1];
@@ -40,7 +98,7 @@ NULL will be returned if the end of the list is reached.
 
 =============
 */
-edict_t *G_Find (edict_t *from, size_t fieldofs, char *match)
+edict_t *G_Find (edict_t *from, size_t fieldofs, const char *match)
 {
 	char	*s;
 
@@ -114,7 +172,7 @@ NULL will be returned if the end of the list is reached.
 */
 #define MAXCHOICES	8
 
-edict_t *G_PickTarget (char *targetname)
+edict_t *G_PickTarget (const char *targetname)
 {
 	edict_t	*ent = NULL;
 	int		num_choices = 0;
@@ -298,11 +356,11 @@ float vectoyaw (vec3_t vec)
 }
 
 
-char *G_CopyString (char *in)
+char *_G_CopyString (const char *in, const char *filename, int fileline)
 {
 	char	*out;
 	
-	out = G_Malloc (strlen(in)+1);
+	out = trap_MemAlloc (strlen(in)+1, filename, fileline);
 	strcpy (out, in);
 	return out;
 }
@@ -614,7 +672,7 @@ G_PrintMsg
 NULL sends to all the message to all clients 
 ============
 */
-void G_PrintMsg ( edict_t *ent, int level, char *fmt, ... )
+void G_PrintMsg ( edict_t *ent, int level, const char *fmt, ... )
 {
 	char		msg[1024];
 	va_list		argptr;
@@ -661,7 +719,7 @@ G_CenterPrintMsg
 NULL sends to all the message to all clients 
 ============
 */
-void G_CenterPrintMsg ( edict_t *ent, char *fmt, ... )
+void G_CenterPrintMsg ( edict_t *ent, const char *fmt, ... )
 {
 	char		msg[1024];
 	va_list		argptr;

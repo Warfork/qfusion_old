@@ -521,7 +521,7 @@ char *Sys_FindFirst (char *path, unsigned musthave, unsigned canhave)
 	if ((fdir = opendir(findbase)) == NULL)
 		return NULL;
 	while ((d = readdir(fdir)) != NULL) {
-		if (!*findpattern || glob_match(findpattern, d->d_name)) {
+		if (!*findpattern || glob_match(findpattern, d->d_name, qfalse)) {
 //			if (*findpattern)
 //				printf("%s matched %s\n", findpattern, d->d_name);
 			if (CompareAttributes(findbase, d->d_name, musthave, canhave)) {
@@ -540,7 +540,7 @@ char *Sys_FindNext (unsigned musthave, unsigned canhave)
 	if (fdir == NULL)
 		return NULL;
 	while ((d = readdir(fdir)) != NULL) {
-		if (!*findpattern || glob_match(findpattern, d->d_name)) {
+		if (!*findpattern || glob_match(findpattern, d->d_name,qfalse)) {
 //			if (*findpattern)
 //				printf("%s matched %s\n", findpattern, d->d_name);
 			if (CompareAttributes(findbase, d->d_name, musthave, canhave)) {

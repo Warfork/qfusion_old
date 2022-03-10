@@ -63,8 +63,8 @@ static void CL_UIModule_GetConfigString ( int i, char *str, int size )
 CL_UIModule_MemAlloc
 ===============
 */
-static void *CL_UIModule_MemAlloc( mempool_t *pool, int size, const char *filename, int fileline ) {
-	return _Mem_Alloc( pool, size, MEMPOOL_USERINTERFACE, 0, filename, fileline );
+static void *CL_UIModule_MemAlloc( size_t size, const char *filename, int fileline ) {
+	return _Mem_Alloc( ui_mempool, size, MEMPOOL_USERINTERFACE, 0, filename, fileline );
 }
 
 /*
@@ -74,33 +74,6 @@ CL_UIModule_MemFree
 */
 static void CL_UIModule_MemFree( void *data, const char *filename, int fileline ) {
 	_Mem_Free( data, MEMPOOL_USERINTERFACE, 0, filename, fileline );
-}
-
-/*
-===============
-CL_UIModule_MemAllocPool
-===============
-*/
-static mempool_t *CL_UIModule_MemAllocPool( const char *name, const char *filename, int fileline ) {
-	return _Mem_AllocPool( ui_mempool, name, MEMPOOL_USERINTERFACE, filename, fileline );
-}
-
-/*
-===============
-CL_UIModule_MemFreePool
-===============
-*/
-static void CL_UIModule_MemFreePool( mempool_t **pool, const char *filename, int fileline ) {
-	_Mem_FreePool( pool, MEMPOOL_USERINTERFACE, 0, filename, fileline );
-}
-
-/*
-===============
-CL_UIModule_MemEmptyPool
-===============
-*/
-static void CL_UIModule_MemEmptyPool( mempool_t *pool, const char *filename, int fileline ) {
-	_Mem_EmptyPool( pool, MEMPOOL_GAMEPROGS, 0, filename, fileline );
 }
 
 /*
@@ -115,7 +88,7 @@ void CL_UIModule_Init (void)
 
 	CL_UIModule_Shutdown ();
 
-	ui_mempool = Mem_AllocPool( NULL, "User Iterface" );
+	ui_mempool = _Mem_AllocPool( NULL, "User Iterface", MEMPOOL_USERINTERFACE, __FILE__, __LINE__ );
 
 	import.Error = CL_UIModule_Error;
 	import.Print = CL_UIModule_Print;
@@ -186,9 +159,6 @@ void CL_UIModule_Init (void)
 
 	import.Mem_Alloc = CL_UIModule_MemAlloc;
 	import.Mem_Free = CL_UIModule_MemFree;
-	import.Mem_AllocPool = CL_UIModule_MemAllocPool;
-	import.Mem_FreePool = CL_UIModule_MemFreePool;
-	import.Mem_EmptyPool = CL_UIModule_MemEmptyPool;
 
 	uie = ( ui_export_t * )Sys_LoadGameLibrary( LIB_UI, &import );
 	if ( !uie )
@@ -221,8 +191,8 @@ void CL_UIModule_Shutdown ( void )
 	cls.uiActive = qfalse;
 
 	uie->Shutdown ();
-	Sys_UnloadGameLibrary( LIB_UI );
 	Mem_FreePool( &ui_mempool );
+	Sys_UnloadGameLibrary( LIB_UI );
 	uie = NULL;
 }
 

@@ -29,7 +29,7 @@ QUAKE FILESYSTEM
 =============================================================================
 */
 
-#define FS_ZIP_BUFSIZE				0x00000800
+#define FS_ZIP_BUFSIZE				0x00001000
 
 #define FS_ZIP_BUFREADCOMMENT		0x00000400
 #define FS_ZIP_SIZELOCALHEADER		0x0000001e
@@ -1477,7 +1477,7 @@ FS_ExecAutoexec
 */
 void FS_ExecAutoexec( void )
 {
-	char *dir;
+	const char *dir;
 	char name[MAX_OSPATH];
 
 	dir = Cvar_VariableString( "fs_gamedir" );
@@ -1519,7 +1519,7 @@ void FS_SetGamedir( char *dir )
 
 	// flush all data, so it will be forced to reload
 	if( dedicated && !dedicated->integer )
-		Cbuf_AddText( "snd_restart\nin_restart\n" );
+		Cbuf_AddText( "snd_restart 1\nin_restart\n" );
 
 	Q_snprintfz( fs_gamedir, sizeof(fs_gamedir), "%s/%s", fs_basepath->string, dir );
 

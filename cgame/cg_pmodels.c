@@ -1009,7 +1009,7 @@ void CG_PlaceRotatedModelOnTag( entity_t *ent, entity_t *dest, orientation_t *ta
 	VectorCopy( dest->lightingOrigin, ent->lightingOrigin );
 	
 	for( i = 0 ; i < 3 ; i++ )
-		VectorMA( ent->origin, tag->origin[i], dest->axis[i], ent->origin );
+		VectorMA( ent->origin, tag->origin[i] * ent->scale, dest->axis[i], ent->origin );
 
 	VectorCopy( ent->origin, ent->origin2 );
 	Matrix_Multiply( ent->axis, tag->axis, tmpAxis );
@@ -1029,7 +1029,7 @@ void CG_PlaceModelOnTag( entity_t *ent, entity_t *dest, orientation_t *tag )
 	VectorCopy( dest->lightingOrigin, ent->lightingOrigin );
 	
 	for( i = 0 ; i < 3 ; i++ )
-		VectorMA( ent->origin, tag->origin[i], dest->axis[i], ent->origin );
+		VectorMA( ent->origin, tag->origin[i] * ent->scale, dest->axis[i], ent->origin );
 	
 	VectorCopy( ent->origin, ent->origin2 );
 	Matrix_Multiply( tag->axis, dest->axis, ent->axis );
@@ -1580,7 +1580,6 @@ void CG_PModelUpdateState( entity_state_t *state )
 #else
 	// update ents models & skins
 	for( i = LOWER ; i < PMODEL_PARTS ; i++ ) {
-		pmodel->ents[i].scale = 1.0f;
 		pmodel->ents[i].rtype = RT_MODEL;
 		pmodel->ents[i].customShader = NULL;
 		pmodel->ents[i].model = pmodel->pmodelinfo->model[i];
@@ -1728,12 +1727,10 @@ void CG_AddPModel( entity_t *ent, entity_state_t *state )
 	ent->frame = ent->oldframe = 0;//frame fields are not used with external poses
 
 	// Add playermodel ent
-	ent->scale = 1.0f;
 	ent->rtype = RT_MODEL;
 	ent->customShader = NULL;
 	ent->model = pmodel->pmodelinfo->model;
 	ent->customSkin = pmodel->pSkin->skin;
-
 	
 	CG_AddEntityToScene( ent );
 	if( !ent->model )
@@ -1826,6 +1823,7 @@ void CG_AddPModel( entity_t *ent, entity_state_t *state )
 		VectorCopy( org, pmodel->ents[LOWER].origin);
 		VectorCopy( org, pmodel->ents[LOWER].origin2 );
 		VectorCopy( org, pmodel->ents[LOWER].lightingOrigin );
+		VectorCopy( org, cg.lightingOrigin );
 	} else {
 		VectorCopy (ent->origin, pmodel->ents[LOWER].origin);
 		VectorCopy (ent->origin2, pmodel->ents[LOWER].origin2);
@@ -1835,6 +1833,7 @@ void CG_AddPModel( entity_t *ent, entity_state_t *state )
 	for( i = LOWER; i < PMODEL_PARTS; i++ ) {
 		prev = i - 1;
 		pmodel->ents[i].flags = ent->flags;
+		pmodel->ents[i].scale = ent->scale;
 
 		// allow player legs to be drawn
 		if( cg_showLegs->integer && pmodel->ents[i].flags & RF_VIEWERMODEL && i == LOWER )

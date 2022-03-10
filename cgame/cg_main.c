@@ -19,8 +19,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "cg_local.h"
 
-struct mempool_s *cgamepool;
-
 cg_static_t		cgs;
 cg_state_t		cg;
 
@@ -37,6 +35,9 @@ cvar_t			*skin;
 cvar_t			*hand;
 cvar_t			*gender;
 cvar_t			*gender_auto;
+
+cvar_t			*cg_outlineWorld;
+cvar_t			*cg_outlineModels;
 
 cvar_t			*cg_testEntities;
 cvar_t			*cg_testLights;
@@ -116,11 +117,11 @@ void CG_Printf( char *fmt, ... )
 CG_CopyString
 =================
 */
-char *CG_CopyString( const char *in )
+char *_CG_CopyString( const char *in, const char *filename, int fileline )
 {
 	char	*out;
 	
-	out = CG_Malloc( strlen( in ) + 1 );
+	out = trap_MemAlloc( strlen( in ) + 1, filename, fileline );
 	strcpy( out, in );
 
 	return out;
@@ -287,6 +288,9 @@ void CG_RegisterVariables (void)
 	cg_predict = trap_Cvar_Get ( "cg_predict", "1", 0 );
 	cg_showMiss = trap_Cvar_Get ( "cg_showMiss", "0", 0 );
 
+	cg_outlineWorld = trap_Cvar_Get ( "cg_outlineWorld", "0", CVAR_ARCHIVE );
+	cg_outlineModels = trap_Cvar_Get ( "cg_outlineModels", "0", CVAR_ARCHIVE );
+
 	cg_testBlend = trap_Cvar_Get ( "cg_testBlend", "0", CVAR_CHEAT );
 	cg_testEntities = trap_Cvar_Get ( "cg_testEntities", "0", CVAR_CHEAT );
 	cg_testLights = trap_Cvar_Get ( "cg_testLights", "0", CVAR_CHEAT );
@@ -376,8 +380,6 @@ CG_Init
 */
 void CG_Init( int playerNum, qboolean attractLoop, unsigned int serverFrameTime, int vidWidth, int vidHeight )
 {
-	cgamepool = CG_MemAllocPool ( "CGame" );
-
 	memset( &cg, 0, sizeof(cg_state_t) );
 	memset( &cgs, 0, sizeof(cg_static_t) );
 
@@ -440,8 +442,6 @@ CG_Shutdown
 void CG_Shutdown (void)
 {
 	SCR_Shutdown ();
-
-	CG_MemFreePool ( &cgamepool );
 }
 
 //======================================================================

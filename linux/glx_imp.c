@@ -42,7 +42,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "linux/x11.h"
 
-#include "ref_gl/r_local.h"
+#include "../qcommon/qcommon.h"
+#include "../ref_gl/r_glimp.h"
+
 #include "client/keys.h"
 
 #include "linux/glw_linux.h"

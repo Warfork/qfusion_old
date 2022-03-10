@@ -13,6 +13,9 @@
 * along with this program; if not, write to the Free Software
 * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 */
+
+// Original code by Jay Dolan, taken from Quake2@icculus.org project
+
 #include <alsa/asoundlib.h>
 
 #include "../client/client.h"

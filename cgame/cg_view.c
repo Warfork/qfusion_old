@@ -208,15 +208,20 @@ CG_SkyPortal
 */
 int CG_SkyPortal( void )
 {
-	float fov;
-	vec3_t origin;
+	float fov = 0;
+	float scale = 0;
+	float yawspeed = 0;
+	skyportal_t *sp = &cg.refdef.skyportal;
 
-	if( cgs.configStrings[CS_SKYBOXORG][0] == '\0' )
+	if( cgs.configStrings[CS_SKYBOX][0] == '\0' )
 		return 0;
 
-	if( sscanf( cgs.configStrings[CS_SKYBOXORG], "%f %f %f %f", &origin[0], &origin[1], &origin[2], &fov ) == 4 ) {
-		cg.refdef.skyportal.fov = fov;
-		VectorCopy( origin, cg.refdef.skyportal.origin );
+	if( sscanf( cgs.configStrings[CS_SKYBOX], "%f %f %f %f %f %f",
+		&sp->vieworg[0], &sp->vieworg[1], &sp->vieworg[2], &fov, &scale, &yawspeed ) >= 3 )
+	{
+		sp->fov = fov;
+		sp->scale = scale ? 1.0f / scale : 0;
+		VectorSet( sp->viewanglesOffset, 0, cg.refdef.time * 0.001f * yawspeed, 0 );
 		return RDF_SKYPORTALINVIEW;
 	}
 
@@ -247,6 +252,9 @@ int CG_RenderFlags( void )
 
 	if( cg.portalInView )
 		rdflags |= RDF_PORTALINVIEW;
+
+	if( cg_outlineWorld->integer )
+		rdflags |= RDF_WORLDOUTLINES;
 
 	rdflags |= RDF_BLOOM;
 
@@ -340,14 +348,14 @@ void CG_RenderView ( float frameTime, int realTime, float stereo_separation, qbo
 	cg.refdef.height = scr_vrect.height;
 	cg.refdef.fov_y = CalcFov( cg.refdef.fov_x, cg.refdef.width, cg.refdef.height );
 
-	cg.refdef.time = cg.time * 0.001;
+	cg.refdef.time = cg.time;
 	cg.refdef.areabits = cg.frame.areabits;
 
 	cg.refdef.rdflags = CG_RenderFlags ();
 
 	// warp if underwater
 	if( cg.refdef.rdflags & RDF_UNDERWATER ) {
-		float phase = cg.refdef.time * WAVE_FREQUENCY * M_TWOPI;
+		float phase = cg.refdef.time * 0.001f * WAVE_FREQUENCY * M_TWOPI;
 		float v = WAVE_AMPLITUDE * (sin( phase ) - 1.0) + 1;
 		cg.refdef.fov_x *= v;
 		cg.refdef.fov_y *= v;

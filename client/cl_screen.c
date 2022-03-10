@@ -287,6 +287,8 @@ void SCR_InitScreen (void)
 //
 	Cmd_AddCommand ("timerefresh", SCR_TimeRefresh_f);
 
+	SCR_InitCinematic ();
+
 	scr_initialized = qtrue;
 }
 
@@ -537,7 +539,7 @@ void SCR_UpdateScreen (void)
 		}
 		// if a cinematic is supposed to be running, handle menus
 		// and console specially
-		else if (cl.cin.time > 0)
+		else if (SCR_GetCinematicTime() > 0)
 		{
 			SCR_DrawCinematic ();
 		} 

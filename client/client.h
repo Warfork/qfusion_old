@@ -20,10 +20,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 // client.h -- primary header for client
 
 #include "../qcommon/qcommon.h"
-#include "../ref_gl/render.h"
+#include "../ref_gl/r_public.h"
 #include "../cgame/cg_public.h"
 
-#include "cin.h"
 #include "vid.h"
 #include "sound.h"
 #include "input.h"
@@ -66,8 +65,8 @@ typedef struct
 								// is rendering at.  always <= cls.realtime
 
 	//
-	// non-gameserver infornamtion
-	cinematics_t cin;
+	// non-gameserver information
+	void		*cin;
 
 	//
 	// server state information
@@ -183,6 +182,8 @@ extern	sizebuf_t	net_message;
 //
 // cl_cin.c
 //
+void SCR_InitCinematic (void);
+unsigned int SCR_GetCinematicTime (void);
 void SCR_PlayCinematic (char *name);
 qboolean SCR_DrawCinematic (void);
 void SCR_RunCinematic (void);

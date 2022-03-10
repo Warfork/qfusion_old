@@ -1,25 +1,25 @@
 Microsoft Visual Studio Solution File, Format Version 8.00
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cgame", "cgame\cgame.vcproj", "{097ADF9C-AC5A-43D0-884B-52325EAB07B5}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cgame", "cgame\cgame_vc7.vcproj", "{097ADF9C-AC5A-43D0-884B-52325EAB07B5}"
 	ProjectSection(ProjectDependencies) = postProject
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "game", "game\game.vcproj", "{8DB4BC7A-9962-43A7-991E-A1959190DC9B}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "game", "game\game_vc7.vcproj", "{8DB4BC7A-9962-43A7-991E-A1959190DC9B}"
 	ProjectSection(ProjectDependencies) = postProject
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "qfds", "qfds.vcproj", "{2EFEEFA4-E93F-4E9F-86E8-373E0B65A737}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "qfds", "qfds_vc7.vcproj", "{2EFEEFA4-E93F-4E9F-86E8-373E0B65A737}"
 	ProjectSection(ProjectDependencies) = postProject
 		{8DB4BC7A-9962-43A7-991E-A1959190DC9B} = {8DB4BC7A-9962-43A7-991E-A1959190DC9B}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "qfusion", "qfusion.vcproj", "{7A8304D0-1106-4ECE-B743-9C56B455B482}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "qfusion", "qfusion_vc7.vcproj", "{7A8304D0-1106-4ECE-B743-9C56B455B482}"
 	ProjectSection(ProjectDependencies) = postProject
 		{8DB4BC7A-9962-43A7-991E-A1959190DC9B} = {8DB4BC7A-9962-43A7-991E-A1959190DC9B}
 		{097ADF9C-AC5A-43D0-884B-52325EAB07B5} = {097ADF9C-AC5A-43D0-884B-52325EAB07B5}
 		{C9FC5481-ED0D-4A9E-AD1C-5A90DFB4D126} = {C9FC5481-ED0D-4A9E-AD1C-5A90DFB4D126}
 	EndProjectSection
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ui", "ui\ui.vcproj", "{C9FC5481-ED0D-4A9E-AD1C-5A90DFB4D126}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ui", "ui\ui_vc7.vcproj", "{C9FC5481-ED0D-4A9E-AD1C-5A90DFB4D126}"
 	ProjectSection(ProjectDependencies) = postProject
 	EndProjectSection
 EndProject

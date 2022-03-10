@@ -1,5 +1,5 @@
 /*
-Copyright (C) 1997-2001 Id Software, Inc.
+Copyright (C) 2002-2007 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -8,7 +8,7 @@ of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 See the GNU General Public License for more details.
 
@@ -17,23 +17,26 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 // r_math.c
+
 #include "../game/q_shared.h"
 #include "r_math.h"
 
-const mat4x4_t mat4x4_identity = 
+const mat4x4_t mat4x4_identity =
 {
-	1, 0, 0, 0, 
-	0, 1, 0, 0, 
-	0, 0, 1, 0, 
-	0, 0, 0, 1 
+	1, 0, 0, 0,
+	0, 1, 0, 0,
+	0, 0, 1, 0,
+	0, 0, 0, 1
 };
 
 void Matrix4_Identity( mat4x4_t m )
 {
 	int i;
 
-	for( i = 0; i < 16; i++ ) {
+	for( i = 0; i < 16; i++ )
+	{
 		if( i == 0 || i == 5 || i == 10 || i == 15 )
 			m[i] = 1.0;
 		else
@@ -100,16 +103,35 @@ void Matrix4_MultiplyFast( const mat4x4_t m1, const mat4x4_t m2, mat4x4_t out )
 	out[15] = 1.0f;
 }
 
+void Matrix_FromQuaternion( const quat_t q, mat4x4_t out )
+{
+	vec_t wx, wy, wz, xx, yy, yz, xy, xz, zz, x2, y2, z2;
+
+	x2 = q[0] + q[0]; y2 = q[1] + q[1]; z2 = q[2] + q[2];
+
+	xx = q[0] * x2; yy = q[1] * y2; zz = q[2] * z2;
+	out[0] = 1.0f - yy - zz; out[5] = 1.0f - xx - zz; out[10] = 1.0f - xx - yy;
+
+	yz = q[1] * z2; wx = q[3] * x2;
+	out[9] = yz - wx; out[6] = yz + wx;
+
+	xy = q[0] * y2; wz = q[3] * z2;
+	out[4] = xy - wz; out[1] = xy + wz;
+
+	xz = q[0] * z2; wy = q[3] * y2;
+	out[8] = xz + wy; out[2] = xz - wy;
+}
+
 void Matrix4_Rotate( mat4x4_t m, vec_t angle, vec_t x, vec_t y, vec_t z )
 {
 	mat4x4_t t, b;
-	vec_t c = cos( DEG2RAD(angle) );
-	vec_t s = sin( DEG2RAD(angle) );
+	vec_t c = cos( DEG2RAD( angle ) );
+	vec_t s = sin( DEG2RAD( angle ) );
 	vec_t mc = 1 - c, t1, t2;
-	
-	t[0]  = (x * x * mc) + c;
-	t[5]  = (y * y * mc) + c;
-	t[10] = (z * z * mc) + c;
+
+	t[0]  = ( x * x * mc ) + c;
+	t[5]  = ( y * y * mc ) + c;
+	t[10] = ( z * z * mc ) + c;
 
 	t1 = y * x * mc;
 	t2 = z * s;

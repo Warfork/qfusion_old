@@ -28,7 +28,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 //define	PARANOID			// speed sapping error checking
 
 #ifndef VERSION
-# define VERSION		3.09
+# define VERSION		3.10
 #endif
 
 #ifndef APPLICATION
@@ -52,8 +52,8 @@ typedef struct
 void SZ_Init (sizebuf_t *buf, qbyte *data, int length);
 void SZ_Clear (sizebuf_t *buf);
 void *SZ_GetSpace (sizebuf_t *buf, int length);
-void SZ_Write (sizebuf_t *buf, void *data, int length);
-void SZ_Print (sizebuf_t *buf, char *data);	// strcats onto the sizebuf
+void SZ_Write (sizebuf_t *buf, const void *data, int length);
+void SZ_Print (sizebuf_t *buf, const char *data);	// strcats onto the sizebuf
 
 //============================================================================
 
@@ -66,7 +66,7 @@ void MSG_WriteShort (sizebuf_t *sb, int c);
 void MSG_WriteInt3 (sizebuf_t *sb, int c);
 void MSG_WriteLong (sizebuf_t *sb, int c);
 void MSG_WriteFloat (sizebuf_t *sb, float f);
-void MSG_WriteString (sizebuf_t *sb, char *s);
+void MSG_WriteString (sizebuf_t *sb, const char *s);
 #define MSG_WriteCoord(sb,f) (MSG_WriteInt3((sb), Q_rint((f*16))))
 #define MSG_WritePos(sb,pos) (MSG_WriteCoord((sb),(pos)[0]), MSG_WriteCoord(sb,(pos)[1]), MSG_WriteCoord(sb,(pos)[2]))
 #define MSG_WriteAngle(sb,f) (MSG_WriteByte((sb), ANGLE2BYTE((f))))
@@ -107,7 +107,8 @@ void COM_AddParm (char *parm);
 void COM_Init (void);
 void COM_InitArgv (int argc, char **argv);
 
-char *CopyString (char *in);
+char *_CopyString (const char *in, const char *filename, int fileline);
+#define CopyString(in) _CopyString(in,__FILE__,__LINE__)
 
 void Info_Print (char *s);
 
@@ -120,8 +121,8 @@ unsigned short CRC_Value(unsigned short crcvalue);
 unsigned short CRC_Block (qbyte *start, int count);
 
 /* patch.h */
-void Patch_GetFlatness( float maxflat, vec3_t *points, int *patch_cp, int *flat );
-void Patch_Evaluate( vec_t *p, int *numcp, int *tess, vec_t *dest, int comp );
+void Patch_GetFlatness( float maxflat, const float *points, int comp, const int *patch_cp, int *flat );
+void Patch_Evaluate( const vec_t *p, int *numcp, const int *tess, vec_t *dest, int comp );
 
 /* huff.h */
 void Huff_Init (void);
@@ -454,36 +455,36 @@ interface from being ambiguous.
 
 extern	cvar_t	*cvar_vars;
 
-cvar_t *Cvar_Get (char *var_name, char *value, int flags);
+cvar_t *Cvar_Get (const char *var_name, const char *value, int flags);
 // creates the variable if it doesn't exist, or returns the existing one
 // if it exists, the value will not be changed, but flags will be ORed in
 // that allows variables to be unarchived without needing bitflags
 
-cvar_t 	*Cvar_Set (char *var_name, char *value);
+cvar_t 	*Cvar_Set (const char *var_name, const char *value);
 // will create the variable if it doesn't exist
 
-cvar_t *Cvar_ForceSet (char *var_name, char *value);
+cvar_t *Cvar_ForceSet (const char *var_name, const char *value);
 // will set the variable even if NOSET or LATCH
 
-cvar_t 	*Cvar_FullSet (char *var_name, char *value, int flags, qboolean overwrite_flags);
+cvar_t 	*Cvar_FullSet (const char *var_name, const char *value, int flags, qboolean overwrite_flags);
 
-void	Cvar_SetValue (char *var_name, float value);
+void	Cvar_SetValue (const char *var_name, float value);
 // expands value to a string and calls Cvar_Set
 
-float	Cvar_VariableValue (char *var_name);
+float	Cvar_VariableValue (const char *var_name);
 // returns 0 if not defined or non numeric
 
-char	*Cvar_VariableString (char *var_name);
+char	*Cvar_VariableString (const char *var_name);
 // returns an empty string if not defined
 
-char 	*Cvar_CompleteVariable (char *partial);
+char 	*Cvar_CompleteVariable (const char *partial);
 // attempts to match a partial variable name for command line completion
 // returns NULL if nothing fits
 
 void	Cmd_WriteAliases (FILE *f);
 
-int Cvar_CompleteCountPossible (char *partial);
-char **Cvar_CompleteBuildList (char *partial);
+int Cvar_CompleteCountPossible (const char *partial);
+char **Cvar_CompleteBuildList (const char *partial);
 char *Cvar_TabComplete (const char *partial);
 
 void	Cvar_GetLatchedVars (int flags);
@@ -691,7 +692,7 @@ qbyte		COM_BlockSequenceCRCByte (qbyte *base, int length, int sequence);
 
 void		Com_PageInMemory (qbyte *buffer, int size);
 
-unsigned int Com_HashKey (char *name, int hashsize);
+unsigned int Com_HashKey (const char *name, int hashsize);
 
 extern	cvar_t	*developer;
 extern	cvar_t	*dedicated;
@@ -836,9 +837,9 @@ void Memory_Init (void);
 void Memory_InitCommands (void);
 void Memory_Shutdown (void);
 
-void *_Mem_AllocExt ( mempool_t *pool, int size, int z, int musthave, int canthave, const char *filename, int fileline );
-void *_Mem_Alloc ( mempool_t *pool, int size, int musthave, int canthave, const char *filename, int fileline );
-void *_Mem_Realloc ( void *data, int size, const char *filename, int fileline );
+void *_Mem_AllocExt ( mempool_t *pool, size_t size, int z, int musthave, int canthave, const char *filename, int fileline );
+void *_Mem_Alloc ( mempool_t *pool, size_t size, int musthave, int canthave, const char *filename, int fileline );
+void *_Mem_Realloc ( void *data, size_t size, const char *filename, int fileline );
 void _Mem_Free ( void *data, int musthave, int canthave, const char *filename, int fileline );
 mempool_t *_Mem_AllocPool ( mempool_t *parent, const char *name, int flags, const char *filename, int fileline );
 mempool_t *_Mem_AllocTempPool ( const char *name, const char *filename, int fileline );

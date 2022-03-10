@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // g_public.h -- game dll information visible to server
 
-#define	GAME_API_VERSION	2
+#define	GAME_API_VERSION	4
 
 // edict->svflags
 #define	SVF_NOCLIENT		0x00000001	// don't send entity to clients, even if it has effects
@@ -95,35 +95,35 @@ typedef struct
 typedef struct
 {
 	// special messages
-	void		(*Print)( char *msg );
+	void		(*Print)( const char *msg );
 
 	// aborts server with a game error
-	void		(*Error)( char *msg );
+	void		(*Error)( const char *msg );
 
 	// hardly encoded sound message
 	void		(*Sound)( vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation );
 
 	// server commands sent to clients
-	void		(*ServerCmd)( edict_t *ent, char *cmd );
+	void		(*ServerCmd)( edict_t *ent, const char *cmd );
 
 	// config strings hold all the index strings,
 	// and misc data like audio track and gridsize.
 	// All of the current configstrings are sent to clients when
 	// they connect, and changes are sent to all connected clients.
-	void		(*ConfigString)( int num, char *string );
+	void		(*ConfigString)( int num, const char *string );
 
 	// general 2D layout
-	void		(*Layout)( edict_t *ent, char *string );
+	void		(*Layout)( edict_t *ent, const char *string );
 
 	// stuffed into client's console buffer, should be \n terminated
-	void		(*StuffCmd)( edict_t *ent, char *string );
+	void		(*StuffCmd)( edict_t *ent, const char *string );
 
 	// the *index functions create configstrings and some internal server state
-	int			(*ModelIndex)( char *name );
-	int			(*SoundIndex)( char *name );
-	int			(*ImageIndex)( char *name );
+	int			(*ModelIndex)( const char *name );
+	int			(*SoundIndex)( const char *name );
+	int			(*ImageIndex)( const char *name );
 
-	void		(*SetBrushModel)( edict_t *ent, char *name );
+	void		(*SetBrushModel)( edict_t *ent, const char *name );
 
 	int			(*Milliseconds)( void );
 
@@ -145,16 +145,13 @@ typedef struct
 	qboolean	(*EntityContact)( vec3_t mins, vec3_t maxs, edict_t *ent );
 
 	// managed memory allocation
-	struct mempool_s *(*Mem_AllocPool)( const char *name, const char *filename, int fileline );	
-	void		*(*Mem_Alloc)( struct mempool_s *pool, int size, const char *filename, int fileline );
+	void		*(*Mem_Alloc)( size_t size, const char *filename, int fileline );
 	void		(*Mem_Free)( void *data, const char *filename, int fileline );
-	void		(*Mem_FreePool)( struct mempool_s **pool, const char *filename, int fileline );
-	void		(*Mem_EmptyPool)( struct mempool_s *pool, const char *filename, int fileline );
 
 	// console variable interaction
-	cvar_t		*(*Cvar_Get)( char *name, char *value, int flags );
-	cvar_t		*(*Cvar_Set)( char *name, char *value );
-	cvar_t		*(*Cvar_ForceSet)( char *name, char *value );	// will return 0 0 if not found
+	cvar_t		*(*Cvar_Get)( const char *name, const char *value, int flags );
+	cvar_t		*(*Cvar_Set)( const char *name, const char *value );
+	cvar_t		*(*Cvar_ForceSet)( const char *name, const char *value );	// will return 0 0 if not found
 
 	// ClientCommand and ServerCommand parameter access
 	int			(*Cmd_Argc)( void );

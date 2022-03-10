@@ -1586,7 +1586,7 @@ void CL_Frame (int msec)
 		time_after_ref = Sys_Milliseconds ();
 
 	// update audio
-	if (cls.state != ca_active || cl.cin.time > 0)
+	if (cls.state != ca_active || SCR_GetCinematicTime() > 0)
 		S_Update (vec3_origin, vec3_origin, vec3_origin, vec3_origin, vec3_origin);
 
 	if( cl_avidemo->modified ) {
@@ -1656,8 +1656,6 @@ void CL_Init (void)
 
 	SZ_Init (&net_recieved, net_recieved_buffer, sizeof(net_recieved_buffer));
 	SZ_Init (&net_message, net_message_buffer, sizeof(net_message_buffer));
-
-	RoQ_Init ();
 
 	SCR_InitScreen ();
 	cls.disable_screen = qtrue;	// don't draw yet

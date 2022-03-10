@@ -35,7 +35,6 @@ static menulist_s		s_cva_list;
 static menulist_s		s_multitexture_list;
 static menulist_s		s_texenvcombine_list;
 static menulist_s		s_glsl_list;
-static menulist_s		s_NVtexenvcombine4_list;
 static menulist_s		s_compressedtex_list;
 static menulist_s		s_cubemap_list;
 static menuslider_s		s_texfilteranisotropic_slider;
@@ -49,7 +48,6 @@ static void ApplyChanges( void *unused )
 	trap_Cvar_SetValue( "gl_ext_multitexture", s_multitexture_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_texture_env_combine", s_texenvcombine_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_GLSL", s_glsl_list.curvalue );
-	trap_Cvar_SetValue( "gl_ext_NV_texture_env_combine4", s_NVtexenvcombine4_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_compressed_textures", s_compressedtex_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_texture_cube_map", s_cubemap_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_texture_filter_anisotropic", s_texfilteranisotropic_slider.curvalue );
@@ -113,14 +111,6 @@ static void GLExt_MenuInit( void )
 	s_glsl_list.curvalue				= trap_Cvar_VariableValue( "gl_ext_GLSL" );
 	clamp ( s_glsl_list.curvalue, 0, 1 );
 
-	s_NVtexenvcombine4_list.generic.type	= MTYPE_SPINCONTROL;
-	s_NVtexenvcombine4_list.generic.name	= "NVidia Env Combine4";
-	s_NVtexenvcombine4_list.generic.x		= 0;
-	s_NVtexenvcombine4_list.generic.y		= y+=y_offset;
-	s_NVtexenvcombine4_list.itemnames		= on_off_names;
-	s_NVtexenvcombine4_list.curvalue		= trap_Cvar_VariableValue( "gl_ext_NV_texture_env_combine4" );
-	clamp ( s_NVtexenvcombine4_list.curvalue, 0, 1 );
-
 	s_compressedtex_list.generic.type	= MTYPE_SPINCONTROL;
 	s_compressedtex_list.generic.name	= "Texture compression";
 	s_compressedtex_list.generic.x		= 0;
@@ -143,7 +133,7 @@ static void GLExt_MenuInit( void )
 	s_texfilteranisotropic_slider.generic.y		= y += y_offset;
 	s_texfilteranisotropic_slider.generic.name	= "texture anisotropic filter";
 	s_texfilteranisotropic_slider.minvalue		= 0;
-	s_texfilteranisotropic_slider.maxvalue		= trap_Cvar_VariableValue( "gl_ext_max_texture_filter_anisotropic" );
+	s_texfilteranisotropic_slider.maxvalue		= trap_Cvar_VariableValue( "gl_ext_texture_filter_anisotropic_max" );
 	s_texfilteranisotropic_slider.curvalue		= trap_Cvar_VariableValue( "gl_ext_texture_filter_anisotropic" );
 	s_texfilteranisotropic_slider.generic.statusbar	= sbar;
 	clamp ( s_texfilteranisotropic_slider.curvalue, s_texfilteranisotropic_slider.minvalue, s_texfilteranisotropic_slider.maxvalue );
@@ -161,7 +151,6 @@ static void GLExt_MenuInit( void )
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_multitexture_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_texenvcombine_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_glsl_list );
-	Menu_AddItem( &s_glext_menu, ( void * ) &s_NVtexenvcombine4_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_compressedtex_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_cubemap_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_texfilteranisotropic_slider );

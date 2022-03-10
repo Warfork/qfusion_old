@@ -21,3 +21,5 @@ typedef struct x11display_s
 
 	unsigned int win_width, win_height;
 } x11display_t;
+
+extern x11display_t x11display;

@@ -552,8 +552,8 @@ void CL_SendCmd (void)
 
 	SZ_Init (&buf, data, sizeof(data));
 
-	if (cmd->buttons && cl.cin.time > 0 && !cl.attractloop 
-		&& cls.realtime - cl.cin.time > 1000)
+	if (cmd->buttons && SCR_GetCinematicTime() > 0 && !cl.attractloop 
+		&& cls.realtime > SCR_GetCinematicTime() + 1000)
 	{	// skip the rest of the cinematic
 		SCR_StopCinematic ();
 		SCR_FinishCinematic ();

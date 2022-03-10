@@ -1,0 +1,8 @@
+*.ncb
+*.opt
+*.suo
+*.plg
+qfusion_private.*
+Makefile.win
+Debug*
+Release*

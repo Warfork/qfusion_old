@@ -223,22 +223,22 @@ typedef struct
 
 typedef struct gitem_s
 {
-	char		*classname;	// spawning name
+	const char	*classname;	// spawning name
 	qboolean	(*pickup)(struct edict_s *ent, struct edict_s *other);
 	void		(*use)(struct edict_s *ent, struct gitem_s *item);
 	void		(*drop)(struct edict_s *ent, struct gitem_s *item);
 	void		(*weaponthink)(struct edict_s *ent);
-	char		*pickup_sound;
-	char		*world_model[MAX_ITEM_MODELS];
+	const char	*pickup_sound;
+	const char	*world_model[MAX_ITEM_MODELS];
 	int			world_model_flags;
-	char		*view_model;
+	const char	*view_model;
 
 	// client side info
-	char		*icon;
-	char		*pickup_name;	// for printing on pickup
+	const char	*icon;
+	const char	*pickup_name;	// for printing on pickup
 
 	int			quantity;		// for ammo how much, for weapons how much is used per shot
-	char		*ammo;			// for weapons
+	const char	*ammo;			// for weapons
 	int			flags;			// IT_* flags
 
 	int			weapmodel;		// weapon model index (for weapons)
@@ -246,7 +246,7 @@ typedef struct gitem_s
 	void		*info;
 	int			tag;
 
-	char		*precaches;		// string of all models, sounds, and images this item will use
+	const char	*precaches;		// string of all models, sounds, and images this item will use
 } gitem_t;
 
 //
@@ -303,7 +303,7 @@ typedef struct
 
 	// intermission state
 	float		intermissiontime;		// time the intermission was started
-	char		*changemap;
+	const char	*changemap;
 	int			exitintermission;
 	vec3_t		intermission_origin;
 	vec3_t		intermission_angle;
@@ -563,8 +563,8 @@ void Cmd_Score_f (edict_t *ent);
 void PrecacheItem (gitem_t *it);
 void InitItems (void);
 void SetItemNames (void);
-gitem_t	*FindItem (char *pickup_name);
-gitem_t	*FindItemByClassname (char *classname);
+gitem_t	*FindItem (const char *pickup_name);
+gitem_t	*FindItemByClassname (const char *classname);
 #define	ITEM_INDEX(x) ((x)-itemlist)
 edict_t *Drop_Item (edict_t *ent, gitem_t *item);
 void SetRespawn (edict_t *ent, float delay);
@@ -580,10 +580,12 @@ void Touch_Item (edict_t *ent, edict_t *other, cplane_t *plane, int surfFlags);
 //
 // g_utils.c
 //
+#define	G_LEVEL_DEFAULT_POOL_SIZE	128 * 1024
+
 qboolean	KillBox (edict_t *ent);
-edict_t *G_Find (edict_t *from, size_t fieldofs, char *match);
+edict_t *G_Find (edict_t *from, size_t fieldofs, const char *match);
 edict_t *findradius (edict_t *from, vec3_t org, float rad);
-edict_t *G_PickTarget (char *targetname);
+edict_t *G_PickTarget (const char *targetname);
 void	G_UseTargets (edict_t *ent, edict_t *activator);
 void	G_SetMovedir (vec3_t angles, vec3_t movedir);
 void	G_InitMover ( edict_t *ent );
@@ -595,7 +597,8 @@ void	G_FreeEdict (edict_t *e);
 void	G_TouchTriggers (edict_t *ent);
 void	G_TouchSolids (edict_t *ent);
 
-char	*G_CopyString (char *in);
+char	*_G_CopyString (const char *in, const char *filename, int fileline);
+#define	G_CopyString(in) _G_CopyString(in,__FILE__,__LINE__)
 
 void	G_ProjectSource ( vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result );
 void	P_ProjectSource ( gclient_t *client, vec3_t point, vec3_t distance, vec3_t forward, vec3_t right, vec3_t result );
@@ -606,13 +609,17 @@ void	G_TurnEntityIntoEvent ( edict_t *ent, int event, int parm );
 
 int		G_PlayerGender (edict_t *player);
 
-void	G_PrintMsg ( edict_t *ent, int level, char *fmt, ... );
-void	G_CenterPrintMsg ( edict_t *ent, char *fmt, ... );
+void	G_PrintMsg ( edict_t *ent, int level, const char *fmt, ... );
+void	G_CenterPrintMsg ( edict_t *ent, const char *fmt, ... );
 void	G_Obituary ( edict_t *victim, edict_t *attacker, int mod );
 
 void	G_Sound ( edict_t *ent, int channel, int soundindex, float volume, float attenuation );
 void	G_PositionedSound ( vec3_t origin, edict_t *ent, int channel, int soundindex, float volume, float attenuation );
 void	G_GlobalSound ( int channel, int soundindex );
+
+void	G_LevelInitPool( size_t size );
+void	*_G_LevelMalloc( size_t size, const char *filename, int fileline );
+void	_G_LevelFree( void *data, const char *filename, int fileline );
 
 float vectoyaw (vec3_t vec);
 
@@ -783,28 +790,12 @@ void G_RunEntity (edict_t *ent);
 //
 
 // memory management
-// G_GameMalloc and G_LevelMalloc are only used during loadtime
-// note that G_Malloc and G_Free exist for simplified temporary memory allocation\freeing
-// the coder should not care about G_Malloc actually using levelpool
-extern struct mempool_s *gamepool;
-extern struct mempool_s *levelpool;
 
-#define G_MemAlloc(pool,size) trap_MemAlloc(pool, size, __FILE__, __LINE__)
-#define G_MemFree(mem) trap_MemFree(mem, __FILE__, __LINE__)
-#define G_MemAllocPool(name) trap_MemAllocPool(name, __FILE__, __LINE__)
-#define G_MemFreePool(pool) trap_MemFreePool(pool, __FILE__, __LINE__)
-#define G_MemEmptyPool(pool) trap_MemEmptyPool(pool, __FILE__, __LINE__)
+#define G_Malloc(size) trap_MemAlloc(size, __FILE__, __LINE__)
+#define G_Free(data) trap_MemFree(data, __FILE__, __LINE__)
 
-#define G_GameMalloc(size) G_MemAlloc(gamepool,size)
-#define G_EmptyGamePool() G_MemEmptyPool(gamepool)
-#define G_GameFree(data) G_MemFree(data)
-
-#define G_LevelMalloc(size) G_MemAlloc(levelpool,size)
-#define G_EmptyLevelPool() G_MemEmptyPool(levelpool)
-#define G_LevelFree(data) G_MemFree(data)
-
-#define G_Malloc(size) G_MemAlloc(levelpool,size)
-#define G_Free(data) G_MemFree(data)
+#define	G_LevelMalloc(size) _G_LevelMalloc((size),__FILE__,__LINE__)
+#define	G_LevelFree(data) _G_LevelFree((data),__FILE__,__LINE__)
 
 int G_API (void);
 void G_Error ( char *fmt, ... );
@@ -1029,8 +1020,8 @@ struct edict_s
 	int			movetype;
 	int			flags;
 
-	char		*model;
-	char		*model2;
+	const char	*model;
+	const char	*model2;
 	float		freetime;			// sv.time when the object was freed
 
 	int			numEvents;
@@ -1041,19 +1032,19 @@ struct edict_s
 	// only used locally in game, not by server
 	//
 	char		*message;
-	char		*classname;
+	const char	*classname;
 	int			spawnflags;
 
 	float		timestamp;
 
 	float		angle;			// set in qe3, -1 = up, -2 = down
-	char		*target;
-	char		*targetname;
-	char		*killtarget;
-	char		*team;
-	char		*pathtarget;
-	char		*deathtarget;
-	char		*combattarget;
+	const char	*target;
+	const char	*targetname;
+	const char	*killtarget;
+	const char	*team;
+	const char	*pathtarget;
+	const char	*deathtarget;
+	const char	*combattarget;
 	edict_t		*target_ent;
 
 	float		speed, accel, decel;
@@ -1094,14 +1085,14 @@ struct edict_s
 
 	float		powerarmor_time;
 
-	char		*map;			// target_changelevel
+	const char	*map;			// target_changelevel
 
 	int			viewheight;		// height above origin where eyesight is determined
 	int			takedamage;
 	int			dmg;
 	int			radius_dmg;
 	float		dmg_radius;
-	char		*sounds;			//make this a spawntemp var?
+	const char	*sounds;		// make this a spawntemp var?
 	int			count;
 
 	edict_t		*chain;

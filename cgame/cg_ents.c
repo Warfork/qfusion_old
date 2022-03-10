@@ -188,15 +188,23 @@ void CG_AddPortalSurfaceEnt( centity_t *cent )
 	VectorCopy( state->origin, ent.origin );
 	VectorCopy( state->origin2, ent.origin2 );
 
+	ent.rtype = RT_PORTALSURFACE;
+	Matrix_Identity( ent.axis );
+
+	// when origin and origin2 are the same, it's drawn as a mirror, otherwise as portal
 	if( !VectorCompare( ent.origin, ent.origin2 ) )
+	{
 		cg.portalInView = qtrue;
 
-	ent.rtype = RT_PORTALSURFACE;
-	ent.scale = state->frame / 256.0f;
-	if( state->modelindex3 )
-		ent.frame = state->modelindex2 ? state->modelindex2 : 50;
+		ent.frame = state->skinnum;
+		if( state->modelindex3 )
+		{
+			float phase = cent->current.frame / 256.0f;
+			float speed = cent->current.modelindex2 ? cent->current.modelindex2 : 50;
+			Matrix_Rotate( ent.axis, 5 * sin( ( phase + cg.time * 0.001 * speed * 0.01 ) * M_TWOPI ), 1, 0, 0 );
 
-	ent.skinNum = state->skinnum;
+		}
+	}
 
 	CG_AddEntityToScene( &ent );
 }
@@ -254,6 +262,7 @@ void CG_AddPlayerEnt( centity_t *cent )
 		ent.flags = RF_MINLIGHT;	// renderfx go on color shell entity
 	else
 		ent.flags = renderfx | RF_MINLIGHT;
+	ent.flags |= RF_OCCLUSIONTEST;
 
 	// interpolate angles
 	for( i = 0; i < 3; i++ )
@@ -410,6 +419,7 @@ void CG_AddGenericEnt( centity_t *cent )
 		ent.flags = renderfx & RF_MINLIGHT;	// renderfx go on color shell entity
 	else
 		ent.flags = renderfx;
+	ent.flags |= RF_PLANARSHADOW;
 
 	// respawning items
 	if( cent->respawnTime )

@@ -1,0 +1,31 @@
+Microsoft Visual Studio Solution File, Format Version 9.00
+# Visual C++ Express 2005
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "cgame", "cgame\cgame_vc8.vcproj", "{B4E45025-40EF-4BC0-937D-F69833072D9A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "game", "game\game_vc8.vcproj", "{DC388F8D-7F87-4636-8AE4-5A25FFD3656B}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ui", "ui\ui_vc8.vcproj", "{78A3500C-EFD9-4E85-BA7E-934213E1FBBC}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{B4E45025-40EF-4BC0-937D-F69833072D9A}.Debug|Win32.ActiveCfg = Debug|Win32
+		{B4E45025-40EF-4BC0-937D-F69833072D9A}.Debug|Win32.Build.0 = Debug|Win32
+		{B4E45025-40EF-4BC0-937D-F69833072D9A}.Release|Win32.ActiveCfg = Release|Win32
+		{B4E45025-40EF-4BC0-937D-F69833072D9A}.Release|Win32.Build.0 = Release|Win32
+		{DC388F8D-7F87-4636-8AE4-5A25FFD3656B}.Debug|Win32.ActiveCfg = Debug|Win32
+		{DC388F8D-7F87-4636-8AE4-5A25FFD3656B}.Debug|Win32.Build.0 = Debug|Win32
+		{DC388F8D-7F87-4636-8AE4-5A25FFD3656B}.Release|Win32.ActiveCfg = Release|Win32
+		{DC388F8D-7F87-4636-8AE4-5A25FFD3656B}.Release|Win32.Build.0 = Release|Win32
+		{78A3500C-EFD9-4E85-BA7E-934213E1FBBC}.Debug|Win32.ActiveCfg = Debug|Win32
+		{78A3500C-EFD9-4E85-BA7E-934213E1FBBC}.Debug|Win32.Build.0 = Debug|Win32
+		{78A3500C-EFD9-4E85-BA7E-934213E1FBBC}.Release|Win32.ActiveCfg = Release|Win32
+		{78A3500C-EFD9-4E85-BA7E-934213E1FBBC}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

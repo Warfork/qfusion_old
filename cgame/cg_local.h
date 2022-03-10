@@ -418,23 +418,16 @@ void CG_LoadingFilename( char *str );
 //
 extern	cvar_t	*cg_paused;
 
-extern struct mempool_s *cgamepool;
-
-#define CG_MemAlloc(pool,size) trap_MemAlloc(pool, size, __FILE__, __LINE__)
-#define CG_MemFree(mem) trap_MemFree(mem, __FILE__, __LINE__)
-#define CG_MemAllocPool(name) trap_MemAllocPool(name, __FILE__, __LINE__)
-#define CG_MemFreePool(pool) trap_MemFreePool(pool, __FILE__, __LINE__)
-#define CG_MemEmptyPool(pool) trap_MemEmptyPool(pool, __FILE__, __LINE__)
-
-#define CG_Malloc(size) CG_MemAlloc(cgamepool,size)
-#define CG_Free(data) CG_MemFree(data)
+#define CG_Malloc(size) trap_MemAlloc(size, __FILE__, __LINE__)
+#define CG_Free(data) trap_MemFree(data, __FILE__, __LINE__)
 
 int CG_API( void );
 void CG_Init( int playerNum, qboolean attractLoop, unsigned int serverFrameTime, int vidWidth, int vidHeight );
 void CG_Shutdown( void );
 void CG_Printf( char *fmt, ... );
 void CG_Error( char *fmt, ... );
-char *CG_CopyString( const char *in );
+char *_CG_CopyString( const char *in, const char *filename, int fileline );
+#define CG_CopyString(in) _CG_CopyString(in,__FILE__,__LINE__)
 void CG_FixUpGender( void );
 
 //
@@ -448,6 +441,9 @@ void CG_ServerCommand( void );
 extern	cvar_t	*cg_testEntities;
 extern	cvar_t	*cg_testLights;
 extern	cvar_t	*cg_testBlend;
+
+extern	cvar_t	*cg_outlineWorld;
+extern	cvar_t	*cg_outlineModels;
 
 extern	cvar_t	*cg_thirdPerson;
 extern	cvar_t	*cg_thirdPersonAngle;

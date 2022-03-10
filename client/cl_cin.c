@@ -17,7 +17,9 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 #include "client.h"
+#include "cin.h"
 
 /*
 =================================================================
@@ -34,11 +36,12 @@ SCR_StopCinematic
 */
 void SCR_StopCinematic( void )
 {
-	cinematics_t *cin = &cl.cin;
+	cinematics_t *cin = cl.cin;
 
-	if( !cin->file )
+	if( !cin || !cin->file )
 		return;
 
+	cl.cin = NULL;
 	cin->time = 0;	// done
 	cin->pic = NULL;
 	cin->pic_pending = NULL;
@@ -46,8 +49,11 @@ void SCR_StopCinematic( void )
 	FS_FCloseFile( cin->file );
 	cin->file = 0;
 
+	Mem_ZoneFree( cin->name );
+	cin->name = NULL;
+
 	if( cin->vid_buffer ) {
-		Mem_ZoneFree( cin->vid_buffer );
+		Mem_Free( cin->vid_buffer );
 		cin->vid_buffer = NULL;
 	}
 }
@@ -76,7 +82,7 @@ SCR_ReadNextCinematicFrame
 */
 static qbyte *SCR_ReadNextCinematicFrame( void )
 {
-	cinematics_t *cin = &cl.cin;
+	cinematics_t *cin = cl.cin;
 	roq_chunk_t *chunk = &cin->chunk;
 
 	while( !FS_Eof( cin->file ) ) {
@@ -104,15 +110,35 @@ static qbyte *SCR_ReadNextCinematicFrame( void )
 
 /*
 ==================
+SCR_InitCinematic
+==================
+*/
+void SCR_InitCinematic( void ) {
+	RoQ_Init ();
+}
+
+/*
+==================
+SCR_InitCinematic
+==================
+*/
+unsigned int SCR_GetCinematicTime( void )
+{
+	cinematics_t *cin = cl.cin;
+	return (cin ? cin->time : 0);
+}
+
+/*
+==================
 SCR_RunCinematic
 ==================
 */
 void SCR_RunCinematic( void )
 {
-	int		frame;
-	cinematics_t *cin = &cl.cin;
+	unsigned int frame;
+	cinematics_t *cin = cl.cin;
 
-	if( cin->time <= 0 ) {
+	if( !cin || cin->time == 0 ) {
 		SCR_StopCinematic ();
 		return;
 	}
@@ -124,15 +150,12 @@ void SCR_RunCinematic( void )
 		return;
 	}
 
-	if( cin->frame == -1 )
-		return;
-
-	frame = (cls.realtime - cin->time) * (float)(RoQ_FRAMERATE) / 1000;
+	frame = (Sys_Milliseconds () - cin->time) * (float)(RoQ_FRAMERATE) / 1000;
 	if( frame <= cin->frame )
 		return;
 	if( frame > cin->frame + 1 ) {
 		Com_Printf( "Dropped frame: %i > %i\n", frame, cin->frame + 1 );
-		cin->time = cls.realtime - cin->frame * 1000 / RoQ_FRAMERATE;
+		cin->time = Sys_Milliseconds () - cin->frame * 1000 / RoQ_FRAMERATE;
 	}
 
 	cin->pic = cin->pic_pending;
@@ -155,9 +178,9 @@ should be skipped
 */
 qboolean SCR_DrawCinematic( void )
 {
-	cinematics_t *cin = &cl.cin;
+	cinematics_t *cin = cl.cin;
 
-	if( cin->time <= 0 )
+	if( !cin || cin->time <= 0 )
 		return qfalse;
 	if( !cin->pic )
 		return qtrue;
@@ -175,10 +198,15 @@ SCR_PlayCinematic
 void SCR_PlayCinematic( char *arg )
 {
 	int	len;
-	cinematics_t *cin = &cl.cin;
+	size_t name_size;
+	static cinematics_t clientCin;
+	cinematics_t *cin = cl.cin = &clientCin;
 	roq_chunk_t *chunk = &cin->chunk;
 
-	Q_snprintfz( cin->name, sizeof(cin->name), "video/%s", arg );
+	name_size = strlen( "video/" ) + strlen( arg ) + strlen( ".roq" ) + 1;
+	cin->name = Mem_ZoneMalloc( name_size );
+	Q_snprintfz( cin->name, name_size, "video/%s", arg );
+	COM_DefaultExtension( cin->name, ".roq" );
 
 	// nasty hack
 	cin->s_rate = 22050;
@@ -191,6 +219,8 @@ void SCR_PlayCinematic( char *arg )
 		SCR_FinishCinematic ();
 		cin->file = 0;
 		cin->time = 0;	// done
+		Mem_ZoneFree( cin->name );
+		cin->name = NULL;
 		return;
 	}
 

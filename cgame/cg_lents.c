@@ -196,7 +196,7 @@ lentity_t *CG_AllocPoly( letype_t type, const vec3_t origin, const vec3_t angles
 	le->ent.flags = RF_NOSHADOW;
 	le->ent.model = model;
 	le->ent.customShader = shader;
-	le->ent.shaderTime = cg.time * 0.001f;
+	le->ent.shaderTime = cg.time;
 	le->ent.scale = 1.0f;
 
 	AnglesToAxis( angles, le->ent.axis );
@@ -226,7 +226,7 @@ lentity_t *CG_AllocSprite( letype_t type, vec3_t origin, float radius, int frame
 	le->ent.flags = RF_NOSHADOW;
 	le->ent.radius = radius;
 	le->ent.customShader = shader;
-	le->ent.shaderTime = cg.time * 0.001f;
+	le->ent.shaderTime = cg.time;
 	le->ent.scale = 1.0f;
 
 	Matrix_Identity( le->ent.axis );

@@ -29,5 +29,5 @@ extern	viddef_t	viddef;				// global video state
 // Video module initialisation etc
 void	VID_Init (void);
 void	VID_Shutdown (void);
-void	VID_Restart (void);
+void	VID_Restart( qboolean verbose );
 void	VID_CheckChanges (void);

@@ -438,7 +438,7 @@ void PlayerConfig_MenuDraw( void )
 	refdef.height = uis.vidHeight;
 
 	refdef.fov_x = 30;
-	refdef.fov_y = 30;
+	refdef.fov_y = CalcFov( refdef.fov_x, refdef.width, refdef.height );
 	refdef.areabits = 0;
 	refdef.time = uis.time * 0.001;
 	refdef.rdflags = RDF_NOWORLDMODEL;

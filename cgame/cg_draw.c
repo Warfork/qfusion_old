@@ -513,8 +513,8 @@ void CG_DrawModel ( int x, int y, int w, int h, struct model_s *model, struct sh
 	refdef.width = w;
 	refdef.height = h;
 	refdef.fov_x = 30;
-	refdef.fov_y = 30;
-	refdef.time = cg.time * 0.001;
+	refdef.fov_y = CalcFov( refdef.fov_x, refdef.width, refdef.height );
+	refdef.time = cg.time;
 	refdef.rdflags = RDF_NOWORLDMODEL;
 
 	memset( &entity, 0, sizeof( entity ) );

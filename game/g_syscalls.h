@@ -40,7 +40,7 @@ static inline void trap_ServerCmd( struct edict_s *ent, char *cmd ) {
 	GAME_IMPORT.ServerCmd( ent, cmd );
 }
 
-static inline void trap_ConfigString( int num, char *string ) {
+static inline void trap_ConfigString( int num, const char *string ) {
 	GAME_IMPORT.ConfigString( num, string );
 }
 
@@ -52,19 +52,19 @@ static inline void trap_StuffCmd( struct edict_s *ent, char *string ) {
 	GAME_IMPORT.StuffCmd( ent, string );
 }
 
-static inline int trap_ModelIndex( char *name ) {
+static inline int trap_ModelIndex( const char *name ) {
 	return GAME_IMPORT.ModelIndex( name );
 }
 
-static inline int trap_SoundIndex( char *name ) {
+static inline int trap_SoundIndex( const char *name ) {
 	return GAME_IMPORT.SoundIndex( name );
 }
 
-static inline int trap_ImageIndex( char *name ) {
+static inline int trap_ImageIndex( const char *name ) {
 	return GAME_IMPORT.ImageIndex( name );
 }
 
-static inline void trap_SetBrushModel( struct edict_s *ent, char *name ) {
+static inline void trap_SetBrushModel( struct edict_s *ent, const char *name ) {
 	GAME_IMPORT.SetBrushModel( ent, name );
 }
 
@@ -112,24 +112,12 @@ static inline qboolean trap_EntityContact( vec3_t mins, vec3_t maxs, edict_t *en
 	return GAME_IMPORT.EntityContact( mins, maxs, ent );
 }
 
-static inline struct mempool_s *trap_MemAllocPool( const char *name, const char *filename, int fileline ) {
-	return GAME_IMPORT.Mem_AllocPool( name, filename, fileline );
-}
-
-static inline void *trap_MemAlloc( struct mempool_s *pool, int size, const char *filename, int fileline ) {
-	return GAME_IMPORT.Mem_Alloc( pool, size, filename, fileline );
+static inline void *trap_MemAlloc( size_t size, const char *filename, int fileline ) {
+	return GAME_IMPORT.Mem_Alloc( size, filename, fileline );
 }
 
 static inline void trap_MemFree( void *data, const char *filename, int fileline ) {
 	GAME_IMPORT.Mem_Free( data, filename, fileline );
-}
-
-static inline void trap_MemFreePool( struct mempool_s **pool, const char *filename, int fileline ) {
-	GAME_IMPORT.Mem_FreePool( pool, filename, fileline );
-}
-
-static inline void trap_MemEmptyPool( struct mempool_s *pool, const char *filename, int fileline ) {
-	GAME_IMPORT.Mem_EmptyPool( pool, filename, fileline );
 }
 
 static inline cvar_t *trap_Cvar_Get( char *name, char *value, int flags ) {

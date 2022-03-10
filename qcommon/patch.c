@@ -24,7 +24,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 Patch_FlatnessTest
 ===============
 */
-static int Patch_FlatnessTest( float maxflat2, vec3_t point0, vec3_t point1, vec3_t point2 )
+static int Patch_FlatnessTest( float maxflat2, const float *point0, const float *point1, const float *point2 )
 {
 	float d;
 	int ft0, ft1;
@@ -56,7 +56,7 @@ static int Patch_FlatnessTest( float maxflat2, vec3_t point0, vec3_t point1, vec
 Patch_GetFlatness
 ===============
 */
-void Patch_GetFlatness( float maxflat, vec3_t *points, int *patch_cp, int *flat )
+void Patch_GetFlatness( float maxflat, const float *points, int comp, const int *patch_cp, int *flat )
 {
 	int i, p, u, v;
 	float maxflat2 = maxflat * maxflat;
@@ -66,18 +66,18 @@ void Patch_GetFlatness( float maxflat, vec3_t *points, int *patch_cp, int *flat 
 		for( u = 0; u < patch_cp[0] - 1; u += 2 ) {
 			p = v * patch_cp[0] + u;
 
-			i = Patch_FlatnessTest( maxflat2, points[p], points[p+1], points[p+2] );
+			i = Patch_FlatnessTest( maxflat2, &points[p*comp], &points[(p+1)*comp], &points[(p+2)*comp] );
 			flat[0] = max( flat[0], i );
-			i = Patch_FlatnessTest( maxflat2, points[p+patch_cp[0]], points[p+patch_cp[0]+1], points[p+patch_cp[0]+2] );
+			i = Patch_FlatnessTest( maxflat2, &points[(p+patch_cp[0])*comp], &points[(p+patch_cp[0]+1)*comp], &points[(p+patch_cp[0]+2)*comp] );
 			flat[0] = max( flat[0], i );
-			i = Patch_FlatnessTest( maxflat2, points[p+2*patch_cp[0]], points[p+2*patch_cp[0]+1], points[p+2*patch_cp[0]+2] );
+			i = Patch_FlatnessTest( maxflat2, &points[(p+2*patch_cp[0])*comp], &points[(p+2*patch_cp[0]+1)*comp], &points[(p+2*patch_cp[0]+2)*comp] );
 			flat[0] = max( flat[0], i );
 
-			i = Patch_FlatnessTest( maxflat2, points[p], points[p+patch_cp[0]], points[p+2*patch_cp[0]] );
+			i = Patch_FlatnessTest( maxflat2, &points[p*comp], &points[(p+patch_cp[0])*comp], &points[(p+2*patch_cp[0])*comp] );
 			flat[1] = max( flat[1], i );
-			i = Patch_FlatnessTest( maxflat2, points[p+1], points[p+patch_cp[0]+1], points[p+2*patch_cp[0]+1] );
+			i = Patch_FlatnessTest( maxflat2, &points[(p+1)*comp], &points[(p+patch_cp[0]+1)*comp], &points[(p+2*patch_cp[0]+1)*comp] );
 			flat[1] = max( flat[1], i );
-			i = Patch_FlatnessTest( maxflat2, points[p+2], points[p+patch_cp[0]+2], points[p+2*patch_cp[0]+2] );
+			i = Patch_FlatnessTest( maxflat2, &points[(p+2)*comp], &points[(p+patch_cp[0]+2)*comp], &points[(p+2*patch_cp[0]+2)*comp] );
 			flat[1] = max( flat[1], i );
 		}
 	}
@@ -88,7 +88,7 @@ void Patch_GetFlatness( float maxflat, vec3_t *points, int *patch_cp, int *flat 
 Patch_Evaluate_QuadricBezier
 ===============
 */
-static void Patch_Evaluate_QuadricBezier( float t, vec_t *point0, vec_t *point1, vec_t *point2, vec_t *out, int comp )
+static void Patch_Evaluate_QuadricBezier( float t, const vec_t *point0, const vec_t *point1, const vec_t *point2, vec_t *out, int comp )
 {
 	int		i;
 	vec_t	qt = t * t;
@@ -106,13 +106,13 @@ static void Patch_Evaluate_QuadricBezier( float t, vec_t *point0, vec_t *point1,
 Patch_Evaluate
 ===============
 */
-void Patch_Evaluate( vec_t *p, int *numcp, int *tess, vec_t *dest, int comp )
+void Patch_Evaluate( const vec_t *p, int *numcp, const int *tess, vec_t *dest, int comp )
 {
 	int num_patches[2], num_tess[2];
 	int index[3], dstpitch, i, u, v, x, y;
 	float s, t, step[2];
 	vec_t *tvec, *tvec2;
-	vec_t *pv[3][3];
+	const vec_t *pv[3][3];
 	vec4_t v1, v2, v3;
 
 	num_patches[0] = numcp[0] / 2;

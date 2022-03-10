@@ -31,7 +31,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 */
 #include <assert.h>
 #include <windows.h>
-#include "../ref_gl/r_local.h"
+#include "../qcommon/qcommon.h"
+#include "../ref_gl/r_glimp.h"
 #include "glw_win.h"
 #include "winquake.h"
 #include "resource.h"
@@ -41,9 +42,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 int GLimp_InitGL (void);
 
 glwstate_t glw_state;
-
-extern cvar_t *vid_fullscreen;
-extern cvar_t *vid_displayfrequency;
 
 static qboolean VerifyDriver( void )
 {

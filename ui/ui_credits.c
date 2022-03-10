@@ -139,7 +139,7 @@ const char *M_Credits_Key( int key )
 	case K_ESCAPE:
 	case K_MOUSE2:
 		if (creditsBuffer) {
-			UI_MemFree( creditsBuffer );
+			UI_Free( creditsBuffer );
 			creditsBuffer = NULL;
 		}
 		M_PopMenu ();

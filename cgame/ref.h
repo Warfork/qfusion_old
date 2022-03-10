@@ -21,10 +21,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define __REF_H
 
 // FIXME: move these to r_local.h?
-#define	MAX_DLIGHTS			32
-#define	MAX_ENTITIES		2048
-#define MAX_POLY_VERTS		3000
-#define MAX_POLYS			2048
+#define	MAX_DLIGHTS				32
+#define	MAX_ENTITIES			2048
+#define MAX_POLY_VERTS			3000
+#define MAX_POLYS				2048
 
 // refdef flags
 #define	RDF_UNDERWATER			1		// warp the screen as apropriate
@@ -33,6 +33,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define RDF_OLDAREABITS			8		// forces R_MarkLeaves if not set
 #define RDF_PORTALINVIEW		16		// cull entities using vis too because pvs\areabits are merged serverside
 #define RDF_SKYPORTALINVIEW		32		// draw skyportal instead of regular sky
+#define RDF_NOFOVADJUSTMENT		64		// do not adjust fov for widescreen
+#define RDF_WORLDOUTLINES		128     // draw cell outlines for world surfaces
 
 // skm flags
 #define SKM_ATTACHMENT_BONE	1
@@ -56,6 +58,7 @@ typedef struct
 	int					fognum;			// -1 - do not bother adding fog later at rendering stage
 										//  0 - determine fog later
 										// >0 - valid fog volume number returned by R_GetClippedFragments
+	vec3_t				normal;
 } fragment_t;
 
 typedef struct
@@ -66,6 +69,7 @@ typedef struct
 	byte_vec4_t			*colors;
 	struct shader_s		*shader;
 	int					fognum;
+	vec3_t				normal;
 } poly_t;
 
 typedef struct
@@ -76,7 +80,9 @@ typedef struct
 typedef struct
 {
 	float				fov;
-	vec3_t				origin;
+	float				scale;
+	vec3_t				vieworg;
+	vec3_t				viewanglesOffset;
 } skyportal_t;
 
 typedef enum
@@ -86,11 +92,11 @@ typedef enum
 	RT_PORTALSURFACE,
 
 	NUM_RTYPES
-} entity_rtype_t;
+} refEntityType_t;
 
 typedef struct entity_s
 {
-	entity_rtype_t		rtype;
+	refEntityType_t		rtype;
 	union
 	{
 		int				flags;
@@ -125,7 +131,7 @@ typedef struct entity_s
 	/*
 	** misc
 	*/
-	float				shaderTime;
+	unsigned int		shaderTime;
 	union
 	{
 		byte_vec4_t		color;
@@ -135,6 +141,15 @@ typedef struct entity_s
 	float				scale;
 	float				radius;			// used as RT_SPRITE's radius
 	float				rotation;
+
+#ifdef HARDWARE_OUTLINES
+	float				outlineHeight;
+	union
+	{
+		byte_vec4_t		outlineColor;
+		qbyte			outlineRGBA[4];
+	};
+#endif
 } entity_t;
 
 typedef struct
@@ -144,7 +159,7 @@ typedef struct
 	float				vieworg[3];
 	float				viewangles[3];
 	float				blend[4];				// rgba 0-1 full screen blend
-	float				time;					// time is used for timing offsets
+	unsigned int		time;					// time is used for timing offsets
 	int					rdflags;				// RDF_UNDERWATER, etc
 	skyportal_t			skyportal;
 	qbyte				*areabits;				// if not NULL, only areas with set bits will be drawn

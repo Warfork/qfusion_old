@@ -54,7 +54,7 @@ typedef struct
 
 typedef struct
 {
-	char		name[MAX_QPATH];
+	char		*name;
 
 	roq_chunk_t chunk;
 	roq_cell_t	cells[256];
@@ -75,11 +75,13 @@ typedef struct
 	int			file;
 	int			headerlen;
 
-	int			time;				// Sys_Milliseconds for first cinematic frame
-	int			frame;
+	unsigned int time;				// Sys_Milliseconds for first cinematic frame
+	unsigned int frame;
 
 	qbyte		*pic;
 	qbyte		*pic_pending;
+
+	mempool_t	*mempool;
 } cinematics_t;
 
 void RoQ_Init (void);

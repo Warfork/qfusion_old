@@ -246,11 +246,13 @@ Restart the sound subsystem so it can pick up new parameters and flush all sound
 */
 void S_Restart( qboolean noVideo )
 {
+	qboolean verbose = (Cmd_Argc() >= 2 ? qtrue : qfalse);
+
 	S_Shutdown ();
 	S_Init ();
 
 	if( !noVideo )
-		VID_Restart ();
+		VID_Restart( verbose );
 }
 
 // =======================================================================

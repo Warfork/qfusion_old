@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2002-2003 Victor Luchits
+Copyright (C) 2002-2007 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -8,7 +8,7 @@ of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 See the GNU General Public License for more details.
 
@@ -17,38 +17,45 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 // r_mesh.c: transformation and sorting
 
 #include "r_local.h"
 
-#define		QSORT_MAX_STACKDEPTH	2048
+#define	    QSORT_MAX_STACKDEPTH    2048
 
 static mempool_t *r_meshlistmempool;
 
-meshlist_t		r_worldlist;
-static meshlist_t r_portallist;
+meshlist_t r_worldlist, r_shadowlist;
+static meshlist_t r_portallist, r_skyportallist;
 
-static qboolean	r_shadowPass;
-static qboolean r_triangleOutlines;
+static meshbuffer_t **r_portalSurfMbuffers;
+static meshbuffer_t **r_skyPortalSurfMbuffers;
 
 static void R_QSortMeshBuffers( meshbuffer_t *meshes, int Li, int Ri );
 static void R_ISortMeshBuffers( meshbuffer_t *meshes, int num_meshes );
 
-#define R_MBCopy(in,out) \
-	(\
-		(out).sortkey = (in).sortkey, \
-		(out).infokey = (in).infokey, \
-		(out).dlightbits = (in).dlightbits, \
-		(out).shaderkey = (in).shaderkey \
+static qboolean R_AddPortalSurface( const meshbuffer_t *mb );
+static qboolean R_DrawPortalSurface( void );
+
+#define R_MBCopy( in, out ) \
+	( \
+	( out ).sortkey = ( in ).sortkey, \
+	( out ).infokey = ( in ).infokey, \
+	( out ).dlightbits = ( in ).dlightbits, \
+	( out ).shaderkey = ( in ).shaderkey, \
+	( out ).shadowbits = ( in ).shadowbits \
 	)
 
-#define R_MBCmp(mb1,mb2) \
-	(\
-		(mb1).shaderkey > (mb2).shaderkey ? qtrue : \
-		(mb1).shaderkey < (mb2).shaderkey ? qfalse : \
-		(mb1).sortkey > (mb2).sortkey ? qtrue : \
-		(mb1).sortkey < (mb2).sortkey ? qfalse : \
-		(mb1).dlightbits > (mb2).dlightbits \
+#define R_MBCmp( mb1, mb2 ) \
+	( \
+	( mb1 ).shaderkey > ( mb2 ).shaderkey ? qtrue : \
+	( mb1 ).shaderkey < ( mb2 ).shaderkey ? qfalse : \
+	( mb1 ).sortkey > ( mb2 ).sortkey ? qtrue : \
+	( mb1 ).sortkey < ( mb2 ).sortkey ? qfalse : \
+	( mb1 ).dlightbits > ( mb2 ).dlightbits ? qtrue : \
+	( mb1 ).dlightbits < ( mb2 ).dlightbits ? qfalse : \
+	( mb1 ).shadowbits > ( mb2 ).shadowbits \
 	)
 
 /*
@@ -65,24 +72,30 @@ static void R_QSortMeshBuffers( meshbuffer_t *meshes, int Li, int Ri )
 	int lstack[QSORT_MAX_STACKDEPTH], rstack[QSORT_MAX_STACKDEPTH];
 
 mark0:
-	if( Ri - Li > 8 ) {
+	if( Ri - Li > 8 )
+	{
 		li = Li;
 		ri = Ri;
 
-		R_MBCopy( meshes[(Li+Ri) >> 1], median );
+		R_MBCopy( meshes[( Li+Ri ) >> 1], median );
 
-		if( R_MBCmp( meshes[Li], median ) ) {
-			if( R_MBCmp( meshes[Ri], meshes[Li] ) ) 
+		if( R_MBCmp( meshes[Li], median ) )
+		{
+			if( R_MBCmp( meshes[Ri], meshes[Li] ) )
 				R_MBCopy( meshes[Li], median );
-		} else if( R_MBCmp( median, meshes[Ri] ) ) {
+		}
+		else if( R_MBCmp( median, meshes[Ri] ) )
+		{
 			R_MBCopy( meshes[Ri], median );
 		}
 
-		do {
+		do
+		{
 			while( R_MBCmp( median, meshes[li] ) ) li++;
 			while( R_MBCmp( meshes[ri], median ) ) ri--;
 
-			if( li <= ri ) {
+			if( li <= ri )
+			{
 				R_MBCopy( meshes[ri], tempbuf );
 				R_MBCopy( meshes[li], meshes[ri] );
 				R_MBCopy( tempbuf, meshes[li] );
@@ -90,9 +103,11 @@ mark0:
 				li++;
 				ri--;
 			}
-		} while( li < ri );
+		}
+		while( li < ri );
 
-		if( (Li < ri) && (stackdepth < QSORT_MAX_STACKDEPTH) ) {
+		if( ( Li < ri ) && ( stackdepth < QSORT_MAX_STACKDEPTH ) )
+		{
 			lstack[stackdepth] = li;
 			rstack[stackdepth] = Ri;
 			stackdepth++;
@@ -101,23 +116,27 @@ mark0:
 			goto mark0;
 		}
 
-		if( li < Ri ) {
+		if( li < Ri )
+		{
 			Li = li;
 			goto mark0;
 		}
 	}
-	if( stackdepth ) {
+	if( stackdepth )
+	{
 		--stackdepth;
 		Ri = ri = rstack[stackdepth];
 		Li = li = lstack[stackdepth];
 		goto mark0;
 	}
 
-	for( li = 1; li < total; li++ ) {
+	for( li = 1; li < total; li++ )
+	{
 		R_MBCopy( meshes[li], tempbuf );
 		ri = li - 1;
 
-		while( (ri >= 0) && (R_MBCmp( meshes[ri], tempbuf )) ) {
+		while( ( ri >= 0 ) && ( R_MBCmp( meshes[ri], tempbuf ) ) )
+		{
 			R_MBCopy( meshes[ri], meshes[ri+1] );
 			ri--;
 		}
@@ -138,17 +157,47 @@ static void R_ISortMeshBuffers( meshbuffer_t *meshes, int num_meshes )
 	int i, j;
 	meshbuffer_t tempbuf;
 
-	for( i = 1; i < num_meshes; i++ ) {
+	for( i = 1; i < num_meshes; i++ )
+	{
 		R_MBCopy( meshes[i], tempbuf );
 		j = i - 1;
 
-		while( (j >= 0) && (R_MBCmp( meshes[j], tempbuf )) ) {
+		while( ( j >= 0 ) && ( R_MBCmp( meshes[j], tempbuf ) ) )
+		{
 			R_MBCopy( meshes[j], meshes[j+1] );
 			j--;
 		}
 		if( i != j+1 )
 			R_MBCopy( tempbuf, meshes[j+1] );
 	}
+}
+
+/*
+=================
+R_ReAllocMeshList
+=================
+*/
+int R_ReAllocMeshList( meshbuffer_t **mb, int minMeshes, int maxMeshes )
+{
+	int oldSize, newSize;
+	meshbuffer_t *newMB;
+
+	oldSize = maxMeshes;
+	newSize = max( minMeshes, oldSize * 2 );
+
+	newMB = Mem_AllocExt( r_meshlistmempool, newSize * sizeof( meshbuffer_t ), 0 );
+	if( *mb )
+	{
+		memcpy( newMB, *mb, oldSize * sizeof( meshbuffer_t ) );
+		Mem_Free( *mb );
+	}
+	*mb = newMB;
+
+	// NULL all pointers to old membuffers so we don't crash
+	if( r_worldmodel && !( ri.refdef.rdflags & RDF_NOWORLDMODEL ) )
+		memset( ri.surfmbuffers, 0, r_worldbrushmodel->numsurfaces * sizeof( meshbuffer_t * ) );
+
+	return newSize;
 }
 
 /*
@@ -161,57 +210,40 @@ All 3D-geometry passes this function.
 */
 meshbuffer_t *R_AddMeshToList( int type, mfog_t *fog, shader_t *shader, int infokey )
 {
-	int i, oldsize;
 	meshlist_t *list;
-	meshbuffer_t *meshbuf, *oldmb;
+	meshbuffer_t *meshbuf;
 
 	if( !shader )
 		return NULL;
 
 	list = ri.meshlist;
-	if( shader->sort > SHADER_SORT_OPAQUE ) {
-		if( list->num_translucent_meshes >= list->max_translucent_meshes ) {	// reallocate if needed
-			oldmb = list->meshbuffer_translucent;
-			oldsize = list->max_translucent_meshes;
+	if( shader->sort > SHADER_SORT_OPAQUE )
+	{
+		if( list->num_translucent_meshes >= list->max_translucent_meshes )	// reallocate if needed
+			list->max_translucent_meshes = R_ReAllocMeshList( &list->meshbuffer_translucent, MIN_RENDER_MESHES/2, list->max_translucent_meshes );
 
-			list->max_translucent_meshes = max( MIN_RENDER_MESHES/2, oldsize * 2 );
-			list->meshbuffer_translucent = Mem_Alloc( r_meshlistmempool, list->max_translucent_meshes * sizeof( meshbuffer_t ) );
-			if( oldmb ) {
-				memcpy( list->meshbuffer_translucent, oldmb, oldsize * sizeof( meshbuffer_t ) );
-				Mem_Free( oldmb );
-			}
-
-			// NULL all pointers to old membuffers so we don't crash
-			if( r_worldmodel ) {
-				for( i = 0; i < r_worldmodel->numsurfaces; i++ )
-					r_worldmodel->surfaces[i].meshBuffer = NULL;
-			}
+		if( shader->flags & SHADER_PORTAL )
+		{
+			if( ri.params & ( RP_MIRRORVIEW|RP_PORTALVIEW|RP_SKYPORTALVIEW ) )
+				return NULL;
+			ri.meshlist->num_portal_translucent_meshes++;
 		}
 
 		meshbuf = &list->meshbuffer_translucent[list->num_translucent_meshes++];
-	} else {
-		if( (shader->sort == SHADER_SORT_PORTAL) && (ri.params & (RP_MIRRORVIEW|RP_PORTALVIEW|RP_SKYPORTALVIEW)) )
-			return NULL;
+	}
+	else
+	{
+		if( list->num_opaque_meshes >= list->max_opaque_meshes )	// reallocate if needed
+			list->max_opaque_meshes = R_ReAllocMeshList( &list->meshbuffer_opaque, MIN_RENDER_MESHES, list->max_opaque_meshes );
 
-		if( list->num_meshes >= list->max_meshes ) {	// reallocate if needed
-			oldmb = list->meshbuffer;
-			oldsize = list->max_meshes;
-
-			list->max_meshes = max( MIN_RENDER_MESHES, oldsize * 2 );
-			list->meshbuffer = Mem_Alloc( r_meshlistmempool, list->max_meshes * sizeof( meshbuffer_t ) );
-			if( oldmb ) {
-				memcpy( list->meshbuffer, oldmb, oldsize * sizeof( meshbuffer_t ) );
-				Mem_Free( oldmb );
-			}
-
-			// NULL all pointers to old membuffers so we don't crash
-			if( r_worldmodel ) {
-				for( i = 0; i < r_worldmodel->numsurfaces; i++ )
-					r_worldmodel->surfaces[i].meshBuffer = NULL;
-			}
+		if( shader->flags & SHADER_PORTAL )
+		{
+			if( ri.params & ( RP_MIRRORVIEW|RP_PORTALVIEW|RP_SKYPORTALVIEW ) )
+				return NULL;
+			ri.meshlist->num_portal_opaque_meshes++;
 		}
 
-		meshbuf = &list->meshbuffer[list->num_meshes++];
+		meshbuf = &list->meshbuffer_opaque[list->num_opaque_meshes++];
 	}
 
 	if( shader->flags & SHADER_VIDEOMAP )
@@ -221,8 +253,31 @@ meshbuffer_t *R_AddMeshToList( int type, mfog_t *fog, shader_t *shader, int info
 	meshbuf->shaderkey = shader->sortkey;
 	meshbuf->infokey = infokey;
 	meshbuf->dlightbits = 0;
+	meshbuf->shadowbits = r_entShadowBits[ri.currententity - r_entities];
 
 	return meshbuf;
+}
+
+/*
+=================
+R_AddMeshToList
+=================
+*/
+void R_AddModelMeshToList( unsigned int modhandle, mfog_t *fog, shader_t *shader, int meshnum )
+{
+	meshbuffer_t *mb;
+	
+	mb = R_AddMeshToList( MB_MODEL, fog, shader, -( meshnum+1 ) );
+	if( mb )
+		mb->LODModelHandle = modhandle;
+
+#ifdef HARDWARE_OUTLINES
+	if( !glConfig.ext.GLSL && ri.currententity->outlineHeight/* && !(ri.params & RP_SHADOWMAPVIEW)*/ )
+	{
+		if( ( shader->sort == SHADER_SORT_OPAQUE ) && ( shader->flags & SHADER_CULL_FRONT ) )
+			R_AddModelMeshOutline( modhandle, fog, meshnum );
+	}
+#endif
 }
 
 /*
@@ -236,16 +291,14 @@ static void R_BatchMeshBuffer( const meshbuffer_t *mb, const meshbuffer_t *nextm
 {
 	int type, features;
 	qboolean nonMergable;
+	entity_t *ent;
 	shader_t *shader;
 	msurface_t *surf, *nextSurf;
-	entity_t *ent, *nextEnt;
 
 	MB_NUM2ENTITY( mb->sortkey, ent );
 
-	if( r_shadowPass && (ent->flags & (RF_NOSHADOW|RF_WEAPONMODEL)) )
-		return;
-
-	if( ri.currententity != ent ) {
+	if( ri.currententity != ent )
+	{
 		ri.previousentity = ri.currententity;
 		ri.currententity = ent;
 		ri.currentmodel = ent->model;
@@ -253,112 +306,120 @@ static void R_BatchMeshBuffer( const meshbuffer_t *mb, const meshbuffer_t *nextm
 
 	type = mb->sortkey & 3;
 
-	switch( type ) {
-		case MB_MODEL:
-			switch( ent->model->type ) {
-				case mod_brush:
-					if( r_shadowPass )
-						break;
+	switch( type )
+	{
+	case MB_MODEL:
+		switch( ent->model->type )
+		{
+		case mod_brush:
+			MB_NUM2SHADER( mb->shaderkey, shader );
 
-					MB_NUM2SHADER( mb->shaderkey, shader );
-
-					if( shader->flags & SHADER_SKY ) {	// draw sky
-						if( !(ri.params & RP_NOSKY) ) {
-							R_DrawSky( shader );
-							ri.params |= RP_NOSKY;
-						}
-						return;
-					}
-
-					surf = &ent->model->surfaces[mb->infokey-1];
-					nextSurf = NULL;
-
-					features = shader->features;
-					if( r_shownormals->integer && !r_shadowPass )
-						features |= MF_NORMALS;
-					if( shader->flags & SHADER_AUTOSPRITE )
-						features |= MF_NOCULL;
-					features |= r_superLightStyles[surf->superLightStyle].features;
-
-					// check if we need to render batched geometry this frame
-					if( !(features & MF_NONBATCHED)
-						&& nextmb 
-						&& (nextmb->shaderkey == mb->shaderkey) 
-						&& (nextmb->sortkey == mb->sortkey) 
-						&& (nextmb->dlightbits == mb->dlightbits) ) {
-						if( nextmb->infokey > 0 ) {
-							MB_NUM2ENTITY( nextmb->sortkey, nextEnt );
-							nextSurf = &nextEnt->model->surfaces[nextmb->infokey-1];
-						}
-					}
-
-					R_PushMesh( surf->mesh, features );
-
-					nonMergable = nextSurf ? R_MeshOverflow( nextSurf->mesh ) : qtrue;
-					if( nonMergable ) {
-						if( ri.previousentity != ri.currententity )
-							R_RotateForEntity( ri.currententity );
-						R_RenderMeshBuffer( mb, r_shadowPass );
-					}
-					break;
-				case mod_alias:
-					R_DrawAliasModel( mb, r_shadowPass );
-					break;
-				case mod_sprite:
-					if( !r_shadowPass ) {
-						R_PushSpriteModel( mb );
-
-						// no rotation for sprites
-						R_TranslateForEntity( ri.currententity );
-						R_RenderMeshBuffer( mb, qfalse );
-					}
-					break;
-				case mod_skeletal:
-					R_DrawSkeletalModel( mb, r_shadowPass );
-					break;
-				default:
-					assert( 0 );		// shut up compiler
-					break;
+			if( shader->flags & SHADER_SKY )
+			{	// draw sky
+				if( !( ri.params & RP_NOSKY ) )
+					R_DrawSky( shader );
+				return;
 			}
-			break;
-		case MB_SPRITE:
-			if( r_shadowPass )
-				break;
 
-			nonMergable = R_PushSpritePoly( mb );
-			if( nonMergable
-				|| !nextmb 
-				|| ((nextmb->shaderkey & 0xFC000FFF) != (mb->shaderkey & 0xFC000FFF))
-				|| ((nextmb->sortkey & 0xFFFFF) != (mb->sortkey & 0xFFFFF))
-				|| R_SpriteOverflow () ) {
-				if( !nonMergable ) {
-					ri.currententity = r_worldent;
-					ri.currentmodel = r_worldmodel;
+			surf = &r_worldbrushmodel->surfaces[mb->infokey-1];
+			nextSurf = NULL;
+
+			features = shader->features;
+			if( r_shownormals->integer )
+				features |= MF_NORMALS;
+#ifdef HARDWARE_OUTLINES
+			if( ent->outlineHeight )
+				features |= (MF_NORMALS|MF_ENABLENORMALS);
+#endif
+			features |= r_superLightStyles[surf->superLightStyle].features;
+
+			if( features & MF_NONBATCHED )
+			{
+				nonMergable = qtrue;
+			}
+			else
+			{	// check if we need to render batched geometry this frame
+				if( nextmb
+					&& ( nextmb->shaderkey == mb->shaderkey )
+					&& ( nextmb->sortkey == mb->sortkey )
+					&& ( nextmb->dlightbits == mb->dlightbits )
+					&& ( nextmb->shadowbits == mb->shadowbits ) )
+				{
+					if( nextmb->infokey > 0 )
+						nextSurf = &r_worldbrushmodel->surfaces[nextmb->infokey-1];
 				}
 
-				// no rotation for sprites
+				nonMergable = nextSurf ? R_MeshOverflow2( surf->mesh, nextSurf->mesh ) : qtrue;
+				if( nonMergable && !r_backacc.numVerts )
+					features |= MF_NONBATCHED;
+			}
+
+			R_PushMesh( surf->mesh, features );
+
+			if( nonMergable )
+			{
 				if( ri.previousentity != ri.currententity )
-					R_TranslateForEntity( ri.currententity );
-				R_RenderMeshBuffer( mb, qfalse );
+					R_RotateForEntity( ri.currententity );
+				R_RenderMeshBuffer( mb );
 			}
 			break;
-		case MB_POLY:
-			if( r_shadowPass )
-				break;
-
-			// polys are already batched at this point
-			R_PushPoly( mb );
-
-			if( ri.previousentity != ri.currententity )
-				R_LoadIdentity ();
-			R_RenderMeshBuffer( mb, qfalse );
+		case mod_alias:
+			R_DrawAliasModel( mb );
 			break;
+#ifdef QUAKE2_JUNK
+		case mod_sprite:
+			R_PushSpriteModel( mb );
+
+			// no rotation for sprites
+			R_TranslateForEntity( ri.currententity );
+			R_RenderMeshBuffer( mb );
+			break;
+#endif
+		case mod_skeletal:
+			R_DrawSkeletalModel( mb );
+			break;
+		default:
+			assert( 0 );    // shut up compiler
+			break;
+		}
+		break;
+	case MB_SPRITE:
+	case MB_CORONA:
+		nonMergable = R_PushSpritePoly( mb );
+		if( nonMergable
+			|| !nextmb
+			|| ( ( nextmb->shaderkey & 0xFC000FFF ) != ( mb->shaderkey & 0xFC000FFF ) )
+			|| ( ( nextmb->sortkey & 0xFFFFF ) != ( mb->sortkey & 0xFFFFF ) )
+			|| R_SpriteOverflow() )
+		{
+			if( !nonMergable )
+			{
+				ri.currententity = r_worldent;
+				ri.currentmodel = r_worldmodel;
+			}
+
+			// no rotation for sprites
+			if( ri.previousentity != ri.currententity )
+				R_TranslateForEntity( ri.currententity );
+			R_RenderMeshBuffer( mb );
+		}
+		break;
+	case MB_POLY:
+		// polys are already batched at this point
+		R_PushPoly( mb );
+
+		if( ri.previousentity != ri.currententity )
+			R_LoadIdentity();
+		R_RenderMeshBuffer( mb );
+		break;
 	}
 }
 
 /*
 ================
 R_SortMeshList
+
+Use quicksort for opaque meshes and insertion sort for translucent meshes.
 ================
 */
 void R_SortMeshes( void )
@@ -366,8 +427,8 @@ void R_SortMeshes( void )
 	if( r_draworder->integer )
 		return;
 
-	if( ri.meshlist->num_meshes )
-		R_QSortMeshBuffers( ri.meshlist->meshbuffer, 0, ri.meshlist->num_meshes - 1 );
+	if( ri.meshlist->num_opaque_meshes )
+		R_QSortMeshBuffers( ri.meshlist->meshbuffer_opaque, 0, ri.meshlist->num_opaque_meshes - 1 );
 	if( ri.meshlist->num_translucent_meshes )
 		R_ISortMeshBuffers( ri.meshlist->meshbuffer_translucent, ri.meshlist->num_translucent_meshes );
 }
@@ -375,36 +436,89 @@ void R_SortMeshes( void )
 /*
 ================
 R_DrawPortals
+
+Render portal views. For regular portals we stop after rendering the
+first valid portal view.
+Skyportal views are rendered afterwards.
 ================
 */
 void R_DrawPortals( void )
 {
 	int i;
+	int trynum, num_meshes, total_meshes;
 	meshbuffer_t *mb;
 	shader_t *shader;
 
-	if( r_fastsky->integer || (ri.params & (RP_MIRRORVIEW|RP_PORTALVIEW|RP_SKYPORTALVIEW)) )
+	if( r_viewcluster == -1 )
 		return;
 
-	for( i = 0, mb = ri.meshlist->meshbuffer; i < ri.meshlist->num_meshes; i++, mb++ ) {
-		MB_NUM2SHADER( mb->shaderkey, shader );
+	if( !( ri.params & ( RP_MIRRORVIEW|RP_PORTALVIEW|RP_SHADOWMAPVIEW ) ) )
+	{
+		if( ri.meshlist->num_portal_opaque_meshes || ri.meshlist->num_portal_translucent_meshes )
+		{
+			trynum = 0;
 
-		if( shader->sort != SHADER_SORT_PORTAL )
-			break;
-		R_DrawPortalSurface( mb );
+			R_AddPortalSurface( NULL );
+
+			do
+			{
+				switch( trynum )
+				{
+				case 0:
+					mb = ri.meshlist->meshbuffer_opaque;
+					total_meshes = ri.meshlist->num_opaque_meshes;
+					num_meshes = ri.meshlist->num_portal_opaque_meshes;
+					break;
+				case 1:
+					mb = ri.meshlist->meshbuffer_translucent;
+					total_meshes = ri.meshlist->num_translucent_meshes;
+					num_meshes = ri.meshlist->num_portal_translucent_meshes;
+					break;
+				default:
+					mb = NULL;
+					total_meshes = num_meshes = 0;
+					assert( 0 );
+					break;
+				}
+
+				for( i = 0; i < total_meshes && num_meshes; i++, mb++ )
+				{
+					MB_NUM2SHADER( mb->shaderkey, shader );
+
+					if( shader->flags & SHADER_PORTAL )
+					{
+						num_meshes--;
+
+						if( r_fastsky->integer && !( shader->flags & (SHADER_PORTAL_CAPTURE|SHADER_PORTAL_CAPTURE2) ) )
+							continue;
+
+						if( !R_AddPortalSurface( mb ) )
+						{
+							if( R_DrawPortalSurface() )
+							{
+								trynum = 2;
+								break;
+							}
+						}
+					}
+				}
+			} while( ++trynum < 2 );
+
+			R_DrawPortalSurface();
+		}
 	}
 
-	if( ri.refdef.rdflags & RDF_SKYPORTALINVIEW ) {
-		if( ri.params & RP_NOSKY )
-			return;
-
-		for( i = 0, mb = ri.meshlist->meshbuffer; i < ri.meshlist->num_meshes; i++, mb++ ) {
+	if( ( ri.refdef.rdflags & RDF_SKYPORTALINVIEW ) && !( ri.params & RP_NOSKY ) && !r_fastsky->integer )
+	{
+		for( i = 0, mb = ri.meshlist->meshbuffer_opaque; i < ri.meshlist->num_opaque_meshes; i++, mb++ )
+		{
 			MB_NUM2SHADER( mb->shaderkey, shader );
 
-			if( shader->flags & SHADER_SKY ) {
+			if( shader->flags & SHADER_SKY )
+			{
 				R_DrawSky( shader );
 				ri.params |= RP_NOSKY;
-				break;
+				return;
 			}
 		}
 	}
@@ -415,51 +529,29 @@ void R_DrawPortals( void )
 R_DrawMeshes
 ================
 */
-void R_DrawMeshes( qboolean triangleOutlines )
+void R_DrawMeshes( void )
 {
 	int i;
 	meshbuffer_t *meshbuf;
 
 	ri.previousentity = NULL;
-	if( ri.meshlist->num_meshes ) {
-		r_shadowPass = qfalse;
-		r_triangleOutlines = triangleOutlines;
-
-		meshbuf = ri.meshlist->meshbuffer;
-		for( i = 0; i < ri.meshlist->num_meshes - 1; i++, meshbuf++ )
+	if( ri.meshlist->num_opaque_meshes )
+	{
+		meshbuf = ri.meshlist->meshbuffer_opaque;
+		for( i = 0; i < ri.meshlist->num_opaque_meshes - 1; i++, meshbuf++ )
 			R_BatchMeshBuffer( meshbuf, meshbuf+1 );
 		R_BatchMeshBuffer( meshbuf, NULL );
-
-		if( r_shadows->integer >= SHADOW_PLANAR ) {
-			if( !triangleOutlines ) {
-				R_BeginShadowPass ();
-			}
-
-			r_shadowPass = qtrue;
-			r_triangleOutlines = qfalse;
-
-			meshbuf = ri.meshlist->meshbuffer;
-			for( i = 0; i < ri.meshlist->num_meshes - 1; i++, meshbuf++ )
-				R_BatchMeshBuffer( meshbuf, meshbuf+1 );
-			R_BatchMeshBuffer( meshbuf, NULL );
-
-			if( !triangleOutlines ) {
-				R_EndShadowPass ();
-			}
-		}
 	}
 
-	r_shadowPass = qfalse;
-	r_triangleOutlines = triangleOutlines;
-
-	if( ri.meshlist->num_translucent_meshes ) {
+	if( ri.meshlist->num_translucent_meshes )
+	{
 		meshbuf = ri.meshlist->meshbuffer_translucent;
 		for( i = 0; i < ri.meshlist->num_translucent_meshes - 1; i++, meshbuf++ )
 			R_BatchMeshBuffer( meshbuf, meshbuf + 1 );
 		R_BatchMeshBuffer( meshbuf, NULL );
 	}
 
-	R_LoadIdentity ();
+	R_LoadIdentity();
 }
 
 /*
@@ -475,6 +567,18 @@ void R_InitMeshLists( void )
 
 /*
 ===============
+R_AllocMeshbufPointers
+===============
+*/
+void R_AllocMeshbufPointers( refinst_t *ri )
+{
+	assert( r_worldmodel );
+	if( !ri->surfmbuffers )
+		ri->surfmbuffers = Mem_Alloc( r_meshlistmempool, r_worldbrushmodel->numsurfaces * sizeof( meshbuffer_t * ) );
+}
+
+/*
+===============
 R_FreeMeshLists
 ===============
 */
@@ -483,10 +587,30 @@ void R_FreeMeshLists( void )
 	if( !r_meshlistmempool )
 		return;
 
+	r_portalSurfMbuffers = NULL;
+	r_skyPortalSurfMbuffers = NULL;
+
 	Mem_FreePool( &r_meshlistmempool );
 
 	memset( &r_worldlist, 0, sizeof( meshlist_t ) );
+	memset( &r_shadowlist, 0, sizeof( meshlist_t ) );
 	memset( &r_portallist, 0, sizeof( meshlist_t ) );
+	memset( &r_skyportallist, 0, sizeof( r_skyportallist ) );
+}
+
+/*
+===============
+R_ClearMeshList
+===============
+*/
+void R_ClearMeshList( meshlist_t *meshlist )
+{
+	// clear counters
+	meshlist->num_opaque_meshes = 0;
+	meshlist->num_translucent_meshes = 0;
+
+	meshlist->num_portal_opaque_meshes = 0;
+	meshlist->num_portal_translucent_meshes = 0;
 }
 
 /*
@@ -494,19 +618,23 @@ void R_FreeMeshLists( void )
 R_DrawTriangleOutlines
 ===============
 */
-void R_DrawTriangleOutlines( void )
+void R_DrawTriangleOutlines( qboolean showTris, qboolean showNormals )
 {
-	if( !r_showtris->integer && !r_shownormals->integer )
+	if( !showTris && !showNormals )
 		return;
 
-	R_BackendBeginTriangleOutlines ();
-	R_DrawMeshes( qtrue );
-	R_BackendEndTriangleOutlines ();
+	ri.params |= (showTris ? RP_TRISOUTLINES : 0) | (showNormals ? RP_SHOWNORMALS : 0);
+	R_BackendBeginTriangleOutlines();
+	R_DrawMeshes();
+	R_BackendEndTriangleOutlines();
+	ri.params &= ~(RP_TRISOUTLINES|RP_SHOWNORMALS);
 }
 
 /*
 ===============
 R_ScissorForPortal
+
+Returns the on-screen scissor box for given bounding box in 3D-space.
 ===============
 */
 qboolean R_ScissorForPortal( entity_t *ent, vec3_t mins, vec3_t maxs, int *x, int *y, int *w, int *h )
@@ -514,28 +642,19 @@ qboolean R_ScissorForPortal( entity_t *ent, vec3_t mins, vec3_t maxs, int *x, in
 	int i;
 	int ix1, iy1, ix2, iy2;
 	float x1, y1, x2, y2;
-	vec3_t v, axis[3], tmp, corner;
+	vec3_t v, bbox[8];
 
-	if( Matrix_Compare( ent->axis, axis_identity ) ) {
-		Matrix_Copy( axis_identity, axis );
-	} else {
-		VectorCopy( ent->axis[0], axis[0] );
-		VectorNegate( ent->axis[1], axis[1] );
-		VectorCopy( ent->axis[2], axis[2] );
-	}
+	R_TransformEntityBBox( ent, mins, maxs, bbox, qtrue );
 
 	x1 = y1 = 999999;
 	x2 = y2 = -999999;
-	for( i = 0; i < 8; i++ ) {	// compute and rotate a full bounding box
-		tmp[0] = ( ( i & 1 ) ? mins[0] : maxs[0] );
-		tmp[1] = ( ( i & 2 ) ? mins[1] : maxs[1] );
-		tmp[2] = ( ( i & 4 ) ? mins[2] : maxs[2] );
-
-		Matrix_TransformVector( axis, tmp, corner );
-		VectorMA( ent->origin, ent->scale, corner,  corner );
+	for( i = 0; i < 8; i++ )
+	{                       // compute and rotate a full bounding box
+		vec_t *corner = bbox[i];
 		R_TransformToScreen_Vec3( corner, v );
 
-		if( v[2] < 0 || v[2] > 1 ) { // the test point is behind the nearclip plane
+		if( v[2] < 0 || v[2] > 1 )
+		{                    // the test point is behind the nearclip plane
 			if( PlaneDiff( corner, &ri.frustum[0] ) < PlaneDiff( corner, &ri.frustum[1] ) )
 				v[0] = 0;
 			else
@@ -544,7 +663,7 @@ qboolean R_ScissorForPortal( entity_t *ent, vec3_t mins, vec3_t maxs, int *x, in
 				v[1] = 0;
 			else
 				v[1] = ri.refdef.height;
-		} 
+		}
 
 		x1 = min( x1, v[0] ); y1 = min( y1, v[1] );
 		x2 = max( x2, v[0] ); y2 = max( y2, v[1] );
@@ -552,11 +671,11 @@ qboolean R_ScissorForPortal( entity_t *ent, vec3_t mins, vec3_t maxs, int *x, in
 
 	ix1 = max( x1 - 1.0f, 0 ); ix2 = min( x2 + 1.0f, ri.refdef.width );
 	if( ix1 >= ix2 )
-		return qfalse;		// FIXME
+		return qfalse; // FIXME
 
 	iy1 = max( y1 - 1.0f, 0 ); iy2 = min( y2 + 1.0f, ri.refdef.height );
 	if( iy1 >= iy2 )
-		return qfalse;		// FIXME
+		return qfalse; // FIXME
 
 	*x = ix1;
 	*y = iy1;
@@ -568,179 +687,381 @@ qboolean R_ScissorForPortal( entity_t *ent, vec3_t mins, vec3_t maxs, int *x, in
 
 /*
 ===============
-R_DrawPortalSurface
+R_AddPortalSurface
 ===============
 */
-void R_DrawPortalSurface( const meshbuffer_t *mb )
+static entity_t *r_portal_ent;
+static cplane_t r_portal_plane, r_original_portal_plane;
+static shader_t *r_portal_shader;
+static vec3_t r_portal_mins, r_portal_maxs, r_portal_centre;
+
+static qboolean R_AddPortalSurface( const meshbuffer_t *mb )
 {
-	int i, x, y, w, h;
-	float dist,	d;
-	refinst_t oldRI;
-	vec3_t v[3], entity_rotation[3], origin, angles;
+	int i;
+	float dist;
 	entity_t *ent;
-	mesh_t *mesh;
-	model_t *model;
+	shader_t *shader;
 	msurface_t *surf;
-	cplane_t plane, *portal_plane = &plane, original_plane;
+	cplane_t plane, oplane;
+	mesh_t *mesh;
+	vec3_t mins, maxs, centre;
+	vec3_t v[3], entity_rotation[3];
+
+	if( !mb )
+	{
+		r_portal_ent = r_worldent;
+		r_portal_shader = NULL;
+		VectorClear( r_portal_plane.normal );
+		ClearBounds( r_portal_mins, r_portal_maxs );
+		return qfalse;
+	}
 
 	MB_NUM2ENTITY( mb->sortkey, ent );
-	if( !(model = ent->model) )
-		return;
+	if( !ent->model )
+		return qfalse;
 
-	surf = mb->infokey > 0 ? &model->surfaces[mb->infokey-1] : NULL;
-	if( !surf || !(mesh = surf->mesh) || !mesh->xyzArray )
-		return;
+	surf = mb->infokey > 0 ? &r_worldbrushmodel->surfaces[mb->infokey-1] : NULL;
+	if( !surf || !( mesh = surf->mesh ) || !mesh->xyzArray )
+		return qfalse;
 
-	Matrix_Transpose( ent->axis, entity_rotation );
-	Matrix_TransformVector( entity_rotation, mesh->xyzArray[mesh->indexes[0]], v[0] ); VectorMA( ent->origin, ent->scale, v[0], v[0] );
-	Matrix_TransformVector( entity_rotation, mesh->xyzArray[mesh->indexes[1]], v[1] ); VectorMA( ent->origin, ent->scale, v[1], v[1] );
-	Matrix_TransformVector( entity_rotation, mesh->xyzArray[mesh->indexes[2]], v[2] ); VectorMA( ent->origin, ent->scale, v[2], v[2] );
-	PlaneFromPoints( v, portal_plane );
-	CategorizePlane( portal_plane );
+	MB_NUM2SHADER( mb->shaderkey, shader );
 
-	if( ( dist = PlaneDiff( ri.viewOrigin, portal_plane ) ) <= BACKFACE_EPSILON )
-		return;
+	VectorCopy( mesh->xyzArray[mesh->elems[0]], v[0] );
+	VectorCopy( mesh->xyzArray[mesh->elems[1]], v[1] );
+	VectorCopy( mesh->xyzArray[mesh->elems[2]], v[2] );
+	PlaneFromPoints( v, &oplane );
+	oplane.dist += DotProduct( ent->origin, oplane.normal );
+	CategorizePlane( &oplane );
 
-	if( !R_ScissorForPortal( ent, surf->mins, surf->maxs, &x, &y, &w, &h ) )
-		return;
+	if( !Matrix_Compare( ent->axis, axis_identity ) )
+	{
+		Matrix_Transpose( ent->axis, entity_rotation );
+		Matrix_TransformVector( entity_rotation, mesh->xyzArray[mesh->elems[0]], v[0] ); VectorMA( ent->origin, ent->scale, v[0], v[0] );
+		Matrix_TransformVector( entity_rotation, mesh->xyzArray[mesh->elems[1]], v[1] ); VectorMA( ent->origin, ent->scale, v[1], v[1] );
+		Matrix_TransformVector( entity_rotation, mesh->xyzArray[mesh->elems[2]], v[2] ); VectorMA( ent->origin, ent->scale, v[2], v[2] );
+		PlaneFromPoints( v, &plane );
+		CategorizePlane( &plane );
+	}
+	else
+	{
+		plane = oplane;
+	}
 
-	VectorCopy( mesh->xyzArray[mesh->indexes[0]], v[0] );
-	VectorCopy( mesh->xyzArray[mesh->indexes[1]], v[1] );
-	VectorCopy( mesh->xyzArray[mesh->indexes[2]], v[2] );
-	PlaneFromPoints( v, &original_plane );
-	original_plane.dist += DotProduct( ent->origin, original_plane.normal );
-	CategorizePlane( &original_plane );
+	if( ( dist = PlaneDiff( ri.viewOrigin, &plane ) ) <= BACKFACE_EPSILON )
+	{
+		if( !( shader->flags & SHADER_PORTAL_CAPTURE2 ) )
+			return qtrue;
+	}
 
-	for( i = 1, ent = r_entities; i < r_numEntities; i++, ent++ ) {
-		if( ent->rtype == RT_PORTALSURFACE ) {
-			d = PlaneDiff( ent->origin, &original_plane );
-			if( (d >= -64) && (d <= 64) ) {
+	// check if we are too far away and the portal view is obscured
+	// by an alphagen portal stage
+	for( i = 0; i < shader->numpasses; i++ )
+	{
+		if( shader->passes[i].alphagen.type == ALPHA_GEN_PORTAL )
+		{
+			if( dist > ( 1.0/shader->passes[i].alphagen.args[0] ) )
+				return qtrue; // completely alpha'ed out
+		}
+	}
+
+	if( OCCLUSION_QUERIES_ENABLED( ri ) )
+	{
+		if( !R_GetOcclusionQueryResultBool( OQ_CUSTOM, R_SurfOcclusionQueryKey( ent, surf ), qtrue ) )
+			return qtrue;
+	}
+
+	VectorAdd( ent->origin, surf->mins, mins );
+	VectorAdd( ent->origin, surf->maxs, maxs );
+	VectorAdd( mins, maxs, centre );
+	VectorScale( centre, 0.5, centre );
+
+	if( r_portal_shader && ( shader != r_portal_shader ) )
+	{
+		if( DistanceSquared( ri.viewOrigin, centre ) > DistanceSquared( ri.viewOrigin, r_portal_centre ) )
+			return qtrue;
+		VectorClear( r_portal_plane.normal );
+		ClearBounds( r_portal_mins, r_portal_maxs );
+	}
+	r_portal_shader = shader;
+
+	if( !Matrix_Compare( ent->axis, axis_identity ) )
+	{
+		r_portal_ent = ent;
+		r_portal_plane = plane;
+		r_original_portal_plane = oplane;
+		VectorCopy( surf->mins, r_portal_mins );
+		VectorCopy( surf->maxs, r_portal_maxs );
+		return qfalse;
+	}
+
+	if( !VectorCompare( r_portal_plane.normal, vec3_origin ) && !( VectorCompare( plane.normal, r_portal_plane.normal ) && plane.dist == r_portal_plane.dist ) )
+	{
+		if( DistanceSquared( ri.viewOrigin, centre ) > DistanceSquared( ri.viewOrigin, r_portal_centre ) )
+			return qtrue;
+		VectorClear( r_portal_plane.normal );
+		ClearBounds( r_portal_mins, r_portal_maxs );
+	}
+
+	if( VectorCompare( r_portal_plane.normal, vec3_origin ) )
+	{
+		r_portal_plane = plane;
+		r_original_portal_plane = oplane;
+	}
+
+	AddPointToBounds( mins, r_portal_mins, r_portal_maxs );
+	AddPointToBounds( maxs, r_portal_mins, r_portal_maxs );
+	VectorAdd( r_portal_mins, r_portal_maxs, r_portal_centre );
+	VectorScale( r_portal_centre, 0.5, r_portal_centre );
+
+	return qtrue;
+}
+
+/*
+===============
+R_DrawPortalSurface
+
+Renders the portal view and captures the results from framebuffer if
+we need to do a $portalmap stage. Note that for $portalmaps we must
+use a different viewport.
+Return qtrue upon success so that we can stop rendering portals.
+===============
+*/
+static qboolean R_DrawPortalSurface( void )
+{
+	unsigned int i;
+	int x, y, w, h;
+	float dist, d;
+	refinst_t oldRI;
+	vec3_t origin, angles;
+	entity_t *ent;
+	cplane_t *portal_plane = &r_portal_plane, *original_plane = &r_original_portal_plane;
+	shader_t *shader = r_portal_shader;
+	qboolean mirror, refraction = qfalse;
+	image_t **captureTexture;
+	int captureTextureID;
+	qboolean doReflection, doRefraction;
+
+	if( !r_portal_shader )
+		return qfalse;
+
+	doReflection = doRefraction = qtrue;
+	if( shader->flags & SHADER_PORTAL_CAPTURE )
+	{
+		shaderpass_t *pass;
+
+		captureTexture = &r_portaltexture;
+		captureTextureID = 1;
+
+		for( i = 0, pass = shader->passes; i < shader->numpasses; i++, pass++ )
+		{
+			if( pass->program && pass->program_type == PROGRAM_TYPE_DISTORTION )
+			{
+				if( ( pass->alphagen.type == ALPHA_GEN_CONST && pass->alphagen.args[0] == 1 ) )
+					doRefraction = qfalse;
+				else if( ( pass->alphagen.type == ALPHA_GEN_CONST && pass->alphagen.args[0] == 0 ) )
+					doReflection = qfalse;
+				break;
+			}
+		}
+	}
+	else
+	{
+		captureTexture = NULL;
+		captureTextureID = 0;
+	}
+
+	// copy portal plane here because we may be flipped later for refractions
+	ri.portalPlane = *portal_plane;
+
+	if( ( dist = PlaneDiff( ri.viewOrigin, portal_plane ) ) <= BACKFACE_EPSILON || !doReflection )
+	{
+		if( !( shader->flags & SHADER_PORTAL_CAPTURE2 ) || !doRefraction )
+			return qfalse;
+
+		// even if we're behind the portal, we still need to capture
+		// the second portal image for refraction
+		refraction = qtrue;
+		captureTexture = &r_portaltexture2;
+		captureTextureID = 2;
+		if( dist < 0 )
+		{
+			VectorInverse( portal_plane->normal );
+			portal_plane->dist = -portal_plane->dist;
+		}
+	}
+
+	if( !R_ScissorForPortal( r_portal_ent, r_portal_mins, r_portal_maxs, &x, &y, &w, &h ) )
+		return qfalse;
+
+	mirror = qtrue; // default to mirror view
+	// it is stupid IMO that mirrors require a RT_PORTALSURFACE entity
+
+	ent = r_portal_ent;
+	for( i = 1; i < r_numEntities; i++ )
+	{
+		ent = &r_entities[i];
+
+		if( ent->rtype == RT_PORTALSURFACE )
+		{
+			d = PlaneDiff( ent->origin, original_plane );
+			if( ( d >= -64 ) && ( d <= 64 ) )
+			{
+				if( !VectorCompare( ent->origin, ent->origin2 ) )	// portal
+					mirror = qfalse;
 				ent->rtype = -1;
 				break;
 			}
 		}
 	}
 
-	if( i == r_numEntities )
-		return;
+	if( ( i == r_numEntities ) && !captureTexture )
+		return qfalse;
 
+setup_and_render:
 	ri.previousentity = NULL;
-	memcpy( &oldRI, &ri, sizeof( ri ) );
-	ri.refdef.rdflags &= ~RDF_SKYPORTALINVIEW;
+	memcpy( &oldRI, &prevRI, sizeof( refinst_t ) );
+	memcpy( &prevRI, &ri, sizeof( refinst_t ) );
 
-	if( VectorCompare( ent->origin, ent->origin2 ) ) {	// mirror
+	if( refraction )
+	{
+		VectorInverse( portal_plane->normal );
+		portal_plane->dist = -portal_plane->dist - 1;
+		CategorizePlane( portal_plane );
+		VectorCopy( ri.viewOrigin, origin );
+		VectorCopy( ri.refdef.viewangles, angles );
+
+		ri.params = RP_PORTALVIEW;
+		if( r_viewcluster != -1 )
+			ri.params |= RP_OLDVIEWCLUSTER;
+	}
+	else if( mirror )
+	{
 		vec3_t M[3];
 
-		d = -2 * (DotProduct( ri.viewOrigin, portal_plane->normal ) - portal_plane->dist);
+		d = -2 * ( DotProduct( ri.viewOrigin, portal_plane->normal ) - portal_plane->dist );
 		VectorMA( ri.viewOrigin, d, portal_plane->normal, origin );
 
-		d = -2 * DotProduct( ri.vpn, portal_plane->normal );
-		VectorMA( ri.vpn, d, portal_plane->normal, M[0] );
-		VectorNormalize( M[0] );
-
-		d = -2 * DotProduct( ri.vright, portal_plane->normal );
-		VectorMA( ri.vright, d, portal_plane->normal, M[1] );
-		VectorNormalize( M[1] );
-
-		d = -2 * DotProduct( ri.vup, portal_plane->normal );
-		VectorMA( ri.vup, d, portal_plane->normal, M[2] );
-		VectorNormalize( M[2] );
+		for( i = 0; i < 3; i++ )
+		{
+			d = -2 * DotProduct( ri.viewAxis[i], portal_plane->normal );
+			VectorMA( ri.viewAxis[i], d, portal_plane->normal, M[i] );
+			VectorNormalize( M[i] );
+		}
 
 		Matrix_EulerAngles( M, angles );
 		angles[ROLL] = -angles[ROLL];
 
-		ri.params = RP_MIRRORVIEW;
-	} else {		// portal
+		ri.params = RP_MIRRORVIEW|RP_FLIPFRONTFACE;
+		if( r_viewcluster != -1 )
+			ri.params |= RP_OLDVIEWCLUSTER;
+	}
+	else
+	{
 		vec3_t tvec;
-		vec3_t A[3], B[3], Bt[3], rot[3], tmp[3], D[3];
-		shader_t *shader;
-
-		MB_NUM2SHADER( mb->shaderkey, shader );
-		if( shader->flags & SHADER_AGEN_PORTAL ) {
-			dist = PlaneDiff( ri.viewOrigin, portal_plane );
-
-			for( i = 0; i < shader->numpasses; i++ ) {
-				if( shader->passes[i].alphagen.type != ALPHA_GEN_PORTAL )
-					continue;
-				if( dist > (1.0/shader->passes[i].alphagen.args[0]) )
-					return;
-			}
-		}
+		vec3_t A[3], B[3], C[3], rot[3];
 
 		// build world-to-portal rotation matrix
 		VectorNegate( portal_plane->normal, A[0] );
-        if( A[0][0] || A[0][1] ) {
-			VectorSet( A[1], A[0][1], -A[0][0], 0 );
-			VectorNormalize( A[1] );
-			CrossProduct( A[0], A[1], A[2] );
-		} else {
-			VectorSet( A[1], 1, 0, 0 );
-			VectorSet( A[2], 0, 1, 0 );
-		}
+		NormalVectorToAxis( A[0], A );
 
 		// build portal_dest-to-world rotation matrix
-		ByteToDir( ent->skinNum, portal_plane->normal );
-
-		VectorCopy( portal_plane->normal, B[0] );
-		if( B[0][0] || B[0][1] ) {
-			VectorSet( B[1], B[0][1], -B[0][0], 0 );
-			VectorNormalize( B[1] );
-			CrossProduct( B[0], B[1], B[2] );
-		} else {
-			VectorSet( B[1], 1, 0, 0 );
-			VectorSet( B[2], 0, 1, 0 );
-		}
-
-		Matrix_Transpose( B, Bt );
+		ByteToDir( ent->frame, portal_plane->normal );
+		NormalVectorToAxis( portal_plane->normal, B );
+		Matrix_Transpose( B, C );
 
 		// multiply to get world-to-world rotation matrix
-		Matrix_Multiply( Bt, A, rot );
-
-		if( ent->frame ) {
-			Matrix_TransformVector( A, ri.vpn, tmp[0] );
-			Matrix_TransformVector( A, ri.vright, tmp[1] );
-			Matrix_TransformVector( A, ri.vup, tmp[2] );
-			Matrix_Rotate( tmp, 5 * R_FastSin( ent->scale + ri.refdef.time * ent->frame * 0.01f ), 1, 0, 0 );
-			Matrix_TransformVector( Bt, tmp[0], D[0] );
-			Matrix_TransformVector( Bt, tmp[1], D[1] );
-			Matrix_TransformVector( Bt, tmp[2], D[2] );
-		} else {
-			Matrix_TransformVector( rot, ri.vpn, D[0] );
-			Matrix_TransformVector( rot, ri.vright, D[1] );
-			Matrix_TransformVector( rot, ri.vup, D[2] );
-		}
-
-		// set up portal_plane
-		portal_plane->dist = DotProduct( ent->origin2, portal_plane->normal );
-		CategorizePlane( portal_plane );
+		Matrix_Multiply( C, A, rot );
 
 		// translate view origin
 		VectorSubtract( ri.viewOrigin, ent->origin, tvec );
 		Matrix_TransformVector( rot, tvec, origin );
 		VectorAdd( origin, ent->origin2, origin );
 
+		for( i = 0; i < 3; i++ )
+			Matrix_TransformVector( A, ri.viewAxis[i], rot[i] );
+		Matrix_Multiply( ent->axis, rot, B );
+		for( i = 0; i < 3; i++ )
+			Matrix_TransformVector( C, B[i], A[i] );
+
+		// set up portal_plane
+//		VectorCopy( A[0], portal_plane->normal );
+		portal_plane->dist = DotProduct( ent->origin2, portal_plane->normal );
+		CategorizePlane( portal_plane );
+
 		// calculate Euler angles for our rotation matrix
-		Matrix_EulerAngles( D, angles );
+		Matrix_EulerAngles( A, angles );
 
 		// for portals, vis data is taken from portal origin, not
 		// view origin, because the view point moves around and
 		// might fly into (or behind) a wall
 		ri.params = RP_PORTALVIEW;
 		VectorCopy( ent->origin2, ri.pvsOrigin );
+		VectorCopy( ent->origin2, ri.lodOrigin );
 	}
 
+	ri.shadowGroup = NULL;
 	ri.meshlist = &r_portallist;
-	ri.clipPlane = plane;
+	ri.surfmbuffers = r_portalSurfMbuffers;
+
+	ri.params |= RP_CLIPPLANE;
+	ri.clipPlane = *portal_plane;
+
+	ri.clipFlags |= ( 1<<5 );
+	VectorNegate( portal_plane->normal, ri.frustum[5].normal );
+	ri.frustum[5].dist = -portal_plane->dist;
+	ri.frustum[5] = *portal_plane;
+	CategorizePlane( &ri.frustum[5] );
+
+	if( captureTexture )
+	{
+		R_InitPortalTexture( captureTexture, captureTextureID, r_lastRefdef.width, r_lastRefdef.height );
+
+		x = y = 0;
+		w = ( *captureTexture )->upload_width;
+		h = ( *captureTexture )->upload_height;
+		ri.refdef.width = w;
+		ri.refdef.height = h;
+		Vector4Set( ri.viewport, ri.refdef.x, ri.refdef.y, w, h );
+	}
+
 	Vector4Set( ri.scissor, ri.refdef.x + x, ri.refdef.y + y, w, h );
 	VectorCopy( origin, ri.refdef.vieworg );
-	VectorCopy( angles, ri.refdef.viewangles );
+	for( i = 0; i < 3; i++ )
+		ri.refdef.viewangles[i] = anglemod( angles[i] );
 
 	R_RenderView( &ri.refdef );
 
-	if( ri.params & RP_PORTALVIEW )
-		r_oldviewcluster = r_viewcluster = -1;	// force markleafs next frame
+	if( !( ri.params & RP_OLDVIEWCLUSTER ) )
+		r_oldviewcluster = r_viewcluster = -1; // force markleafs next frame
 
-	memcpy( &ri, &oldRI, sizeof( ri ) );
+	r_portalSurfMbuffers = ri.surfmbuffers;
+
+	memcpy( &ri, &prevRI, sizeof( refinst_t ) );
+	memcpy( &prevRI, &oldRI, sizeof( refinst_t ) );
+
+	if( captureTexture )
+	{
+		GL_Cull( 0 );
+		GL_SetState( GLSTATE_NO_DEPTH_TEST );
+		qglColor4f( 1, 1, 1, 1 );
+
+		// grab the results from framebuffer
+		GL_Bind( 0, *captureTexture );
+		qglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, ri.refdef.x, ri.refdef.y, ( *captureTexture )->upload_width, ( *captureTexture )->upload_height );
+		ri.params |= ( refraction ? RP_PORTALCAPTURED2 : RP_PORTALCAPTURED );
+	}
+
+	if( doRefraction && !refraction && ( shader->flags & SHADER_PORTAL_CAPTURE2 ) )
+	{
+		refraction = qtrue;
+		captureTexture = &r_portaltexture2;
+		captureTextureID = 2;
+		goto setup_and_render;
+	}
+
+	R_AddPortalSurface( NULL );
+
+	return qtrue;
 }
 
 /*
@@ -757,26 +1078,51 @@ void R_DrawSkyPortal( skyportal_t *skyportal, vec3_t mins, vec3_t maxs )
 		return;
 
 	ri.previousentity = NULL;
-	memcpy( &oldRI, &ri, sizeof( ri ) );
+	memcpy( &oldRI, &prevRI, sizeof( refinst_t ) );
+	memcpy( &prevRI, &ri, sizeof( refinst_t ) );
 
-	ri.params = RP_SKYPORTALVIEW;
-	VectorCopy( skyportal->origin, ri.pvsOrigin );
+	ri.params = ( ri.params|RP_SKYPORTALVIEW ) & ~( RP_OLDVIEWCLUSTER|RP_PORTALCAPTURED|RP_PORTALCAPTURED2 );
+	VectorCopy( skyportal->vieworg, ri.pvsOrigin );
 
-	ri.meshlist = &r_portallist;
+	ri.clipFlags = 15;
+	ri.shadowGroup = NULL;
+	ri.meshlist = &r_skyportallist;
+	ri.surfmbuffers = r_skyPortalSurfMbuffers;
 	Vector4Set( ri.scissor, ri.refdef.x + x, ri.refdef.y + y, w, h );
-	VectorCopy( skyportal->origin, ri.refdef.vieworg );
+//	Vector4Set( ri.viewport, ri.refdef.x, glState.height - ri.refdef.height - ri.refdef.y, ri.refdef.width, ri.refdef.height );
 
-	ri.refdef.rdflags &= ~(RDF_UNDERWATER|RDF_SKYPORTALINVIEW);
-	if( skyportal->fov ) {
+	if( skyportal->scale )
+	{
+		vec3_t centre, diff;
+
+		VectorAdd( r_worldmodel->mins, r_worldmodel->maxs, centre );
+		VectorScale( centre, 0.5f, centre );
+		VectorSubtract( centre, ri.viewOrigin, diff );
+		VectorMA( skyportal->vieworg, -skyportal->scale, diff, ri.refdef.vieworg );
+	}
+	else
+	{
+		VectorCopy( skyportal->vieworg, ri.refdef.vieworg );
+	}
+
+	VectorAdd( ri.refdef.viewangles, skyportal->viewanglesOffset, ri.refdef.viewangles );
+
+	ri.refdef.rdflags &= ~( RDF_UNDERWATER|RDF_SKYPORTALINVIEW );
+	if( skyportal->fov )
+	{
 		ri.refdef.fov_x = skyportal->fov;
 		ri.refdef.fov_y = CalcFov( ri.refdef.fov_x, ri.refdef.width, ri.refdef.height );
+		if( glState.wideScreen && !( ri.refdef.rdflags & RDF_NOFOVADJUSTMENT ) )
+			AdjustFov( &ri.refdef.fov_x, &ri.refdef.fov_y, glState.width, glState.height, qfalse );
 	}
 
 	R_RenderView( &ri.refdef );
 
-	r_oldviewcluster = r_viewcluster = -1;	// force markleafs next frame
+	r_skyPortalSurfMbuffers = ri.surfmbuffers;
+	r_oldviewcluster = r_viewcluster = -1;		// force markleafs next frame
 
-	memcpy( &ri, &oldRI, sizeof( ri ) );
+	memcpy( &ri, &prevRI, sizeof( refinst_t ) );
+	memcpy( &prevRI, &oldRI, sizeof( refinst_t ) );
 }
 
 /*
@@ -804,7 +1150,7 @@ void R_DrawCubemapView( vec3_t origin, vec3_t angles, int size )
 
 	R_RenderScene( fd );
 
-	r_oldviewcluster = r_viewcluster = -1;	// force markleafs next frame
+	r_oldviewcluster = r_viewcluster = -1;		// force markleafs next frame
 }
 
 /*
@@ -812,23 +1158,31 @@ void R_DrawCubemapView( vec3_t origin, vec3_t angles, int size )
 R_BuildTangentVectors
 ===============
 */
-void R_BuildTangentVectors( int numVertexes, vec3_t *xyzArray, vec3_t *normalsArray, vec2_t *stArray, int numTris, index_t *indexes, vec4_t *sVectorsArray, vec3_t *tVectorsArray )
+void R_BuildTangentVectors( int numVertexes, vec4_t *xyzArray, vec4_t *normalsArray, vec2_t *stArray, int numTris, elem_t *elems, vec4_t *sVectorsArray )
 {
 	int i, j;
 	float d, *v[3], *tc[3];
 	vec_t *s, *t, *n;
 	vec3_t stvec[3], cross;
-	qboolean broken = qfalse;
+	vec3_t stackTVectorsArray[128];
+	vec3_t *tVectorsArray;
+
+	if( numVertexes > sizeof( stackTVectorsArray )/sizeof( stackTVectorsArray[0] ) )
+		tVectorsArray = Mem_TempMalloc( sizeof( vec3_t )*numVertexes );
+	else
+		tVectorsArray = stackTVectorsArray;
 
 	// assuming arrays have already been allocated
 	// this also does some nice precaching
 	memset( sVectorsArray, 0, numVertexes * sizeof( *sVectorsArray ) );
 	memset( tVectorsArray, 0, numVertexes * sizeof( *tVectorsArray ) );
 
-	for( i = 0; i < numTris; i++, indexes += 3 ) {
-		for( j = 0; j < 3; j++ ) {
-			v[j] = ( float * )( xyzArray + indexes[j] );
-			tc[j] = ( float * )( stArray + indexes[j] );
+	for( i = 0; i < numTris; i++, elems += 3 )
+	{
+		for( j = 0; j < 3; j++ )
+		{
+			v[j] = ( float * )( xyzArray + elems[j] );
+			tc[j] = ( float * )( stArray + elems[j] );
 		}
 
 		// calculate two mostly perpendicular edge directions
@@ -838,27 +1192,31 @@ void R_BuildTangentVectors( int numVertexes, vec3_t *xyzArray, vec3_t *normalsAr
 		// we have two edge directions, we can calculate the normal then
 		CrossProduct( stvec[1], stvec[0], cross );
 
-		for( j = 0; j < 3; j++ ) {
-			stvec[0][j] = ((tc[1][1] - tc[0][1]) * (v[2][j] - v[0][j]) - (tc[2][1] - tc[0][1]) * (v[1][j] - v[0][j]));
-			stvec[1][j] = ((tc[1][0] - tc[0][0]) * (v[2][j] - v[0][j]) - (tc[2][0] - tc[0][0]) * (v[1][j] - v[0][j]));
+		for( j = 0; j < 3; j++ )
+		{
+			stvec[0][j] = ( ( tc[1][1] - tc[0][1] ) * ( v[2][j] - v[0][j] ) - ( tc[2][1] - tc[0][1] ) * ( v[1][j] - v[0][j] ) );
+			stvec[1][j] = ( ( tc[1][0] - tc[0][0] ) * ( v[2][j] - v[0][j] ) - ( tc[2][0] - tc[0][0] ) * ( v[1][j] - v[0][j] ) );
 		}
 
 		// inverse tangent vectors if their cross product goes in the opposite
 		// direction to triangle normal
 		CrossProduct( stvec[1], stvec[0], stvec[2] );
-		if( DotProduct( stvec[2], cross ) < 0 ) {
+		if( DotProduct( stvec[2], cross ) < 0 )
+		{
 			VectorInverse( stvec[0] );
 			VectorInverse( stvec[1] );
 		}
 
-		for( j = 0; j < 3; j++ ) {
-			VectorAdd( sVectorsArray[indexes[j]], stvec[0], sVectorsArray[indexes[j]] );
-			VectorAdd( tVectorsArray[indexes[j]], stvec[1], tVectorsArray[indexes[j]] );
+		for( j = 0; j < 3; j++ )
+		{
+			VectorAdd( sVectorsArray[elems[j]], stvec[0], sVectorsArray[elems[j]] );
+			VectorAdd( tVectorsArray[elems[j]], stvec[1], tVectorsArray[elems[j]] );
 		}
 	}
 
 	// normalize
-	for( i = 0, s = *sVectorsArray, t = *tVectorsArray, n = *normalsArray; i < numVertexes; i++, s+=4, t+=3, n+=3 ) {
+	for( i = 0, s = *sVectorsArray, t = *tVectorsArray, n = *normalsArray; i < numVertexes; i++, s += 4, t += 3, n += 4 )
+	{
 		// keep s\t vectors perpendicular
 		d = -DotProduct( s, n );
 		VectorMA( s, d, n, s );
@@ -874,4 +1232,7 @@ void R_BuildTangentVectors( int numVertexes, vec3_t *xyzArray, vec3_t *normalsAr
 		else
 			s[3] = 1;
 	}
+
+	if( tVectorsArray != stackTVectorsArray )
+		Mem_TempFree( tVectorsArray );
 }

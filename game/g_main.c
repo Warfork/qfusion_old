@@ -137,9 +137,6 @@ void G_Init (unsigned int seed, unsigned int frametime)
 
 	srand (seed);
 
-	gamepool = G_MemAllocPool ( "Game" );
-	levelpool = G_MemAllocPool ( "Level" );
-
 	//FIXME: sv_ prefix is wrong for these
 	sv_rollspeed = trap_Cvar_Get ("sv_rollspeed", "200", 0);
 	sv_rollangle = trap_Cvar_Get ("sv_rollangle", "2", 0);
@@ -213,11 +210,11 @@ void G_Init (unsigned int seed, unsigned int frametime)
 
 	// initialize all entities for this game
 	game.maxentities = sv_maxentities->integer;
-	game.edicts = G_GameMalloc (game.maxentities * sizeof(game.edicts[0]));
+	game.edicts = G_Malloc (game.maxentities * sizeof(game.edicts[0]));
 
 	// initialize all clients for this game
 	game.maxclients = sv_maxclients->integer;
-	game.clients = G_GameMalloc (game.maxclients * sizeof(game.clients[0]));
+	game.clients = G_Malloc (game.maxclients * sizeof(game.clients[0]));
 
 	game.numentities = game.maxclients+1;
 
@@ -239,9 +236,6 @@ G_Shutdown
 void G_Shutdown (void)
 {
 	G_Printf ("==== G_Shutdown ====\n");
-
-	G_MemFreePool (&gamepool);
-	G_MemFreePool (&levelpool);
 }
 
 //======================================================================

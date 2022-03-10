@@ -101,8 +101,8 @@ static void CL_GameModule_R_RegisterWorldModel( char *model ) {
 CL_GameModule_MemAlloc
 ===============
 */
-static void *CL_GameModule_MemAlloc( mempool_t *pool, int size, const char *filename, int fileline ) {
-	return _Mem_Alloc( pool, size, MEMPOOL_CLIENTGAME, 0, filename, fileline );
+static void *CL_GameModule_MemAlloc( size_t size, const char *filename, int fileline ) {
+	return _Mem_Alloc( cl_gamemodulepool, size, MEMPOOL_CLIENTGAME, 0, filename, fileline );
 }
 
 /*
@@ -112,33 +112,6 @@ CL_GameModule_MemFree
 */
 static void CL_GameModule_MemFree( void *data, const char *filename, int fileline ) {
 	_Mem_Free( data, MEMPOOL_CLIENTGAME, 0, filename, fileline );
-}
-
-/*
-===============
-CL_GameModule_MemAllocPool
-===============
-*/
-static mempool_t *CL_GameModule_MemAllocPool( const char *name, const char *filename, int fileline ) {
-	return _Mem_AllocPool( cl_gamemodulepool, name, MEMPOOL_CLIENTGAME, filename, fileline );
-}
-
-/*
-===============
-CL_GameModule_MemFreePool
-===============
-*/
-static void CL_GameModule_MemFreePool( mempool_t **pool, const char *filename, int fileline ) {
-	_Mem_FreePool( pool, MEMPOOL_CLIENTGAME, 0, filename, fileline );
-}
-
-/*
-===============
-CL_GameModule_MemEmptyPool
-===============
-*/
-static void CL_GameModule_MemEmptyPool( mempool_t *pool, const char *filename, int fileline ) {
-	_Mem_EmptyPool( pool, MEMPOOL_CLIENTGAME, 0, filename, fileline );
 }
 
 /*
@@ -155,7 +128,7 @@ void CL_GameModule_Init (void)
 	// unload anything we have now
 	CL_GameModule_Shutdown ();
 
-	cl_gamemodulepool = Mem_AllocPool ( NULL, "Client Game Progs" );
+	cl_gamemodulepool = _Mem_AllocPool( NULL, "Client Game Progs", MEMPOOL_CLIENTGAME, __FILE__, __LINE__ );
 
 	import.Error = CL_GameModule_Error;
 	import.Print = CL_GameModule_Print;
@@ -206,6 +179,7 @@ void CL_GameModule_Init (void)
 	import.R_AddPolyToScene = R_AddPolyToScene;
 	import.R_AddLightStyleToScene = R_AddLightStyleToScene;
 	import.R_RenderScene = R_RenderScene;
+	import.R_SpeedsMessage = R_SpeedsMessage;
 	import.R_RegisterWorldModel = CL_GameModule_R_RegisterWorldModel;
 	import.R_ModelBounds = R_ModelBounds;
 	import.R_RegisterModel = R_RegisterModel;
@@ -240,9 +214,6 @@ void CL_GameModule_Init (void)
 
 	import.Mem_Alloc = CL_GameModule_MemAlloc;
 	import.Mem_Free = CL_GameModule_MemFree;
-	import.Mem_AllocPool = CL_GameModule_MemAllocPool;
-	import.Mem_FreePool = CL_GameModule_MemFreePool;
-	import.Mem_EmptyPool = CL_GameModule_MemEmptyPool;
 
 	cge = ( cgame_export_t * )Sys_LoadGameLibrary( LIB_CGAME, &import );
 	if( !cge )
@@ -287,8 +258,8 @@ void CL_GameModule_Shutdown (void)
 	cls.cgameActive = qfalse;
 
 	cge->Shutdown ();
-	Sys_UnloadGameLibrary( LIB_CGAME );
 	Mem_FreePool( &cl_gamemodulepool );
+	Sys_UnloadGameLibrary( LIB_CGAME );
 	cge = NULL;
 }
 

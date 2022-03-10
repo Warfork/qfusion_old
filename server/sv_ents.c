@@ -565,12 +565,12 @@ void SV_BuildClientFrame (client_t *client)
 	SV_FatPVS( org );
 	SV_FatPHS( clusternum );
 
-	if (sv.configstrings[CS_SKYBOXORG][0] != '\0')
+	if (sv.configstrings[CS_SKYBOX][0] != '\0')
 	{
 		float fov;
 		vec3_t origin;
 
-		if (sscanf( sv.configstrings[CS_SKYBOXORG], "%f %f %f %f", &origin[0], &origin[1], &origin[2], &fov ) == 4)
+		if (sscanf( sv.configstrings[CS_SKYBOX], "%f %f %f %f", &origin[0], &origin[1], &origin[2], &fov ) == 4)
 		{
 			SV_MergePVS( origin );
 

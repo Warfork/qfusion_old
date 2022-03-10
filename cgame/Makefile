@@ -1,4 +1,4 @@
-# Qfusion makefile for the cgame DLL
+# Qfusion makefile for the cgame module
 
 include ../Makefile.inc
 

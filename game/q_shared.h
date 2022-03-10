@@ -42,6 +42,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # pragma warning(disable : 4018)		// signed/unsigned mismatch
 # pragma warning(disable : 4305)		// truncation from const double to float
 
+# if defined( _MSC_VER ) && ( _MSC_VER >= 1400 )
+#  pragma warning(disable : 4996)		// function or variable may be unsafe
+# endif
+
 # if defined _M_AMD64
 #  pragma warning(disable : 4267)		// conversion from 'size_t' to whatever, possible loss of data
 # endif
@@ -216,6 +220,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 # include <tchar.h>
 #endif
 
+#if defined(__GNUC__)
+# define ALIGN(x)	__attribute__((aligned(x)))
+#elif defined( _MSC_VER ) && ( _MSC_VER >= 1400 )
+# define ALIGN(x)	__declspec(align(16))
+#else
+# define ALIGN(x)
+#endif
+
+#define HARDWARE_OUTLINES
+
 //==============================================
 
 typedef unsigned char 			qbyte;
@@ -247,6 +261,7 @@ typedef enum {qfalse, qtrue}	qboolean;
 #define	MAX_MODELS			256		// these are sent over the net as bytes
 #define	MAX_SOUNDS			256		// so they cannot be blindly increased
 #define	MAX_IMAGES			256
+#define MAX_SKINFILES	    256
 #define	MAX_ITEMS			256
 #define MAX_GENERAL			(MAX_CLIENTS*2)	// general config strings
 
@@ -331,6 +346,8 @@ int		Q_rand (int *seed);
 float	Q_RSqrt (float number);
 int		Q_log2 (int val);
 
+#define SQRTFAST( x ) ( (x) * Q_RSqrt( x ) ) // The expression a * rsqrt(b) is intended as a higher performance alternative to a / sqrt(b). The two expressions are comparably accurate, but do not compute exactly the same value in every case. For example, a * rsqrt(a*a + b*b) can be just slightly greater than 1, in rare cases.
+
 #define PlaneDiff(point,plane) (((plane)->type < 3 ? (point)[(plane)->type] : DotProduct((point), (plane)->normal)) - (plane)->dist)
 
 #define DotProduct(x,y)			((x)[0]*(y)[0]+(x)[1]*(y)[1]+(x)[2]*(y)[2])
@@ -355,6 +372,10 @@ int		Q_log2 (int val);
 #define DistanceSquared(v1,v2) (((v1)[0]-(v2)[0])*((v1)[0]-(v2)[0])+((v1)[1]-(v2)[1])*((v1)[1]-(v2)[1])+((v1)[2]-(v2)[2])*((v1)[2]-(v2)[2]))
 #define Distance(v1,v2) (sqrt(DistanceSquared(v1,v2)))
 
+#define VectorLengthFast(v)		(SQRTFAST(DotProduct((v),(v))))
+#define DistanceFast(v1,v2)		(SQRTFAST(DistanceSquared(v1,v2)))
+
+#define Vector2Set(v,x,y)		((v)[0]=(x),(v)[1]=(y))
 #define Vector2Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1])
 #define Vector2Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f)) 
 
@@ -365,15 +386,15 @@ int		Q_log2 (int val);
 #define Vector4Avg(a,b,c)		((c)[0]=(((a[0])+(b[0]))*0.5f),(c)[1]=(((a[1])+(b[1]))*0.5f),(c)[2]=(((a[2])+(b[2]))*0.5f),(c)[3]=(((a[3])+(b[3]))*0.5f)) 
 
 vec_t VectorNormalize (vec3_t v);		// returns vector length
-vec_t VectorNormalize2 (vec3_t v, vec3_t out);
+vec_t VectorNormalize2 (const vec3_t v, vec3_t out);
 void  VectorNormalizeFast (vec3_t v);
 
 // just in case you do't want to use the macros
-void _VectorMA (vec3_t veca, float scale, vec3_t vecb, vec3_t vecc);
-vec_t _DotProduct (vec3_t v1, vec3_t v2);
-void _VectorSubtract (vec3_t veca, vec3_t vecb, vec3_t out);
-void _VectorAdd (vec3_t veca, vec3_t vecb, vec3_t out);
-void _VectorCopy (vec3_t in, vec3_t out);
+void _VectorMA (const vec3_t veca, float scale, const vec3_t vecb, vec3_t vecc);
+vec_t _DotProduct (const vec3_t v1, const vec3_t v2);
+void _VectorSubtract (const vec3_t veca, const vec3_t vecb, vec3_t out);
+void _VectorAdd (const vec3_t veca, const vec3_t vecb, vec3_t out);
+void _VectorCopy (const vec3_t in, vec3_t out);
 
 void ClearBounds (vec3_t mins, vec3_t maxs);
 void AddPointToBounds (const vec3_t v, vec3_t mins, vec3_t maxs);
@@ -394,10 +415,12 @@ float anglemod(float a);
 float LerpAngle (float a1, float a2, const float frac);
 void VecToAngles (const vec3_t vec, vec3_t angles);
 void AnglesToAxis (const vec3_t angles, vec3_t axis[3]);
+void NormalVectorToAxis( const vec3_t forward, vec3_t axis[3] );
 
 vec_t ColorNormalize( const vec_t *in, vec_t *out );
 
-float CalcFov (float fov_x, float width, float height);
+float CalcFov( float fov_x, float width, float height );
+void AdjustFov( float *fov_x, float *fov_y, float width, float height, qboolean lock_x );
 
 #define Q_rint(x)	((x) < 0 ? ((int)((x)-0.5f)) : ((int)((x)+0.5f)))
 
@@ -429,7 +452,7 @@ void Matrix_TransformVector( vec3_t m[3], vec3_t v, vec3_t out );
 void Matrix_Transpose( vec3_t in[3], vec3_t out[3] );
 void Matrix_EulerAngles( vec3_t m[3], vec3_t angles );
 void Matrix_Rotate( vec3_t m[3], vec_t angle, vec_t x, vec_t y, vec_t z );
-void Matrix_FromPoints( const vec3_t v1, const vec3_t v2, const vec3_t v3, vec3_t m[3] );
+void Matrix_FromPoints( vec3_t v1, vec3_t v2, vec3_t v3, vec3_t m[3] );
 
 void Quat_Identity( quat_t q );
 void Quat_Copy( const quat_t q1, quat_t q2 );
@@ -453,9 +476,12 @@ const char *COM_FileExtension( const char *in );
 char *COM_FileBase( const char *in, char *out );
 char *COM_FilePath( const char *in, char *out );
 char *COM_DefaultExtension( char *path, const char *extension );
+char *COM_ReplaceExtension( char *path, const char *extension );
+
+int COM_Compress( char *data_p );
 
 // data is an in/out parm, returns a parsed out token
-char *COM_ParseExt (char **data_p, qboolean nl);
+char *COM_ParseExt (const char **data_p, qboolean nl);
 #define COM_Parse(data_p)	COM_ParseExt(data_p,qtrue)
 
 //=============================================
@@ -510,7 +536,8 @@ void Q_strncatz( char *dest, const char *src, size_t size );
 void Q_snprintfz( char *dest, size_t size, const char *fmt, ... );
 char *Q_strlwr( char *s );
 qboolean Q_WildCmp( const char *pattern, const char *text );
-qboolean Q_isdigit( char *str );
+qboolean Q_isdigit( const char *str );
+const char *Q_strrstr( const char *s, const char *substr );
 
 //=============================================
 #if !defined(ENDIAN_LITTLE) && !defined(ENDIAN_BIG)
@@ -730,7 +757,7 @@ typedef struct cplane_s
 } cplane_t;
 
 int SignbitsForPlane ( const cplane_t *out );
-int	PlaneTypeForNormal ( const vec3_t normal );
+int PlaneTypeForNormal ( const vec3_t normal );
 void CategorizePlane ( cplane_t *plane );
 void PlaneFromPoints ( vec3_t verts[3], cplane_t *plane );
 
@@ -848,6 +875,8 @@ typedef struct
 #define	RF_WEAPONMODEL		512		// only draw through eyes and depth hack
 #define RF_CULLHACK			1024
 #define RF_FORCENOLOD		2048
+#define RF_PLANARSHADOW		4096
+#define RF_OCCLUSIONTEST	8192
 
 // sound channels
 // channel 0 never willingly overrides
@@ -902,7 +931,7 @@ typedef enum
 #define	CS_AUDIOTRACK		2
 #define	CS_STATUSBAR		3		// display program string
 #define	CS_GAMETYPE			4
-#define CS_SKYBOXORG		5		// sky portal origin
+#define CS_SKYBOX			5		// sky portal origin
 
 #define CS_AIRACCEL			29		// air acceleration control
 #define	CS_MAXCLIENTS		30

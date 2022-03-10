@@ -17,6 +17,23 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
+/*
+	This code is part of DynGL, a method of dynamically loading an OpenGL
+	library without much pain designed by Joseph Carter and is based
+	loosely on previous work done both by Zephaniah E. Hull and Joseph.
+
+	Both contributors have decided to disclaim all Copyright to this work.
+	It is released to the Public Domain WITHOUT ANY WARRANTY whatsoever,
+	express or implied, in the hopes that others will use it instead of
+	other less-evolved hacks which usually don't work right.  ;)
+*/
+
+/*
+	The following code is loosely based on DynGL code by Joseph Carter 
+	and Zephaniah E. Hull. Adapted by Victor Luchits for qfusion project.
+*/
+
 /*
 ** QGL_WIN.C
 **
@@ -51,6 +68,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #undef QGL_EXT
 #undef QGL_FUNC
 
+static const char *_qglGetGLWExtensionsString( void );
+static const char *_qglGetGLWExtensionsStringInit( void );
+
 /*
 ** QGL_Shutdown
 **
@@ -61,6 +81,8 @@ void QGL_Shutdown( void )
 	if( glw_state.hinstOpenGL )
 		FreeLibrary( glw_state.hinstOpenGL );
 	glw_state.hinstOpenGL = NULL;
+
+	qglGetGLWExtensionsString = NULL;
 
 #define QGL_FUNC(type,name,params) (q##name) = NULL;
 #define QGL_EXT(type,name,params) (q##name) = NULL;
@@ -121,6 +143,8 @@ qboolean QGL_Init( const char *dllname )
 #undef QGL_EXT
 #undef QGL_FUNC
 
+	qglGetGLWExtensionsString = _qglGetGLWExtensionsStringInit;
+
 	return qtrue;
 }
 
@@ -129,4 +153,21 @@ qboolean QGL_Init( const char *dllname )
 */
 void *qglGetProcAddress( const GLubyte *procName ) {
 	return (void *)qwglGetProcAddress( (LPCSTR)procName );
+}
+
+/*
+** qglGetGLWExtensionsString
+*/
+static const char *_qglGetGLWExtensionsStringInit( void )
+{
+	qwglGetExtensionsStringEXT = ( void * )qglGetProcAddress( (const GLubyte *)"wglGetExtensionsStringEXT" );
+	qglGetGLWExtensionsString = _qglGetGLWExtensionsString;
+	return qglGetGLWExtensionsString ();
+}
+
+static const char *_qglGetGLWExtensionsString( void )
+{
+	if( qwglGetExtensionsStringEXT )
+		return qwglGetExtensionsStringEXT ();
+	return NULL;
 }

@@ -20,7 +20,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 // cg_public.h -- client game dll information visible to engine
 
-#define	CGAME_API_VERSION	4
+#define	CGAME_API_VERSION	6
 
 //
 // structs and variables shared with the main engine
@@ -57,12 +57,12 @@ typedef struct
 	void			(*Print)( char *msg );
 
 	// console variable interaction
-	cvar_t			*(*Cvar_Get)( char *name, char *value, int flags );
-	cvar_t			*(*Cvar_Set)( char *name, char *value );
-	void			(*Cvar_SetValue)( char *name, float value );
-	cvar_t			*(*Cvar_ForceSet)( char *name, char *value );	// will return 0 0 if not found
-	float			(*Cvar_VariableValue)( char *name );
-	char			*(*Cvar_VariableString)( char *name );
+	cvar_t			*(*Cvar_Get)( const char *name, const char *value, int flags );
+	cvar_t			*(*Cvar_Set)( const char *name, const char *value );
+	void			(*Cvar_SetValue)( const char *name, float value );
+	cvar_t			*(*Cvar_ForceSet)( const char *name, const char *value );	// will return 0 0 if not found
+	float			(*Cvar_VariableValue)( const char *name );
+	char			*(*Cvar_VariableString)( const char *name );
 
 	int				(*Cmd_Argc)( void );
 	char			*(*Cmd_Argv)( int arg );
@@ -109,6 +109,7 @@ typedef struct
 	void			(*R_AddPolyToScene)( poly_t *poly );
 	void			(*R_AddLightStyleToScene)( int style, float r, float g, float b );
 	void			(*R_RenderScene)( refdef_t *fd );
+	const char		*(*R_SpeedsMessage)( char *out, size_t size );
 	void			(*R_RegisterWorldModel)( char *name );
 	void			(*R_ModelBounds)( struct model_s *mod, vec3_t mins, vec3_t maxs );
 	struct model_s		*(*R_RegisterModel)( char *name );
@@ -119,7 +120,7 @@ typedef struct
 	void			(*R_DrawStretchPic)( int x, int y, int w, int h, float s1, float t1, float s2, float t2, vec4_t color, struct shader_s *shader );
 	void			(*R_TransformVectorToScreen)( refdef_t *rd, vec3_t in, vec2_t out );
 	int				(*R_SkeletalGetNumBones)( struct model_s *mod, int *numFrames );
-	int				(*R_SkeletalGetBoneInfo)( struct model_s *mod, int bone, char *name, int size, int *flags );
+	int				(*R_SkeletalGetBoneInfo)( struct model_s *mod, int bone, char *name, size_t name_size, int *flags );
 	void			(*R_SkeletalGetBonePose)( struct model_s *mod, int bone, int frame, bonepose_t *bonepose );
 	void			(*R_SetCustomColor)( int num, int r, int g, int b );
 	void			(*R_LightForOrigin)( vec3_t origin, vec3_t dir, vec4_t ambient, vec4_t diffuse, float radius );
@@ -144,11 +145,8 @@ typedef struct
 	void			(*S_StopBackgroundTrack)( void );
 
 	// managed memory allocation
-	struct mempool_s *(*Mem_AllocPool)( const char *name, const char *filename, int fileline );
-	void			*(*Mem_Alloc)( struct mempool_s *pool, int size, const char *filename, int fileline );
+	void			*(*Mem_Alloc)( size_t size, const char *filename, int fileline );
 	void			(*Mem_Free)( void *data, const char *filename, int fileline );
-	void			(*Mem_FreePool)( struct mempool_s **pool, const char *filename, int fileline );
-	void			(*Mem_EmptyPool)( struct mempool_s *pool, const char *filename, int fileline );
 } cgame_import_t;
 
 //

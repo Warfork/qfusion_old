@@ -68,7 +68,9 @@ OBJS_CLIENT=\
 	$(BUILDDIR)/client/r_shader.o \
 	$(BUILDDIR)/client/r_shadow.o \
 	$(BUILDDIR)/client/r_cin.o \
+	$(BUILDDIR)/client/r_cull.o \
 	$(BUILDDIR)/client/r_image.o \
+	$(BUILDDIR)/client/r_register.o \
 	$(BUILDDIR)/client/r_program.o \
 	$(BUILDDIR)/client/r_poly.o \
 	$(BUILDDIR)/client/r_surf.o \
@@ -76,7 +78,7 @@ OBJS_CLIENT=\
 	$(BUILDDIR)/client/r_skm.o \
 	$(BUILDDIR)/client/r_light.o \
 	$(BUILDDIR)/client/r_model.o \
-    $(BUILDDIR)/client/r_sky.o \
+	$(BUILDDIR)/client/r_sky.o \
 	\
 	$(BUILDDIR)/client/glob.o \
 	$(BUILDDIR)/client/qgl_linux.o \

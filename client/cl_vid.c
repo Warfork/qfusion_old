@@ -37,11 +37,12 @@ viddef_t	viddef;				// global video state; used by other modules
 
 #define VID_NUM_MODES (int)( sizeof( vid_modes ) / sizeof( vid_modes[0] ) )
 
-qboolean vid_ref_modified;
-qboolean vid_ref_active;
+static qboolean vid_ref_modified;
+static qboolean vid_ref_verbose;
+static qboolean vid_ref_active;
 
 // These are system specific functions
-int	VID_Sys_Init( void );			// wrapper around R_Init
+int	VID_Sys_Init( qboolean verbose );			// wrapper around R_Init
 void VID_Front_f( void );
 void VID_UpdateWindowPosAndSize( int x, int y );
 void VID_EnableAltTab( qboolean enable );
@@ -55,14 +56,15 @@ simply by setting the vid_ref_modified variable, which will
 cause the entire video mode and refresh DLL to be reset on the next frame.
 ============
 */
-void VID_Restart (void)
+void VID_Restart( qboolean verbose )
 {
 	vid_ref_modified = qtrue;
+	vid_ref_verbose = verbose;
 }
 
 void VID_Restart_f (void)
 {
-	VID_Restart ();
+	VID_Restart( (Cmd_Argc() >= 2 ? qtrue : qfalse) );
 }
 
 /*
@@ -175,11 +177,11 @@ void VID_CheckChanges (void)
 		CL_ShutdownMedia ();
 
 		if( vid_ref_active ) {
-			R_Shutdown ();
+			R_Shutdown( qfalse );
 			vid_ref_active = qfalse;
 		}
 
-		if( VID_Sys_Init () == -1 )
+		if( VID_Sys_Init( vid_ref_verbose ) == -1 )
 			Com_Error ( ERR_FATAL, "Failed to load %s", (gl_driver && gl_driver->name) ? gl_driver->string : "" );
 
 		CL_InitMedia ();
@@ -198,6 +200,7 @@ void VID_CheckChanges (void)
 
 		vid_ref_active = qtrue;
 		vid_ref_modified = qfalse;
+		vid_ref_verbose = qtrue;
 	}
 
 	/*
@@ -238,6 +241,7 @@ void VID_Init (void)
 	/* Start the graphics mode and load refresh DLL */
 	vid_ref_modified = qtrue;
 	vid_ref_active = qfalse;
+	vid_ref_verbose = qtrue;
 	vid_fullscreen->modified = qtrue;
 	VID_CheckChanges ();
 }
@@ -250,7 +254,7 @@ VID_Shutdown
 void VID_Shutdown (void)
 {
 	if( vid_ref_active ) {
-		R_Shutdown();
+		R_Shutdown( qtrue );
 		vid_ref_active = qfalse;
 	}
 

@@ -167,6 +167,18 @@ char *COM_DefaultExtension( char *path, const char *extension )
 }
 
 /*
+==================
+COM_DefaultExtension
+==================
+*/
+char *COM_ReplaceExtension( char *path, const char *extension )
+{
+	COM_StripExtension( path, path );
+	strcat( path, extension );
+	return path;
+}
+
+/*
 ============================================================================
 
 					BYTE ORDER FUNCTIONS
@@ -349,6 +361,104 @@ char	*va(char *format, ...)
 	return string[str_index];
 }
 
+/*
+==============
+COM_Compress
+
+Parse a token out of a string
+==============
+*/
+int COM_Compress( char *data_p )
+{
+	char *in, *out;
+	int c;
+	qboolean newline = qfalse, whitespace = qfalse;
+
+	in = out = data_p;
+	if( in )
+	{
+		while( ( c = *in ) != 0 )
+		{
+			// skip double slash comments
+			if( c == '/' && in[1] == '/' )
+			{
+				while( *in && *in != '\n' )
+				{
+					in++;
+				}
+				// skip /* */ comments
+			}
+			else if( c == '/' && in[1] == '*' )
+			{
+				while( *in && ( *in != '*' || in[1] != '/' ) )
+					in++;
+				if( *in )
+					in += 2;
+				// record when we hit a newline
+			}
+			else if( c == '\n' || c == '\r' )
+			{
+				newline = qtrue;
+				in++;
+				// record when we hit whitespace
+			}
+			else if( c == ' ' || c == '\t' )
+			{
+				whitespace = qtrue;
+				in++;
+				// an actual token
+			}
+			else
+			{
+				// if we have a pending newline, emit it (and it counts as whitespace)
+				if( newline )
+				{
+					*out++ = '\n';
+					newline = qfalse;
+					whitespace = qfalse;
+				}
+				if( whitespace )
+				{
+					*out++ = ' ';
+					whitespace = qfalse;
+				}
+
+				// copy quoted strings unmolested
+				if( c == '"' )
+				{
+					*out++ = c;
+					in++;
+					while( 1 )
+					{
+						c = *in;
+						if( c && c != '"' )
+						{
+							*out++ = c;
+							in++;
+						}
+						else
+						{
+							break;
+						}
+					}
+					if( c == '"' )
+					{
+						*out++ = c;
+						in++;
+					}
+				}
+				else
+				{
+					*out = c;
+					out++;
+					in++;
+				}
+			}
+		}
+	}
+	*out = 0;
+	return out - data_p;
+}
 
 char	com_token[MAX_TOKEN_CHARS];
 
@@ -359,11 +469,11 @@ COM_ParseExt
 Parse a token out of a string
 ==============
 */
-char *COM_ParseExt (char **data_p, qboolean nl)
+char *COM_ParseExt (const char **data_p, qboolean nl)
 {
 	int		c;
 	int		len;
-	char	*data;
+	const char *data;
 	qboolean newlines = qfalse;
 
 	data = *data_p;
@@ -561,7 +671,7 @@ char *Q_strlwr( char *s )
 Q_isdigit
 ==============
 */
-qboolean Q_isdigit( char *str )
+qboolean Q_isdigit( const char *str )
 {
 	if( str && *str ) {
 		while( isdigit( *str ) ) str++;
@@ -569,6 +679,25 @@ qboolean Q_isdigit( char *str )
 			return qtrue;
 	}
 	return qfalse;
+}
+
+/*
+==============
+Q_strrstr
+==============
+*/
+const char *Q_strrstr( const char *s, const char *substr )
+{
+	const char *p;
+
+	s = p = strstr( s, substr );
+	while( s != NULL )
+	{
+		p = s;
+		s = strstr( s + 1, substr );
+	}
+
+	return p;
 }
 
 /*

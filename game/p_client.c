@@ -643,7 +643,7 @@ edict_t *SelectCoopSpawnPoint (edict_t *ent)
 {
 	int		index;
 	edict_t	*spot = NULL;
-	char	*target;
+	const char *target;
 
 	index = ent->r.client - game.clients;
 

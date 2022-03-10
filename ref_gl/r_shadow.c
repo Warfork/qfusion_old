@@ -1,5 +1,5 @@
 /*
-Copyright (C) 1997-2001 Id Software, Inc.
+Copyright (C) 2002-2007 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -8,7 +8,7 @@ of the License, or (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
 See the GNU General Public License for more details.
 
@@ -17,517 +17,495 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
+
 #include "r_local.h"
 
-#if SHADOW_VOLUMES
+/*
+=============================================================
 
-static qboolean triangleFacingLight[MAX_ARRAY_TRIANGLES];
-static index_t	shadowVolumeIndexes[MAX_SHADOWVOLUME_INDEXES];
-static int		numShadowVolumeTris;
+PLANAR STENCIL SHADOWS
+
+=============================================================
+*/
+
+static shader_t *r_planarShadowShader;
 
 /*
 ===============
-R_FindTriangleWithEdge
+R_InitPlanarShadows
 ===============
 */
-static int R_FindTriangleWithEdge( index_t *indexes, int numtris, index_t start, index_t end, int ignore)
+static void R_InitPlanarShadows( void )
+{
+	r_planarShadowShader = R_LoadShader( "***r_planarShadow***", SHADER_PLANAR_SHADOW, qtrue, 0, 0 );
+}
+
+/*
+===============
+R_PlanarShadowShader
+===============
+*/
+shader_t *R_PlanarShadowShader( void )
+{
+	return r_planarShadowShader;
+}
+
+/*
+===============
+R_GetShadowImpactAndDir
+===============
+*/
+static void R_GetShadowImpactAndDir( entity_t *e, trace_t *tr, vec3_t lightdir )
+{
+	vec3_t point;
+
+	R_LightForOrigin( e->lightingOrigin, lightdir, NULL, NULL, e->model->radius * e->scale );
+
+	VectorSet( lightdir, -lightdir[0], -lightdir[1], -1 );
+	VectorNormalizeFast( lightdir );
+	VectorMA( e->origin, /*(e->model->radius*e->scale*4 + r_shadows_projection_distance->value)*/ 1024.0f, lightdir, point );
+
+	R_TraceLine( tr, e->origin, point, SURF_NONSOLID );
+}
+
+/*
+===============
+R_CullPlanarShadow
+===============
+*/
+qboolean R_CullPlanarShadow( entity_t *e, vec3_t mins, vec3_t maxs, qboolean occlusion_query )
 {
 	int i;
-	int match, count;
+	float planedist, dist;
+	vec3_t lightdir, point;
+	vec3_t bbox[8], newmins, newmaxs;
+	trace_t tr;
 
-	count = 0;
-	match = -1;
+	if( e->flags & ( RF_NOSHADOW|RF_WEAPONMODEL ) )
+		return qtrue;
+	if( e->flags & RF_VIEWERMODEL )
+		return qfalse;
 
-	for( i = 0; i < numtris; i++, indexes += 3 ) {
-		if( (indexes[0] == start && indexes[1] == end)
-			|| (indexes[1] == start && indexes[2] == end)
-			|| (indexes[2] == start && indexes[0] == end) ) {
-			if (i != ignore)
-				match = i;
-			count++;
-		} else if( (indexes[1] == start && indexes[0] == end)
-			|| (indexes[2] == start && indexes[1] == end)
-			|| (indexes[0] == start && indexes[2] == end) ) {
-			count++;
-		}
-	}
+	R_GetShadowImpactAndDir( e, &tr, lightdir );
+	if( tr.fraction == 1.0f )
+		return qtrue;
 
-	// detect edges shared by three triangles and make them seams
-	if( count > 2 )
-		match = -1;
+	R_TransformEntityBBox( e, mins, maxs, bbox, qtrue );
 
-	return match;
-}
+	VectorSubtract( tr.endpos, e->origin, point );
+	planedist = DotProduct( point, tr.plane.normal ) + 1;
+	dist = -1.0f / DotProduct( lightdir, tr.plane.normal );
+	VectorScale( lightdir, dist, lightdir );
 
-/*
-===============
-R_BuildTriangleNeighbors
-===============
-*/
-void R_BuildTriangleNeighbors( int *neighbors, index_t *indexes, int numtris )
-{
-	int i, *n;
-	index_t *index;
-
-	for( i = 0, index = indexes, n = neighbors; i < numtris; i++, index += 3, n += 3 ) {
-		n[0] = R_FindTriangleWithEdge( indexes, numtris, index[1], index[0], i );
-		n[1] = R_FindTriangleWithEdge( indexes, numtris, index[2], index[1], i );
-		n[2] = R_FindTriangleWithEdge( indexes, numtris, index[0], index[2], i );
-	}
-}
-
-/*
-===============
-R_BuildShadowVolumeTriangles
-===============
-*/
-static int R_BuildShadowVolumeTriangles( void )
-{
-	int i, j, tris;
-	index_t *indexes = indexesArray;
-	int *neighbors = neighborsArray;
-	index_t *out = shadowVolumeIndexes;
-
-	// check each frontface for bordering backfaces,
-	// and cast shadow polygons from those edges,
-	// also create front and back caps for shadow volume
-	for( i = 0, j = 0, tris = 0; i < numIndexes; i += 3, j++, indexes += 3, neighbors += 3 ) {
-		if( triangleFacingLight[j] ) {
-			// triangle is frontface and therefore casts shadow,
-			// output front and back caps for shadow volume front cap
-			out[0] = indexes[0];
-			out[1] = indexes[1];
-			out[2] = indexes[2];
-
-			// rear cap (with flipped winding order)
-			out[3] = indexes[0] + numVerts;
-			out[4] = indexes[2] + numVerts;
-			out[5] = indexes[1] + numVerts;
-			out += 6;
-			tris += 2;
-
-			// check the edges
-			if( neighbors[0] < 0 || !triangleFacingLight[neighbors[0]] ) {
-				out[0] = indexes[1];
-				out[1] = indexes[0];
-				out[2] = indexes[0] + numVerts;
-				out[3] = indexes[1];
-				out[4] = indexes[0] + numVerts;
-				out[5] = indexes[1] + numVerts;
-				out += 6;
-				tris += 2;
-			}
-
-			if( neighbors[1] < 0 || !triangleFacingLight[neighbors[1]] ) {
-				out[0] = indexes[2];
-				out[1] = indexes[1];
-				out[2] = indexes[1] + numVerts;
-				out[3] = indexes[2];
-				out[4] = indexes[1] + numVerts;
-				out[5] = indexes[2] + numVerts;
-				out += 6;
-				tris += 2;
-			}
-
-			if( neighbors[2] < 0 || !triangleFacingLight[neighbors[2]] ) {
-				out[0] = indexes[0];
-				out[1] = indexes[2];
-				out[2] = indexes[2] + numVerts;
-				out[3] = indexes[0];
-				out[4] = indexes[2] + numVerts;
-				out[5] = indexes[0] + numVerts;
-				out += 6;
-				tris += 2;
-			}
-		}
-	}
-
-	return tris;
-}
-
-/*
-===============
-R_MakeTriangleShadowFlagsFromScratch
-===============
-*/
-static void R_MakeTriangleShadowFlagsFromScratch ( vec3_t lightdist, float lightradius )
-{
-	float f;
-	int i, j;
-	float *v0, *v1, *v2;
-	vec3_t dir0, dir1, temp;
-	float *trnormal = trNormalsArray[0];
-	index_t *indexes = indexesArray;
-
-	for( i = 0, j = 0; i < numIndexes; i += 3, j++, trnormal += 3, indexes += 3 ) {
-		// calculate triangle facing flag
-		v0 = ( float * )(inVertsArray + indexes[0]);
-		v1 = ( float * )(inVertsArray + indexes[1]);
-		v2 = ( float * )(inVertsArray + indexes[2]);
-
-		// calculate two mostly perpendicular edge directions
-		VectorSubtract( v1, v0, dir0 );
-		VectorSubtract( v2, v0, dir1 );
-
-		// we have two edge directions, we can calculate a third vector from
-		// them, which is the direction of the surface normal (it's magnitude
-		// is not 1 however)
-		CrossProduct( dir0, dir1, temp );
-
-		// compare distance of light along normal, with distance of any point
-		// of the triangle along the same normal (the triangle is planar,
-		// I.E. flat, so all points give the same answer)
-		f = ( lightdist[0] - v0[0] ) * temp[0] + ( lightdist[1] - v0[1] ) * temp[1] + ( lightdist[2] - v0[2] ) * temp[2];
-		triangleFacingLight[j] = f > 0;
-	}
-}
-
-/*
-===============
-R_MakeTriangleShadowFlags
-===============
-*/
-static void R_MakeTriangleShadowFlags( vec3_t lightdist, float lightradius )
-{
-	int i, j;
-	float f;
-	float *v0;
-	float *trnormal = trNormalsArray[0];
-	index_t *indexes = indexesArray;
-
-	for( i = 0, j = 0; i < numIndexes; i += 3, j++, trnormal += 3, indexes += 3 ) {
-		v0 = ( float * )(vertsArray + indexes[0]);
-
-		// compare distance of light along normal, with distance of any point
-		// of the triangle along the same normal (the triangle is planar,
-		// I.E. flat, so all points give the same answer)
-		f = ( lightdist[0] - v0[0] ) * trnormal[0] + ( lightdist[1] - v0[1] ) * trnormal[1] + ( lightdist[2] - v0[2] ) * trnormal[2];
-		triangleFacingLight[j] = f > 0;
-	}
-}
-
-/*
-===============
-R_ShadowProjectVertices
-===============
-*/
-static void R_ShadowProjectVertices( vec3_t lightdist, float projectdistance )
-{
-	int i;
-	vec3_t diff;
-	float *in, *out;
-
-	in = (float *)(vertsArray[0]);
-	out = (float *)(vertsArray[numVerts]);
-
-	for( i = 0; i < numVerts; i++, in += 3, out += 3 ) {
-		VectorSubtract( in, lightdist, diff );
-		VectorNormalizeFast( diff );
-		VectorMA( in, projectdistance, diff, out );
-//		VectorMA( in, r_shadows_nudge->value, diff, in );
-	}
-}
-
-/*
-===============
-R_BuildShadowVolume
-===============
-*/
-static void R_BuildShadowVolume( vec3_t lightdist, float projectdistance )
-{
-	if( currentTrNormal != trNormalsArray[0] )
-		R_MakeTriangleShadowFlags( lightdist, projectdistance );
-	else
-		R_MakeTriangleShadowFlagsFromScratch( lightdist, projectdistance );
-
-	R_ShadowProjectVertices( lightdist, projectdistance );
-	numShadowVolumeTris = R_BuildShadowVolumeTriangles ();
-}
-
-/*
-===============
-R_DrawShadowVolume
-===============
-*/
-static void R_DrawShadowVolume( void )
-{
-#ifdef VERTEX_BUFFER_OBJECTS
-	if( glConfig.vertexBufferObject ) {
-		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, r_vertexBufferObjects[VBO_VERTS] );
-		qglBufferDataARB( GL_ARRAY_BUFFER_ARB, numVerts * 2 * sizeof( vec3_t ), vertsArray, GL_STREAM_DRAW_ARB );
-		qglBindBufferARB( GL_ARRAY_BUFFER_ARB, 0 );
-	}
-#endif
-
-	if( glConfig.drawRangeElements )
-		qglDrawRangeElementsEXT( GL_TRIANGLES, 0, numVerts * 2, numShadowVolumeTris * 3, GL_UNSIGNED_INT, shadowVolumeIndexes );
-	else
-		qglDrawElements( GL_TRIANGLES, numShadowVolumeTris * 3, GL_UNSIGNED_INT, shadowVolumeIndexes );
-}
-
-/*
-===============
-R_CheckLightBoundaries
-===============
-*/
-static qboolean R_CheckLightBoundaries( vec3_t mins, vec3_t maxs, vec3_t lightorg, float intensity2 )
-{
-	vec3_t v;
-
-	v[0] = bound( mins[0], lightorg[0], maxs[0] );
-	v[1] = bound( mins[1], lightorg[1], maxs[1] );
-	v[2] = bound( mins[2], lightorg[2], maxs[2] );
-
-	return( DotProduct(v, v) < intensity2 );
-}
-
-/*
-===============
-R_CastShadowVolume
-===============
-*/
-static void R_CastShadowVolume( vec3_t mins, vec3_t maxs, float radius, vec3_t lightorg, float intensity )
-{
-	float projectdistance, intensity2;
-	vec3_t lightdist, lightdist2;
-
-	if( R_CullSphere( lightorg, intensity, 15 ) )
-		return;
-
-	intensity2 = intensity * intensity;
-	VectorSubtract( lightorg, ri.currententity->origin, lightdist2 );
-
-	if( !R_CheckLightBoundaries( mins, maxs, lightdist2, intensity2 ) )
-		return;
-
-	projectdistance = radius - VectorLength( lightdist2 );
-	if( projectdistance > 0 )		// light is inside the bbox
-		return;
-
-	projectdistance += intensity;
-	if( projectdistance <= 0.1 )	// too far away
-		return;
-
-	if( !Matrix_Compare( ri.currententity->axis, axis_identity ) )
-		Matrix_TransformVector( ri.currententity->axis, lightdist2, lightdist );
-	else
-		VectorCopy( lightdist2, lightdist );
-
-	R_BuildShadowVolume( lightdist, projectdistance );
-
-	R_UnlockArrays ();
-
-	R_LockArrays( numVerts * 2 );
-
-	if( r_shadows->integer == SHADOW_VOLUMES ) {
-		GL_Cull( GL_BACK );		// quake is backwards, this culls front faces
-		qglStencilOp( GL_KEEP, GL_DECR, GL_KEEP );
-		R_DrawShadowVolume ();
-
-		// decrement stencil if frontface is behind depthbuffer
-		GL_Cull( GL_FRONT );	// quake is backwards, this culls back faces
-		qglStencilOp( GL_KEEP, GL_INCR, GL_KEEP );
-	}
-
-	R_DrawShadowVolume ();
-}
-
-/*
-===============
-R_DrawShadowVolumes
-===============
-*/
-void R_DrawShadowVolumes( mesh_t *mesh, vec3_t mins, vec3_t maxs, float radius )
-{
-	int i;
-
-	if( !r_worldmodel ) {
-		R_ClearArrays ();
-		return;
-	}
-
-	if (0)
+	ClearBounds( newmins, newmaxs );
+	for( i = 0; i < 8; i++ )
 	{
-		mlight_t *wlight;
-		dlight_t *dlight;	
-
-		wlight = r_worldmodel->worldlights;
-		for ( i = 0; i < r_worldmodel->numworldlights; i++, wlight++ )
-			R_CastShadowVolume( mins, maxs, radius, wlight->origin, wlight->intensity );
-
-		dlight = r_dlights;
-		for( i = 0; i < r_numDlights; i++, dlight++ )
-			R_CastShadowVolume( mins, maxs, radius, dlight->origin, dlight->intensity );
+		VectorSubtract( bbox[i], e->origin, bbox[i] );
+		dist = DotProduct( bbox[i], tr.plane.normal ) - planedist;
+		if( dist > 0 )
+			VectorMA( bbox[i], dist, lightdir, bbox[i] );
+		AddPointToBounds( bbox[i], newmins, newmaxs );
 	}
-	else
-	{
-		vec4_t diffuse;
-		vec3_t lightdir, neworigin;
+	VectorAdd( newmins, e->origin, newmins );
+	VectorAdd( newmaxs, e->origin, newmaxs );
 
-		R_LightForOrigin( ri.currententity->lightingOrigin, lightdir, NULL, diffuse, radius );
-		VectorSet( lightdir, -lightdir[0], -lightdir[1], -1 );
-		VectorNormalize( lightdir );
-		VectorMA( ri.currententity->origin, -(radius + 10), lightdir, neworigin );
+	if( R_CullBox( newmins, newmaxs, ri.clipFlags ) )
+		return qtrue;
 
-		R_CastShadowVolume( mins, maxs, radius, neworigin, r_shadows_projection_distance->value * VectorLength( diffuse ) );
-	}
+	// mins/maxs are pretransfomed so use r_worldent here
+	if( occlusion_query && OCCLUSION_QUERIES_ENABLED( ri ) )
+		R_IssueOcclusionQuery( R_GetOcclusionQueryNum( OQ_PLANARSHADOW, e - r_entities ), r_worldent, newmins, newmaxs );
 
-	R_ClearArrays ();
+	return qfalse;
 }
 
 /*
 ===============
-R_ShadowBlend
+R_DeformVPlanarShadow
 ===============
 */
-void R_ShadowBlend( void )
+void R_DeformVPlanarShadow( int numV, float *v )
 {
-	if( r_shadows->integer != SHADOW_VOLUMES || !glState.stencilEnabled )
-		return;
-
-	qglScissor( 0, 0, glState.width, glState.height );
-	qglViewport( 0, 0, glState.width, glState.height );
-	qglMatrixMode( GL_PROJECTION );
-    qglLoadIdentity ();
-	qglOrtho( 0, 1, 1, 0, -10, 100 );
-	qglMatrixMode( GL_MODELVIEW );
-    qglLoadIdentity ();
-
-	GL_Cull( 0 );
-	GL_SetState( GLSTATE_NO_DEPTH_TEST|GLSTATE_SRCBLEND_SRC_ALPHA|GLSTATE_DSTBLEND_ONE_MINUS_SRC_ALPHA );
-	qglColor4f( 0, 0, 0, bound (0.0f, r_shadows_alpha->value, 1.0f) );
-
-	qglDisable( GL_TEXTURE_2D );
-
-	qglDepthFunc( GL_ALWAYS );
-
-	qglEnable( GL_STENCIL_TEST );
-	qglStencilFunc( GL_NOTEQUAL, 128, ~0 );
-	qglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
-	qglStencilMask( ~0 );
-
-	qglBegin( GL_TRIANGLES );
-	qglVertex2f( -5, -5 );
-	qglVertex2f( 10, -5 );
-	qglVertex2f( -5, 10 );
-	qglEnd ();
-
-	qglDepthFunc( GL_LEQUAL );
-
-	qglDisable( GL_STENCIL_TEST );
-	qglEnable( GL_TEXTURE_2D );
-
-	qglColor4f( 1, 1, 1, 1 );
-}
-#endif
-
-/*
-===============
-R_BeginShadowPass
-===============
-*/
-void R_BeginShadowPass( void )
-{
-	R_BackendCleanUpTextureUnits ();
-
-	qglDisable( GL_TEXTURE_2D );
-
-	if( r_shadows->integer == SHADOW_PLANAR ) {
-		GL_SetState( GLSTATE_SRCBLEND_SRC_ALPHA|GLSTATE_DSTBLEND_ONE_MINUS_SRC_ALPHA );
-		qglColor4f( 0, 0, 0, bound( 0.0f, r_shadows_alpha->value, 1.0f ) );
-
-		qglEnable( GL_STENCIL_TEST );
-		qglStencilMask( ~0 );
-		qglStencilFunc( GL_EQUAL, 128, 0xFF );
-		qglStencilOp( GL_KEEP, GL_KEEP, GL_INCR );
-#if SHADOW_VOLUMES
-	} else if( r_shadows->integer == SHADOW_VOLUMES ) {
-		GL_SetState( GLSTATE_SRCBLEND_SRC_ALPHA|GLSTATE_DSTBLEND_ONE_MINUS_SRC_ALPHA );
-		qglColor4f( 1, 1, 1, 1 );
-		qglColorMask( 0, 0, 0, 0 );
-
-		qglEnable( GL_STENCIL_TEST );
-		qglStencilMask( ~0 );
-		qglStencilOp( GL_KEEP, GL_KEEP, GL_KEEP );
-		qglStencilFunc( GL_ALWAYS, 128, ~0 );
-	} else {
-		GL_Cull( 0 );
-		GL_SetState( GLSTATE_SRCBLEND_ONE|GLSTATE_DSTBLEND_ONE );
-		qglColor4f( 1.0, 0.1, 0.1, 1 );
-#endif
-	}
-}
-
-/*
-===============
-R_EndShadowPass
-===============
-*/
-void R_EndShadowPass( void )
-{
-	if( r_shadows->integer == SHADOW_PLANAR ) {
-		qglDisable( GL_STENCIL_TEST );
-#if SHADOW_VOLUMES
-	} else if( r_shadows->integer == SHADOW_VOLUMES ) {
-		qglDisable( GL_STENCIL_TEST );
-		qglColorMask( 1, 1, 1, 1 );
-	} else {
-#endif
-		GL_SetState( GLSTATE_DEPTHWRITE );
-	}
-
-	qglEnable( GL_TEXTURE_2D );
-}
-
-/*
-===============
-R_Draw_SimpleShadow
-===============
-*/
-void R_Draw_SimpleShadow( entity_t *e )
-{
-	int i;
-	float *v;
+	entity_t *e = ri.currententity;
 	float planedist, dist;
 	vec3_t planenormal, lightdir, lightdir2, point;
 	trace_t tr;
 
-	if( e->flags & RF_NOSHADOW )
-		return;
-
-	R_LightForOrigin( e->lightingOrigin, lightdir, NULL, NULL, e->model->radius * e->scale );
-
-	VectorSet( lightdir, -lightdir[0], -lightdir[1], -1 );	
-	VectorNormalizeFast( lightdir );
-	VectorMA( e->origin, 1024.0f, lightdir, point );
-
-	CL_GameModule_Trace( &tr, e->origin, vec3_origin, vec3_origin, point, -1, CONTENTS_SOLID );
-	if( tr.fraction == 1.0f ) {
-		R_ClearArrays ();
-		return;
-	}
+	R_GetShadowImpactAndDir( e, &tr, lightdir );
 
 	Matrix_TransformVector( e->axis, lightdir, lightdir2 );
 	Matrix_TransformVector( e->axis, tr.plane.normal, planenormal );
+	VectorScale( planenormal, e->scale, planenormal );
 
 	VectorSubtract( tr.endpos, e->origin, point );
-	planedist = DotProduct ( point, tr.plane.normal ) + 1;
-
+	planedist = DotProduct( point, tr.plane.normal ) + 1;
 	dist = -1.0f / DotProduct( lightdir2, planenormal );
 	VectorScale( lightdir2, dist, lightdir2 );
 
-	v = (float *)(inVertsArray[0]);
-	for( i = 0; i < numVerts; i++, v += 3 ) {
+	for( ; numV > 0; numV--, v += 4 )
+	{
 		dist = DotProduct( v, planenormal ) - planedist;
 		if( dist > 0 )
 			VectorMA( v, dist, lightdir2, v );
 	}
+}
 
-	R_UnlockArrays ();
+/*
+===============
+R_PlanarShadowPass
+===============
+*/
+void R_PlanarShadowPass( int state )
+{
+	GL_EnableTexGen( GL_S, 0 );
+	GL_EnableTexGen( GL_T, 0 );
+	GL_EnableTexGen( GL_R, 0 );
+	GL_EnableTexGen( GL_Q, 0 );
+	GL_SetTexCoordArrayMode( 0 );
 
-	R_LockArrays( numVerts );
+	GL_SetState( state );
+	qglColor4f( 0, 0, 0, bound( 0.0f, r_shadows_alpha->value, 1.0f ) );
 
-	R_FlushArrays ();
+	qglDisable( GL_TEXTURE_2D );
+	if( glState.stencilEnabled )
+		qglEnable( GL_STENCIL_TEST );
 
-	R_ClearArrays ();
+	R_FlushArrays();
+
+	if( glState.stencilEnabled )
+		qglDisable( GL_STENCIL_TEST );
+	qglEnable( GL_TEXTURE_2D );
+}
+
+/*
+=============================================================
+
+STANDARD PROJECTIVE SHADOW MAPS (SSM)
+
+=============================================================
+*/
+
+int r_numShadowGroups;
+shadowGroup_t r_shadowGroups[MAX_SHADOWGROUPS];
+int r_entShadowBits[MAX_ENTITIES];
+
+//static qboolean r_shadowGroups_sorted;
+
+#define SHADOWGROUPS_HASH_SIZE	8
+static shadowGroup_t *r_shadowGroups_hash[SHADOWGROUPS_HASH_SIZE];
+static qbyte r_shadowCullBits[MAX_SHADOWGROUPS/8];
+
+/*
+===============
+R_InitShadowmaps
+===============
+*/
+static void R_InitShadowmaps( void )
+{
+	// clear all possible values, should be called once per scene
+	r_numShadowGroups = 0;
+//	r_shadowGroups_sorted = qfalse;
+
+	memset( r_shadowGroups, 0, sizeof( r_shadowGroups ) );
+	memset( r_entShadowBits, 0, sizeof( r_entShadowBits ) );
+	memset( r_shadowGroups_hash, 0, sizeof( r_shadowGroups_hash ) );
+}
+
+/*
+===============
+R_ClearShadowmaps
+===============
+*/
+void R_ClearShadowmaps( void )
+{
+	r_numShadowGroups = 0;
+
+	if( r_shadows->integer != SHADOW_MAPPING || ri.refdef.rdflags & RDF_NOWORLDMODEL )
+		return;
+
+	// clear all possible values, should be called once per scene
+//	r_shadowGroups_sorted = qfalse;
+	memset( r_shadowGroups, 0, sizeof( r_shadowGroups ) );
+	memset( r_entShadowBits, 0, sizeof( r_entShadowBits ) );
+	memset( r_shadowGroups_hash, 0, sizeof( r_shadowGroups_hash ) );
+}
+
+/*
+===============
+R_AddShadowCaster
+===============
+*/
+qboolean R_AddShadowCaster( entity_t *ent )
+{
+	int i;
+	float radius;
+	vec3_t origin;
+	unsigned int hash_key;
+	shadowGroup_t *group;
+	mleaf_t *leaf;
+	vec3_t mins, maxs, bbox[8];
+
+	if( r_shadows->integer != SHADOW_MAPPING || ri.refdef.rdflags & RDF_NOWORLDMODEL )
+		return qfalse;
+	if( !glConfig.ext.GLSL || !glConfig.ext.depth_texture || !glConfig.ext.shadow )
+		return qfalse;
+
+	VectorCopy( ent->lightingOrigin, origin );
+	if( VectorCompare( origin, vec3_origin ) )
+		return qfalse;
+
+	// find lighting group containing entities with same lightingOrigin as ours
+	hash_key = (unsigned int)( origin[0] * 7 + origin[1] * 5 + origin[2] * 3 );
+	hash_key &= ( SHADOWGROUPS_HASH_SIZE-1 );
+
+	for( group = r_shadowGroups_hash[hash_key]; group; group = group->hashNext )
+	{
+		if( VectorCompare( group->origin, origin ) )
+			goto add; // found an existing one, add
+	}
+
+	if( r_numShadowGroups == MAX_SHADOWGROUPS )
+		return qfalse; // no free groups
+
+	leaf = Mod_PointInLeaf( origin, r_worldmodel );
+
+	// start a new group
+	group = &r_shadowGroups[r_numShadowGroups];
+	group->bit = ( 1<<r_numShadowGroups );
+	//	group->cluster = leaf->cluster;
+	group->vis = Mod_ClusterPVS( leaf->cluster, r_worldmodel );
+
+	// clear group bounds
+	VectorCopy( origin, group->origin );
+	ClearBounds( group->mins, group->maxs );
+
+	// add to hash table
+	group->hashNext = r_shadowGroups_hash[hash_key];
+	r_shadowGroups_hash[hash_key] = group;
+
+	r_numShadowGroups++;
+add:
+	// get model bounds
+	if( ent->model->type == mod_alias )
+		R_AliasModelBBox( ent, mins, maxs );
+	else
+		R_SkeletalModelBBox( ent, mins, maxs );
+
+	for( i = 0; i < 3; i++ )
+	{
+		if( mins[i] >= maxs[i] )
+			return qfalse;
+	}
+
+	r_entShadowBits[ent - r_entities] |= group->bit;
+	if( ent->flags & RF_WEAPONMODEL )
+		return qtrue;
+
+	// rotate local bounding box and compute the full bounding box for this group
+	R_TransformEntityBBox( ent, mins, maxs, bbox, qtrue );
+	for( i = 0; i < 8; i++ )
+		AddPointToBounds( bbox[i], group->mins, group->maxs );
+
+	// increase projection distance if needed
+	VectorSubtract( group->mins, origin, mins );
+	VectorSubtract( group->maxs, origin, maxs );
+	radius = RadiusFromBounds( mins, maxs );
+	group->projDist = max( group->projDist, radius * ent->scale * 2 + min( r_shadows_projection_distance->value, 64 ) );
+
+	return qtrue;
+}
+
+/*
+===============
+R_ShadowGroupSort
+
+Make sure current view cluster comes first
+===============
+*/
+/*
+static int R_ShadowGroupSort (void const *a, void const *b)
+{
+	shadowGroup_t *agroup, *bgroup;
+
+	agroup = (shadowGroup_t *)a;
+	bgroup = (shadowGroup_t *)b;
+
+	if( agroup->cluster == r_viewcluster )
+		return -2;
+	if( bgroup->cluster == r_viewcluster )
+		return 2;
+	if( agroup->cluster < bgroup->cluster )
+		return -1;
+	if( agroup->cluster > bgroup->cluster )
+		return 1;
+	return 0;
+}
+*/
+
+/*
+===============
+R_CullShadowmapGroups
+===============
+*/
+void R_CullShadowmapGroups( void )
+{
+	int i, j;
+	vec3_t mins, maxs;
+	shadowGroup_t *group;
+
+	if( ri.refdef.rdflags & RDF_NOWORLDMODEL )
+		return;
+
+	memset( r_shadowCullBits, 0, sizeof( r_shadowCullBits ) );
+
+	for( i = 0, group = r_shadowGroups; i < r_numShadowGroups; i++, group++ ) {
+		for( j = 0; j < 3; j++ )
+		{
+			mins[j] = group->origin[j] - group->projDist * 1.75 * 0.5 * 0.5;
+			maxs[j] = group->origin[j] + group->projDist * 1.75 * 0.5 * 0.5;
+		}
+
+		// check if view point is inside the bounding box...
+		for( j = 0; j < 3; j++ )
+			if( ri.viewOrigin[j] < mins[j] || ri.viewOrigin[j] > maxs[j] )
+				break;
+
+		if( j == 3 )
+			continue;									// ...it is, so trivially accept
+
+		if( R_CullBox( mins, maxs, ri.clipFlags ) )
+			r_shadowCullBits[i>>3] |= (1<<(i&7));		// trivially reject
+		else if( OCCLUSION_QUERIES_ENABLED( ri ) )
+			R_IssueOcclusionQuery( R_GetOcclusionQueryNum( OQ_SHADOWGROUP, i ), r_worldent, mins, maxs );
+	}
+}
+
+/*
+===============
+R_DrawShadowmaps
+===============
+*/
+void R_DrawShadowmaps( void )
+{
+	int i, j;
+	int width, height, textureWidth, textureHeight;
+	float lod_scale;
+	vec3_t angles;
+	vec3_t lightdir, M[3];
+	refinst_t oldRI;
+	shadowGroup_t *group;
+
+	if( !r_numShadowGroups )
+		return;
+
+	width = r_lastRefdef.width;
+	height = r_lastRefdef.height;
+
+	ri.previousentity = NULL;
+	memcpy( &oldRI, &prevRI, sizeof( refinst_t ) );
+	memcpy( &prevRI, &ri, sizeof( refinst_t ) );
+	ri.refdef.rdflags &= ~RDF_SKYPORTALINVIEW;
+	lod_scale = tan( ri.refdef.fov_x * ( M_PI/180 ) * 0.5f );
+
+/*
+	// sort by clusternum (not really needed anymore, but oh well)
+	if( !r_shadowGroups_sorted ) {		// note: this breaks hash pointers
+		r_shadowGroups_sorted = qtrue;
+		qsort( r_shadowGroups, r_numShadowGroups, sizeof(shadowGroup_t), R_ShadowGroupSort );
+	}
+*/
+
+	// find lighting group containing entities with same lightingOrigin as ours
+	for( i = 0, group = r_shadowGroups; i < r_numShadowGroups; i++, group++ )
+	{
+		if( r_shadowCullBits[i>>3] & ( 1<<( i&7 ) ) )
+			continue;
+
+		if( OCCLUSION_QUERIES_ENABLED( prevRI ) )
+		{
+			if( !R_GetOcclusionQueryResultBool( OQ_SHADOWGROUP, i, qtrue ) )
+				continue;
+		}
+
+		ri.farClip = group->projDist;
+		ri.lod_dist_scale_for_fov = lod_scale;
+		ri.clipFlags |= ( 1<<4 ); // clip by far plane too
+		ri.shadowBits = 0;      // no shadowing yet
+		ri.meshlist = &r_shadowlist;
+		ri.shadowGroup = group;
+		ri.params = RP_SHADOWMAPVIEW|RP_FLIPFRONTFACE|RP_OLDVIEWCLUSTER; // make sure RP_WORLDSURFVISIBLE isn't set
+
+		// allocate/resize the texture if needed
+		R_InitShadowmapTexture( &( r_shadowmapTextures[i] ), i, width, height );
+
+		assert( r_shadowmapTextures[i] && r_shadowmapTextures[i]->upload_width && r_shadowmapTextures[i]->upload_height );
+
+		group->depthTexture = r_shadowmapTextures[i];
+		textureWidth = group->depthTexture->upload_width;
+		textureHeight = group->depthTexture->upload_height;
+
+		// default to fov 90, R_SetupFrame will most likely alter the values to give depth more precision
+		ri.refdef.width = textureWidth;
+		ri.refdef.height = textureHeight;
+		ri.refdef.fov_x = 90;
+		ri.refdef.fov_y = CalcFov( ri.refdef.fov_x, ri.refdef.width, ri.refdef.height );
+		Vector4Set( ri.viewport, ri.refdef.x, ri.refdef.y, textureWidth, textureHeight );
+		Vector4Set( ri.scissor, ri.refdef.x, ri.refdef.y, textureWidth, textureHeight );
+
+		// set the view transformation matrix according to lightgrid
+		R_LightForOrigin( group->origin, lightdir, NULL, NULL, group->projDist * 0.5 );
+		VectorSet( lightdir, -lightdir[0], -lightdir[1], -lightdir[2] );
+		VectorNormalizeFast( lightdir );
+
+		NormalVectorToAxis( lightdir, M );
+		Matrix_EulerAngles( M, angles );
+
+		for( j = 0; j < 3; j++ )
+			ri.refdef.viewangles[j] = anglemod( angles[j] );
+
+		// position the light source in the opposite direction
+		VectorMA( group->origin, -group->projDist * 0.5, lightdir, ri.refdef.vieworg );
+
+		R_RenderView( &ri.refdef );
+
+		if( !( ri.params & RP_WORLDSURFVISIBLE ) )
+			continue; // we didn't cast any shadows on opaque meshes so discard this group
+
+		if( !( prevRI.shadowBits & group->bit ) )
+		{	// capture results from framebuffer into depth texture
+			prevRI.shadowBits |= group->bit;
+			GL_Bind( 0, group->depthTexture );
+			qglCopyTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, ri.refdef.x, ri.refdef.y, textureWidth, textureHeight );
+		}
+
+		Matrix4_Copy( ri.worldviewProjectionMatrix, group->worldviewProjectionMatrix );
+	}
+
+	oldRI.shadowBits |= prevRI.shadowBits;  // set shadowBits for all RI's so that we won't
+	memcpy( &ri, &prevRI, sizeof( refinst_t ) );
+	memcpy( &prevRI, &oldRI, sizeof( refinst_t ) );
+}
+
+//==================================================================================
+
+/*
+===============
+R_InitShadows
+===============
+*/
+void R_InitShadows( void )
+{
+	R_InitPlanarShadows();
+
+	R_InitShadowmaps();
+}
+
+/*
+===============
+R_ShutdownShadows
+===============
+*/
+void R_ShutdownShadows( void )
+{
+	r_planarShadowShader = NULL;
 }

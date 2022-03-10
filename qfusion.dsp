@@ -234,6 +234,10 @@ SOURCE=.\ref_gl\r_cin.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\ref_gl\r_cull.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\ref_gl\r_image.c
 # End Source File
 # Begin Source File
@@ -263,6 +267,10 @@ SOURCE=.\ref_gl\r_poly.c
 # Begin Source File
 
 SOURCE=.\ref_gl\r_program.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\r_register.c
 # End Source File
 # Begin Source File
 
@@ -382,6 +390,10 @@ SOURCE=.\client\console.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\win32\glw_win.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\client\input.h
 # End Source File
 # Begin Source File
@@ -414,6 +426,10 @@ SOURCE=.\ref_gl\r_backend.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\ref_gl\r_glimp.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\ref_gl\r_local.h
 # End Source File
 # Begin Source File
@@ -430,15 +446,15 @@ SOURCE=.\ref_gl\r_model.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\ref_gl\r_public.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\ref_gl\r_shader.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\ref_gl\r_shadow.h
-# End Source File
-# Begin Source File
-
-SOURCE=.\ref_gl\render.h
 # End Source File
 # Begin Source File
 
