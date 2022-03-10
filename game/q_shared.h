@@ -68,6 +68,7 @@ typedef enum {false, true}	qboolean;
 #define NULL ((void *)0)
 #endif
 
+#define APPLICATION			"QFusion"
 
 // angle indexes
 #define	PITCH				0		// up / down
@@ -108,6 +109,10 @@ typedef enum {false, true}	qboolean;
 #define	PRINT_ALL			0
 #define PRINT_DEVELOPER		1		// only print when "developer 1"
 
+// command line execution flags
+#define	EXEC_NOW	0				// don't return until completed
+#define	EXEC_INSERT	1				// insert at current position, but don't run yet
+#define	EXEC_APPEND	2				// add to end of the command buffer
 
 // destination class for gi.multicast()
 typedef enum
@@ -188,7 +193,7 @@ extern mat3_t axis_identity;
 // microsoft's fabs seems to be ungodly slow...
 //float Q_fabs (float f);
 //#define	fabs(f) Q_fabs(f)
-#if !defined C_ONLY && !defined __linux__ && !defined __sgi
+#if defined id386 && !defined __linux__
 extern long Q_ftol( float f );
 #else
 #define Q_ftol( f ) ( long ) (f)
@@ -208,9 +213,10 @@ float Q_RSqrt (float number);
 #define VectorCopy(a,b)			((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2])
 #define VectorClear(a)			((a)[0]=(a)[1]=(a)[2]=0)
 #define VectorNegate(a,b)		((b)[0]=-(a)[0],(b)[1]=-(a)[1],(b)[2]=-(a)[2])
-#define VectorSet(v, x, y, z)	((v)[0]=(x), v[1]=(y), v[2]=(z))
+#define VectorSet(v, x, y, z)	((v)[0]=(x),(v)[1]=(y),(v)[2]=(z))
 #define VectorAvg(a,b,c)		((c)[0]=((a)[0]+(b)[0])*0.5f,(c)[1]=((a)[1]+(b)[1])*0.5f, (c)[2]=((a)[2]+(b)[2])*0.5f)
 #define VectorMA(a,b,c,d)		((d)[0]=(a)[0]+(b)*(c)[0],(d)[1]=(a)[1]+(b)*(c)[1],(d)[2]=(a)[2]+(b)*(c)[2])
+#define Vector4Set(v, a, b, c, d)	((v)[0]=(a),(v)[1]=(b),(v)[2]=(c),(v)[3] = (d))
 #define Vector4Copy(a,b)		((b)[0]=(a)[0],(b)[1]=(a)[1],(b)[2]=(a)[2],(b)[3]=(a)[3])
 #define Vector4Scale(in,scale,out)		((out)[0]=(in)[0]*scale,(out)[1]=(in)[1]*scale,(out)[2]=(in)[2]*scale,(out)[3]=(in)[3]*scale)
 #define Vector4Add(a,b,c)		((c)[0]=(((a[0])+(b[0]))),(c)[1]=(((a[1])+(b[1]))),(c)[2]=(((a[2])+(b[2]))),(c)[3]=(((a[3])+(b[3])))) 
@@ -252,6 +258,7 @@ float anglemod(float a);
 float LerpAngle (float a1, float a2, const float frac);
 void VecToAngles (const vec3_t vec, vec3_t angles);
 void AnglesToAxis (vec3_t angles, mat3_t axis);
+float ColorNormalize (vec3_t in, vec3_t out);
 
 float CalcFov (float fov_x, float width, float height);
 
@@ -344,6 +351,13 @@ extern	vec4_t		colorDkGrey;
 #define COLOR_MAGENTA	'6'
 #define COLOR_WHITE		'7'
 #define ColorIndex(c)	( ( (c) - '0' ) & 7 )
+
+#define	COLOR_R(rgba)		((rgba) & 0xFF)
+#define	COLOR_G(rgba)		(((rgba) >> 8) & 0xFF)
+#define	COLOR_B(rgba)		(((rgba) >> 16) & 0xFF)
+#define	COLOR_A(rgba)		(((rgba) >> 24) & 0xFF)
+#define COLOR_RGB(r,g,b)	(((r) << 0)|((g) << 8)|((b) << 16))
+#define COLOR_RGBA(r,g,b,a) (((r) << 0)|((g) << 8)|((b) << 16)|((a) << 24))
 
 #define S_COLOR_BLACK	"^0"
 #define S_COLOR_RED		"^1"
@@ -1070,24 +1084,23 @@ typedef enum {
 } keydest_t;
 
 // player_state->stats[] indexes
-#define STAT_HEALTH_ICON		0
-#define	STAT_HEALTH				1
-#define	STAT_AMMO_ICON			2
-#define	STAT_AMMO				3
-#define	STAT_ARMOR_ICON			4
-#define	STAT_ARMOR				5
-#define	STAT_SELECTED_ICON		6
-#define	STAT_PICKUP_ICON		7
-#define	STAT_PICKUP_STRING		8
-#define	STAT_TIMER_ICON			9
-#define	STAT_TIMER				10
-#define	STAT_HELPICON			11
-#define	STAT_SELECTED_ITEM		12
-#define	STAT_LAYOUTS			13
-#define	STAT_FRAGS				14
-#define	STAT_FLASHES			15		// cleared each frame, 1 = health, 2 = armor
-#define STAT_CHASE				16
-#define STAT_SPECTATOR			17
+#define	STAT_HEALTH				0
+#define	STAT_AMMO_ICON			1
+#define	STAT_AMMO				2
+#define	STAT_ARMOR_ICON			3
+#define	STAT_ARMOR				4
+#define	STAT_SELECTED_ICON		5
+#define	STAT_PICKUP_ICON		6
+#define	STAT_PICKUP_STRING		7
+#define	STAT_TIMER_ICON			8
+#define	STAT_TIMER				9
+#define	STAT_HELPICON			10
+#define	STAT_SELECTED_ITEM		11
+#define	STAT_LAYOUTS			12
+#define	STAT_FRAGS				13
+#define	STAT_FLASHES			14		// cleared each frame, 1 = health, 2 = armor
+#define STAT_CHASE				15
+#define STAT_SPECTATOR			16
 
 #define	MAX_STATS				32
 
@@ -1225,6 +1238,7 @@ typedef struct entity_state_s
 	int		event;			// impulse events -- muzzle flashes, footsteps, etc
 							// events only go out for a single frame, they
 							// are automatically cleared each frame
+	int		light;			// constant light
 } entity_state_t;
 
 //==============================================

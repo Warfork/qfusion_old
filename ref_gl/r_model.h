@@ -48,6 +48,7 @@ typedef struct
 {
 	char			name[MAX_QPATH];
 	int				flags;
+	int				contents;
 	shader_t		*shader;
 } mshaderref_t;
 
@@ -84,41 +85,34 @@ typedef struct msurface_s
 
     float			origin[3];
 
+	int				fragmentframe;		// for R_GetClippedFragments
+
 	int				lightmaptexturenum;
 	unsigned int	dlightbits;
+	int				dlightframe;
 } msurface_t;
-
-#define CONTENTS_NODE			-1
 
 typedef struct mnode_s
 {
 // common with leaf
-	int				contents;		// negative number to differentiate from leafs
-	int				visframe;		// node needs to be traversed if current
-	
-	float			mins[3];
-	float			maxs[3];		// for bounding box culling
-
-	struct mnode_s	*parent;
+	cplane_t		*plane;
 
 // node specific
-	cplane_t		*plane;
 	struct mnode_s	*children[2];
 } mnode_t;
-
 
 typedef struct mleaf_s
 {
 // common with node
-	int				contents;		// will be a positive contents number
-	int				visframe;		// node needs to be traversed if current
+	cplane_t		*plane;
+
+// leaf specific
+	int				visframe;
+	struct mleaf_s	*vischain;
 
 	float			mins[3];
 	float			maxs[3];		// for bounding box culling
 
-	struct mnode_s	*parent;
-
-// leaf specific
 	int				cluster;
 	int				area;
 
@@ -156,7 +150,7 @@ typedef struct
 	vec3_t			*normals_array;		// normals
 	vec2_t			*st_array;			// texture coords		
 	vec2_t			*lmst_array;		// lightmap texture coords
-	vec4_t			*colors_array;		// colors used for vertex lighting
+	byte_vec4_t		*colors_array;		// colors used for vertex lighting
 
 	int				numnodes;
 	mnode_t			*nodes;
@@ -201,6 +195,7 @@ ALIAS MODELS
 
 ==============================================================================
 */
+
 //
 // in memory representation
 //
@@ -248,7 +243,7 @@ typedef struct
 	maliasskin_t	*skins;
 } maliasmesh_t;
 
-typedef struct
+typedef struct maliasmodel_s
 {
     int				numframes;
 	maliasframe_t	*frames;
@@ -321,7 +316,9 @@ typedef struct
 
 typedef struct
 {
+	char			name[DPM_MAX_NAME];
 	signed int		parent;
+	unsigned int	flags;
 } dpmbone_t;
 
 typedef struct
@@ -425,6 +422,9 @@ typedef struct model_s
 //
 	smodel_t		*smodel;
 
+	int				numlods;
+	struct model_s	**lods;	
+
 	int				extradatasize;
 	void			*extradata;
 } model_t;
@@ -432,8 +432,9 @@ typedef struct model_s
 typedef struct
 {
 	const char		*header;
-	int				headerlen;
-	int				maxsize;
+	int				headerLen;
+	int				maxSize;
+	int				maxLods;
 	void			(*loader) ( model_t *mod, void *buffer );
 } modelformatdescriptor_t;
 

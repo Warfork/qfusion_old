@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2001-2002 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -25,6 +25,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 extern vec4_t	vertexArray[MAX_ARRAY_VERTS*2];	// the second half is for shadow volumes
 extern vec3_t	normalsArray[MAX_ARRAY_VERTS];
+extern index_t	tempIndexesArray[MAX_ARRAY_INDEXES];
 
 extern vec4_t	tempVertexArray[MAX_ARRAY_VERTS];
 extern vec3_t	tempNormalsArray[MAX_ARRAY_VERTS];
@@ -40,7 +41,7 @@ extern int		inNeighborsArray[MAX_ARRAY_NEIGHBORS];
 extern vec3_t	inTrNormalsArray[MAX_ARRAY_TRIANGLES];
 extern vec2_t	inCoordsArray[MAX_ARRAY_VERTS];
 extern vec2_t	inLightmapCoordsArray[MAX_ARRAY_VERTS];
-extern vec4_t	inColorsArray[MAX_ARRAY_VERTS];
+extern byte_vec4_t	inColorsArray[MAX_ARRAY_VERTS];
 
 extern int		numVerts, numIndexes, numColors;
 
@@ -51,13 +52,15 @@ extern float	*currentVertex;
 extern float	*currentNormal;
 extern float	*currentCoords;
 extern float	*currentLightmapCoords;
-extern float	*currentColor;
+extern byte		*currentColor;
 
 extern unsigned int	r_numverts;
 extern unsigned int	r_numtris;
 
 extern qboolean r_blocked;
 extern qboolean r_arrays_locked;
+
+extern int		r_features;
 
 extern unsigned int r_quad_indexes[6];
 
@@ -82,6 +85,7 @@ void R_DrawTriangleStrips (index_t *indexes, int numindexes);
 #define MF_LMCOORDS		8
 #define MF_COLORS		16
 #define MF_TRNORMALS	32
+#define MF_NOCULL		64
 
 static inline void R_ResetTexState (void)
 {
@@ -99,7 +103,6 @@ static inline void R_PushIndexes ( index_t *indexes, int *neighbors, vec3_t *trn
 {
 	int i;
 	int numTris;
-
 
 	// this is a fast path for non-batched geometry, use carefully 
 	// used on pics, sprites, .dpm, .md3 and .md2 models
@@ -165,6 +168,8 @@ static inline void R_PushMesh ( mesh_t *mesh, int features )
 		return;
 	}
 
+	r_features = features;
+
 	R_PushIndexes ( mesh->indexes, mesh->trneighbors, mesh->trnormals, mesh->numindexes, features );
 
 	numverts = mesh->numvertexes;
@@ -203,7 +208,7 @@ static inline void R_PushMesh ( mesh_t *mesh, int features )
 	}
 
 	if ( mesh->colors_array && (features & MF_COLORS) ) {
-		memcpy ( currentColor, mesh->colors_array, numverts * sizeof(vec4_t) );
+		memcpy ( currentColor, mesh->colors_array, numverts * sizeof(byte_vec4_t) );
 		currentColor += numverts * 4;
 	}
 
@@ -217,7 +222,7 @@ static inline qboolean R_BackendOverflow ( mesh_t *mesh )
 		numIndexes + mesh->numindexes > MAX_ARRAY_INDEXES );
 }
 
-static inline qboolean R_MeshIsInvalid ( mesh_t *mesh )
+static inline qboolean R_InvalidMesh ( mesh_t *mesh )
 {
 	return ( !mesh->numvertexes || !mesh->numindexes || 
 		mesh->numvertexes > MAX_ARRAY_VERTS || mesh->numindexes > MAX_ARRAY_INDEXES );

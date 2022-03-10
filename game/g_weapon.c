@@ -389,6 +389,7 @@ fire_grenade
 static void Grenade_Explode (edict_t *ent)
 {
 	vec3_t		origin;
+	vec3_t		dir;
 	int			mod;
 
 	if (ent->owner->client)
@@ -422,6 +423,8 @@ static void Grenade_Explode (edict_t *ent)
 	T_RadiusDamage(ent, ent->owner, ent->dmg, ent->enemy, ent->dmg_radius, mod);
 
 	VectorMA (ent->s.origin, -0.02, ent->velocity, origin);
+	VectorSet (dir, 0, 0, 1);
+
 	gi.WriteByte (svc_temp_entity);
 	if (ent->waterlevel)
 	{
@@ -438,6 +441,7 @@ static void Grenade_Explode (edict_t *ent)
 			gi.WriteByte (TE_ROCKET_EXPLOSION);
 	}
 	gi.WritePosition (origin);
+	gi.WriteDir (dir);
 	gi.multicast (ent->s.origin, MULTICAST_PHS);
 
 	G_FreeEdict (ent);
@@ -514,9 +518,11 @@ static void LaserGrenade_Touch (edict_t *ent, edict_t *other, cplane_t *plane, c
 		return;
 	}
 
-	if (other->takedamage)
+	if (other != world)
 	{
-		ent->enemy = other;
+		if (other->takedamage)
+			ent->enemy = other;
+
 		Grenade_Explode (ent);
 		return;
 	}
@@ -654,6 +660,10 @@ void rocket_touch (edict_t *ent, edict_t *other, cplane_t *plane, csurface_t *su
 	else
 		gi.WriteByte (TE_ROCKET_EXPLOSION);
 	gi.WritePosition (origin);
+	if (!plane)
+		gi.WriteDir (vec3_origin);
+	else
+		gi.WriteDir (plane->normal);
 	gi.multicast (ent->s.origin, MULTICAST_PHS);
 
 	G_FreeEdict (ent);
@@ -912,7 +922,7 @@ void bfg_think (edict_t *self)
 				gi.WriteByte (4);
 				gi.WritePosition (tr.endpos);
 				gi.WriteDir (tr.plane.normal);
-				gi.WriteByte (self->s.skinnum);
+				gi.WriteLong (self->s.skinnum);
 				gi.multicast (tr.endpos, MULTICAST_PVS);
 				break;
 			}

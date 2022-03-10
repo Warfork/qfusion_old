@@ -31,8 +31,6 @@ bmodel_t	*r_worldbmodel;
 
 meshlist_t	r_worldlist;
 
-int			r_entvisframe[MAX_ENTITIES][2];
-
 float		gldepthmin, gldepthmax;
 
 glconfig_t	gl_config;
@@ -44,11 +42,14 @@ image_t		*r_whitetexture;
 image_t		*r_dlighttexture;
 image_t		*r_fogtexture;
 
+shader_t	*particle_shader;
+
 entity_t	*currententity;
 model_t		*currentmodel;
 
 cplane_t	frustum[4];
 
+mleaf_t		*r_vischain;		// linked list of visible leafs
 int			r_visframecount;	// bumped when going to a new PVS
 int			r_framecount;		// used for dlight push checking
 
@@ -81,7 +82,7 @@ mat4_t		r_projection_matrix;
 //
 refdef_t	r_newrefdef;
 
-int			r_viewcluster, r_viewcluster2, r_oldviewcluster, r_oldviewcluster2;
+int			r_viewcluster, r_oldviewcluster;
 
 cvar_t	*r_norefresh;
 cvar_t	*r_drawentities;
@@ -116,12 +117,15 @@ cvar_t	*r_shadows;
 cvar_t	*r_shadows_alpha;
 cvar_t	*r_shadows_nudge;
 
-cvar_t	*r_colorbits;
+cvar_t	*r_lodbias;
+
 cvar_t	*r_stencilbits;
+cvar_t	*r_colorbits;
+cvar_t	*r_texturebits;
+cvar_t	*r_texturemode;
 cvar_t	*r_mode;
 cvar_t	*r_picmip;
 cvar_t	*r_skymip;
-cvar_t	*r_lightmap;
 cvar_t	*r_nobind;
 cvar_t	*r_clear;
 cvar_t	*r_polyblend;
@@ -138,6 +142,7 @@ cvar_t	*gl_ext_sgis_mipmap;
 cvar_t	*gl_ext_texture_env_combine;
 cvar_t	*gl_ext_NV_texture_env_combine4;
 cvar_t	*gl_ext_compressed_textures;
+cvar_t	*gl_ext_bgra;
 
 cvar_t	*gl_log;
 cvar_t	*gl_drawbuffer;
@@ -145,9 +150,6 @@ cvar_t  *gl_driver;
 cvar_t	*gl_finish;
 cvar_t	*gl_cull;
 cvar_t	*gl_swapinterval;
-cvar_t	*gl_texturemode;
-cvar_t	*gl_texturealphamode;
-cvar_t	*gl_texturesolidmode;
 
 cvar_t	*vid_fullscreen;
 cvar_t	*vid_gamma;
@@ -159,7 +161,7 @@ R_CullBox
 Returns true if the box is completely outside the frustum
 =================
 */
-qboolean R_CullBox (vec3_t mins, vec3_t maxs)
+qboolean R_CullBox (const vec3_t mins, const vec3_t maxs, const int clipflags)
 {
 	int		i;
 	cplane_t *p;
@@ -169,6 +171,10 @@ qboolean R_CullBox (vec3_t mins, vec3_t maxs)
 
 	for (i=0,p=frustum ; i<4; i++,p++)
 	{
+		if ( !(clipflags & (1<<i)) ) {
+			continue;
+		}
+
 		switch (p->signbits)
 		{
 		case 0:
@@ -219,7 +225,7 @@ R_CullSphere
 Returns true if the sphere is completely outside the frustum
 =================
 */
-qboolean R_CullSphere (vec3_t centre, float radius)
+qboolean R_CullSphere (const vec3_t centre, const float radius, const int clipflags)
 {
 	int		i;
 	cplane_t *p;
@@ -229,6 +235,10 @@ qboolean R_CullSphere (vec3_t centre, float radius)
 
 	for (i=0,p=frustum ; i<4; i++,p++)
 	{
+		if ( !(clipflags & (1<<i)) ) {
+			continue;
+		}
+
 		if ( DotProduct ( centre, p->normal ) - p->dist <= -radius )
 			return true;
 	}
@@ -241,7 +251,7 @@ qboolean R_CullSphere (vec3_t centre, float radius)
 R_FogForSphere
 =============
 */
-mfog_t *R_FogForSphere( vec3_t centre, float radius )
+mfog_t *R_FogForSphere( const vec3_t centre, const float radius )
 {
 	int			i, j;
 	mfog_t		*fog;
@@ -327,6 +337,26 @@ void R_TranslateForEntity (entity_t *e)
 	qglLoadMatrixf ( m );
 }
 
+void R_LerpAttachment ( orientation_t *orient, model_t *mod, int frame, int oldframe, float backlerp, char *name )
+{
+	if ( !orient ) {
+		return;
+	}
+
+	VectorClear ( orient->origin );
+	Matrix3_Identity ( orient->axis );
+
+	if ( !name ) {
+		return;
+	}
+
+	if ( mod->aliasmodel ) {
+		R_AliasModelLerpTag ( orient, mod->aliasmodel, frame, oldframe, backlerp, name );
+	} else if ( mod->dpmmodel ) {
+		R_DarkPlacesModelLerpAttachment ( orient, mod->dpmmodel, frame, oldframe, backlerp, name );
+	}
+}
+
 /*
 =============================================================
 
@@ -337,8 +367,8 @@ void R_TranslateForEntity (entity_t *e)
 
 static	vec4_t			spr_xyz[4];
 static	vec2_t			spr_st[4];
+static	byte_vec4_t		spr_color[4];
 
-static	vec3_t			spr_mins, spr_maxs;
 static	mesh_t			spr_mesh;
 static	meshbuffer_t	spr_mbuffer;
 
@@ -356,9 +386,6 @@ void R_DrawSpriteModel (meshbuffer_t *mb)
 	sframe_t	*frame;
 	smodel_t	*psprite;
 	entity_t	*e = mb->entity;
-
-	// don't even bother culling, because it's just a single
-	// polygon without a surface cache
 
 	psprite = e->model->smodel;
 	frame = psprite->frames + e->frame;
@@ -380,6 +407,22 @@ void R_DrawSpriteModel (meshbuffer_t *mb)
 	VectorScale (up, -frame->origin_y, point);
 	VectorMA (point, frame->width - frame->origin_x, right, spr_mesh.xyz_array[3]);
 	
+	if ( e->scale != 1.0f ) {
+		VectorScale ( spr_mesh.xyz_array[0], e->scale, spr_mesh.xyz_array[0] );
+		VectorScale ( spr_mesh.xyz_array[1], e->scale, spr_mesh.xyz_array[1] );
+		VectorScale ( spr_mesh.xyz_array[2], e->scale, spr_mesh.xyz_array[2] );
+		VectorScale ( spr_mesh.xyz_array[3], e->scale, spr_mesh.xyz_array[3] );
+	}
+
+	// the code below is disgusting, but some q3a shaders use 'rgbgen vertex'
+	// and 'alphagen vertex' for effects instead of 'rgbgen entity' and 'alphagen entity'
+	if ( mb->shader->features & MF_COLORS ) {
+		Vector4Copy ( e->color, spr_mesh.colors_array[0] );
+		Vector4Copy ( e->color, spr_mesh.colors_array[1] );
+		Vector4Copy ( e->color, spr_mesh.colors_array[2] );
+		Vector4Copy ( e->color, spr_mesh.colors_array[3] );
+	}
+
 	spr_mbuffer.shader = mb->shader;
 	spr_mbuffer.entity = e;
 	spr_mbuffer.fog = mb->fog;
@@ -405,20 +448,21 @@ void R_AddSpriteModelToList (entity_t *e)
 	sframe_t	*frame;
 	smodel_t	*psprite;
 
-	// don't even bother culling, because it's just a single
-	// polygon without a surface cache
 	if ( !(psprite = e->model->smodel) ) {
 		return;
 	}
+
+	// don't even bother culling, because it's just a single
+	// polygon without a surface cache
 
 	e->frame %= psprite->numframes;
 	frame = psprite->frames + e->frame;
 
 	// select skin
 	if ( e->customShader ) {
-		R_AddMeshToBuffer ( NULL, R_FogForSphere ( e->origin, frame->radius ), NULL, e->customShader, 0 );
+		R_AddMeshToBuffer ( &spr_mesh, R_FogForSphere ( e->origin, frame->radius ), NULL, e->customShader, 0 );
 	} else {
-		R_AddMeshToBuffer ( NULL, R_FogForSphere ( e->origin, frame->radius ), NULL, frame->shader, 0 );
+		R_AddMeshToBuffer ( &spr_mesh, R_FogForSphere ( e->origin, frame->radius ), NULL, frame->shader, 0 );
 	}
 }
 
@@ -440,33 +484,55 @@ void R_DrawSpritePoly (meshbuffer_t *mb)
 		right = vright;
 	}
 
-	VectorAdd (up, right, point);
-	VectorNormalizeFast (point);
-	VectorScale (point, e->radius, point);
-	VectorCopy (point, spr_mesh.xyz_array[0]);
-
-	VectorNegate (point, spr_mesh.xyz_array[2]);
+	VectorAdd ( up, right, point );
+	VectorNormalizeFast ( point );
+	VectorScale ( point, e->radius, point );
+	VectorCopy ( point, spr_mesh.xyz_array[1] );
+	VectorNegate ( point, spr_mesh.xyz_array[3] );
 
 	VectorSubtract ( up, right, point );
 	VectorNormalizeFast ( point );
 	VectorScale ( point, e->radius, point );
-	VectorCopy ( point, spr_mesh.xyz_array[1] );
-
-	VectorNegate ( point, spr_mesh.xyz_array[3] );
+	VectorCopy ( point, spr_mesh.xyz_array[2] );
+	VectorNegate ( point, spr_mesh.xyz_array[0] );
 	
+	if ( e->scale != 1.0f ) {
+		VectorScale ( spr_mesh.xyz_array[0], e->scale, spr_mesh.xyz_array[0] );
+		VectorScale ( spr_mesh.xyz_array[1], e->scale, spr_mesh.xyz_array[1] );
+		VectorScale ( spr_mesh.xyz_array[2], e->scale, spr_mesh.xyz_array[2] );
+		VectorScale ( spr_mesh.xyz_array[3], e->scale, spr_mesh.xyz_array[3] );
+	}
+
+	// the code below is disgusting, but some q3a shaders use 'rgbgen vertex'
+	// and 'alphagen vertex' for effects instead of 'rgbgen entity' and 'alphagen entity'
+	if ( mb->shader->features & MF_COLORS ) {
+		Vector4Copy ( e->color, spr_mesh.colors_array[0] );
+		Vector4Copy ( e->color, spr_mesh.colors_array[1] );
+		Vector4Copy ( e->color, spr_mesh.colors_array[2] );
+		Vector4Copy ( e->color, spr_mesh.colors_array[3] );
+	}
+
 	spr_mbuffer.shader = mb->shader;
 	spr_mbuffer.entity = e;
 	spr_mbuffer.fog = mb->fog;
 
-	features = MF_NONBATCHED | mb->shader->features;
+	features = MF_NOCULL | mb->shader->features;
 	if ( r_shownormals->value ) {
 		features |= MF_NORMALS;
 	}
 
-	R_TranslateForEntity ( e );
-
-	R_PushMesh ( &spr_mesh, features );
-	R_RenderMeshBuffer ( &spr_mbuffer, false );
+	if ( !(mb->shader->flags & SHADER_ENTITY_MERGABLE) ) {
+		features |= MF_NONBATCHED;
+		R_TranslateForEntity ( e );
+		R_PushMesh ( &spr_mesh, features );
+		R_RenderMeshBuffer ( &spr_mbuffer, false );
+	} else {
+		VectorAdd ( spr_mesh.xyz_array[0], e->origin, spr_mesh.xyz_array[0] );
+		VectorAdd ( spr_mesh.xyz_array[1], e->origin, spr_mesh.xyz_array[1] );
+		VectorAdd ( spr_mesh.xyz_array[2], e->origin, spr_mesh.xyz_array[2] );
+		VectorAdd ( spr_mesh.xyz_array[3], e->origin, spr_mesh.xyz_array[3] );
+		R_PushMesh ( &spr_mesh, features );
+	}
 }
 
 /*
@@ -481,7 +547,10 @@ void R_AddSpritePolyToList (entity_t *e)
 		return;
 	}
 
-	R_AddMeshToBuffer ( NULL, R_FogForSphere ( e->origin, e->radius ), NULL, e->customShader, 0 );
+	// don't even bother culling, because it's just a single
+	// polygon without a surface cache
+
+	R_AddMeshToBuffer ( &spr_mesh, R_FogForSphere ( e->origin, e->radius ), NULL, e->customShader, 0 );
 }
 
 /*
@@ -497,6 +566,7 @@ void R_InitSpriteModels (void)
 	spr_mesh.numvertexes = 4;
 	spr_mesh.xyz_array = spr_xyz;
 	spr_mesh.st_array = spr_st;
+	spr_mesh.colors_array = spr_color;
 
 	spr_mesh.st_array[0][0] = 0;
 	spr_mesh.st_array[0][1] = 0;
@@ -520,7 +590,7 @@ void R_InitSpriteModels (void)
 
 static	vec4_t			flare_xyz[4];
 static	vec2_t			flare_st[4];
-static	vec4_t			flare_color[4];
+static	byte_vec4_t		flare_color[4];
 
 static	mesh_t			flare_mesh;
 static	meshbuffer_t	flare_mbuffer;
@@ -558,22 +628,22 @@ void R_PushFlare ( meshbuffer_t *mb )
 
 	VectorSubtract (origin, v, flare_mesh.xyz_array[3]);
 
-	flarescale = (1.0 / 255.0) / r_flarefade->value;
-	color[0] = (( mb->dlightbits	   ) & 0xFF) * flarescale;
-	color[1] = (( mb->dlightbits >> 8  ) & 0xFF) * flarescale;
-	color[2] = (( mb->dlightbits >> 16 ) & 0xFF) * flarescale;
-	color[3] = 1.0f;
+	flarescale = 1.0 / r_flarefade->value;
+	Vector4Set ( color, 
+		COLOR_R ( mb->dlightbits ) * flarescale,
+		COLOR_G ( mb->dlightbits ) * flarescale,
+		COLOR_B ( mb->dlightbits ) * flarescale, 255 );
 
-	VectorCopy ( color, flare_mesh.colors_array[0] );
-	VectorCopy ( color, flare_mesh.colors_array[1] );
-	VectorCopy ( color, flare_mesh.colors_array[2] );
-	VectorCopy ( color, flare_mesh.colors_array[3] );
+	Vector4Copy ( color, flare_mesh.colors_array[0] );
+	Vector4Copy ( color, flare_mesh.colors_array[1] );
+	Vector4Copy ( color, flare_mesh.colors_array[2] );
+	Vector4Copy ( color, flare_mesh.colors_array[3] );
 
 	flare_mbuffer.fog = mb->fog;
 	flare_mbuffer.shader = mb->shader;
 	flare_mbuffer.entity = mb->entity;
 
-	R_PushMesh  ( &flare_mesh, mb->shader->features );
+	R_PushMesh  ( &flare_mesh, MF_NOCULL | mb->shader->features );
 }
 
 /*
@@ -601,6 +671,8 @@ void R_InitFlares (void)
 	flare_mesh.st_array[3][1] = 1;
 
 	flare_mbuffer.mesh = &flare_mesh;
+
+	particle_shader = R_RegisterShader ( "particle" );
 }
 
 
@@ -664,6 +736,7 @@ R_DrawNullModel
 */
 void R_DrawNullModel (void)
 {
+	qglDepthMask ( GL_FALSE );
 	qglBegin ( GL_LINES );
 
 	qglColor4f ( 1, 0, 0, 0.5 );
@@ -685,14 +758,15 @@ void R_DrawNullModel (void)
 		currententity->origin[2] + currententity->axis[2][2] * 15);
 
 	qglEnd ();
+	qglDepthMask ( GL_TRUE );
 }
 
 /*
 =============
-R_SortEntitiesOnList
+R_AddEntitiesToList
 =============
 */
-void R_SortEntitiesOnList (void)
+void R_AddEntitiesToList (void)
 {
 	int		i;
 
@@ -756,10 +830,10 @@ void R_SortEntitiesOnList (void)
 
 /*
 =============
-R_DrawEntitiesOnList
+R_DrawEntities
 =============
 */
-void R_DrawEntitiesOnList (void)
+void R_DrawEntities (void)
 {
 	int		i;
 
@@ -768,10 +842,9 @@ void R_DrawEntitiesOnList (void)
 
 	GL_EnableMultitexture ( false );
 	qglDepthFunc ( GL_LEQUAL );
-	qglDepthMask ( GL_FALSE );
-	qglDisable (GL_TEXTURE_2D);
-	GLSTATE_DISABLE_ALPHATEST;
-	GLSTATE_ENABLE_BLEND;
+	qglDisable ( GL_TEXTURE_2D );
+	qglDisable ( GL_ALPHA_TEST );
+	qglEnable ( GL_BLEND );
 	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
 	// draw non-transparent first
@@ -779,10 +852,6 @@ void R_DrawEntitiesOnList (void)
 	{
 		currententity = &r_newrefdef.entities[i];
 
-		if ( !r_portalview && !r_mirrorview ) {
-			r_entvisframe[currententity->number][0] = r_entvisframe[currententity->number][1] = 0;
-		}
-		
 		if ( r_mirrorview ) {
 			if ( currententity->flags & RF_WEAPONMODEL ) 
 				continue;
@@ -811,8 +880,8 @@ void R_DrawEntitiesOnList (void)
 		}
 	}
 
-	GLSTATE_DISABLE_BLEND;
-	qglEnable (GL_TEXTURE_2D);
+	qglDisable ( GL_BLEND );
+	qglEnable ( GL_TEXTURE_2D );
 }
 
 /*
@@ -824,61 +893,63 @@ void R_DrawParticles (void)
 {
 	const particle_t *p;
 	int				i;
-	vec3_t			r_pup, r_pright;
+	vec3_t			up, right;
+	vec3_t			corner, r_pup, r_pright;
 	float			scale;
-	byte_vec4_t		pcolor;
 
-	if( !r_newrefdef.particles )
+	if( !r_newrefdef.num_particles || !particle_shader )
 		return;
 
 	VectorScale ( vup, 1.5f, r_pup );
 	VectorScale ( vright, 1.5f, r_pright );
 
-	GL_EnableMultitexture ( false );
-    GL_Bind( r_particletexture->texnum );
-	qglDepthMask( GL_FALSE );		// no z buffering
-	GLSTATE_DISABLE_ALPHATEST;
-	GLSTATE_ENABLE_BLEND;
-	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	qglBegin ( GL_TRIANGLES );
+	flare_mbuffer.fog = NULL;				// FIXME
+	flare_mbuffer.entity = &r_worldent;
+	flare_mbuffer.shader = particle_shader;
 
 	for ( i=0,p = r_newrefdef.particles ; i < r_newrefdef.num_particles ; i++, p++ )
 	{
-		// hack a scale up to keep particles from disapearing
+		// hack a scale up to keep particles from disappearing
 		scale = ( p->origin[0] - r_origin[0] ) * vpn[0] + 
 			( p->origin[1] - r_origin[1] ) * vpn[1] +
 			( p->origin[2] - r_origin[2] ) * vpn[2];
 
-		if (scale <= 0) {
-			continue;
-		} else if (scale < 20) {
+		if ( scale < 20 ) {
 			scale = 1;
 		} else {
 			scale = 1 + scale * 0.004f;
 		}
+		scale *= p->scale;
 
-		*(int *)pcolor = d_8to24table[p->color];
-		pcolor[3] = p->alpha*255;
+		VectorScale ( r_pup, scale, up );
+		VectorScale ( r_pright, scale, right );
 
-		qglColor4ubv ( pcolor );
+		*(int *)flare_mesh.colors_array[0] = *(int *)p->color;
+		*(int *)flare_mesh.colors_array[1] = *(int *)p->color;
+		*(int *)flare_mesh.colors_array[2] = *(int *)p->color;
+		*(int *)flare_mesh.colors_array[3] = *(int *)p->color;
 
-		qglTexCoord2f( 0.0625, 0.0625 );
-		qglVertex3fv( p->origin );
+		corner[0] = p->origin[0] - 0.5f * (up[0] + right[0]);
+		corner[1] = p->origin[1] - 0.5f * (up[1] + right[1]);
+		corner[2] = p->origin[2] - 0.5f * (up[2] + right[2]);
 
-		qglTexCoord2f( 1.0625, 0.0625 );
-		qglVertex3f( p->origin[0] + r_pup[0]*scale, 
-					 p->origin[1] + r_pup[1]*scale, 
-					 p->origin[2] + r_pup[2]*scale);
+		VectorSet ( flare_mesh.xyz_array[0], corner[0] + up[0] + right[0], 
+			corner[1] + up[1] + right[1], corner[2] + up[2] + right[2] );
+		VectorSet ( flare_mesh.xyz_array[1], corner[0] + up[0], 
+			corner[1] + up[1], corner[2] + up[2] );
+		VectorSet ( flare_mesh.xyz_array[2], corner[0], corner[1], corner[2] );
+		VectorSet ( flare_mesh.xyz_array[3], corner[0] + right[0],
+			corner[1] + right[1], corner[2] + right[2]);
 
-		qglTexCoord2f( 0.0625, 1.0625 );
-		qglVertex3f( p->origin[0] + r_pright[0]*scale, 
-					 p->origin[1] + r_pright[1]*scale, 
-					 p->origin[2] + r_pright[2]*scale);
+		R_PushMesh ( &flare_mesh, flare_mbuffer.shader->features );
+
+		if ( R_BackendOverflow (&flare_mesh) || (i == r_newrefdef.num_particles - 1) ) {
+			R_RenderMeshBuffer (&flare_mbuffer, false);
+		}
 	}
 
-	qglEnd ();
 	qglColor4f ( 1, 1, 1, 1 );
-	GLSTATE_DISABLE_BLEND;
+	qglDisable ( GL_BLEND );
 	qglDepthMask( GL_TRUE );		// back to normal Z buffering
 }
 
@@ -894,7 +965,7 @@ void R_PolyBlend (void)
 	if (v_blend[3] < 0.01f)
 		return;
 
-	GLSTATE_ENABLE_BLEND;
+	qglEnable ( GL_BLEND );
 	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 	qglDisable (GL_DEPTH_TEST);
 	qglDisable (GL_TEXTURE_2D);
@@ -914,7 +985,7 @@ void R_PolyBlend (void)
 	qglVertex2f (-5, 10);
 	qglEnd ();
 
-	GLSTATE_DISABLE_BLEND;
+	qglDisable ( GL_BLEND );
 	qglEnable (GL_TEXTURE_2D);
 
 	qglColor4f(1,1,1,1);
@@ -933,7 +1004,7 @@ void R_ApplySoftwareGamma (void)
 	if (!r_ignorehwgamma->value || gl_state.gammaramp)
 		return;
 
-	GLSTATE_ENABLE_BLEND;
+	qglEnable ( GL_BLEND );
 	qglBlendFunc ( GL_DST_COLOR, GL_ONE );
 	qglDisable (GL_DEPTH_TEST);
 	qglDisable (GL_TEXTURE_2D);
@@ -967,7 +1038,7 @@ void R_ApplySoftwareGamma (void)
 	qglEnd ();
 
 	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
-	GLSTATE_DISABLE_BLEND;
+	qglDisable ( GL_BLEND );
 	qglEnable (GL_TEXTURE_2D);
 
 	qglColor4f(1,1,1,1);
@@ -975,7 +1046,7 @@ void R_ApplySoftwareGamma (void)
 
 void R_ShadowBlend (void)
 {
-	if ( r_shadows->value != 1 || !gl_state.stencil_enabled ) {
+	if ( r_shadows->value != 2 || !gl_state.stencil_enabled ) {
 		return;
 	}
 
@@ -986,15 +1057,15 @@ void R_ShadowBlend (void)
 	qglMatrixMode(GL_MODELVIEW);
     qglLoadIdentity ();
 
-	GLSTATE_DISABLE_ALPHATEST;
-	GLSTATE_ENABLE_BLEND;
-	GLSTATE_DISABLE_CULL;
-	qglDisable (GL_DEPTH_TEST);
-	qglDisable (GL_TEXTURE_2D);
+	qglDisable ( GL_ALPHA_TEST );
+	qglEnable ( GL_BLEND );
+	qglDisable ( GL_CULL_FACE );
+	qglDisable ( GL_DEPTH_TEST );
+	qglDisable ( GL_TEXTURE_2D );
 
 	qglColor4f ( 0, 0, 0, bound (0.0f, r_shadows_alpha->value, 1.0f) );
 
-	GLSTATE_ENABLE_STENCIL
+	qglEnable ( GL_STENCIL_TEST );
 	qglStencilFunc (GL_NOTEQUAL, 128, 0xFF);
 	qglStencilOp (GL_KEEP, GL_KEEP, GL_KEEP);
 
@@ -1004,10 +1075,9 @@ void R_ShadowBlend (void)
 	qglVertex2f (-5, 10);
 	qglEnd ();
 
-	GLSTATE_DISABLE_STENCIL;
-	GLSTATE_DISABLE_BLEND;
-	qglEnable (GL_TEXTURE_2D);
-	GLSTATE_ENABLE_ALPHATEST;
+	qglDisable ( GL_STENCIL_TEST );
+	qglDisable ( GL_BLEND );
+	qglEnable ( GL_TEXTURE_2D );
 
 	qglColor4f(1,1,1,1);
 }
@@ -1045,7 +1115,7 @@ R_SetupFrame
 void R_SetupFrame (void)
 {
 	int i;
-	mleaf_t	*leaf;
+	mleaf_t *leaf;
 
 	r_framecount++;
 
@@ -1058,37 +1128,15 @@ void R_SetupFrame (void)
 // current viewcluster
 	if ( !( r_newrefdef.rdflags & RDF_NOWORLDMODEL ) && !r_mirrorview )
 	{
-		r_oldviewcluster = r_viewcluster;
-		r_oldviewcluster2 = r_viewcluster2;
-		if (r_portalview)
+		if ( r_portalview ) {
+			r_oldviewcluster = -1;
 			leaf = Mod_PointInLeaf (r_portalorg, r_worldbmodel);
-		else
+		} else {
+			r_oldviewcluster = r_viewcluster;
 			leaf = Mod_PointInLeaf (r_origin, r_worldbmodel);
-		r_viewcluster = r_viewcluster2 = leaf->cluster;
-
-		// check above and below so crossing solid water doesn't draw wrong
-		if (!leaf->contents)
-		{	// look down a bit
-			vec3_t	temp;
-
-			VectorCopy (r_origin, temp);
-			temp[2] -= 16;
-			leaf = Mod_PointInLeaf (temp, r_worldbmodel);
-			if ( !(leaf->contents & CONTENTS_SOLID) &&
-				(leaf->cluster != r_viewcluster2) )
-				r_viewcluster2 = leaf->cluster;
 		}
-		else
-		{	// look up a bit
-			vec3_t	temp;
 
-			VectorCopy (r_origin, temp);
-			temp[2] += 16;
-			leaf = Mod_PointInLeaf (temp, r_worldbmodel);
-			if ( !(leaf->contents & CONTENTS_SOLID) &&
-				(leaf->cluster != r_viewcluster2) )
-				r_viewcluster2 = leaf->cluster;
-		}
+		r_viewcluster = leaf->cluster;
 	}
 
 	for (i=0 ; i<4 ; i++)
@@ -1204,6 +1252,7 @@ modelview:
 	}
 
 	qglEnable (GL_DEPTH_TEST);
+	qglDepthMask ( GL_TRUE );
 }
 
 /*
@@ -1220,7 +1269,7 @@ void R_Clear (void)
 	if ( r_clear->value ) {
 		bits |= GL_COLOR_BUFFER_BIT;
 	}
-	if ( gl_state.stencil_enabled ) {
+	if ( gl_state.stencil_enabled && r_shadows->value ) {
 		qglClearStencil ( 128 );
 		bits |= GL_STENCIL_BUFFER_BIT;
 	}
@@ -1263,15 +1312,17 @@ void R_RenderView ( refdef_t *fd, meshlist_t *list )
 		goto done;
 	}
 
-	R_MarkLeaves ();	// done here so we know if we're in water
+	R_MarkLeaves ();
 
 	R_DrawWorld ();
 
-	R_SortEntitiesOnList ();
+	R_AddPolysToList ();
+
+	R_AddEntitiesToList ();
 
 	R_DrawSortedMeshes ();
 
-	R_DrawEntitiesOnList ();
+	R_DrawEntities ();
 
 	R_RenderDlights ();
 
@@ -1293,7 +1344,7 @@ void R_SetGL2D (void)
 	qglMatrixMode (GL_MODELVIEW);
     qglLoadIdentity ();
 	qglDisable (GL_DEPTH_TEST);
-	GLSTATE_DISABLE_CULL;
+	qglDisable ( GL_CULL_FACE );
 	qglColor4f (1, 1, 1, 1);
 	gl_state.in2d = true;
 }
@@ -1388,10 +1439,9 @@ void R_Register( void )
 
 	r_lefthand = Cvar_Get( "hand", "0", CVAR_USERINFO | CVAR_ARCHIVE );
 	r_norefresh = Cvar_Get ("r_norefresh", "0", 0);
-	r_fullbright = Cvar_Get ("r_fullbright", "0", CVAR_CHEAT);
+	r_fullbright = Cvar_Get ("r_fullbright", "0", CVAR_CHEAT|CVAR_LATCH_VIDEO);
 	r_drawentities = Cvar_Get ("r_drawentities", "1", CVAR_CHEAT);
 	r_drawworld = Cvar_Get ("r_drawworld", "1", CVAR_CHEAT);
-	r_lightmap = Cvar_Get ("r_lightmap", "0", CVAR_CHEAT);
 	r_novis = Cvar_Get ("r_novis", "0", 0);
 	r_nocull = Cvar_Get ("r_nocull", "0", 0);
 	r_lerpmodels = Cvar_Get ("r_lerpmodels", "1", 0);
@@ -1421,12 +1471,16 @@ void R_Register( void )
 	r_shadows_alpha = Cvar_Get ("r_shadows_alpha", "0.4", CVAR_ARCHIVE );
 	r_shadows_nudge = Cvar_Get ("r_shadows_nudge", "1", CVAR_ARCHIVE );
 
-	r_colorbits = Cvar_Get( "r_colorbits", "0", CVAR_LATCH_VIDEO );
+	r_lodbias = Cvar_Get( "r_lodbias", "0", CVAR_ARCHIVE );
+
+	r_colorbits = Cvar_Get( "r_colorbits", "0", CVAR_ARCHIVE | CVAR_LATCH_VIDEO );
+	r_texturebits = Cvar_Get( "r_texturebits", "0", CVAR_ARCHIVE | CVAR_LATCH_VIDEO );
+	r_texturemode = Cvar_Get( "r_texturemode", "GL_LINEAR_MIPMAP_NEAREST", CVAR_ARCHIVE );
 	r_stencilbits = Cvar_Get( "r_stencilbits", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	r_mode = Cvar_Get( "r_mode", "3", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	r_nobind = Cvar_Get ("r_nobind", "0", 0);
 	r_picmip = Cvar_Get ("r_picmip", "0", CVAR_LATCH_VIDEO);
-	r_skymip = Cvar_Get ("r_skymip", "1", CVAR_LATCH_VIDEO);
+	r_skymip = Cvar_Get ("r_skymip", "0", CVAR_LATCH_VIDEO);
 	r_clear = Cvar_Get ("r_clear", "0", 0);
 	r_polyblend = Cvar_Get ("r_polyblend", "1", 0);
 	r_playermip = Cvar_Get ("r_playermip", "0", 0);
@@ -1438,9 +1492,6 @@ void R_Register( void )
 	gl_finish = Cvar_Get ("gl_finish", "0", CVAR_ARCHIVE);
 	gl_cull = Cvar_Get ("gl_cull", "1", 0);
 	gl_driver = Cvar_Get( "gl_driver", GL_DRIVERNAME, CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
-	gl_texturemode = Cvar_Get( "gl_texturemode", "GL_LINEAR_MIPMAP_NEAREST", CVAR_ARCHIVE );
-	gl_texturealphamode = Cvar_Get( "gl_texturealphamode", "default", CVAR_ARCHIVE );
-	gl_texturesolidmode = Cvar_Get( "gl_texturesolidmode", "default", CVAR_ARCHIVE );
 
 	gl_extensions = Cvar_Get( "gl_extensions", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_swapinterval = Cvar_Get( "gl_ext_swapinterval", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
@@ -1450,6 +1501,7 @@ void R_Register( void )
 	gl_ext_texture_env_combine = Cvar_Get( "gl_ext_texture_env_combine", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_NV_texture_env_combine4 = Cvar_Get( "gl_ext_NV_texture_env_combine4", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 	gl_ext_compressed_textures = Cvar_Get( "gl_ext_compressed_textures", "0", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
+	gl_ext_bgra = Cvar_Get( "gl_ext_bgra", "1", CVAR_ARCHIVE|CVAR_LATCH_VIDEO );
 
 	gl_drawbuffer = Cvar_Get( "gl_drawbuffer", "GL_BACK", 0 );
 	gl_swapinterval = Cvar_Get( "gl_swapinterval", "0", CVAR_ARCHIVE );
@@ -1458,8 +1510,9 @@ void R_Register( void )
 	vid_gamma = Cvar_Get( "vid_gamma", "1.0", CVAR_ARCHIVE );
 
 	Cmd_AddCommand( "imagelist", GL_ImageList_f );
-	Cmd_AddCommand( "screenshot", GL_ScreenShot_f );
+	Cmd_AddCommand( "screenshot", R_ScreenShot_f );
 	Cmd_AddCommand( "modellist", Mod_Modellist_f );
+
 	Cmd_AddCommand( "gl_strings", GL_Strings_f );
 }
 
@@ -1540,6 +1593,7 @@ void GL_CheckExtensions (void)
 	gl_config.sgis_mipmap = false;
 	gl_config.nv_tex_env_combine4 = false;
 	gl_config.compressed_textures = false;
+	gl_config.bgra = false;
 
 	if ( !gl_extensions->value ) {
 		Com_Printf ( "...ignoring all OpenGL extensions\n" );
@@ -1748,6 +1802,23 @@ void GL_CheckExtensions (void)
 	{
 		Com_Printf ( "...GL_ARB_texture_compression not found\n" );
 	}
+
+	if ( strstr( gl_config.extensions_string, "GL_EXT_bgra" ) )
+	{
+		if ( gl_ext_bgra->value )
+		{
+			Com_Printf ( "...using GL_EXT_bgra\n" );
+			gl_config.bgra = true;
+		}
+		else
+		{
+			Com_Printf ( "...ignoring GL_EXT_bgra\n" );
+		}
+	}
+	else
+	{
+		Com_Printf ( "...GL_EXT_bgra not found\n" );
+	}
 }
 
 /*
@@ -1762,8 +1833,6 @@ int R_Init( void *hinstance, void *hWnd )
 	int	 err;
 
 	Com_Printf( "ref_gl version: "REF_VERSION"\n");
-
-	Draw_GetPalette ();
 
 	R_Register();
 
@@ -1790,11 +1859,11 @@ int R_Init( void *hinstance, void *hWnd )
 	else
 		gl_state.inv_pow2_ovrbr = 1.0f;
 
-	gl_state.inv_pow2_mapovrbr = floor( r_mapoverbrightbits->value - r_overbrightbits->value );
-	if ( gl_state.inv_pow2_mapovrbr > 0 ) {
-		gl_state.inv_pow2_mapovrbr = pow( 2, gl_state.inv_pow2_mapovrbr ) / 255.0;
+	gl_state.pow2_mapovrbr = floor( r_mapoverbrightbits->value - r_overbrightbits->value );
+	if ( gl_state.pow2_mapovrbr > 0 ) {
+		gl_state.pow2_mapovrbr = pow( 2, gl_state.pow2_mapovrbr ) / 255.0;
 	} else {
-		gl_state.inv_pow2_mapovrbr = 1.0 / 255.0;
+		gl_state.pow2_mapovrbr = 1.0 / 255.0;
 	}
 
 	// create the window and set up the context
@@ -1905,6 +1974,11 @@ int R_Init( void *hinstance, void *hWnd )
 	R_InitBuiltInTextures ();
 	R_InitBubble ();
 
+	Shader_Init ();
+
+	Draw_InitLocal ();
+
+	R_InitPolys ();
 	R_InitFlares ();
 
 	R_InitSpriteModels ();
@@ -1912,10 +1986,6 @@ int R_Init( void *hinstance, void *hWnd )
 	R_InitDarkPlacesModels ();
 
 	R_InitSkydome ();
-
-	Shader_Init ();
-
-	Draw_InitLocal ();
 
 	R_BackendInit ();
 
@@ -1988,8 +2058,7 @@ void R_BeginFrame( float camera_separation )
 	}
 
 	/*
-	** update 3Dfx gamma -- it is expected that a user will do a vid_restart
-	** after tweaking this value
+	** update gamma
 	*/
 	if ( vid_gamma->modified )
 	{
@@ -2023,22 +2092,10 @@ void R_BeginFrame( float camera_separation )
 	/*
 	** texturemode stuff
 	*/
-	if ( gl_texturemode->modified )
+	if ( r_texturemode->modified )
 	{
-		GL_TextureMode( gl_texturemode->string );
-		gl_texturemode->modified = false;
-	}
-
-	if ( gl_texturealphamode->modified )
-	{
-		GL_TextureAlphaMode( gl_texturealphamode->string );
-		gl_texturealphamode->modified = false;
-	}
-
-	if ( gl_texturesolidmode->modified )
-	{
-		GL_TextureSolidMode( gl_texturesolidmode->string );
-		gl_texturesolidmode->modified = false;
+		GL_TextureMode( r_texturemode->string );
+		r_texturemode->modified = false;
 	}
 
 	/*

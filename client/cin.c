@@ -1,20 +1,22 @@
-/* Aftershock 3D rendering engine
- * Copyright (C) 1999 Stephen C. Taylor
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
- */
+/*
+Copyright (C) 2002-2003 Victor Luchits
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License
+as published by the Free Software Foundation; either version 2
+of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  
+
+See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+
+*/
 
 #include "client.h"
 
@@ -52,6 +54,8 @@ void RoQ_ReadChunk (cinematics_t *cin)
 	chunk->id = LittleShort ( chunk->id );
 	chunk->size = LittleLong ( chunk->size );
 	chunk->argument = LittleShort ( chunk->argument );
+
+	cin->remaining -= sizeof(roq_chunk_t);
 }
 
 /*
@@ -164,41 +168,44 @@ RoQ_ApplyVector4x4
 */
 static void RoQ_ApplyVector4x4 (cinematics_t *cin, int x, int y, roq_cell_t *cell)
 {
+	byte u[2], v[2], yp[4];
 	int row_inc, c_row_inc;
-	byte y0, y1, u, v;
 	byte *yptr, *uptr, *vptr;
+
+	row_inc = cin->width - 4;
+	c_row_inc = cin->width_2 - 2;
 
 	yptr = cin->y[0] + y * cin->width + x;
 	uptr = cin->u[0] + (y/2) * cin->width_2 + x/2;
 	vptr = cin->v[0] + (y/2) * cin->width_2 + x/2;
 	
-	row_inc = cin->width - 4;
-	c_row_inc = cin->width_2 - 2;
-	*yptr++ = y0 = cell->y0; *uptr++ = u = cell->u; *vptr++ = v = cell->v;
-	*yptr++ = y0;
-	*yptr++ = y1 = cell->y1; *uptr++ = u; *vptr++ = v;
-	*yptr++ = y1;
+	yp[0] = yp[1] = cell->y0;
+	yp[2] = yp[3] = cell->y1;
+
+	u[0] = u[1] = cell->u;
+	v[0] = v[1] = cell->v;
+
+	*(int *)yptr = *(int *)yp;
+	yptr += row_inc + 4;
 	
-	yptr += row_inc;
+	*(int *)yptr = *(int *)yp;
+	yptr += row_inc + 4; 
 	
-	*yptr++ = y0;
-	*yptr++ = y0;
-	*yptr++ = y1;
-	*yptr++ = y1;
+	*(short *)uptr = *(short *)u;
+	uptr += c_row_inc + 2; 
+
+	*(short *)vptr = *(short *)v;
+	vptr += c_row_inc + 2;
 	
-	yptr += row_inc; uptr += c_row_inc; vptr += c_row_inc;
+	yp[0] = yp[1] = cell->y2;
+	yp[2] = yp[3] = cell->y3;
+
+	*(int *)yptr = *(int *)yp;
+	yptr += row_inc + 4;
 	
-	*yptr++ = y0 = cell->y2; *uptr++ = u; *vptr++ = v;
-	*yptr++ = y0;
-	*yptr++ = y1 = cell->y3; *uptr++ = u; *vptr++ = v;
-	*yptr++ = y1;
-	
-	yptr += row_inc;
-	
-	*yptr++ = y0;
-	*yptr++ = y0;
-	*yptr++ = y1;
-	*yptr++ = y1;
+	*(int *)yptr = *(int *)yp;
+	*(short *)uptr = *(short *)u;
+	*(short *)vptr = *(short *)v;
 }
 
 /*
@@ -295,7 +302,7 @@ static byte *RoQ_DecodeImage (cinematics_t *cin)
 {
 	roq_chunk_t *chunk = &cin->chunk;
 	int i, x, y;
-	long rgb[3], rgbs[2], u, v;
+	int rgb[3], rgbs[2], u, v;
 	byte *pa, *pb, *pc, *pic;
 
 	pic = cin->buf;
@@ -493,7 +500,8 @@ RoQ_ReadAudio
 */
 void RoQ_ReadAudio (cinematics_t *cin)
 {
-	int i, snd_left, snd_right;
+	int i;
+	int snd_left, snd_right;
 	byte compressed[0x20000], samples[0x40000];
 	roq_chunk_t *chunk = &cin->chunk;
 
@@ -507,24 +515,24 @@ void RoQ_ReadAudio (cinematics_t *cin)
 		{
 			snd_left += snd_sqr_arr[compressed[i]];
 
-			samples[i * 2 + 0] = snd_left & 0xFF;
-			samples[i * 2 + 1] = ((snd_left & 0xFF00) >> 8) & 0xFF;
+			samples[i * 2 + 0] = snd_left & 0xff;
+			samples[i * 2 + 1] = ((snd_left & 0xff00) >> 8) & 0xff;
 		}
 
-		S_RawSamples (chunk->size / 2, cin->s_rate, 2, 1, samples);
+		S_RawSamples (chunk->size, cin->s_rate, 2, 1, samples);
 	} else if ( chunk->id == RoQ_SOUND_STEREO ) {
-		snd_left = chunk->argument & 0xFF00;
-		snd_right = (chunk->argument & 0xFF) << 8;
+		snd_left = chunk->argument & 0xff00;
+		snd_right = (chunk->argument & 0xff) << 8;
 
 		for (i = 0; i < chunk->size; i += 2)
 		{
 			snd_left += snd_sqr_arr[compressed[i]];
 			snd_right += snd_sqr_arr[compressed[i+1]];
 
-			samples[i * 2 + 0] = snd_left & 0xFF;
-			samples[i * 2 + 1] = ((snd_left & 0xFF00) >> 8) & 0xFF;
-			samples[i * 2 + 2] = snd_right & 0xFF;
-			samples[i * 2 + 3] = ((snd_right & 0xFF00) >> 8) & 0xFF;
+			samples[i * 2 + 0] = snd_left & 0xff;
+			samples[i * 2 + 1] = ((snd_left & 0xff00) >> 8) & 0xff;
+			samples[i * 2 + 2] = snd_right & 0xff;
+			samples[i * 2 + 3] = ((snd_right & 0xff00) >> 8) & 0xff;
 		}
 
 		S_RawSamples (chunk->size / 2, cin->s_rate, 2, 2, samples);

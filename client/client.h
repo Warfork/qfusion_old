@@ -21,13 +21,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 //define	PARANOID			// speed sapping error checking
 
-#include <math.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdio.h>
-#include <stdlib.h>
+#include "../qcommon/qcommon.h"
 
 #include "ref.h"
+#include "cin.h"
+
+#include "../ref_gl/render.h"
 
 #include "vid.h"
 #include "screen.h"
@@ -35,7 +34,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "input.h"
 #include "keys.h"
 #include "console.h"
-#include "../ui/ui.h"
 
 //=============================================================================
 
@@ -150,6 +148,7 @@ typedef struct
 	struct	model_s		*modPowerScreen;
 	struct	model_s		*modLightning;
 	struct	model_s		*modMeatyGib;
+	struct	model_s		*modTeleportEffect;
 	
 	// shaders
 	struct	shader_s	*shaderGrenadeExplosion;
@@ -158,6 +157,12 @@ typedef struct
 	struct	shader_s	*shaderQuadWeapon;
 	struct	shader_s	*shaderPowerupPenta;
 	struct	shader_s	*shaderShellEffect;
+	struct	shader_s	*shaderWaterBubble;
+	struct	shader_s	*shaderTeleportEffect;
+	struct	shader_s	*shaderSmokePuff;
+	struct	shader_s	*shaderBulletMark;
+	struct	shader_s	*shaderExplosionMark;
+	struct	shader_s	*shaderEnergyMark;
 } client_media_t;
 
 //
@@ -180,7 +185,7 @@ typedef struct
 	usercmd_t	cmd;
 	usercmd_t	cmds[CMD_BACKUP];	// each mesage will send several old cmds
 	int			cmd_time[CMD_BACKUP];	// time sent, for calculating pings
-	short		predicted_origins[CMD_BACKUP][3];	// for debug comparing against server
+	int			predicted_origins[CMD_BACKUP][3];	// for debug comparing against server
 
 	float		predicted_step;				// for stair up smoothing
 	unsigned	predicted_step_time;
@@ -325,6 +330,8 @@ extern	cvar_t	*cl_add_blend;
 extern	cvar_t	*cl_add_lights;
 extern	cvar_t	*cl_add_particles;
 extern	cvar_t	*cl_add_entities;
+extern	cvar_t	*cl_add_polys;
+extern	cvar_t	*cl_add_decals;
 extern	cvar_t	*cl_predict;
 extern	cvar_t	*cl_footsteps;
 extern	cvar_t	*cl_noskins;
@@ -358,6 +365,7 @@ extern	cvar_t	*cl_freelook;
 
 extern	cvar_t	*cl_paused;
 extern	cvar_t	*cl_timedemo;
+extern	cvar_t	*cl_avidemo;
 
 extern	cvar_t	*cl_vwep;
 
@@ -371,8 +379,7 @@ typedef struct
 	vec3_t	color;
 	vec3_t	origin;
 	float	radius;
-	float	die;				// stop lighting after this time
-	float	minlight;			// don't add when contributing less
+	int		die;				// stop lighting after this time
 } cdlight_t;
 
 extern	centity_t	cl_entities[MAX_EDICTS];
@@ -394,38 +401,33 @@ qboolean	CL_CheckOrDownloadFile (char *filename);
 
 void CL_AddNetgraph (void);
 
-void CL_TeleporterParticles (entity_state_t *ent);
-void CL_ParticleEffect (vec3_t org, vec3_t dir, int color, int count);
-void CL_ParticleEffect2 (vec3_t org, vec3_t dir, int color, int count);
+void CL_ParticleEffect (vec3_t org, vec3_t dir, float r, float g, float b, int count);
+void CL_ParticleEffect2 (vec3_t org, vec3_t dir, float r, float g, float b, int count);
 
 //=================================================
 
 typedef struct particle_s
 {
-	struct particle_s	*next;
-
 	float		time;
 
 	vec3_t		org;
 	vec3_t		vel;
 	vec3_t		accel;
-	float		color;
-	float		colorvel;
+	vec3_t		color;
 	float		alpha;
 	float		alphavel;
+	float		scale;
 } cparticle_t;
 
 
 #define	PARTICLE_GRAVITY	40
 
+void CL_ClearLocalEntities (void);
 void CL_ClearEffects (void);
-void CL_ClearTEnts (void);
-void CL_BlasterTrail (vec3_t start, vec3_t end);
-void CL_QuadTrail (vec3_t start, vec3_t end);
-void CL_RailTrail (vec3_t start, vec3_t end);
-void CL_BubbleTrail (vec3_t start, vec3_t end, int dist);
-void CL_FlagTrail (vec3_t start, vec3_t end, float color);
-void CL_GibPlayer ( vec3_t origin, vec3_t mins, vec3_t maxs );
+void CL_ClearDecals (void);
+
+void CL_TeleportEffect ( vec3_t org );
+
 void CL_AddLaser ( vec3_t start, vec3_t end, int colors );
 void CL_AddBeam (int ent, vec3_t start, vec3_t end, vec3_t offset, struct model_s *model );
 void CL_AddLightning (int srcEnt, int destEnt, vec3_t start, vec3_t end, struct model_s *model);
@@ -439,31 +441,20 @@ void CL_ParseConfigString (void);
 void CL_ParseMuzzleFlash (void);
 void CL_ParseMuzzleFlash2 (void);
 
-void CL_RunParticles (void);
-void CL_RunDLights (void);
+void CL_AddBeams (void);
+void CL_AddLocalEntities (void);
+void CL_AddDLights (void);
 
 void CL_AddEntities (void);
-void CL_AddDLights (void);
-void CL_AddTEnts (void);
 
 //=================================================
-
-void CL_PrepRefresh (void);
-void CL_RegisterSounds (void);
-
-void CL_Quit_f (void);
-
-void IN_Accumulate (void);
-
-void CL_ParseLayout (void);
 
 
 //
 // cl_main
 //
-extern	ui_export_t	*uie;	// interface to user interface .dll
-
 void CL_Init (void);
+void CL_Quit_f (void);
 
 void CL_Spawn ( void );
 void CL_FixUpGender(void);
@@ -525,6 +516,7 @@ void CL_LoadClientinfo (clientinfo_t *ci, char *s);
 void SHOWNET(char *s);
 void CL_ParseClientinfo (int player);
 void CL_Download_f (void);
+void CL_RegisterSounds (void);
 
 //
 // cl_view.c
@@ -532,8 +524,11 @@ void CL_Download_f (void);
 void V_Init (void);
 void V_RenderView( float stereo_separation );
 void V_AddEntity (entity_t *ent);
-void V_AddParticle (vec3_t org, int color, float alpha);
+void V_AddParticle (vec3_t org, float r, float g, float b, float alpha, float scale);
 void V_AddLight (vec3_t org, float intensity, float r, float g, float b);
+void V_AddPoly (poly_t *poly);
+
+void CL_PrepRefresh (void);
 
 //
 // cl_tent.c
@@ -541,15 +536,38 @@ void V_AddLight (vec3_t org, float intensity, float r, float g, float b);
 
 void CL_RegisterMediaSounds (void);
 void CL_RegisterMediaModels (void);
-void CL_RegisterMediaPics (void);
+void CL_RegisterMediaShaders (void);
 void CL_SmokeAndFlash(vec3_t origin);
 
+//
+// cl_decals.c
+//
+#define MAX_DECALS				256
+
+typedef struct
+{
+	int			start, die;				// stop lighting after this time
+	int			fadetime;
+	float		fadefreq;
+	qboolean	fadealpha;
+	float		color[4];
+	struct shader_s *shader;
+
+	poly_t			poly;
+	vec3_t			verts[MAX_POLY_VERTS];
+	vec2_t			stcoords[MAX_POLY_VERTS];
+	byte_vec4_t		colors[MAX_POLY_VERTS];
+} cdecal_t;
+
+void CL_SpawnDecal ( vec3_t origin, vec3_t dir, float orient, float radius,
+				 float r, float g, float b, float a, float die, float fadetime, qboolean fadealpha, struct shader_s *shader );
+void CL_AddDecals (void);
 
 //
 // cl_pred.c
 //
 void CL_InitPrediction (void);
-void CL_PredictMove (void);
+void CL_PredictMovement (void);
 void CL_CheckPredictionError (void);
 
 #define IGNORE_NOTHING	-1
@@ -562,11 +580,18 @@ trace_t CL_Trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore
 // cl_fx.c
 //
 cdlight_t *CL_AllocDlight (int key);
-void CL_BigTeleportParticles (vec3_t org);
-void CL_TeleportParticles (vec3_t org);
-void CL_ItemRespawnParticles (vec3_t org);
-void CL_RocketTrail (vec3_t start, vec3_t end, centity_t *old);
+
+void CL_RailTrail (vec3_t start, vec3_t end);
+void CL_FlagTrail (vec3_t start, vec3_t end, int effect);
+void CL_BubbleTrail (vec3_t start, vec3_t end, int dist);
+void CL_BlasterTrail (vec3_t start, vec3_t end);
+void CL_BloodTrail (vec3_t start, vec3_t end, int *trailcount);
+void CL_RocketTrail (vec3_t start, vec3_t end);
+void CL_GrenadeTrail (vec3_t start, vec3_t end);
+
 void CL_DiminishingTrail (vec3_t start, vec3_t end, int *trailcount, int flags);
+
+void CL_BigTeleportParticles (vec3_t org);
 void CL_FlyEffect (centity_t *ent, vec3_t origin);
 void CL_BfgParticles (entity_t *ent);
 void CL_AddParticles (void);
@@ -582,30 +607,17 @@ void UI_Refresh (int frametime);
 void UI_Update (void);
 void UI_Menu_Main_f (void);
 void UI_ForceMenuOff (void);
-void UI_AddToServerList (netadr_t *adr, char *info);
+void UI_AddToServerList (char *adr, char *info);
 void UI_MouseMove (int dx, int dy);
 
 //
 // cl_inv.c
 //
 void CL_ParseInventory (void);
-void CL_KeyInventory (int key);
 void CL_DrawInventory (void);
-
-//
-// cl_pred.c
-//
-void CL_PredictMovement (void);
 
 //
 // cl_scrn.c
 void CL_LoadingString (char *str);
 void CL_LoadingFilename (char *str);
 
-//
-#if id386
-void x86_TimerStart( void );
-void x86_TimerStop( void );
-void x86_TimerInit( unsigned long smallest, unsigned longest );
-unsigned long *x86_TimerGetHistogram( void );
-#endif

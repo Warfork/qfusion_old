@@ -1,5 +1,5 @@
 /*
-Copyright (C) 1997-2001 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -37,7 +37,7 @@ typedef struct mesh_s
 	vec3_t			*normals_array;
 	vec2_t			*st_array;
 	vec2_t			*lmst_array;
-	vec4_t			*colors_array;
+	byte_vec4_t		*colors_array;
 
     int				numindexes;
     index_t			*indexes;
@@ -96,4 +96,5 @@ meshbuffer_t *R_AddMeshToBuffer ( mesh_t *mesh, struct mfog_s *fog, struct msurf
 
 void R_DrawSortedMeshes (void);
 
+extern	meshlist_t	r_worldlist;
 extern	meshlist_t	*currentlist;

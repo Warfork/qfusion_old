@@ -128,8 +128,8 @@ typedef struct
 #define IDMD3HEADER			"IDP3"
 
 #define MD3_ALIAS_VERSION	15
+#define MD3_ALIAS_MAX_LODS	4
 
-#define MD3_MAX_LODS		4
 #define	MD3_MAX_TRIANGLES	8192	// per mesh
 #define MD3_MAX_VERTS		4096	// per mesh
 #define MD3_MAX_SHADERS		256		// per mesh
@@ -239,6 +239,7 @@ typedef struct
 #define DPM_MAX_SHADERS			256
 #define DPM_MAX_FILESIZE		16777216
 #define DPM_MAX_ATTACHMENTS		DPM_MAX_BONES
+#define DPM_MAX_LODS			4
 
 // model format related flags
 #define DPM_BONEFLAG_ATTACH		1
@@ -528,7 +529,7 @@ typedef struct shaderref_s
 enum
 {
     FACETYPE_PLANAR   = 1,
-    FACETYPE_MESH     = 2,
+    FACETYPE_PATCH    = 2,
     FACETYPE_TRISURF  = 3,
     FACETYPE_FLARE    = 4
 };
@@ -548,13 +549,13 @@ typedef struct
     int				lm_offset[2];
     int				lm_size[2];
 
-    float			origin[3];		// FACETYPE_PLANAR only
+    float			origin[3];		// FACETYPE_FLARE only
 
     float			mins[3];
-    float			maxs[3];		// FACETYPE_MESH only
+    float			maxs[3];		// FACETYPE_PATCH and FACETYPE_TRISURF only
     float			normal[3];		// FACETYPE_PLANAR only
 
-    int				mesh_cp[2];		// mesh control point dimensions
+    int				patch_cp[2];	// patch control point dimensions
 } dface_t;
 
 typedef struct

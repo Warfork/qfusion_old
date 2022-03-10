@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2001-2002 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -41,13 +41,14 @@ vec3_t			normalsArray[MAX_ARRAY_VERTS];
 
 vec4_t			tempVertexArray[MAX_ARRAY_VERTS];
 vec3_t			tempNormalsArray[MAX_ARRAY_VERTS];
+index_t			tempIndexesArray[MAX_ARRAY_INDEXES];
 
 index_t			inIndexesArray[MAX_ARRAY_INDEXES];
 int				inNeighborsArray[MAX_ARRAY_NEIGHBORS];
 vec3_t			inTrNormalsArray[MAX_ARRAY_TRIANGLES];
 vec2_t			inCoordsArray[MAX_ARRAY_VERTS];
 vec2_t			inLightmapCoordsArray[MAX_ARRAY_VERTS];
-vec4_t			inColorsArray[MAX_ARRAY_VERTS];
+byte_vec4_t		inColorsArray[MAX_ARRAY_VERTS];
 
 static	vec2_t		tUnitCoordsArray[MAX_TEXTURE_UNITS][MAX_ARRAY_VERTS];
 static	byte_vec4_t	colorArray[MAX_ARRAY_VERTS];
@@ -56,6 +57,8 @@ int				numVerts, numIndexes, numColors;
 
 qboolean		r_arrays_locked;
 qboolean		r_blocked;
+
+int				r_features;
 
 static	int		r_lmtex;
 
@@ -69,9 +72,9 @@ float			*currentVertex;
 float			*currentNormal;
 float			*currentCoords;
 float			*currentLightmapCoords;
-float			*currentColor;
+byte			*currentColor;
 
-static	float	r_identityLighting;
+static	int		r_identityLighting;
 static	float	r_localShaderTime;
 
 unsigned int	r_numverts;
@@ -123,9 +126,9 @@ void R_BackendInit (void)
 	qglEnableClientState( GL_VERTEX_ARRAY );
 
 	if ( !r_ignorehwgamma->value )
-		r_identityLighting = 1.0f / pow(2, max(0, (int)floor(r_overbrightbits->value)));
+		r_identityLighting = (int)(255.0f / pow(2, max(0, floor(r_overbrightbits->value))));
 	else
-		r_identityLighting = 1.0f;
+		r_identityLighting = 255;
 
 	for ( i = 0; i < FTABLE_SIZE; i++ ) {
 		t = (double)i / (double)FTABLE_SIZE;
@@ -505,17 +508,39 @@ void R_DeformVertices ( meshbuffer_t *mb )
 
 				for ( k = 0; k < numIndexes; k += 6 )
 				{
+					mat3_t m0, m1, result;
+
 					quad[0] = (float *)(vertexArray + indexesArray[k+0]);
-					quad[1] = (float *)(vertexArray + indexesArray[k+3]);
-					quad[2] = (float *)(vertexArray + indexesArray[k+4]);
-					quad[3] = (float *)(vertexArray + indexesArray[k+5]);
+					quad[1] = (float *)(vertexArray + indexesArray[k+1]);
+					quad[2] = (float *)(vertexArray + indexesArray[k+2]);
+
+					for ( j = 2; j >= 0; j-- ) {
+						quad[3] = (float *)(vertexArray + indexesArray[k+3+j]);
+						if ( !VectorCompare (quad[3], quad[0]) && 
+							!VectorCompare (quad[3], quad[1]) &&
+							!VectorCompare (quad[3], quad[2]) ) {
+							break;
+						}
+					}
+
+					VectorSubtract ( quad[0], quad[1], m0[0] );
+					VectorSubtract ( quad[2], quad[1], m0[1] );
+					CrossProduct ( m0[0], m0[1], m0[2] );
+					VectorNormalizeFast ( m0[2] );
+					MakeNormalVectors ( m0[2], m0[1], m0[0] );
+
+					VectorCopy ( &r_modelview_matrix[0], m1[0] );
+					VectorCopy ( &r_modelview_matrix[4], m1[1] );
+					VectorCopy ( &r_modelview_matrix[8], m1[2] );
+
+					Matrix3_Multiply ( m1, m0, result );
 
 					for ( j = 0; j < 3; j++ )
 						rot_centre[j] = (quad[0][j] + quad[1][j] + quad[2][j] + quad[3][j]) * 0.25 + currententity->origin[j];
 
 					for ( j = 0; j < 4; j++ ) {
 						VectorSubtract ( quad[j], rot_centre, tv );
-						Matrix4_Multiply_Vec3 ( r_modelview_matrix, tv, quad[j] );
+						Matrix3_Multiply_Vec3 ( result, tv, quad[j] );
 						VectorAdd ( rot_centre, quad[j], quad[j] );
 					}
 				}
@@ -527,21 +552,73 @@ void R_DeformVertices ( meshbuffer_t *mb )
 
 				for ( k = 0; k < numIndexes; k += 6 )
 				{
+					int long_axis, short_axis;
 					vec3_t axis;
-					mat3_t matrix, fmatrix, result;
+					float len[3];
+					mat3_t m0, m1, m2, result;
 
 					quad[0] = (float *)(vertexArray + indexesArray[k+0]);
 					quad[1] = (float *)(vertexArray + indexesArray[k+1]);
 					quad[2] = (float *)(vertexArray + indexesArray[k+2]);
-					quad[3] = (float *)(vertexArray + indexesArray[k+5]);
+
+					for ( j = 2; j >= 0; j-- ) {
+						quad[3] = (float *)(vertexArray + indexesArray[k+3+j]);
+						if ( !VectorCompare (quad[3], quad[0]) && 
+							!VectorCompare (quad[3], quad[1]) &&
+							!VectorCompare (quad[3], quad[2]) ) {
+							break;
+						}
+					}
 
 					// build a matrix were the longest axis of the billboard is the Y-Axis
-					VectorSubtract ( quad[1], quad[0], result[0] );
-					VectorSubtract ( quad[2], quad[0], result[1] );
-					VectorNormalizeFast ( result[0] );
-					VectorNormalizeFast ( result[1] );
-					CrossProduct ( result[0], result[1], result[2] );
-					VectorCopy ( result[1], axis );
+					VectorSubtract ( quad[1], quad[0], m0[0] );
+					VectorSubtract ( quad[2], quad[0], m0[1] );
+					VectorSubtract ( quad[2], quad[1], m0[2] );
+					len[0] = DotProduct ( m0[0], m0[0] );
+					len[1] = DotProduct ( m0[1], m0[1] );
+					len[2] = DotProduct ( m0[2], m0[2] );
+
+					if ( (len[2] > len[1]) && (len[2] > len[0]) ) {
+						if ( len[1] > len[0] ) {
+							long_axis = 1;
+							short_axis = 0;
+						} else {
+							long_axis = 0;
+							short_axis = 1;
+						}
+					} else if ( (len[1] > len[2]) && (len[1] > len[0]) ) {
+						if ( len[2] > len[0] ) {
+							long_axis = 2;
+							short_axis = 0;
+						} else {
+							long_axis = 0;
+							short_axis = 2;
+						}
+					} else if ( (len[0] > len[1]) && (len[0] > len[2]) ) {
+						if ( len[2] > len[1] ) {
+							long_axis = 2;
+							short_axis = 1;
+						} else {
+							long_axis = 1;
+							short_axis = 2;
+						}
+					}
+
+					if ( DotProduct (m0[long_axis], m0[short_axis]) ) {
+						VectorNormalize2 ( m0[long_axis], axis );
+						VectorCopy ( axis, m0[1] );
+
+						if ( axis[0] || axis[1] ) {
+							MakeNormalVectors ( m0[1], m0[2], m0[0] );
+						} else {
+							MakeNormalVectors ( m0[1], m0[0], m0[2] );
+						}
+					} else {
+						VectorNormalize2 ( m0[long_axis], axis );
+						VectorNormalize2 ( m0[short_axis], m0[0] );
+						VectorCopy ( axis, m0[1] );
+						CrossProduct ( m0[0], m0[1], m0[2] );
+					}
 
 					for ( j = 0; j < 3; j++ )
 						rot_centre[j] = (quad[0][j] + quad[1][j] + quad[2][j] + quad[3][j]) * 0.25;
@@ -556,13 +633,13 @@ void R_DeformVertices ( meshbuffer_t *mb )
 					// filter any longest-axis-parts off the camera-direction
 					deflect = -DotProduct ( tv, axis );
 
-					VectorMA ( tv, deflect, axis, fmatrix[2] );
-					VectorNormalizeFast ( fmatrix[2] );
-					VectorCopy ( axis, fmatrix[1] );
-					CrossProduct ( fmatrix[1], fmatrix[2], fmatrix[0] );
+					VectorMA ( tv, deflect, axis, m1[2] );
+					VectorNormalizeFast ( m1[2] );
+					VectorCopy ( axis, m1[1] );
+					CrossProduct ( m1[1], m1[2], m1[0] );
 
-					Matrix3_Transpose ( result, matrix );
-					Matrix3_Multiply ( matrix, fmatrix, result );
+					Matrix3_Transpose ( m1, m2 );
+					Matrix3_Multiply ( m2, m0, result );
 
 					for ( j = 0; j < 4; j++ ) {
 						VectorSubtract ( quad[j], rot_centre, tv );
@@ -586,7 +663,7 @@ void R_DeformVertices ( meshbuffer_t *mb )
 R_VertexTCBase
 ==============
 */
-void R_VertexTCBase ( int tc_gen, int unit )
+void R_VertexTCBase ( int tcgen, int unit )
 {
 	int	i;
 	vec3_t t, n;
@@ -597,11 +674,11 @@ void R_VertexTCBase ( int tc_gen, int unit )
 	outCoords = tUnitCoordsArray[unit][0];
 	qglTexCoordPointer( 2, GL_FLOAT, 0, outCoords );
 
-	if ( tc_gen == TC_GEN_BASE ) {
+	if ( tcgen == TC_GEN_BASE ) {
 		memcpy ( outCoords, coordsArray[0], sizeof(float) * 2 * numVerts );
-	} else if ( tc_gen == TC_GEN_LIGHTMAP ) {
+	} else if ( tcgen == TC_GEN_LIGHTMAP ) {
 		memcpy ( outCoords, lightmapCoordsArray[0], sizeof(float) * 2 * numVerts );
-	} else if ( tc_gen == TC_GEN_ENVIRONMENT ) {
+	} else if ( tcgen == TC_GEN_ENVIRONMENT ) {
 		if ( !currentmodel ) {
 			VectorSubtract ( vec3_origin, currententity->origin, transform );
 			Matrix3_Transpose ( currententity->axis, inverse_axis );
@@ -633,7 +710,7 @@ void R_VertexTCBase ( int tc_gen, int unit )
 			outCoords[0] = t[0]*n[2] - n[0];
 			outCoords[1] = t[1]*n[2] - n[1];
 		}
-	} else if ( tc_gen == TC_GEN_VECTOR ) {
+	} else if ( tcgen == TC_GEN_VECTOR ) {
 		for ( i = 0; i < numVerts; i++, outCoords += 2 ) {
 			static vec3_t tc_gen_s = { 1.0f, 0.0f, 0.0f };
 			static vec3_t tc_gen_t = { 0.0f, 1.0f, 0.0f };
@@ -678,17 +755,17 @@ void R_ModifyTextureCoords ( shaderpass_t *pass, int unit )
 
 	// we're smart enough not to copy data and simply switch the pointer
 	if ( !pass->numtcmods ) {
-		if ( pass->tc_gen == TC_GEN_BASE ) {
+		if ( pass->tcgen == TC_GEN_BASE ) {
 			qglTexCoordPointer( 2, GL_FLOAT, 0, coordsArray );
-		} else if ( pass->tc_gen == TC_GEN_LIGHTMAP ) {
+		} else if ( pass->tcgen == TC_GEN_LIGHTMAP ) {
 			qglTexCoordPointer( 2, GL_FLOAT, 0, lightmapCoordsArray );
 		} else {
-			R_VertexTCBase ( pass->tc_gen, unit );
+			R_VertexTCBase ( pass->tcgen, unit );
 		}
 		return;
 	}
 
-	R_VertexTCBase ( pass->tc_gen, unit );
+	R_VertexTCBase ( pass->tcgen, unit );
 
 	for (i = 0, tcmod = pass->tcmods; i < pass->numtcmods; i++, tcmod++)
 	{
@@ -710,9 +787,12 @@ void R_ModifyTextureCoords ( shaderpass_t *pass, int unit )
 				break;
 
 			case SHADER_TCMOD_SCALE:
+				t1 = tcmod->args[0];
+				t2 = tcmod->args[1];
+
 				for ( j = 0; j < numVerts; j++, tcArray += 2 ) {
-					tcArray[0] = tcArray[0] * tcmod->args[0];
-					tcArray[1] = tcArray[1] * tcmod->args[1];
+					tcArray[0] = tcArray[0] * t1;
+					tcArray[1] = tcArray[1] * t2;
 				}
 				break;
 
@@ -772,23 +852,20 @@ R_ModifyColor
 */
 void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 {
-	int i;
+	int i, b;
 	float *table, c, a;
 	vec3_t t, v;
 	shader_t *shader;
-	byte *bArray;
-	float *cArray, *vArray;
+	byte *bArray, *vArray;
 	qboolean fogged, noArray;
-	vec4_t tempcArray[MAX_ARRAY_VERTS];
-
-	cArray = tempcArray[0];
-	vArray = inColorsArray[0];
-	bArray = colorArray[0];
+	shaderfunc_t *rgbgenfunc, *alphagenfunc;
 
 	shader = mb->shader;
-	fogged = mb->fog && (shader->sort >= SHADER_SORT_ADDITIVE) &&
+	fogged = mb->fog && (shader->sort >= SHADER_SORT_UNDERWATER) &&
 		!(pass->flags & SHADER_PASS_DEPTHWRITE) && !shader->fog_dist;
 	noArray = (pass->flags & SHADER_PASS_NOCOLORARRAY) && !fogged;
+	rgbgenfunc = &pass->rgbgen_func;
+	alphagenfunc = &pass->alphagen_func;
 
 	if ( noArray ) {
 		numColors = 1;
@@ -796,107 +873,68 @@ void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 		numColors = numVerts;
 	}
 
-	if ( !fogged ) {
-		// three most common cases
-		if ( pass->rgbgen == RGB_GEN_VERTEX && pass->alphagen == ALPHA_GEN_VERTEX ) {
-			for ( i = 0; i < numColors; i++, vArray += 4, bArray += 4 ) 
-			{
-				bArray[0] = FloatToByte ( vArray[0] );
-				bArray[1] = FloatToByte ( vArray[1] );
-				bArray[2] = FloatToByte ( vArray[2] );
-				bArray[3] = FloatToByte ( vArray[3] );
-			}
-
-			return;
-		} else if ( pass->rgbgen == RGB_GEN_VERTEX && pass->alphagen == ALPHA_GEN_IDENTITY ) {
-			for ( i = 0; i < numColors; i++, vArray += 4, bArray += 4 ) 
-			{
-				bArray[0] = FloatToByte ( vArray[0] );
-				bArray[1] = FloatToByte ( vArray[1] );
-				bArray[2] = FloatToByte ( vArray[2] );
-				bArray[3] = 255;
-			}
-
-			return;
-		} else if ( pass->rgbgen == RGB_GEN_IDENTITY && pass->alphagen == ALPHA_GEN_IDENTITY ) {
-			memset ( bArray, (byte)255, numColors*sizeof(byte_vec4_t) );
-			return;
-		}
-	}
+	bArray = colorArray[0];
+	vArray = inColorsArray[0];
 
 	switch (pass->rgbgen)
 	{
-		case RGB_GEN_IDENTITY_LIGHTING:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[0] = cArray[1] = cArray[2] = r_identityLighting;
-			}
+		case RGB_GEN_IDENTITY:
+			memset ( bArray, 255, sizeof(byte_vec4_t)*numColors );
 			break;
 
-		case RGB_GEN_IDENTITY:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[0] = cArray[1] = cArray[2] = 1.0f;
-			}
+		case RGB_GEN_IDENTITY_LIGHTING:
+			memset ( bArray, r_identityLighting, sizeof(byte_vec4_t)*numColors );
 			break;
 
 		case RGB_GEN_CONST:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[0] = pass->rgbgen_func->args[0];
-				cArray[1] = pass->rgbgen_func->args[1];
-				cArray[2] = pass->rgbgen_func->args[2];
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[0] = FloatToByte (rgbgenfunc->args[0]);
+				bArray[1] = FloatToByte (rgbgenfunc->args[1]);
+				bArray[2] = FloatToByte (rgbgenfunc->args[2]);
 			}
 			break;
 
 		case RGB_GEN_WAVE:
-			table = R_TableForFunc ( pass->rgbgen_func->type );
-			c = pass->rgbgen_func->args[2] + r_localShaderTime * pass->rgbgen_func->args[3];
-			c = FTABLE_EVALUATE ( table, c ) * pass->rgbgen_func->args[1] + pass->rgbgen_func->args[0];
+			table = R_TableForFunc ( rgbgenfunc->type );
+			c = rgbgenfunc->args[2] + r_localShaderTime * rgbgenfunc->args[3];
+			c = FTABLE_EVALUATE ( table, c ) * rgbgenfunc->args[1] + rgbgenfunc->args[0];
 			clamp ( c, 0.0f, 1.0f );
 
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[0] = cArray[1] = cArray[2] = c;
-			}
+			memset ( bArray, FloatToByte (c), sizeof(byte_vec4_t)*numColors );
 			break;
 
 		case RGB_GEN_ENTITY:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[0] = currententity->color[0] * (1.0 / 255.0);
-				cArray[1] = currententity->color[1] * (1.0 / 255.0);
-				cArray[2] = currententity->color[2] * (1.0 / 255.0);
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				*(int *)bArray = *(int *)currententity->color;
 			}
 			break;
 
 		case RGB_GEN_ONE_MINUS_ENTITY:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[0] = 1.0 - currententity->color[0] * (1.0 / 255.0);
-				cArray[1] = 1.0 - currententity->color[1] * (1.0 / 255.0);
-				cArray[2] = 1.0 - currententity->color[2] * (1.0 / 255.0);
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[0] = 255 - currententity->color[0];
+				bArray[1] = 255 - currententity->color[1];
+				bArray[2] = 255 - currententity->color[2];
 			}
 			break;
 
 		case RGB_GEN_VERTEX:
 		case RGB_GEN_EXACT_VERTEX:
-			for ( i = 0; i < numColors; i++, cArray += 4, vArray += 4 ) {
-				cArray[0] = vArray[0];
-				cArray[1] = vArray[1];
-				cArray[2] = vArray[2];
-			}
+			memcpy ( bArray, vArray, sizeof(byte_vec4_t)*numColors );
 			break;
 
 		case RGB_GEN_ONE_MINUS_VERTEX:
-			for ( i = 0; i < numColors; i++, cArray += 4, vArray += 4 ) {
-				cArray[0] = 1.0f - vArray[0];
-				cArray[1] = 1.0f - vArray[1];
-				cArray[2] = 1.0f - vArray[2];
+			for ( i = 0; i < numColors; i++, bArray += 4, vArray += 4 ) {
+				bArray[0] = 255 - vArray[0];
+				bArray[1] = 255 - vArray[1];
+				bArray[2] = 255 - vArray[2];
 			}
 			break;
 
 		case RGB_GEN_LIGHTING_DIFFUSE:
 			if ( !currententity ) {
-				for ( i = 0; i < numColors; i++, cArray += 4 ) {
-					cArray[0] = cArray[1] = cArray[2] = 1.0f;
-				}
+				memset ( bArray, 255, sizeof(byte_vec4_t)*numColors );
 			} else {
-				R_LightForEntity ( currententity, tempcArray );
+				R_LightForEntity ( currententity, bArray );
 			}
 			break;
 
@@ -904,54 +942,57 @@ void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 			break;
 	}
 
-	cArray = tempcArray[0];
+	bArray = colorArray[0];
 	vArray = inColorsArray[0];
 
 	switch (pass->alphagen)
 	{
 		case ALPHA_GEN_IDENTITY:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[3] = 1.0f;
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[3] = 255;
 			}
 			break;
 
 		case ALPHA_GEN_CONST:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[3] = pass->alphagen_func->args[0];
+			b = FloatToByte ( alphagenfunc->args[0] );
+
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[3] = b;
 			}
 			break;
 
 		case ALPHA_GEN_WAVE:
-			table = R_TableForFunc ( pass->alphagen_func->type );
-			a = pass->alphagen_func->args[2] + r_localShaderTime * pass->alphagen_func->args[3];
-			a = FTABLE_EVALUATE ( table, a ) * pass->alphagen_func->args[1] + pass->alphagen_func->args[0];
-			clamp ( a, 0.0f, 1.0f );
+			table = R_TableForFunc ( alphagenfunc->type );
+			a = alphagenfunc->args[2] + r_localShaderTime * alphagenfunc->args[3];
+			a = FTABLE_EVALUATE ( table, a ) * alphagenfunc->args[1] + alphagenfunc->args[0];
+			b = FloatToByte ( bound (0.0f, a, 1.0f) );
 
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[3] = a;
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[3] = b;
 			}
 			break;
 
 		case ALPHA_GEN_PORTAL:
 			VectorAdd ( vertexArray[0], currententity->origin, v );
 			VectorSubtract ( r_origin, v, t );
-			a = VectorLength ( t ) * (1.0/255.0);
+			a = VectorLength ( t ) * (1.0 / 255.0);
 			clamp ( a, 0.0f, 1.0f );
+			b = FloatToByte ( a );
 
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[3] = a;
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[3] = b;
 			}
 			break;
 
 		case ALPHA_GEN_VERTEX:
-			for ( i = 0; i < numColors; i++, cArray += 4, vArray += 4 ) {
-				cArray[3] = vArray[3];
+			for ( i = 0; i < numColors; i++, bArray += 4, vArray += 4 ) {
+				bArray[3] = vArray[3];
 			}
 			break;
 
 		case ALPHA_GEN_ENTITY:
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
-				cArray[3] = currententity->color[3] * (1.0 / 255.0);
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
+				bArray[3] = currententity->color[3];
 			}
 			break;
 
@@ -964,17 +1005,15 @@ void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 				VectorCopy ( t, v );
 			}
 
-			for ( i = 0; i < numColors; i++, cArray += 4 ) {
+			for ( i = 0; i < numColors; i++, bArray += 4 ) {
 				VectorSubtract ( v, vertexArray[i], t );
 				a = DotProduct( t, normalsArray[i] ) * Q_RSqrt ( DotProduct(t,t) );
 				a = a * a * a * a * a;
-				cArray[3] = bound ( 0.0f, a, 1.0f );
+				bArray[3] = FloatToByte ( bound (0.0f, a, 1.0f) );
 			}
 			break;
 	}
 	
-	cArray = tempcArray[0];
-
 	if ( fogged ) {
 		float dist, vdist;
 		cplane_t *fogplane;
@@ -997,7 +1036,8 @@ void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 
 		VectorScale ( vpn, mb->fog->shader->fog_dist, fog_vpn );
 
-		for ( i = 0; i < numColors; i++, cArray += 4, bArray += 4 ) 
+		bArray = colorArray[0];
+		for ( i = 0; i < numColors; i++, bArray += 4 )
 		{
 			VectorAdd ( vertexArray[i], viewtofog, diff );
 
@@ -1006,7 +1046,7 @@ void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 				VectorSubtract ( diff, r_origin, diff );
 
 				c = DotProduct ( diff, fog_vpn );
-				a = 1.0f - bound ( 0, c, 1.0f );
+				a = (1.0f - bound ( 0, c, 1.0f )) * (1.0 / 255.0);
 			} else {
 				vdist = PlaneDiff ( diff, fogplane );
 
@@ -1015,31 +1055,20 @@ void R_ModifyColor ( meshbuffer_t *mb, shaderpass_t *pass )
 
 					c = vdist / ( vdist - dist );
 					c *= DotProduct ( diff, fog_vpn );
-					a = 1.0f - bound ( 0, c, 1.0f );
+					a = (1.0f - bound ( 0, c, 1.0f )) * (1.0 / 255.0);
 				} else {
-					a = 1.0f;
+					a = 1.0 / 255.0;
 				}
 			}
 
-			if ( pass->blendmode == GL_ADD ) {
-				bArray[0] = FloatToByte ( cArray[0]*a );
-				bArray[1] = FloatToByte ( cArray[1]*a );
-				bArray[2] = FloatToByte ( cArray[2]*a );
-				bArray[3] = FloatToByte ( cArray[3] );
+			if ( pass->blendmode == GL_ADD || 
+				((pass->blendsrc == GL_ZERO) && (pass->blenddst == GL_ONE_MINUS_SRC_COLOR)) ) {
+				bArray[0] = FloatToByte ( (float)bArray[0]*a );
+				bArray[1] = FloatToByte ( (float)bArray[1]*a );
+				bArray[2] = FloatToByte ( (float)bArray[2]*a );
 			} else {
-				bArray[0] = FloatToByte ( cArray[0] );
-				bArray[1] = FloatToByte ( cArray[1] );
-				bArray[2] = FloatToByte ( cArray[2] );
-				bArray[3] = FloatToByte ( cArray[3]*a );
+				bArray[3] = FloatToByte ( (float)bArray[3]*a );
 			}
-		}
-	} else {
-		for ( i = 0; i < numColors; i++, cArray += 4, bArray += 4 ) 
-		{
-			bArray[0] = FloatToByte ( cArray[0] );
-			bArray[1] = FloatToByte ( cArray[1] );
-			bArray[2] = FloatToByte ( cArray[2] );
-			bArray[3] = FloatToByte ( cArray[3] );
 		}
 	}
 }
@@ -1052,24 +1081,24 @@ R_SetShaderState
 void R_SetShaderState ( shader_t *shader )
 {
 // Face culling
-	if ( !gl_cull->value ) {
-		GLSTATE_DISABLE_CULL;
+	if ( !gl_cull->value || (r_features & MF_NOCULL) ) {
+		qglDisable ( GL_CULL_FACE );
 	} else {
 		if ( shader->flags & SHADER_CULL_FRONT ) {
-			GLSTATE_ENABLE_CULL;
+			qglEnable ( GL_CULL_FACE );
 			qglCullFace ( GL_FRONT );
 		} else if ( shader->flags & SHADER_CULL_BACK ) {
-			GLSTATE_ENABLE_CULL;
+			qglEnable ( GL_CULL_FACE );
 			qglCullFace ( GL_BACK );
 		} else {
-			GLSTATE_DISABLE_CULL;
+			qglDisable ( GL_CULL_FACE );
 		}
 	}
 
 	if ( shader->flags & SHADER_POLYGONOFFSET ) {
-		GLSTATE_ENABLE_OFFSET;
+		qglEnable ( GL_POLYGON_OFFSET_FILL );
 	} else {
-		GLSTATE_DISABLE_OFFSET;
+		qglDisable ( GL_POLYGON_OFFSET_FILL );
 	}
 }
 
@@ -1081,14 +1110,14 @@ R_SetShaderpassState
 void R_SetShaderpassState ( shaderpass_t *pass, qboolean mtex )
 {
 	if ( (mtex && (pass->blendmode != GL_REPLACE)) || (pass->flags & SHADER_PASS_BLEND) ) {
-		GLSTATE_ENABLE_BLEND;
+		qglEnable ( GL_BLEND );
 		qglBlendFunc ( pass->blendsrc, pass->blenddst );
 	} else {
-		GLSTATE_DISABLE_BLEND;
+		qglDisable ( GL_BLEND );
 	}
 
 	if ( pass->flags & SHADER_PASS_ALPHAFUNC ) {
-		GLSTATE_ENABLE_ALPHATEST;
+		qglEnable ( GL_ALPHA_TEST );
 
 		if ( pass->alphafunc == SHADER_ALPHA_GT0 ) {
 			qglAlphaFunc ( GL_GREATER, 0 );
@@ -1098,7 +1127,7 @@ void R_SetShaderpassState ( shaderpass_t *pass, qboolean mtex )
 			qglAlphaFunc ( GL_GEQUAL, 0.5f );
 		}
 	} else {
-		GLSTATE_DISABLE_ALPHATEST;
+		qglDisable ( GL_ALPHA_TEST );
 	}
 
 	// nasty hack!!!
@@ -1359,13 +1388,17 @@ void R_RenderMeshBuffer ( meshbuffer_t *mb, qboolean shadowpass )
 	shader_t *shader;
 	shaderpass_t *pass;
 
+	if ( !numVerts ) {
+		return;
+	}
+
 	shader = mb->shader;
 	r_lmtex = mb->infokey;
 
 	if ( currententity && !gl_state.in2d ) {
-		r_localShaderTime = r_shadertime - currententity->shaderTime;
+		r_localShaderTime = r_newrefdef.time - currententity->shaderTime;
 	} else {
-		r_localShaderTime = r_shadertime;
+		r_localShaderTime = curtime * 0.001f;
 	}
 
 	R_SetShaderState ( shader );
@@ -1374,7 +1407,7 @@ void R_RenderMeshBuffer ( meshbuffer_t *mb, qboolean shadowpass )
 		R_DeformVertices ( mb );
 	}
 
-	if ( shadowpass ) {
+	if ( !numIndexes || shadowpass ) {
 		return;
 	}
 
@@ -1420,10 +1453,10 @@ void R_RenderFogOnMesh ( shader_t *shader, mfog_t *fog )
 
 	qglBlendFunc( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
 
-	if ( shader->numpasses && (shader->passes[shader->numpasses-1].flags & SHADER_PASS_DEPTHWRITE) ) {
-		qglDepthFunc ( GL_EQUAL );
-	} else {
+	if ( !shader->numpasses || shader->fog_dist || (shader->flags & SHADER_SKY) ) {
 		qglDepthFunc ( GL_LEQUAL );
+	} else {
+		qglDepthFunc ( GL_EQUAL );
 	}
 
 	qglColor4ubv ( fogshader->fog_color );
@@ -1461,7 +1494,7 @@ void R_RenderFogOnMesh ( shader_t *shader, mfog_t *fog )
 			}
 		}
 
-		currentCoords[1] = -vdist*fogshader->fog_dist + 1.5f/256.0f;
+		currentCoords[1] = -vdist * fogshader->fog_dist + 1.5f/(float)FOG_TEXTURE_HEIGHT;
 	}
 
 	if ( !shader->numpasses ) {
@@ -1478,10 +1511,12 @@ R_DrawTriangleOutlines
 */
 void R_DrawTriangleOutlines (void)
 {
+	R_ResetTexState ();
+
 	qglDisable( GL_TEXTURE_2D );
 	qglDisable( GL_DEPTH_TEST );
 	qglColor4f( 1, 1, 1, 1 );
-	GLSTATE_DISABLE_BLEND;
+	qglDisable ( GL_BLEND );
 	qglPolygonMode (GL_FRONT_AND_BACK, GL_LINE);
 
 	R_FlushArrays ();
@@ -1500,9 +1535,11 @@ void R_DrawNormals (void)
 {
 	int i;
 
+	R_ResetTexState ();
+
 	qglDisable( GL_TEXTURE_2D );
 	qglColor4f( 1, 1, 1, 1 );
-	GLSTATE_DISABLE_BLEND;
+	qglDisable( GL_BLEND );
 
 	if ( gl_state.in2d ) {
 		qglBegin ( GL_POINTS );
@@ -1536,20 +1573,22 @@ void R_FinishMeshBuffer ( meshbuffer_t *mb )
 {
 	shader_t	*shader;
 	qboolean	fogged;
+	qboolean	dlight;
 
 	shader = mb->shader;
-	fogged = mb->fog && ((shader->sort < SHADER_SORT_ADDITIVE && 
+	dlight = (mb->dlightbits != 0) && !(shader->flags & SHADER_FLARE);
+	fogged = mb->fog && ((shader->sort < SHADER_SORT_UNDERWATER && 
 		(shader->flags & (SHADER_DEPTHWRITE|SHADER_SKY))) || shader->fog_dist);
 
-	if ( mb->dlightbits || fogged ) {
+	if ( dlight || fogged ) {
 		GL_EnableMultitexture ( false );
 		qglTexCoordPointer( 2, GL_FLOAT, 0, inCoordsArray[0] );
 
-		GLSTATE_ENABLE_BLEND;
-		GLSTATE_DISABLE_ALPHATEST;
+		qglEnable ( GL_BLEND );
+		qglDisable ( GL_ALPHA_TEST );
 		qglDepthMask ( GL_FALSE );
 
-		if ( mb->dlightbits ) {
+		if ( dlight ) {
 			R_AddDynamicLights ( mb );
 		}
 

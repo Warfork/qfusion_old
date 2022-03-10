@@ -602,9 +602,6 @@ int GLimp_InitGL (void)
 	if (gl_state.gammaramp)
 		vid_gamma->modified = true;
 
-	gl_state.blend = false;
-	gl_state.alphatest = false;
-
 	return true;
 
 fail:
@@ -690,7 +687,6 @@ void GLimp_BeginFrame( float camera_separation )
 		qglDrawBuffer( GL_BACK );
 	}
 
-	r_shadertime = curtime * 0.001;
 	Shader_RunCinematic ();
 }
 

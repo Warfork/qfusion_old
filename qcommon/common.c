@@ -611,6 +611,9 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 	if (newentity || (to->renderfx & (RF_BEAM|RF_PORTALSURFACE)))
 		bits |= U_OLDORIGIN;
 
+	if ( to->light != from->light )
+		bits |= U_LIGHT;
+
 	//
 	// write the message
 	//
@@ -710,6 +713,9 @@ void MSG_WriteDeltaEntity (entity_state_t *from, entity_state_t *to, sizebuf_t *
 		MSG_WriteByte (msg, to->event);
 	if (bits & U_SOLID)
 		MSG_WriteShort (msg, to->solid);
+
+	if (bits & U_LIGHT)
+		MSG_WriteLong (msg, to->light);
 }
 
 

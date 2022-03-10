@@ -81,7 +81,7 @@ void MakeNormalVectors (const vec3_t forward, vec3_t right, vec3_t up)
 
 	d = DotProduct (right, forward);
 	VectorMA (right, -d, forward, right);
-	VectorNormalizeFast (right);
+	VectorNormalize (right);
 	CrossProduct (right, forward, up);
 }
 
@@ -298,7 +298,7 @@ float Q_RSqrt (float number)
 	return y;
 }
 
-#if defined _M_IX86 && !defined C_ONLY
+#if defined id386 && !defined __linux__
 #pragma warning (disable:4035)
 __declspec( naked ) long Q_ftol( float f )
 {
@@ -327,6 +327,30 @@ float LerpAngle (float a2, float a1, const float frac)
 }
 
 /*
+===============
+ColorNormalize
+
+===============
+*/
+float ColorNormalize (vec3_t in, vec3_t out)
+{
+	float f = max (max (in[0], in[1]), in[2]);
+
+	if ( f > 1.0 ) {
+		f = 1.0 / f;
+		out[0] = in[0] * f;
+		out[1] = in[1] * f;
+		out[2] = in[2] * f;
+	} else {
+		out[0] = in[0];
+		out[1] = in[1];
+		out[2] = in[2];
+	}
+
+	return f;
+}
+
+/*
 ====================
 CalcFov
 ====================
@@ -348,10 +372,6 @@ float	anglemod(float a)
 	a = (360.0/65536) * ((int)(a*(65536/360.0)) & 65535);
 	return a;
 }
-
-int		i;
-vec3_t	corners[2];
-
 
 /*
 ==================
@@ -486,6 +506,7 @@ void CategorizePlane ( cplane_t *plane )
 {
 	int i;
 
+	plane->signbits = 0;
 	plane->type = PLANE_ANYZ;
 	for (i = 0; i < 3; i++)
 	{
@@ -595,6 +616,10 @@ vec_t VectorNormalize2 (vec3_t v, vec3_t out)
 		out[1] = v[1]*ilength;
 		out[2] = v[2]*ilength;
 	}
+	else
+	{
+		VectorClear (out);
+	}
 		
 	return length;
 }
@@ -666,6 +691,8 @@ void Matrix4_Copy (mat4_t a, mat4_t b)
 
 qboolean Matrix4_Compare (mat4_t a, mat4_t b)
 {
+	int i;
+
 	for (i = 0; i < 16; i++)
 	{
 		if ( a[i] != b[i] )

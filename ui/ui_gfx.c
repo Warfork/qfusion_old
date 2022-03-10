@@ -39,6 +39,7 @@ static menulist_s		s_dlights_list;
 static menulist_s		s_lightflares_list;
 static menulist_s		s_thirdperson_list;
 static menulist_s  		s_finish_box;
+static menulist_s  		s_marks_list;
 
 static void				*s_crosshair_pic;
 
@@ -73,6 +74,11 @@ static void UpdateFinishFunc( void *unused )
 	trap_Cvar_SetValue( "gl_finish", s_finish_box.curvalue );
 }
 
+static void UpdateMarksFunc( void *unused )
+{
+	trap_Cvar_SetValue( "cl_decals", s_marks_list.curvalue );
+}
+
 void Gfx_MenuInit( void )
 {
 	static const char *crosshair_names[] =
@@ -103,6 +109,11 @@ void Gfx_MenuInit( void )
 	static const char *finish_names[] =
 	{
 		"no", "yes", 0
+	};
+
+	static const char *marks_names[] =
+	{
+		"off", "on", 0
 	};
 
 	int w, h;
@@ -183,6 +194,14 @@ void Gfx_MenuInit( void )
 	s_finish_box.itemnames					= finish_names;
 	clamp ( s_finish_box.curvalue, 0, 1 );
 
+	s_marks_list.generic.type				= MTYPE_SPINCONTROL;
+	s_marks_list.generic.x					= 0;
+	s_marks_list.generic.y					= y+=y_offset;
+	s_marks_list.generic.name				= "marks on walls";
+	s_marks_list.curvalue					= trap_Cvar_VariableValue( "cl_decals" );
+	s_marks_list.itemnames					= marks_names;
+	clamp ( s_marks_list.curvalue, 0, 1 );
+
 	Menu_AddItem( &s_gfx_menu, ( void * ) &s_gfx_title );
 	Menu_AddItem( &s_gfx_menu, ( void * ) &s_crosshair_box );
 	Menu_AddItem( &s_gfx_menu, ( void * ) &s_skyquality_list );
@@ -190,6 +209,7 @@ void Gfx_MenuInit( void )
 	Menu_AddItem( &s_gfx_menu, ( void * ) &s_lightflares_list );
 	Menu_AddItem( &s_gfx_menu, ( void * ) &s_thirdperson_list );
 	Menu_AddItem( &s_gfx_menu, ( void * ) &s_finish_box );
+	Menu_AddItem( &s_gfx_menu, ( void * ) &s_marks_list );
 
 	Menu_Center( &s_gfx_menu );
 

@@ -557,4 +557,13 @@ extern int GL_TEXTURE_0, GL_TEXTURE_1;
 
 #endif
 
+/* GL_EXT_bgra */
+#ifndef GL_EXT_bgra
+#define GL_EXT_bgra
+
+#define GL_BGR_EXT                                              0x80E0
+#define GL_BGRA_EXT                                             0x80E1
+
+#endif
+
 #endif

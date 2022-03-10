@@ -195,17 +195,17 @@ void CTFInit(void)
 
 void CTFPrecache(void)
 {
-	imageindex_i_ctf1 =   gi.imageindex("i_ctf1"); 
-	imageindex_i_ctf2 =   gi.imageindex("i_ctf2"); 
-	imageindex_i_ctf1d =  gi.imageindex("i_ctf1d");
-	imageindex_i_ctf2d =  gi.imageindex("i_ctf2d");
-	imageindex_i_ctf1t =  gi.imageindex("i_ctf1t");
-	imageindex_i_ctf2t =  gi.imageindex("i_ctf2t");
-	imageindex_i_ctfj =   gi.imageindex("i_ctfj"); 
-	imageindex_sbfctf1 =  gi.imageindex("sbfctf1");
-	imageindex_sbfctf2 =  gi.imageindex("sbfctf2");
-	imageindex_ctfsb1 =   gi.imageindex("ctfsb1");
-	imageindex_ctfsb2 =   gi.imageindex("ctfsb2");
+	imageindex_i_ctf1 =   gi.imageindex("pics/i_ctf1"); 
+	imageindex_i_ctf2 =   gi.imageindex("pics/i_ctf2"); 
+	imageindex_i_ctf1d =  gi.imageindex("pics/i_ctf1d");
+	imageindex_i_ctf2d =  gi.imageindex("pics/i_ctf2d");
+	imageindex_i_ctf1t =  gi.imageindex("pics/i_ctf1t");
+	imageindex_i_ctf2t =  gi.imageindex("pics/i_ctf2t");
+	imageindex_i_ctfj =   gi.imageindex("pics/i_ctfj"); 
+	imageindex_sbfctf1 =  gi.imageindex("pics/sbfctf1");
+	imageindex_sbfctf2 =  gi.imageindex("pics/sbfctf2");
+	imageindex_ctfsb1 =   gi.imageindex("pics/ctfsb1");
+	imageindex_ctfsb2 =   gi.imageindex("pics/ctfsb2");
 }
 
 /*--------------------------------------------------------------------------*/
@@ -1192,36 +1192,17 @@ void CTFGrappleDrawCable(edict_t *self)
 	float	distance;
 
 	AngleVectors (self->owner->client->v_angle, f, r, NULL);
-	VectorSet(offset, 16, 16, self->owner->viewheight-8);
+	VectorSet (offset, 16, 16, self->owner->viewheight-8);
 	P_ProjectSource (self->owner->client, self->owner->s.origin, offset, f, r, start);
 
-	VectorSubtract(start, self->owner->s.origin, offset);
+	VectorSubtract (start, self->owner->s.origin, offset);
 
 	VectorSubtract (start, self->s.origin, dir);
-	distance = VectorLength(dir);
+	distance = VectorLength (dir);
+
 	// don't draw cable if close
 	if (distance < 64)
 		return;
-
-#if 0
-	if (distance > 256)
-		return;
-
-	// check for min/max pitch
-	vectoangles (dir, angles);
-	if (angles[0] < -180)
-		angles[0] += 360;
-	if (fabs(angles[0]) > 45)
-		return;
-
-	trace_t	tr; //!!
-
-	tr = gi.trace (start, NULL, NULL, self->s.origin, self, MASK_SHOT);
-	if (tr.ent != self) {
-		CTFResetGrapple(self);
-		return;
-	}
-#endif
 
 	// adjust start for beam origin being in middle of a segment
 //	VectorMA (start, 8, f, start);
@@ -1341,6 +1322,7 @@ void CTFFireGrapple (edict_t *self, vec3_t start, vec3_t dir, int damage, int sp
 	grapple->movetype = MOVETYPE_FLYMISSILE;
 	grapple->clipmask = MASK_SHOT;
 	grapple->solid = SOLID_BBOX;
+	grapple->s.renderfx = RF_NOSHADOW;
 	grapple->s.effects |= effect;
 	VectorClear (grapple->mins);
 	VectorClear (grapple->maxs);
@@ -1578,12 +1560,12 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 	len = 0;
 
 	// team one
-	sprintf(string, "if 24 xv 8 yv 8 pic 24 endif "
+	sprintf(string, "if 23 xv 8 yv 8 pic 32 32 23 endif "
 		"xv 40 yv 28 string \"%4d/%-3d\" "
-		"xv 98 yv 12 num 2 18 "
-		"if 25 xv 168 yv 8 pic 25 endif "
+		"xv 98 yv 12 num 2 17 "
+		"if 24 xv 168 yv 8 pic 32 32 24 endif "
 		"xv 200 yv 28 string \"%4d/%-3d\" "
-		"xv 256 yv 12 num 2 20 ",
+		"xv 256 yv 12 num 2 19 ",
 		totalscore[0], total[0],
 		totalscore[1], total[1]);
 	len = strlen(string);
@@ -1593,44 +1575,23 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 		if (i >= total[0] && i >= total[1])
 			break; // we're done
 
-#if 0 //ndef NEW_SCORE
-		// set up y
-		sprintf(entry, "yv %d ", 42 + i * 8);
-		if (maxsize - len > strlen(entry)) {
-			strcat(string, entry);
-			len = strlen(string);
-		}
-#else
 		*entry = 0;
-#endif
 
 		// left side
 		if (i < total[0]) {
 			cl = &game.clients[sorted[0][i]];
 			cl_ent = g_edicts + 1 + sorted[0][i];
 
-#if 0 //ndef NEW_SCORE
-			sprintf(entry+strlen(entry),
-			"xv 0 %s \"%3d %3d %-12.12s\" ",
-			(cl_ent == ent) ? "string2" : "string",
-			cl->resp.score, 
-			(cl->ping > 999) ? 999 : cl->ping, 
-			cl->pers.netname);
-
-			if (cl_ent->client->pers.inventory[ITEM_INDEX(flag2_item)])
-				strcat(entry, "xv 56 picn sbfctf2 ");
-#else
 			sprintf(entry+strlen(entry),
 				"ctf 0 %d %d %d %d ",
-				42 + i * 8,
+				42 + i * 16,
 				sorted[0][i],
 				cl->resp.score,
 				cl->ping > 999 ? 999 : cl->ping);
 
 			if (cl_ent->client->pers.inventory[ITEM_INDEX(flag2_item)])
-				sprintf(entry + strlen(entry), "xv 56 yv %d picn sbfctf2 ",
-					42 + i * 8);
-#endif
+				sprintf(entry + strlen(entry), "xv 56 yv %d picn 32 32 pics/sbfctf2 ",
+					42 + i * 16);
 
 			if (maxsize - len > strlen(entry)) {
 				strcat(string, entry);
@@ -1644,30 +1605,17 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 			cl = &game.clients[sorted[1][i]];
 			cl_ent = g_edicts + 1 + sorted[1][i];
 
-#if 0 //ndef NEW_SCORE
-			sprintf(entry+strlen(entry),
-			"xv 160 %s \"%3d %3d %-12.12s\" ",
-			(cl_ent == ent) ? "string2" : "string",
-			cl->resp.score, 
-			(cl->ping > 999) ? 999 : cl->ping, 
-			cl->pers.netname);
-
-			if (cl_ent->client->pers.inventory[ITEM_INDEX(flag1_item)])
-				strcat(entry, "xv 216 picn sbfctf1 ");
-
-#else
-
 			sprintf(entry+strlen(entry),
 				"ctf 160 %d %d %d %d ",
-				42 + i * 8,
+				42 + i * 16,
 				sorted[1][i],
 				cl->resp.score,
 				cl->ping > 999 ? 999 : cl->ping);
 
 			if (cl_ent->client->pers.inventory[ITEM_INDEX(flag1_item)])
-				sprintf(entry + strlen(entry), "xv 216 yv %d picn sbfctf1 ",
-					42 + i * 8);
-#endif
+				sprintf(entry + strlen(entry), "xv 216 yv %d picn 32 32 pics/sbfctf1 ",
+					42 + i * 16);
+
 			if (maxsize - len > strlen(entry)) {
 				strcat(string, entry);
 				len = strlen(string);
@@ -1681,7 +1629,7 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 		j = last[0];
 	else
 		j = last[1];
-	j = (j + 2) * 8 + 42;
+	j = (j + 2) * 16 + 42;
 
 	k = n = 0;
 	if (maxsize - len > 50) {
@@ -1695,10 +1643,10 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 
 			if (!k) {
 				k = 1;
-				sprintf(entry, "xv 0 yv %d string2 \"Spectators\" ", j);
+				sprintf(entry, "xv 0 yv %d string \"%sSpectators\" ", S_COLOR_YELLOW, j);
 				strcat(string, entry);
 				len = strlen(string);
-				j += 8;
+				j += 16;
 			}
 
 			sprintf(entry+strlen(entry),
@@ -1714,7 +1662,7 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 			}
 			
 			if (n & 1)
-				j += 8;
+				j += 16;
 			n++;
 		}
 	}
@@ -1737,7 +1685,7 @@ void CTFScoreboardMessage (edict_t *ent, edict_t *killer)
 void CTFHasTech(edict_t *who)
 {
 	if (level.time - who->client->ctf_lasttechmsg > 2) {
-		gi.centerprintf(who, "You already have a TECH powerup.");
+		gi.centerprintf(who, S_COLOR_RED "You already have a TECH powerup.");
 		who->client->ctf_lasttechmsg = level.time;
 	}
 }
@@ -2762,7 +2710,7 @@ void CTFReturnToMain(edict_t *ent, pmenuhnd_t *p);
 void CTFChaseCam(edict_t *ent, pmenuhnd_t *p);
 
 pmenu_t creditsmenu[] = {
-	{ "*QFusion",						PMENU_ALIGN_CENTER, NULL },
+	{ "*" APPLICATION,					PMENU_ALIGN_CENTER, NULL },
 	{ "*ThreeWave Capture the Flag",	PMENU_ALIGN_CENTER, NULL },
 	{ NULL,								PMENU_ALIGN_CENTER, NULL },
 	{ "*Programming",					PMENU_ALIGN_CENTER, NULL }, 
@@ -2790,7 +2738,7 @@ static const int jmenu_chase = 9;
 static const int jmenu_reqmatch = 11;
 
 pmenu_t joinmenu[] = {
-	{ "*QFusion",			PMENU_ALIGN_CENTER, NULL },
+	{ "*" APPLICATION,		PMENU_ALIGN_CENTER, NULL },
 	{ "*ThreeWave Capture the Flag",	PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
@@ -2811,7 +2759,7 @@ pmenu_t joinmenu[] = {
 };
 
 pmenu_t nochasemenu[] = {
-	{ "*QFusion",			PMENU_ALIGN_CENTER, NULL },
+	{ "*" APPLICATION,		PMENU_ALIGN_CENTER, NULL },
 	{ "*ThreeWave Capture the Flag",	PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },
 	{ NULL,					PMENU_ALIGN_CENTER, NULL },

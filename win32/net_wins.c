@@ -47,8 +47,6 @@ loopback_t	loopbacks[2];
 int			ip_sockets[2];
 int			ipx_sockets[2];
 
-static byte huffbuff[65536];
-
 char *NET_ErrorString (void);
 
 //=============================================================================
@@ -354,8 +352,8 @@ qboolean	NET_GetPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_messag
 			continue;
 
 		fromlen = sizeof(from);
-	    ret = recvfrom (net_socket, huffbuff, sizeof(huffbuff), 
-			0, (struct sockaddr *)&from, &fromlen);
+		ret = recvfrom (net_socket, net_message->data, net_message->maxsize
+			, 0, (struct sockaddr *)&from, &fromlen);
 
 		SockadrToNetadr (&from, net_from);
 
@@ -371,12 +369,9 @@ qboolean	NET_GetPacket (netsrc_t sock, netadr_t *net_from, sizebuf_t *net_messag
 				continue;
 			}
 
-			if (dedicated->value)	// let dedicated servers continue after errors
-				Com_Printf ("NET_GetPacket: %s from %s\n", NET_ErrorString(),
-						NET_AdrToString(net_from));
-			else
-				Com_Error (ERR_DROP, "NET_GetPacket: %s from %s", 
-						NET_ErrorString(), NET_AdrToString(net_from));
+	// let servers continue after errors
+			Com_DPrintf ("NET_GetPacket: %s from %s\n", NET_ErrorString(),
+					NET_AdrToString(net_from));
 			continue;
 		}
 
@@ -436,7 +431,7 @@ void NET_SendPacket (netsrc_t sock, int length, void *data, netadr_t to)
 
 	NetadrToSockadr (&to, &addr);
 
-    ret = sendto (net_socket, huffbuff, length, 0, &addr, sizeof(addr) );
+	ret = sendto (net_socket, data, length, 0, &addr, sizeof(addr) );
 
 	if (ret == -1)
 	{

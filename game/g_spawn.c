@@ -691,6 +691,8 @@ void SP_worldspawn (edict_t *ent)
 	ent->solid = SOLID_BSP;
 	ent->inuse = true;			// since the world doesn't use G_Spawn()
 	ent->s.modelindex = 1;		// world model is always index 1
+	VectorClear (ent->s.origin);
+	VectorClear (ent->s.angles);
 
 	//---------------
 
@@ -735,10 +737,8 @@ void SP_worldspawn (edict_t *ent)
 
 
 	// help icon for statusbar
-	gi.imageindex ("i_help");
-	level.pic_health = gi.imageindex ("icons/iconh_red");
-	gi.imageindex ("help");
-	gi.imageindex ("field_3");
+	gi.imageindex ("pics/i_help");
+	gi.imageindex ("pics/help");
 
 	if (!st.gravity)
 		gi.cvar_set("sv_gravity", "800");

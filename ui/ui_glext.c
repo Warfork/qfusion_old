@@ -38,6 +38,8 @@ static menulist_s		s_texenvcombine_list;
 static menulist_s		s_NVtexenvcombine4_list;
 static menulist_s		s_sgismipmap_list;
 static menulist_s		s_compressedtex_list;
+static menulist_s		s_bgra_list;
+
 static menuaction_s		s_apply_action;
 
 static void ApplyChanges( void *unused )
@@ -50,6 +52,7 @@ static void ApplyChanges( void *unused )
 	trap_Cvar_SetValue( "gl_ext_texture_env_combine", s_texenvcombine_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_NV_texture_env_combine4", s_NVtexenvcombine4_list.curvalue );
 	trap_Cvar_SetValue( "gl_ext_compressed_textures", s_compressedtex_list.curvalue );
+	trap_Cvar_SetValue( "gl_ext_bgra", s_bgra_list.curvalue );
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "vid_restart\n");
 	trap_Cmd_Execute();
@@ -72,7 +75,7 @@ static void GLExt_MenuInit( void )
 	int y = 0;
 	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_glext_menu.x = trap_GetWidth() / 2;
+	s_glext_menu.x = uis.vidWidth / 2;
 	s_glext_menu.nitems = 0;
 
 	s_extensions_list.generic.type	= MTYPE_SPINCONTROL;
@@ -141,6 +144,14 @@ static void GLExt_MenuInit( void )
 	s_compressedtex_list.curvalue		= trap_Cvar_VariableValue( "gl_ext_compressed_textures" );
 	s_compressedtex_list.generic.statusbar = "trades texture quality for speed";
 	clamp ( s_compressedtex_list.curvalue, 0, 1 );
+
+	s_bgra_list.generic.type			= MTYPE_SPINCONTROL;
+	s_bgra_list.generic.name			= "BGRA byte order";
+	s_bgra_list.generic.x				= 0;
+	s_bgra_list.generic.y				= y+=y_offset;
+	s_bgra_list.itemnames				= on_off_names;
+	s_bgra_list.curvalue				= trap_Cvar_VariableValue( "gl_ext_bgra" );
+	clamp ( s_bgra_list.curvalue, 0, 1 );
 	y += y_offset;
 
 	s_apply_action.generic.type		= MTYPE_ACTION;
@@ -158,6 +169,7 @@ static void GLExt_MenuInit( void )
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_NVtexenvcombine4_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_sgismipmap_list );
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_compressedtex_list );
+	Menu_AddItem( &s_glext_menu, ( void * ) &s_bgra_list );
 
 	Menu_AddItem( &s_glext_menu, ( void * ) &s_apply_action );
 

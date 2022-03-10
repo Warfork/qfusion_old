@@ -207,7 +207,7 @@ void DeathmatchScoreboardMessage (edict_t *ent, edict_t *killer)
 		cl = &game.clients[sorted[i]];
 		cl_ent = g_edicts + 1 + sorted[i];
 
-		picnum = gi.imageindex ("i_fixme");
+		picnum = gi.imageindex ("pics/i_fixme");
 		x = (i>=6) ? 160 : 0;
 		y = 32 + 64 * (i%6);
 
@@ -305,18 +305,18 @@ void HelpComputer (edict_t *ent)
 
 	// send the layout
 	Com_sprintf (string, sizeof(string),
-		"xv 32 yv 8 picn help "			// background
-		"xv 202 yv 12 string2 \"%s\" "		// skill
-		"xv 0 yv 24 cstring2 \"%s\" "		// level name
-		"xv 0 yv 54 cstring2 \"%s\" "		// help 1
-		"xv 0 yv 110 cstring2 \"%s\" "		// help 2
-		"xv 50 yv 164 string2 \" kills     goals    secrets\" "
-		"xv 50 yv 172 string2 \"%3i/%3i     %i/%i       %i/%i\" ", 
-		sk,
-		level.level_name,
-		game.helpmessage1,
-		game.helpmessage2,
-		level.killed_monsters, level.total_monsters, 
+		"xv 32 yv 8 picn 32 32 pics/help "			// background
+		"xv 202 yv 12 string \"%s%s\" "		// skill
+		"xv 0 yv 24 cstring \"%s%s\" "		// level name
+		"xv 0 yv 54 cstring \"%s%s\" "		// help 1
+		"xv 0 yv 110 cstring \"%s%s\" "		// help 2
+		"xv 50 yv 164 string \"%s kills     goals    secrets\" "
+		"xv 50 yv 172 string \"%s%3i/%3i     %i/%i       %i/%i\" ", 
+		S_COLOR_GREEN, sk,
+		S_COLOR_GREEN, level.level_name,
+		S_COLOR_GREEN, game.helpmessage1,
+		S_COLOR_GREEN, game.helpmessage2, S_COLOR_GREEN,
+		S_COLOR_GREEN, level.killed_monsters, level.total_monsters, 
 		level.found_goals, level.total_goals,
 		level.found_secrets, level.total_secrets);
 
@@ -335,7 +335,7 @@ Display the current help message
 */
 void Cmd_Help_f (edict_t *ent)
 {
-	// this is for backwards compatability
+	// this is for backwards compatibility
 	if (deathmatch->value)
 	{
 		Cmd_Score_f (ent);
@@ -373,7 +373,6 @@ void G_SetStats (edict_t *ent)
 	//
 	// health
 	//
-	ent->client->ps.stats[STAT_HEALTH_ICON] = level.pic_health;
 	ent->client->ps.stats[STAT_HEALTH] = ent->health;
 
 	//
@@ -409,7 +408,7 @@ void G_SetStats (edict_t *ent)
 	index = ArmorIndex (ent);
 	if (power_armor_type && (!index || (level.framenum & 8) ) )
 	{	// flash between power armor and other armor icon
-		ent->client->ps.stats[STAT_ARMOR_ICON] = gi.imageindex ("i_powershield");
+		ent->client->ps.stats[STAT_ARMOR_ICON] = gi.imageindex ("pics/i_powershield");
 		ent->client->ps.stats[STAT_ARMOR] = cells;
 	}
 	else if (index)
@@ -502,7 +501,7 @@ void G_SetStats (edict_t *ent)
 	// help icon / current weapon if not shown
 	//
 	if (ent->client->resp.helpchanged && (level.framenum&8) )
-		ent->client->ps.stats[STAT_HELPICON] = gi.imageindex ("i_help");
+		ent->client->ps.stats[STAT_HELPICON] = gi.imageindex ("pics/i_help");
 	else if ( (ent->client->pers.hand == CENTER_HANDED || ent->client->ps.fov > 91)
 		&& ent->client->pers.weapon)
 		ent->client->ps.stats[STAT_HELPICON] = gi.imageindex (ent->client->pers.weapon->icon);

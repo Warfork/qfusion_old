@@ -593,8 +593,7 @@ void Con_DrawConsole (float frac)
 // draw the background
 	Draw_StretchPic (0, -(int)viddef.height+lines, viddef.width, viddef.height, 
 		0, 0, 1, 1, colorWhite, R_RegisterPic( "console" ) );
-	Draw_StretchPic (0, -(int)viddef.height+lines+viddef.height, viddef.width, 3, 
-		0, 0, 1, 1, colorRed, R_RegisterPic( "***r_whitetexture***" ) );
+	Draw_FillRect ( 0, -(int)viddef.height+lines+viddef.height, viddef.width, 3, colorRed );
 
 	Com_sprintf (version, sizeof(version), APPLICATION " v%4.2f", VERSION);
 	Draw_String (viddef.width-strlen(version)*SMALL_CHAR_WIDTH-4, lines-20, version, FONT_SMALL, colorRed );

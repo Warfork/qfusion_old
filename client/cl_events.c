@@ -28,9 +28,7 @@ CL_ItemRespawn
 void CL_ItemRespawn ( entity_state_t *ent ) 
 {
 	cl_entities[ent->number].respawnTime = cl.time;
-
 	S_StartSound ( NULL, ent->number, CHAN_WEAPON, cl.media.sfxItemRespawn, 1, ATTN_IDLE, 0 );
-	CL_ItemRespawnParticles ( ent->origin );
 }
 
 /*
@@ -139,21 +137,7 @@ CL_Gib
 */
 void CL_Gib ( entity_state_t *ent ) 
 {
-	vec3_t		mins, maxs;
-	int			x, zd, zu;
-
-	x = 8 * (ent->solid & 31);
-	zd = 8 * ((ent->solid>>5) & 31);
-	zu = 8 * ((ent->solid>>10) & 63) - 32;
-
-	mins[0] = mins[1] = -x;
-	maxs[0] = maxs[1] = x;
-	mins[2] = -zd;
-	maxs[2] = zu;
-
 	S_StartSound ( NULL, ent->number, CHAN_VOICE, cl.media.sfxGibSound, 1, ATTN_NORM, 0 );
-
-	CL_GibPlayer ( ent->origin, mins, maxs );
 }
 
 /*
@@ -162,7 +146,7 @@ CL_EntityEvent
 
 An entity has just been parsed that has an event value
 
-the female events are there for backwards compatability
+the female events are there for backwards compatibility
 ==============
 */
 void CL_EntityEvent (entity_state_t *ent)

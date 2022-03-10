@@ -56,7 +56,7 @@ void SCR_AddDirtyPoint (int x, int y);
 void SCR_DirtyScreen (void);
 
 //
-// scr_cin.c
+// cl_cin.c
 //
 void SCR_PlayCinematic (char *name);
 qboolean SCR_DrawCinematic (void);

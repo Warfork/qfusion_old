@@ -1,26 +1,26 @@
 
 #include "../client/ref.h"
 
-#define	UI_API_VERSION		9
+#define	UI_API_VERSION		10
 
 typedef struct
 {
 	// if api_version is different, the dll cannot be used
 	int		api_version;
 
-	void	(*Init) ( void );
-	void	(*Shutdown) ( void );
+	void	(*Init) (void);
+	void	(*Shutdown) (void);
 
 	void	(*Refresh) ( int frametime );
-	void	(*Update) ( void );
+	void	(*Update) (void);
 
-	void	(*Keydown) ( int key );
+	void	(*Keydown) (int key);
 
-	void	(*MouseMove) (int dx, int dy);
+	void	(*MouseMove) ( int dx, int dy );
 
 	void	(*MainMenu) (void);
 	void	(*ForceMenuOff) (void);
-	void	(*AddToServerList) ( netadr_t *adr, char *info );
+	void	(*AddToServerList) ( char *adr, char *info );
 } ui_export_t;
 
 //
@@ -45,15 +45,13 @@ typedef struct
 
 	void	(*S_StartLocalSound) (char *s);
 
-	float	(*CL_GetTime_f) (void);
-	void	(*CL_SetKeyDest_f) ( int key_dest );
-	void	(*CL_ResetServerCount_f) (void);
-	void	(*CL_Quit_f) (void);
+	int		(*CL_GetTime) (void);
+	void	(*CL_SetKeyDest) ( int key_dest );
+	void	(*CL_ResetServerCount) (void);
+	void	(*CL_Quit) (void);
 
 	int		(*GetClientState) (void);
 	int		(*GetServerState) (void);
-
-	char	*(*NET_AdrToString) ( netadr_t *a );
 
 	char	*(*Key_GetBindingBuf)( int binding );
 	void	(*Key_ClearStates) (void);

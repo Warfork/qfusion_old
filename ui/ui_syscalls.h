@@ -18,8 +18,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "../client/ref.h"
-
 void trap_Sys_Error ( int err_level, char *str, ... );
 
 void trap_Cmd_AddCommand ( char *name, void(*cmd)(void) );
@@ -37,15 +35,13 @@ void trap_EndFrame (void);
 
 void trap_S_StartLocalSound ( char *s );
 
-float trap_CL_GetTime_f (void);
-void trap_CL_SetKeyDest_f ( int key_dest );
-void trap_CL_ResetServerCount_f (void);
-void trap_CL_Quit_f (void);
+int trap_CL_GetTime (void);
+void trap_CL_SetKeyDest ( int key_dest );
+void trap_CL_ResetServerCount (void);
+void trap_CL_Quit (void);
 
 int trap_GetClientState (void);
 int trap_GetServerState (void);
-
-char *trap_NET_AdrToString ( netadr_t *a );
 
 char *trap_Key_GetBindingBuf ( int binding );
 void trap_Key_ClearStates(void);
@@ -74,6 +70,3 @@ int	 trap_PropStringLength ( char *str, int fontstyle );
 void trap_FillRect ( int x, int y, int w, int h, vec4_t color );
 
 void trap_Vid_GetCurrentInfo ( int *width, int *height );
-
-int trap_GetWidth (void);
-int trap_GetHeight (void);

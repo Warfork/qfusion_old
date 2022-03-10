@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2001-2002 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -72,7 +72,7 @@ void Mod_LoadDarkPlacesModel ( model_t *mod, void *buffer )
 	ddpmframe_t		*pinframe;
 	dpmframe_t		*poutframe;
 	ddpmbonepose_t	*pinbonepose;
-	dpmbonepose_t	*poutbonepose;
+	dpmbonepose_t	*poutbonepose, temppose;
 
 	pinmodel = ( ddpmheader_t * )buffer;
 
@@ -118,12 +118,13 @@ void Mod_LoadDarkPlacesModel ( model_t *mod, void *buffer )
 	poutmodel->yawradius = BigFloat ( pinmodel->yawradius );
 	poutmodel->allradius = BigFloat ( pinmodel->allradius );
 
-
 	pinbone = ( ddpmbone_t * )( ( byte * )pinmodel + BigLong ( pinmodel->ofs_bones ) );
 	poutbone = poutmodel->bones = Hunk_AllocName ( sizeof(dpmbone_t) * poutmodel->numbones, mod->name );
 
 	for ( i = 0; i < poutmodel->numbones; i++, pinbone++, poutbone++ ) 
 	{
+		Com_sprintf ( poutbone->name, DPM_MAX_NAME, pinbone->name );
+		poutbone->flags = BigLong ( pinbone->flags );
 		poutbone->parent = BigLong ( pinbone->parent );
 	}
 
@@ -212,17 +213,25 @@ void Mod_LoadDarkPlacesModel ( model_t *mod, void *buffer )
 		poutframe->yawradius = BigFloat ( pinframe->yawradius );
 		poutframe->allradius = BigFloat ( pinframe->allradius );
 
+		poutbone = poutmodel->bones;
+
 		pinbonepose = ( ddpmbonepose_t * )( ( byte * )pinmodel + BigLong (pinframe->ofs_bonepositions) );
 		poutbonepose = poutframe->boneposes = Hunk_AllocName ( sizeof(dpmbonepose_t) * poutmodel->numbones, mod->name );
 
-		for ( j = 0; j < poutmodel->numbones; j++, pinbonepose++, poutbonepose++ )
+		for ( j = 0; j < poutmodel->numbones; j++, poutbone++, pinbonepose++, poutbonepose++ )
 		{
 			for ( k = 0; k < 3; k++ )
 			{
-				poutbonepose->matrix[k][0] = BigFloat ( pinbonepose->matrix[k][0] );
-				poutbonepose->matrix[k][1] = BigFloat ( pinbonepose->matrix[k][1] );
-				poutbonepose->matrix[k][2] = BigFloat ( pinbonepose->matrix[k][2] );
-				poutbonepose->matrix[k][3] = BigFloat ( pinbonepose->matrix[k][3] );
+				temppose.matrix[k][0] = BigFloat ( pinbonepose->matrix[k][0] );
+				temppose.matrix[k][1] = BigFloat ( pinbonepose->matrix[k][1] );
+				temppose.matrix[k][2] = BigFloat ( pinbonepose->matrix[k][2] );
+				temppose.matrix[k][3] = BigFloat ( pinbonepose->matrix[k][3] );
+			}
+
+			if ( poutbone->parent >= 0 ) {
+				R_ConcatTransforms ( &poutframe->boneposes[poutbone->parent].matrix[0][0], &temppose.matrix[0][0], &poutbonepose->matrix[0][0] );
+			} else {
+				memcpy ( &poutbonepose->matrix[0][0], &temppose.matrix[0][0], sizeof(dpmbonepose_t) );
 			}
 		}
 	}
@@ -257,23 +266,51 @@ void Mod_RegisterDarkPlacesModel ( model_t *mod )
 }
 
 /*
+** R_DarkPlacesModelLODForDistance
+*/
+model_t *R_DarkPlacesModelLODForDistance ( entity_t *e )
+{
+	vec3_t v;
+	int lod;
+	float dist;
+
+	if ( !e->model->numlods ) {
+		return e->model;
+	}
+
+	VectorSubtract ( e->origin, r_origin, v );
+	dist = VectorLength ( v );
+	dist *= tan (r_newrefdef.fov_x * (M_PI/180) * 0.5f);
+
+	lod = (int)(dist / e->model->radius);
+	lod /= 8;
+	lod += (int)max(r_lodbias->value, 0);
+
+	if ( lod < 1 ) {
+		return e->model;
+	} else {
+		return e->model->lods[min(lod, e->model->numlods)-1];
+	}
+}
+
+/*
 ** R_DarkPlacesModelBBox
 */
-void R_DarkPlacesModelBBox ( entity_t *e )
+void R_DarkPlacesModelBBox ( entity_t *e, model_t *mod )
 {
 	int			i;
 	dpmframe_t	*pframe, *poldframe;
 	float		*thismins, *oldmins, *thismaxs, *oldmaxs;
-	dpmmodel_t	*dpmmodel = e->model->dpmmodel;
+	dpmmodel_t	*dpmmodel = mod->dpmmodel;
 
 	if ( ( e->frame >= dpmmodel->numframes ) || ( e->frame < 0 ) )
 	{
-		Com_DPrintf ("R_DrawDarkPlacesModel %s: no such frame %d\n", e->model->name, e->frame);
+		Com_DPrintf ("R_DrawDarkPlacesModel %s: no such frame %d\n", mod->name, e->frame);
 		e->frame = 0;
 	}
 	if ( ( e->oldframe >= dpmmodel->numframes ) || ( e->oldframe < 0 ) )
 	{
-		Com_DPrintf ("R_DrawDarkPlacesModel %s: no such oldframe %d\n", e->model->name, e->oldframe);
+		Com_DPrintf ("R_DrawDarkPlacesModel %s: no such oldframe %d\n", mod->name, e->oldframe);
 		e->oldframe = 0;
 	}
 
@@ -323,10 +360,8 @@ void R_DarkPlacesModelBBox ( entity_t *e )
 /*
 ** R_CullDarkPlacesModel
 */
-qboolean R_CullDarkPlacesModel( entity_t *e )
+qboolean R_CullDarkPlacesModel( entity_t *e, model_t *mod )
 {
-	R_DarkPlacesModelBBox ( e );
-
 	if ( e->flags & RF_WEAPONMODEL ) {
 		return false;
 	}
@@ -334,7 +369,7 @@ qboolean R_CullDarkPlacesModel( entity_t *e )
 		return !(r_mirrorview || r_portalview);
 	}
 
-	if ( R_CullSphere (e->origin, dpm_mesh.radius) ) {
+	if ( R_CullSphere (e->origin, dpm_mesh.radius, 15) ) {
 		return true;
 	}
 
@@ -348,10 +383,73 @@ qboolean R_CullDarkPlacesModel( entity_t *e )
 
 /*
 ================
+R_DarkPlacesModelLerpAttachment
+================
+*/
+void R_DarkPlacesModelLerpAttachment ( orientation_t *orient, dpmmodel_t *dpmmodel, int framenum, int oldframenum, 
+									  float backlerp, char *name )
+{
+	int i;
+	dpmbone_t		*bone;
+	dpmframe_t		*frame, *oldframe;
+	dpmbonepose_t	*bonepose, *oldbonepose;
+
+	// find the appropriate attachment bone
+	bone = dpmmodel->bones;
+	for ( i = 0; i < dpmmodel->numbones; i++, bone++ )
+	{
+		if ( !(bone->flags & DPM_BONEFLAG_ATTACH) ) {
+			continue;
+		}
+		if ( !Q_stricmp (bone->name, name) ) {
+			break;
+		}
+	}
+
+	if ( i == dpmmodel->numbones ) {
+		Com_DPrintf ("R_DPMLerpAttachment: no such bone %s\n", name );
+		return;
+	}
+
+	// ignore invalid frames
+	if ( ( framenum >= dpmmodel->numframes ) || ( framenum < 0 ) )
+	{
+		Com_DPrintf ("R_DPMLerpAttachment %s: no such oldframe %i\n", name, framenum);
+		framenum = 0;
+	}
+	if ( ( oldframenum >= dpmmodel->numframes ) || ( oldframenum < 0 ) )
+	{
+		Com_DPrintf ("R_DPMLerpAttachment %s: no such oldframe %i\n", name, oldframenum);
+		oldframenum = 0;
+	}
+
+	frame = dpmmodel->frames + framenum;
+	oldframe = dpmmodel->frames + oldframenum;
+
+	bonepose = frame->boneposes + i;
+	oldbonepose = oldframe->boneposes + i;
+
+	// interpolate matrices
+	orient->axis[0][0] = bonepose->matrix[0][0] + (oldbonepose->matrix[0][0] - bonepose->matrix[0][0]) * backlerp;
+	orient->axis[0][1] = bonepose->matrix[0][1] + (oldbonepose->matrix[0][1] - bonepose->matrix[0][1]) * backlerp;
+	orient->axis[0][2] = bonepose->matrix[0][2] + (oldbonepose->matrix[0][2] - bonepose->matrix[0][2]) * backlerp;
+	orient->origin[0] = bonepose->matrix[0][3] + (oldbonepose->matrix[0][3] - bonepose->matrix[0][3]) * backlerp;
+	orient->axis[1][0] = bonepose->matrix[1][0] + (oldbonepose->matrix[1][0] - bonepose->matrix[1][0]) * backlerp;
+	orient->axis[1][1] = bonepose->matrix[1][1] + (oldbonepose->matrix[1][1] - bonepose->matrix[1][1]) * backlerp;
+	orient->axis[1][2] = bonepose->matrix[1][2] + (oldbonepose->matrix[1][2] - bonepose->matrix[1][2]) * backlerp;
+	orient->origin[1] = bonepose->matrix[1][3] + (oldbonepose->matrix[1][3] - bonepose->matrix[1][3]) * backlerp;
+	orient->axis[2][0] = bonepose->matrix[2][0] + (oldbonepose->matrix[2][0] - bonepose->matrix[2][0]) * backlerp;
+	orient->axis[2][1] = bonepose->matrix[2][1] + (oldbonepose->matrix[2][1] - bonepose->matrix[2][1]) * backlerp;
+	orient->axis[2][2] = bonepose->matrix[2][2] + (oldbonepose->matrix[2][2] - bonepose->matrix[2][2]) * backlerp;
+	orient->origin[2] = bonepose->matrix[2][3] + (oldbonepose->matrix[2][3] - bonepose->matrix[2][3]) * backlerp;
+}
+
+/*
+================
 R_DrawBonesFrameLerp
 ================
 */
-void R_DrawBonesFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
+void R_DrawBonesFrameLerp ( meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
 {
 	int				i, meshnum;
 	int				j, k, l;
@@ -361,13 +459,13 @@ void R_DrawBonesFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
 	dpmbone_t		*bone;
 	dpmframe_t		*frame, *oldframe;
 	dpmbonepose_t	*bonepose, *oldbonepose;
-	dpmbonepose_t	*out = dpmbonepose, temp[DPM_MAX_BONES];
+	dpmbonepose_t	*out = dpmbonepose;
 	dpmvertex_t		*dpmverts;
 	dpmbonevert_t	*boneverts;
 	entity_t		*e = mb->entity;
-	dpmmodel_t		*dpmmodel = e->model->dpmmodel;
+	dpmmodel_t		*dpmmodel = mod->dpmmodel;
 
-	if ( !shadow && !r_entvisframe[e->number][(r_portalview || r_mirrorview)] ) {
+	if ( !shadow && (e->flags & RF_VIEWERMODEL) && !r_mirrorview && !r_portalview ) {
 		return;
 	}
 
@@ -395,7 +493,7 @@ void R_DrawBonesFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
 	Matrix3_Multiply_Vec3 ( e->axis, delta, move );
 	VectorScale ( move, backlerp, move );
 
-	out = temp;
+	out = dpmbonepose;
 	for ( i = 0; i < dpmmodel->numbones; i++, bonepose++, oldbonepose++, out++ )
 	{
 		// interpolate matrices
@@ -411,16 +509,6 @@ void R_DrawBonesFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
 		out->matrix[2][1] = bonepose->matrix[2][1] + (oldbonepose->matrix[2][1] - bonepose->matrix[2][1]) * backlerp;
 		out->matrix[2][2] = bonepose->matrix[2][2] + (oldbonepose->matrix[2][2] - bonepose->matrix[2][2]) * backlerp;
 		out->matrix[2][3] = bonepose->matrix[2][3] + (oldbonepose->matrix[2][3] - bonepose->matrix[2][3]) * backlerp;
-	}
-
-	out = dpmbonepose;
-	for ( i = 0; i < dpmmodel->numbones; i++, bone++, out++ )
-	{
-		if ( bone->parent >= 0 ) {
-			R_ConcatTransforms ( &dpmbonepose[bone->parent].matrix[0][0], &temp[i].matrix[0][0], &out->matrix[0][0] );
-		} else {
-			memcpy ( &out->matrix[0][0], &temp[i].matrix[0][0], sizeof(dpmbonepose_t) );
-		}
 	}
 
 	dpmverts = mesh->vertexes;
@@ -463,17 +551,26 @@ void R_DrawBonesFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
 	dpm_mbuffer.entity = e;
 	dpm_mbuffer.fog = mb->fog;
 
-	features = MF_NONBATCHED | mb->shader->features;
-	if ( r_shownormals->value ) {
+	features = MF_NONBATCHED | dpm_mbuffer.shader->features;
+	if ( r_shownormals->value && !shadow ) {
 		features |= MF_NORMALS;
 	}
+	if ( dpm_mbuffer.shader->features & SHADER_AUTOSPRITE ) {
+		features |= MF_NOCULL;
+	}
+
+	R_RotateForEntity ( e );
 
 	R_PushMesh ( &dpm_mesh, features );
 	R_RenderMeshBuffer ( &dpm_mbuffer, shadow );
 
 	if ( shadow ) {
-		R_DarkPlacesModelBBox ( e );
-		R_DrawShadowVolumes ( &dpm_mesh );
+		if ( r_shadows->value == 1) {
+			R_Draw_SimpleShadow ( e );
+		} else {
+			R_DarkPlacesModelBBox ( e, mod );
+			R_DrawShadowVolumes ( &dpm_mesh );
+		}
 	}
 }
 
@@ -513,9 +610,7 @@ void R_DrawDarkPlacesModel ( meshbuffer_t *mb, qboolean shadow )
 		e->backlerp = 0;
 	}
 
-	R_RotateForEntity ( e );
-
-	R_DrawBonesFrameLerp ( mb, e->backlerp, shadow );
+	R_DrawBonesFrameLerp ( mb, R_DarkPlacesModelLODForDistance ( e ), e->backlerp, shadow );
 
 	if ( ( e->flags & RF_WEAPONMODEL ) && ( r_lefthand->value == 1.0F ) ) {
 		qglMatrixMode( GL_PROJECTION );
@@ -538,23 +633,24 @@ void R_AddDarkPlacesModelToList ( entity_t *e )
 {
 	int				i;
 	mfog_t			*fog;
+	model_t			*mod;
 	dpmmodel_t		*dpmmodel;
 	dpmmesh_t		*dpmmesh;
 
 	if ( (e->flags & RF_WEAPONMODEL) && (r_lefthand->value == 2) ) {
 		return;
 	}
-	if ( !(dpmmodel = e->model->dpmmodel) ) {
+
+	mod = R_DarkPlacesModelLODForDistance ( e );
+	if ( !(dpmmodel = mod->dpmmodel) ) {
 		return;
 	}
-	if ( R_CullDarkPlacesModel( e ) ) {
-		if ( !r_shadows->value ) {
-			return;
-		}
-	} else {
-		r_entvisframe[e->number][(r_portalview || r_mirrorview)] = r_framecount;
-	}
 
+	R_DarkPlacesModelBBox ( e, mod );
+	if ( !r_shadows->value && R_CullDarkPlacesModel( e, mod ) ) {
+		return;
+	}
+	
 	fog = R_FogForSphere ( e->origin, dpm_mesh.radius );
 	for ( i = 0, dpmmesh = dpmmodel->meshes; i < dpmmodel->nummeshes; i++, dpmmesh++ )
 	{

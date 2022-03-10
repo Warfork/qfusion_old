@@ -23,11 +23,9 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #include "../game/q_shared.h"
 
 
-#define	VERSION		3.03
+#define	VERSION		3.04
 
 #define	BASEDIRNAME	"baseq3"
-
-#define APPLICATION "QFusion"
 
 #ifdef WIN32
 
@@ -157,10 +155,10 @@ void CRC_ProcessByte(unsigned short *crcvalue, byte data);
 unsigned short CRC_Value(unsigned short crcvalue);
 unsigned short CRC_Block (byte *start, int count);
 
-/* mesh.h */
+/* patch.h */
 
-void Mesh_GetFlatness ( float maxflat, vec4_t *points, int *mesh_cp, int *flat );
-void Mesh_EvalQuadricBezierPatch ( vec4_t *p, int *numcp, int *tess, vec4_t *dest );
+void Patch_GetFlatness ( float maxflat, vec4_t *points, int *patch_cp, int *flat );
+void Patch_Evaluate ( vec4_t *p, int *numcp, int *tess, vec4_t *dest );
 
 /*
 ==============================================================
@@ -172,7 +170,7 @@ PROTOCOL
 
 // protocol.h -- communications protocols
 
-#define	PROTOCOL_VERSION	38
+#define	PROTOCOL_VERSION	39
 
 //=========================================
 
@@ -324,7 +322,7 @@ enum clc_ops_e
 #define	U_SKIN16	(1<<25)
 #define	U_SOUND		(1<<26)
 #define	U_SOLID		(1<<27)
-
+#define U_LIGHT		(1<<28)
 
 /*
 ==============================================================
@@ -347,10 +345,6 @@ The + command line options are also added to the command buffer.
 The game starts with a Cbuf_AddText ("exec quake.rc\n"); Cbuf_Execute ();
 
 */
-
-#define	EXEC_NOW	0		// don't return until completed
-#define	EXEC_INSERT	1		// insert at current position, but don't run yet
-#define	EXEC_APPEND	2		// add to end of the command buffer
 
 void Cbuf_Init (void);
 // allocates an initial text buffer that will grow as needed
@@ -718,7 +712,7 @@ void	FS_ExecAutoexec (void);
 int		FS_FOpenFile (char *filename, int *file);
 int		FS_FileExists (char *path);
 void	FS_FCloseFile (int file);
-int		FS_GetFileList (const char *dir, const char *extension, char *str, int bufsize);
+int		FS_GetFileList (const char *dir, const char *extension, char *buf, int bufsize);
 
 // note: this can't be called from another DLL, due to MS libc issues
 

@@ -1,5 +1,5 @@
 /*
-Copyright (C) 1997-2001 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -25,7 +25,6 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define SHADER_PASS_MAX			8
 #define SHADER_DEFORM_MAX		8
 #define SHADER_ANIM_FRAMES_MAX	8
-#define SHADER_ARGS_MAX			(SHADER_ANIM_FRAMES_MAX+1)
 #define SHADER_TCMOD_MAX		8
 
 #define SHADER_BSP				0
@@ -48,7 +47,8 @@ enum
 	SHADER_AGEN_PORTAL				= 1 << 8,
 	SHADER_DEFORMV_BULGE			= 1 << 9,
 	SHADER_ENTITY_MERGABLE			= 1 << 10,
-	SHADER_FLARE					= 1 << 11
+	SHADER_FLARE					= 1 << 11,
+	SHADER_AUTOSPRITE				= 1 << 12
 };
 
 // Shaderpass flags
@@ -200,14 +200,12 @@ typedef struct shaderpass_s
     unsigned int	alphafunc;
 
     int				rgbgen;             
-    shaderfunc_t	*rgbgen_func;
+    shaderfunc_t	rgbgen_func;
 
 	int				alphagen;
-    shaderfunc_t	*alphagen_func;
+    shaderfunc_t	alphagen_func;
 
-	int				tc_gen;
-//	vec3_t			tc_gen_s;
-//	vec3_t			tc_gen_t;
+	int				tcgen;
 
 	int				numMergedPasses;
 	void			(*flush)(struct meshbuffer_s *mb, struct shaderpass_s *pass);
@@ -244,17 +242,7 @@ typedef struct shader_s
 	float			fog_dist;
 } shader_t;
 
-typedef struct shaderkey_s
-{
-    char			*keyword;
-    int				minargs, maxargs;
-    void			(*func)(shader_t *shader, shaderpass_t *pass,
-						int numargs, char **args);
-} shaderkey_t;
-
 extern shader_t r_shaders[MAX_SHADERS];
-
-extern double r_shadertime;
 
 qboolean Shader_Init (void);
 void Shader_Shutdown (void);

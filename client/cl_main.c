@@ -51,6 +51,8 @@ cvar_t	*cl_add_particles;
 cvar_t	*cl_add_lights;
 cvar_t	*cl_add_entities;
 cvar_t	*cl_add_blend;
+cvar_t	*cl_add_polys;
+cvar_t	*cl_add_decals;
 
 cvar_t	*cl_shownet;
 cvar_t	*cl_showmiss;
@@ -58,6 +60,7 @@ cvar_t	*cl_showclamp;
 
 cvar_t	*cl_paused;
 cvar_t	*cl_timedemo;
+cvar_t	*cl_avidemo;
 
 cvar_t	*lookspring;
 cvar_t	*lookstrafe;
@@ -597,7 +600,8 @@ void CL_ClearState (void)
 {
 	S_StopAllSounds ();
 	CL_ClearEffects ();
-	CL_ClearTEnts ();
+	CL_ClearLocalEntities ();
+	CL_ClearDecals ();
 
 // wipe the entire cl structure
 	memset (&cl, 0, sizeof(cl));
@@ -813,7 +817,7 @@ void CL_ParseStatusMessage (void)
 
 	Com_Printf ( "%s\n", s );
 
-	UI_AddToServerList ( &net_from, s );
+	UI_AddToServerList ( NET_AdrToString(&net_from), s );
 }
 
 
@@ -1449,10 +1453,12 @@ void CL_InitLocal (void)
 	cl_stereo_separation = Cvar_Get( "cl_stereo_separation", "0.4", CVAR_ARCHIVE );
 	cl_stereo = Cvar_Get( "cl_stereo", "0", 0 );
 
-	cl_add_blend = Cvar_Get ("cl_blend", "1", 0);
-	cl_add_lights = Cvar_Get ("cl_lights", "1", 0);
-	cl_add_particles = Cvar_Get ("cl_particles", "1", 0);
-	cl_add_entities = Cvar_Get ("cl_entities", "1", 0);
+	cl_add_blend = Cvar_Get ("cl_blend", "1", CVAR_CHEAT);
+	cl_add_lights = Cvar_Get ("cl_lights", "1", CVAR_CHEAT);
+	cl_add_particles = Cvar_Get ("cl_particles", "1", CVAR_CHEAT);
+	cl_add_entities = Cvar_Get ("cl_entities", "1", CVAR_CHEAT);
+	cl_add_polys = Cvar_Get ("cl_polys", "1", CVAR_CHEAT);
+	cl_add_decals = Cvar_Get ("cl_decals", "1", 0);
 	cl_gun = Cvar_Get ("cl_gun", "1", 0);
 	cl_footsteps = Cvar_Get ("cl_footsteps", "1", 0);
 	cl_noskins = Cvar_Get ("cl_noskins", "0", 0);
@@ -1484,6 +1490,7 @@ void CL_InitLocal (void)
 	cl_timeout = Cvar_Get ("cl_timeout", "120", 0);
 	cl_paused = Cvar_Get ("paused", "0", 0);
 	cl_timedemo = Cvar_Get ("timedemo", "0", 0);
+	cl_avidemo = Cvar_Get ("cl_avidemo", "0", 0);
 
 	rcon_client_password = Cvar_Get ("rcon_password", "", 0);
 	rcon_address = Cvar_Get ("rcon_address", "", 0);
@@ -1709,11 +1716,13 @@ void CL_Frame (int msec)
 	if (host_speeds->value)
 		time_after_ref = Sys_Milliseconds ();
 
+	if (cl_avidemo->value)
+		R_ScreenShot (true);
+
 	// update audio
 	S_Update (cl.refdef.vieworg, cl.v_forward, cl.v_right, cl.v_up);
 
 	// advance local effects for next frame
-	CL_RunDLights ();
 	SCR_RunCinematic ();
 	SCR_RunConsole ();
 

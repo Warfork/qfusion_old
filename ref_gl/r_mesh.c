@@ -1,5 +1,5 @@
 /*
-Copyright (C) 1997-2001 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -137,16 +137,18 @@ All 3D-geometry passes this function.
 */
 meshbuffer_t *R_AddMeshToBuffer ( mesh_t *mesh, mfog_t *fog, msurface_t *surf, shader_t *shader, int infokey )
 {
-	int fognumber;
+	int entnumber, fognumber;
 	meshbuffer_t *meshbuf;
 
-	if ( !shader || (mesh && R_MeshIsInvalid (mesh)) ) {
+	if ( !shader || (mesh && R_InvalidMesh (mesh)) ) {
 		return NULL;
 	}
-	if ( shader->sort >= SHADER_SORT_ADDITIVE ) {
+	if ( shader->sort >= SHADER_SORT_UNDERWATER ) {
 		if ( currentlist->num_additive_meshes >= MAX_RENDER_ADDITIVE_MESHES )
 			return NULL;
 	} else {
+		if ( (shader->sort == SHADER_SORT_PORTAL) && (r_mirrorview || r_portalview) )
+			return NULL;
 		if ( currentlist->num_meshes >= MAX_RENDER_MESHES )
 			return NULL;
 	}
@@ -155,7 +157,7 @@ meshbuffer_t *R_AddMeshToBuffer ( mesh_t *mesh, mfog_t *fog, msurface_t *surf, s
 		Shader_UploadCinematic ( shader );
 	}
 
-	if ( shader->sort >= SHADER_SORT_ADDITIVE )
+	if ( shader->sort >= SHADER_SORT_UNDERWATER )
 		meshbuf = &currentlist->meshbuffer_additives[currentlist->num_additive_meshes++];
 	else
 		meshbuf = &currentlist->meshbuffer[currentlist->num_meshes++];
@@ -171,23 +173,29 @@ meshbuffer_t *R_AddMeshToBuffer ( mesh_t *mesh, mfog_t *fog, msurface_t *surf, s
 		fognumber = 0;
 	}
 
+	if ( currententity == &r_worldent ) {
+		entnumber = MAX_ENTITIES - 1;
+	} else if ( currententity == &r_polyent ) {
+		entnumber = MAX_ENTITIES - 1;
+	} else {
+		entnumber = MAX_ENTITIES - (currententity - r_newrefdef.entities) - 1;
+	}
+
 	if ( surf ) {
 		if ( surf->lightmaptexturenum > -1 ) {
 			meshbuf->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | ((surf->lightmaptexturenum+1) << 8) | (fognumber);
 		} else {
-			meshbuf->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | (fognumber);
+			meshbuf->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | (entnumber << 8) | (fognumber);
 		}
 		meshbuf->sortkey <<= 32;
-
 		meshbuf->dlightbits = surf->dlightbits;
 
-		if ( surf->dlightbits && !(shader->flags & SHADER_FLARE) ) {
+		if ( surf->dlightbits && (surf->dlightframe == r_framecount) ) {
 			meshbuf->sortkey |= (msortkey_t)meshbuf->dlightbits;
-			surf->dlightbits = 0;
 		}
 	} else {
 		meshbuf->dlightbits = 0;
-		meshbuf->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | (fognumber);
+		meshbuf->sortkey = (shader->sort << 28) | ((shader-r_shaders) << 18) | (entnumber << 8) | (fognumber);
 		meshbuf->sortkey <<= 32;
 	}
 
@@ -205,9 +213,11 @@ inline void R_DrawMeshBuffer ( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean 
 {
 	int features;
 	qboolean deformvBulge;
+	shader_t *shader;
 
 	currententity = mb->entity;
 	currentmodel = currententity->model;
+	shader = mb->shader;
 
 	switch ( currententity->type )
 	{
@@ -220,13 +230,16 @@ inline void R_DrawMeshBuffer ( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean 
 						break;
 					}
 
-					deformvBulge = ( (mb->shader->flags & SHADER_DEFORMV_BULGE) != 0 );
-					features = mb->shader->features;
-					if ( mb->dlightbits || r_shownormals->value ) {
+					deformvBulge = ( (shader->flags & SHADER_DEFORMV_BULGE) != 0 );
+					features = shader->features;
+					if ( r_shownormals->value && !shadow ) {
 						features |= MF_NORMALS;
 					}
+					if ( shader->flags & SHADER_AUTOSPRITE ) {
+						features |= MF_NOCULL;
+					}
 
-					if ( mb->shader->flags & SHADER_FLARE ) {
+					if ( shader->flags & SHADER_FLARE ) {
 						R_PushFlare ( mb );
 					} else if ( deformvBulge ) {
 						R_PushMesh ( mb->mesh, MF_NONBATCHED|features );
@@ -236,11 +249,12 @@ inline void R_DrawMeshBuffer ( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean 
 
 					if ( !nextmb
 						|| nextmb->sortkey != mb->sortkey
-						|| ((nextmb->entity != mb->entity) && !(mb->shader->flags & SHADER_ENTITY_MERGABLE))
+						|| ((nextmb->entity != mb->entity) 
+							&& (!(shader->flags & SHADER_ENTITY_MERGABLE) || !(nextmb->shader->flags & SHADER_ENTITY_MERGABLE)))
 						|| deformvBulge || (nextmb->shader->flags & SHADER_DEFORMV_BULGE)
 						|| R_BackendOverflow (nextmb->mesh) ) {
 
-						if ( mb->shader->flags & SHADER_FLARE )
+						if ( shader->flags & SHADER_FLARE )
 							R_TranslateForEntity ( mb->entity );
 						else if ( currentmodel != r_worldmodel )
 							R_RotateForEntity ( mb->entity );
@@ -274,13 +288,34 @@ inline void R_DrawMeshBuffer ( meshbuffer_t *mb, meshbuffer_t *nextmb, qboolean 
 			break;
 
 		case ET_SPRITE:
+			if ( shadow ) {
+				break;
+			}
+
 			R_DrawSpritePoly ( mb );
+
+			if ( !nextmb
+				|| nextmb->sortkey != mb->sortkey
+				|| ((nextmb->entity != mb->entity) 
+					&& (!(shader->flags & SHADER_ENTITY_MERGABLE) || !(nextmb->shader->flags & SHADER_ENTITY_MERGABLE)))
+				|| R_BackendOverflow (nextmb->mesh) ) {
+
+				currententity = &r_worldent;
+				currentmodel = r_worldmodel;
+				qglLoadMatrixf ( r_modelview_matrix );
+
+				R_RenderMeshBuffer ( mb, shadow );
+			}
 			break;
 
 		case ET_BEAM:
 			break;
 
 		case ET_PORTALSURFACE:
+			break;
+
+		case ET_POLY:
+			R_DrawPoly ( mb );
 			break;
 	}
 }
@@ -292,14 +327,13 @@ R_DrawSortedMeshes
 */
 void R_DrawSortedMeshes (void)
 {
-	int i, lastsort;
+	int i;
 	meshbuffer_t *meshbuf;
 	shader_t *shader;
 	qboolean skydrawn;
 
 	currententity = &r_worldent;
 	skydrawn = false;
-	lastsort = SHADER_SORT_NONE;
 
 	if ( currentlist->num_meshes ) {
 		R_QSortMeshBuffers ( currentlist->meshbuffer, 0, currentlist->num_meshes - 1 );
@@ -310,17 +344,13 @@ void R_DrawSortedMeshes (void)
 
 			if ( shader->sort == SHADER_SORT_PORTAL ) {
 				R_DrawPortalSurface ( meshbuf );
-			} else if ( (shader->flags & SHADER_SKY) ) {
+			} else if ( shader->flags & SHADER_SKY ) {
 				if ( !skydrawn ) {
 					R_DrawSky ( shader );
 					skydrawn = true;
 				}
-
-				lastsort = SHADER_SORT_SKY;
 				continue;
 			}
-
-			lastsort = shader->sort;
 
 			if ( i == currentlist->num_meshes - 1 ) {
 				R_DrawMeshBuffer ( meshbuf, NULL, false );
@@ -335,9 +365,18 @@ void R_DrawSortedMeshes (void)
 		qglDisable (GL_TEXTURE_2D);
 
 		if ( r_shadows->value == 1 ) {
-			GLSTATE_ENABLE_STENCIL;
-			GLSTATE_ENABLE_CULL;
-			GLSTATE_DISABLE_BLEND;
+			qglDepthFunc (GL_LEQUAL);
+			qglEnable ( GL_BLEND );
+			qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
+			qglColor4f ( 0, 0, 0, bound (0.0f, r_shadows_alpha->value, 1.0f) );
+
+			qglEnable ( GL_STENCIL_TEST );
+			qglStencilFunc (GL_EQUAL, 128, 0xFF);
+			qglStencilOp (GL_KEEP, GL_KEEP, GL_INCR);
+		} else if ( r_shadows->value == 2 ) {
+			qglEnable ( GL_STENCIL_TEST );
+			qglEnable ( GL_CULL_FACE );
+			qglEnable ( GL_BLEND );
 
 			qglColor4f (1, 1, 1, 1);
 			qglColorMask (0, 0, 0, 0);
@@ -345,9 +384,9 @@ void R_DrawSortedMeshes (void)
 			qglStencilOp (GL_KEEP, GL_KEEP, GL_KEEP);
 			qglStencilFunc (GL_ALWAYS, 128, 0xFF);
 		} else {
-			GLSTATE_DISABLE_STENCIL;
-			GLSTATE_DISABLE_CULL;
-			GLSTATE_ENABLE_BLEND;
+			qglDisable ( GL_STENCIL_TEST );
+			qglDisable ( GL_CULL_FACE );
+			qglEnable ( GL_BLEND );
 
 			qglBlendFunc (GL_ONE, GL_ONE);
 			qglDepthFunc (GL_LEQUAL);
@@ -355,8 +394,8 @@ void R_DrawSortedMeshes (void)
 			qglColor3f ( 1.0, 0.1, 0.1 );
 		}
 
-		GLSTATE_DISABLE_ALPHATEST;
-		qglDepthMask (GL_FALSE);
+		qglDisable ( GL_ALPHA_TEST );
+		qglDepthMask ( GL_FALSE );
 
 		meshbuf = currentlist->meshbuffer;
 		for ( i = 0; i < currentlist->num_meshes; i++, meshbuf++ ) {
@@ -372,11 +411,13 @@ void R_DrawSortedMeshes (void)
 		}
 
 		if ( r_shadows->value == 1 ) {
+			qglDisable ( GL_STENCIL_TEST );
+		} else if ( r_shadows->value == 2 ) {
 			qglStencilOp (GL_KEEP, GL_KEEP, GL_KEEP);
-			GLSTATE_DISABLE_STENCIL;
+			qglDisable ( GL_STENCIL_TEST );
 			qglColorMask (1, 1, 1, 1);
 		} else {
-			GLSTATE_DISABLE_BLEND;
+			qglDisable ( GL_BLEND );
 		}
 
 		qglEnable (GL_TEXTURE_2D);
@@ -404,9 +445,9 @@ void R_DrawSortedMeshes (void)
 	qglLoadMatrixf ( r_modelview_matrix );
 
 	GL_EnableMultitexture ( false );
-	GLSTATE_DISABLE_OFFSET;
-	GLSTATE_DISABLE_ALPHATEST;
-	GLSTATE_DISABLE_BLEND;
+	qglDisable ( GL_POLYGON_OFFSET_FILL );
+	qglDisable ( GL_ALPHA_TEST );
+	qglDisable ( GL_BLEND );
 	qglDepthFunc ( GL_LEQUAL );
 
 	qglBlendFunc ( GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA );
@@ -418,7 +459,7 @@ void R_DrawSortedMeshes (void)
 R_DrawPortalSurface
 ===============
 */
-static meshlist_t portal_list;
+static meshlist_t r_portallist;
 
 void R_DrawPortalSurface ( meshbuffer_t *mb )
 {
@@ -427,16 +468,20 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 	meshlist_t *prevlist;
 	refdef_t r;
 	mat4_t modelviewm, projectionm;
-	vec3_t prev_vpn, prev_vright, prev_vup;
+	vec3_t v[3], prev_vpn, prev_vright, prev_vup;
 	entity_t *ent;
+	mesh_t *mesh;
 	cplane_t *portal_plane = &r_clipplane;
 
-	if ( !mb->mesh || !mb->mesh->xyz_array || !mb->mesh->normals_array ) {
+	if ( !(mesh = mb->mesh) || !mesh->xyz_array ) {
 		return;
 	}
 
-	VectorCopy ( mb->mesh->normals_array[0], portal_plane->normal );
-	portal_plane->dist = DotProduct ( mb->mesh->xyz_array[0], portal_plane->normal );
+	VectorCopy ( mesh->xyz_array[mesh->indexes[0+0]], v[0] );
+	VectorCopy ( mesh->xyz_array[mesh->indexes[0+1]], v[1] );
+	VectorCopy ( mesh->xyz_array[mesh->indexes[0+2]], v[2] );
+	
+	PlaneFromPoints ( v, portal_plane );
 	CategorizePlane ( portal_plane );
 
 	if ( (dist = PlaneDiff (r_origin, portal_plane)) <= BACKFACE_EPSILON ) {
@@ -466,8 +511,8 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 	Matrix4_Copy ( r_modelview_matrix, modelviewm );
 	Matrix4_Copy ( r_projection_matrix, projectionm );
 
-	portal_list.num_meshes = 0;
-	portal_list.num_additive_meshes = 0;
+	r_portallist.num_meshes = 0;
+	r_portallist.num_additive_meshes = 0;
 
 	if ( VectorCompare (ent->origin, ent->oldorigin) )
 	{	// mirror
@@ -485,8 +530,8 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 			VectorMA ( vpn, d, portal_plane->normal, vpn );
 		}
 
-		r_newrefdef.viewangles[0] = -RAD2DEG( asin (vpn[2]) );
-		r_newrefdef.viewangles[1] =  RAD2DEG( atan2 (vpn[1], vpn[0]) );
+		VectorNormalize ( vpn );
+		VecToAngles ( vpn, r_newrefdef.viewangles );
 		r_newrefdef.viewangles[2] = -r_newrefdef.viewangles[2];
 
 		r_mirrorview = true;
@@ -494,8 +539,8 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 	else
 	{	// portal
 		extern vec3_t r_avertexnormals[];
-		mat3_t	A, B, Bt, rot, tmp, D;
-		vec3_t	tvec;
+		mat3_t A, B, Bt, rot, tmp, D;
+		vec3_t tvec;
 
 		if ( mb->shader->flags & SHADER_AGEN_PORTAL ) {
 			VectorSubtract ( mb->mesh->xyz_array[0], r_origin, tvec );
@@ -522,7 +567,7 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 		VectorCopy ( r_avertexnormals[ent->skinnum], portal_plane->normal );
 
 		VectorCopy ( portal_plane->normal, B[0] );
-        if (B[0][0] || B[0][1])
+		if (B[0][0] || B[0][1])
 		{
 			VectorSet ( B[1], B[0][1], -B[0][0], 0 );
 			VectorNormalizeFast ( B[1] );
@@ -544,7 +589,7 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 			Matrix3_Multiply_Vec3 ( A, vright, tmp[1] );
 			Matrix3_Multiply_Vec3 ( A, vup, tmp[2] );
 
-			Matrix3_Rotate (tmp, 5*R_FastSin ( ent->scale + r_shadertime * ent->frame * 0.01f ),
+			Matrix3_Rotate (tmp, 5*R_FastSin ( ent->scale + r_newrefdef.time * ent->frame * 0.01f ),
 				1, 0, 0);
 
 			Matrix3_Multiply_Vec3 ( Bt, tmp[0], D[0] );
@@ -581,14 +626,14 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 
 	qglDepthMask ( GL_TRUE );
 	qglDepthFunc ( GL_LEQUAL );
-	GLSTATE_DISABLE_ALPHATEST;
-	GLSTATE_DISABLE_BLEND;
+	qglDisable ( GL_POLYGON_OFFSET_FILL );
+	qglDisable ( GL_BLEND );
 
 	if ( r_mirrorview ) {
 		qglFrontFace( GL_CW );
 	}
 
-	R_RenderView ( &r_newrefdef, &portal_list );
+	R_RenderView ( &r_newrefdef, &r_portallist );
 
 	if ( r_fastsky->value ) {
 		R_DrawSky ( NULL );
@@ -605,7 +650,9 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 	qglLoadMatrixf ( modelviewm );
 
 	qglDepthMask( GL_TRUE );
-	qglClear( GL_DEPTH_BUFFER_BIT );
+	if ( !r_fastsky->value ) {
+		qglClear ( GL_DEPTH_BUFFER_BIT );
+	}
 
 	Matrix4_Copy ( modelviewm, r_modelview_matrix );
 	Matrix4_Copy ( projectionm, r_projection_matrix );
@@ -617,6 +664,10 @@ void R_DrawPortalSurface ( meshbuffer_t *mb )
 	VectorCopy ( prev_vpn, vpn );
 	VectorCopy ( prev_vright, vright );
 	VectorCopy ( prev_vup, vup );
+
+	if ( r_portalview ) {
+		r_oldviewcluster = r_viewcluster = -1;	// force markleafs next frame
+	}
 
 	r_mirrorview = false;
 	r_portalview = false;

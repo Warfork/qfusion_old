@@ -179,7 +179,7 @@ void DMOptions_MenuInit( void )
 	int y = 0;
 	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_dmoptions_menu.x = trap_GetWidth() * 0.50;
+	s_dmoptions_menu.x = uis.vidWidth / 2;
 	s_dmoptions_menu.nitems = 0;
 
 	s_falls_box.generic.type = MTYPE_SPINCONTROL;

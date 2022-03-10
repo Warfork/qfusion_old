@@ -94,7 +94,7 @@ void Touch_Multi (edict_t *self, edict_t *other, cplane_t *plane, csurface_t *su
 		vec3_t	forward;
 
 		AngleVectors(other->s.angles, forward, NULL, NULL);
-		if (_DotProduct(forward, self->movedir) < 0)
+		if (DotProduct(forward, self->movedir) < 0)
 			return;
 	}
 

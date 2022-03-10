@@ -48,16 +48,19 @@ static const char *idcredits[] =
 	"",
 	"",
 	"+" S_COLOR_RED "SPECIAL THANKS",
-	"Mathias Heyer",
-	"LordHavoc",
-	"Stephen Taylor",
-	"Martin Kraus",
-	"Tim Ferguson",
-	"EvilTypeGuy",
-	"Nate Miller",
-	"MrG",
-	"Robert 'Heffo' Heffernan",
+	"(in alphabetical order)",
+	"",
 	"Andrew Tridgell",
+	"Bram 'Brambo' Stein",
+	"EvilTypeGuy",
+	"Forest 'LordHavoc' Hale",
+	"Martin Kraus",
+	"Mathias Heyer",
+	"MrG",
+	"Nate Miller",
+	"Robert 'Heffo' Heffernan",
+	"Stephen Taylor",
+	"Tim Ferguson",
 	0
 };
 
@@ -74,10 +77,10 @@ void M_Credits_MenuDraw( void )
 	w = uis.vidWidth;
 	h = uis.vidHeight;
 
-	for ( i = 0, y = h - ( ( trap_CL_GetTime_f() - credits_start_time ) * 0.025f ); credits[i] && y < h; y += y_offset, i++ )
+	for ( i = 0, y = h - ( ( trap_CL_GetTime() - credits_start_time ) * 0.025f ); credits[i] && y < h; y += y_offset, i++ )
 	{
 		int stringoffset;
-		int bold;
+		int bold, length;
 
 		if ( credits[i][0] == '+' )
 		{
@@ -91,18 +94,23 @@ void M_Credits_MenuDraw( void )
 		}
 
 		s = ( char * )&credits[i][stringoffset];
+		if ( Q_IsColorString (s) ) {
+			length = strlen (s) - 2;
+		} else {
+			length = strlen (s);
+		}
 
 		if ( bold ) {
-			x = ( w - (strlen(s) - stringoffset) * BIG_CHAR_WIDTH ) / 2;
+			x = ( w - length * BIG_CHAR_WIDTH ) / 2;
 			trap_DrawString( x, y, s, FONT_BIG|FONT_SHADOWED, colorWhite );
 		} else {
-			x = ( w - (strlen(s) - stringoffset) * SMALL_CHAR_WIDTH ) / 2;
+			x = ( w - length * SMALL_CHAR_WIDTH ) / 2;
 			trap_DrawString( x, y, s, FONT_SMALL, colorWhite );
 		}
 	}
 
 	if ( y < 0 )
-		credits_start_time = trap_CL_GetTime_f();
+		credits_start_time = trap_CL_GetTime();
 }
 
 const char *M_Credits_Key( int key )
@@ -158,6 +166,6 @@ void M_Menu_Credits_f( void )
 		credits = idcredits;	
 	}
 
-	credits_start_time = trap_CL_GetTime_f();
+	credits_start_time = trap_CL_GetTime();
 	M_PushMenu( NULL, M_Credits_MenuDraw, M_Credits_Key);
 }

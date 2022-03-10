@@ -583,7 +583,6 @@ void CL_ParseConfigString (void)
 
 		if ( !FS_FileExists ( cl.levelshot ) ) 
 			Com_sprintf ( cl.levelshot, sizeof(cl.levelshot), "menu/art/unknownmap", cl.configstrings[CS_MAPNAME] );
-
 	} else if ( i == CS_AUDIOTRACK ) {
 		if (cl.refresh_prepped)
 			cl.music_precache = S_RegisterSound (cl.configstrings[i]);
@@ -610,6 +609,19 @@ void CL_ParseConfigString (void)
 	}
 }
 
+
+/*
+================
+CL_ParseInventory
+================
+*/
+void CL_ParseInventory (void)
+{
+	int		i;
+
+	for (i=0 ; i<MAX_ITEMS ; i++)
+		cl.inventory[i] = MSG_ReadShort (&net_message);
+}
 
 /*
 =====================================================================

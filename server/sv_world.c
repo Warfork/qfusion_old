@@ -405,10 +405,10 @@ void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 		return;
 	}
 
-	areaportal = 0;
+	areaportal = -1;
 	for (i=0 ; i<num_leafs ; i++)
 	{
-		if ( !CM_LeafCluster ( leafs[i] ) )
+		if ( CM_LeafCluster ( leafs[i] ) == -1 )
 			continue;
 
 		if ( CM_LeafContents( leafs[i] ) & CONTENTS_AREAPORTAL ) {
@@ -417,7 +417,7 @@ void SV_SetAreaPortalState ( edict_t *ent, qboolean open )
 		}
 	}
 
-	if ( !areaportal ) {
+	if ( areaportal == -1 ) {
 		return;
 	}
 

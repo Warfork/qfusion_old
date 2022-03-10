@@ -48,9 +48,9 @@ int		m_num_servers;
 static char local_server_names[MAX_LOCAL_SERVERS][80];
 
 // network address
-static netadr_t local_server_netadr[MAX_LOCAL_SERVERS];
+static char local_server_netadr[MAX_LOCAL_SERVERS][64];
 
-void M_AddToServerList (netadr_t *adr, char *info)
+void M_AddToServerList (char *adr, char *info)
 {
 	int		i;
 
@@ -64,7 +64,7 @@ void M_AddToServerList (netadr_t *adr, char *info)
 		if (!strcmp(info, local_server_names[i]))
 			return;
 
-	memcpy ( &local_server_netadr[m_num_servers], adr, sizeof(netadr_t) );
+	Q_strncpyz ( local_server_netadr[m_num_servers], adr, sizeof(local_server_netadr[0]) );
 	Q_strncpyz ( local_server_names[m_num_servers], info, sizeof(local_server_names[0]) );
 	m_num_servers++;
 }
@@ -83,7 +83,7 @@ void JoinServerFunc( void *self )
 	if (index >= m_num_servers)
 		return;
 
-	Com_sprintf (buffer, sizeof(buffer), "connect %s\n", trap_NET_AdrToString (&local_server_netadr[index]));
+	Com_sprintf (buffer, sizeof(buffer), "connect %s\n", local_server_netadr[index]);
 	trap_Cmd_ExecuteText (EXEC_APPEND, buffer);
 	M_ForceMenuOff ();
 }
@@ -125,7 +125,7 @@ void JoinServer_MenuInit( void )
 	int y = 0;
 	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_joinserver_menu.x = trap_GetWidth() / 2 - 120;
+	s_joinserver_menu.x = uis.vidWidth / 2 - 120;
 	s_joinserver_menu.nitems = 0;
 
 	s_joinserver_title.generic.type = MTYPE_SEPARATOR;

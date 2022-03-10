@@ -55,7 +55,7 @@ void CL_CheckPredictionError (void)
 
 		VectorCopy (cl.frame.playerstate.pmove.origin, cl.predicted_origins[frame]);
 
-		// save for error itnerpolation
+		// save for error interpolation
 		for (i=0 ; i<3 ; i++)
 			cl.prediction_error[i] = delta[i]*0.125;
 	}
@@ -270,7 +270,7 @@ void CL_PredictMovement (void)
 	oldz = cl.predicted_origins[oldframe][2];
 	step = pm.s.origin[2] - oldz;
 
-	if (pm.step && step > 0 && step < 160 )
+	if (pm.step && step > 0 && step < 160)
 	{
 		oldstep = 0;
 		if (cls.realtime - cl.predicted_step_time < 150)

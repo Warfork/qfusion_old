@@ -398,13 +398,14 @@ void PlayerConfig_MenuDraw( void )
 	refdef.width = 200;
 	refdef.height = 200;
 	refdef.fov_x = 30;
-	refdef.fov_y = CalcFov( refdef.fov_x, refdef.width, refdef.height );
-	refdef.time = trap_CL_GetTime_f()*0.001;
+	refdef.fov_y = 30;
+	refdef.time = trap_CL_GetTime() * 0.001f;
+	refdef.areabits = 0;
+	refdef.rdflags = RDF_NOWORLDMODEL;
 
 	if ( s_pmi[s_player_model_box.curvalue].skindisplaynames )
 	{
 		static vec3_t angles;
-		int maxframe = 29;
 		entity_t entity;
 
 		memset( &entity, 0, sizeof( entity ) );
@@ -427,10 +428,8 @@ void PlayerConfig_MenuDraw( void )
 		entity.oldframe = entity.frame;
 		entity.frame = 0;
 
-		refdef.areabits = 0;
 		refdef.num_entities = 1;
 		refdef.entities = &entity;
-		refdef.rdflags = RDF_NOWORLDMODEL;
 
 		Menu_Draw( &s_player_config_menu );
 

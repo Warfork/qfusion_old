@@ -77,14 +77,11 @@ byte *GL_ReadNextFrame ( cinematics_t *cin )
 	{
 		RoQ_ReadChunk ( cin );
 
-		if ( cin->remaining <= 0 ) {
+		if ( cin->remaining <= 0 || chunk->size > cin->remaining ) {
 			return NULL;
 		}
 		if ( chunk->size <= 0 ) {
 			continue;
-		}
-		if ( chunk->size > cin->remaining ) {
-			chunk->size -= cin->remaining;
 		}
 
 		if ( chunk->id == RoQ_INFO ) {
@@ -136,7 +133,7 @@ image_t *GL_ResampleCinematicFrame ( shaderpass_t *pass )
 			GL_RGBA, GL_UNSIGNED_BYTE, cin->pic );
 	} else {
 		qglTexImage2D ( GL_TEXTURE_2D, 
-			0, gl_tex_solid_format, 
+			0, GL_RGB, 
 			image->upload_width, image->upload_height, 
 			0, GL_RGBA, GL_UNSIGNED_BYTE, cin->pic );
 	}

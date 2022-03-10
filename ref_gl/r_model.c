@@ -50,22 +50,22 @@ int		registration_sequence;
 static modelformatdescriptor_t mod_supportedformats[] =
 {
  // Quake2 .md2 models
-	{ IDMD2HEADER,	4,	0x800000,			Mod_LoadAliasMD2Model },
+	{ IDMD2HEADER,	4,	0x800000,			MD3_ALIAS_MAX_LODS,	Mod_LoadAliasMD2Model },
 
 // Quake III Arena .md3 models
-	{ IDMD3HEADER,	4,	0x800000,			Mod_LoadAliasMD3Model },
+	{ IDMD3HEADER,	4,	0x800000,			MD3_ALIAS_MAX_LODS,	Mod_LoadAliasMD3Model },
 
 // Quake2 .sp2 sprites
-	{ IDSP2HEADER,	4,	0x10000,			Mod_LoadSpriteModel	},
+	{ IDSP2HEADER,	4,	0x10000,			0,					Mod_LoadSpriteModel	},
 
 // DarkPlaces models
-	{ DPMHEADER,	16, DPM_MAX_FILESIZE,	Mod_LoadDarkPlacesModel },
+	{ DPMHEADER,	16, DPM_MAX_FILESIZE,	DPM_MAX_LODS,		Mod_LoadDarkPlacesModel },
 
 // Quake III Arena .bsp models
-	{ IDBSPHEADER,	4,	0x4000000,			Mod_LoadBrushModel },
+	{ IDBSPHEADER,	4,	0x4000000,			0,					Mod_LoadBrushModel },
 
 // trailing NULL
-	{ NULL,			0,	0,					NULL }
+	{ NULL,			0,	0,					0,					NULL }
 };
 
 static int mod_numsupportedformats = sizeof(mod_supportedformats) / sizeof(mod_supportedformats[0]) - 1;
@@ -86,7 +86,7 @@ mleaf_t *Mod_PointInLeaf (vec3_t p, bmodel_t *model)
 	node = model->nodes;
 	while (1)
 	{
-		if (node->contents != -1)
+		if (node->plane == NULL)
 			return (mleaf_t *)node;
 		plane = node->plane;
 		node = node->children[PlaneDiff (p, plane) <= 0];
@@ -145,33 +145,16 @@ void Mod_Init (void)
 }
 
 
-
 /*
 ==================
-Mod_ForName
+Mod_FindSlot
 
-Loads in a model for the given name
 ==================
 */
-model_t *Mod_ForName (char *name, qboolean crash)
+model_t *Mod_FindSlot (char *name)
 {
-	model_t	*mod;
-	unsigned *buf;
 	int		i;
-	
-	if (!name[0])
-		Com_Error (ERR_DROP, "Mod_ForName: NULL name");
-		
-	//
-	// inline models are grabbed only from worldmodel
-	//
-	if (name[0] == '*')
-	{
-		i = atoi(name+1);
-		if (i < 1 || !r_worldbmodel || !r_worldbmodel || i >= r_worldbmodel->numsubmodels)
-			Com_Error (ERR_DROP, "bad inline model number");
-		return &mod_inline[i];
-	}
+	model_t	*mod;
 
 	//
 	// search the currently loaded models
@@ -192,14 +175,53 @@ model_t *Mod_ForName (char *name, qboolean crash)
 		if (!mod->name[0])
 			break;	// free spot
 	}
+
 	if (i == mod_numknown)
 	{
 		if (mod_numknown == MAX_MOD_KNOWN)
 			Com_Error (ERR_DROP, "mod_numknown == MAX_MOD_KNOWN");
 		mod_numknown++;
 	}
+
+	return mod;
+}
+
+/*
+==================
+Mod_ForName
+
+Loads in a model for the given name
+==================
+*/
+model_t *Mod_ForName (char *name, qboolean crash)
+{
+	int		i;
+	model_t	*mod, *lod;
+	unsigned *buf;
+	char shortname[MAX_QPATH], lodname[MAX_QPATH];
+	modelformatdescriptor_t *descr;
+
+	if (!name[0])
+		Com_Error (ERR_DROP, "Mod_ForName: NULL name");
+		
+	//
+	// inline models are grabbed only from worldmodel
+	//
+	if (name[0] == '*')
+	{
+		i = atoi(name+1);
+		if (i < 1 || !r_worldbmodel || !r_worldbmodel || i >= r_worldbmodel->numsubmodels)
+			Com_Error (ERR_DROP, "bad inline model number");
+		return &mod_inline[i];
+	}
+
+	mod = Mod_FindSlot (name);
+	if ( mod->name[0] && !strcmp (mod->name, name) ) {
+		return mod;
+	}
+
 	strcpy (mod->name, name);
-	
+
 	//
 	// load the file
 	//
@@ -215,22 +237,80 @@ model_t *Mod_ForName (char *name, qboolean crash)
 	loadmodel = mod;
 
 	// call the apropriate loader
-	for ( i = 0; i < mod_numsupportedformats; i++ ) {
-		if ( !strncmp ((const char *)buf,  mod_supportedformats[i].header, mod_supportedformats[i].headerlen) ) {
+	descr = mod_supportedformats;
+	for ( i = 0; i < mod_numsupportedformats; i++, descr++ ) {
+		if ( !strncmp ((const char *)buf, descr->header, descr->headerLen) ) {
 			break;
 		}
 	}
 
-	if ( i != mod_numsupportedformats ) {
-		loadmodel->extradata = Hunk_Begin ( mod_supportedformats[i].maxsize );
-		mod_supportedformats[i].loader ( mod, buf );
-	} else {
+	if ( i == mod_numsupportedformats ) {
 		Com_Error (ERR_DROP, "Mod_NumForName: unknown fileid for %s", mod->name);
 	}
 
-	loadmodel->extradatasize = Hunk_End ();
+	mod->extradata = Hunk_Begin ( descr->maxSize );
+	descr->loader ( mod, buf );
 
 	FS_FreeFile (buf);
+
+	if ( !descr->maxLods ) {
+		loadmodel->extradatasize = Hunk_End ();
+		return mod;
+	}
+
+	// 
+	// load level-of-detail models
+	//
+	COM_StripExtension ( mod->name, shortname );
+
+	for ( i = 0, mod->numlods = 0; i < mod_supportedformats[i].maxLods; i++ )
+	{
+		Com_sprintf ( lodname, MAX_QPATH, "%s_%i%s", shortname, i+1, &mod->name[strlen(shortname)] );
+		
+		modfilelen = FS_LoadFile (lodname, (void **)&buf);
+		if ( !buf ) {
+			break;
+		}
+		if ( strncmp ((const char *)buf, descr->header, descr->headerLen) ) {
+			break;
+		}
+		
+		mod->numlods++;
+		FS_FreeFile (buf);
+	}
+
+	if ( mod->numlods < 2 ) {
+		mod->numlods = 0;
+		mod->extradatasize = Hunk_End ();
+		return mod;
+	}
+
+	mod->lods = Hunk_AllocName ( sizeof(model_t *)*mod->numlods, mod->name );
+	mod->extradatasize = Hunk_End ();
+
+	for ( i = 0; i < mod->numlods; i++ )
+	{
+		Com_sprintf ( lodname, MAX_QPATH, "%s_%i%s", shortname, i+1, &mod->name[strlen(shortname)] );
+
+		FS_LoadFile ( lodname, (void **)&buf );
+
+		lod = mod->lods[i] = Mod_FindSlot ( lodname );
+		if ( lod->name[0] && !strcmp(lod->name, lodname) ) {
+			continue;
+		}
+
+		strcpy ( lod->name, lodname );
+
+		loadmodel = lod;
+
+		lod->extradata = Hunk_Begin ( descr->maxSize );
+		descr->loader ( lod, buf );
+		lod->extradatasize = Hunk_End ();
+
+		FS_FreeFile (buf);
+	}
+
+	loadmodel = mod;
 
 	return mod;
 }
@@ -295,7 +375,9 @@ Mod_LoadVertexes
 void Mod_LoadVertexes (lump_t *l)
 {
 	dvertex_t	*in;
-	float		*out_xyz, *out_normals,	*out_st, *out_lmst, *out_colors;
+	float		*out_xyz, *out_normals,	*out_st, *out_lmst;
+	byte		*out_colors;
+	vec3_t		color, fcolor;
 	int			i, count, j;
 	float		div;
 
@@ -317,12 +399,7 @@ void Mod_LoadVertexes (lump_t *l)
 	out_lmst = loadbmodel->lmst_array[0];
 	out_colors = loadbmodel->colors_array[0];
 
-	div = floor( r_mapoverbrightbits->value - r_overbrightbits->value );
-	if ( div > 0 ) {
-		div = pow( 2, div ) / 255.0;
-	} else {
-		div = 1.0 / 255.0;
-	}
+	div = gl_state.pow2_mapovrbr;
 
 	for ( i=0 ; i<count ; i++, in++, out_xyz+=4, out_normals+=3, out_st+=2, out_lmst+=2, out_colors+=4)
 	{
@@ -338,11 +415,23 @@ void Mod_LoadVertexes (lump_t *l)
 			out_lmst[j] = LittleFloat ( in->lm_st[j] );
 		}
 
-		for ( j=0 ; j < 3 ; j++) {
-			out_colors[j] = (float)((double)in->color[j] * div);
-			out_colors[j] = min( out_colors[j], 1 );
+		if ( r_fullbright->value ) {
+			for ( j=0 ; j < 3 ; j++) {
+				out_colors[j] = 255;
+			}
+		} else {
+			for ( j=0 ; j < 3 ; j++) {
+				color[j] = (float)((double)in->color[j] * div);
+			}
+
+			ColorNormalize ( color, fcolor );
+
+			out_colors[0] = FloatToByte ( fcolor[0] );
+			out_colors[1] = FloatToByte ( fcolor[1] );
+			out_colors[2] = FloatToByte ( fcolor[2] );
 		}
-		out_colors[3] = (float)((double)in->color[3] * (1.0 / 255.0));
+
+		out_colors[3] = in->color[3];
 	}
 }
 
@@ -405,6 +494,7 @@ void Mod_LoadShaderrefs (lump_t *l)
 		Com_sprintf ( out->name, sizeof( out->name ), in->name );
 
 		out->flags = LittleLong ( in->flags );
+		out->contents = LittleLong ( in->contents );
 		out->shader = NULL;
 	}
 }
@@ -418,11 +508,12 @@ void Mod_LoadFaces (lump_t *l)
 {
 	dface_t		*in;
 	msurface_t 	*out;
+	mesh_t		*mesh;
 	mfog_t		*fog;
 	mshaderref_t *shaderref;
 	int			i, j, count;
 	int			shadernum, fognum, surfnum;
-	vec4_t		*vert;
+	float		*vert;
 
 	in = (void *)(mod_base + l->fileofs);
 	if (l->filelen % sizeof(*in))
@@ -452,21 +543,31 @@ void Mod_LoadFaces (lump_t *l)
 			out->lightmaptexturenum = -1;
 		}
 
-		if ( out->facetype == FACETYPE_MESH ) {
-			GL_CreateMesh ( loadmodel, in, out );
+		if ( out->facetype == FACETYPE_PATCH ) {
+			mesh = GL_CreateMeshForPatch ( loadmodel, in );
+			if ( mesh ) {
+				out->mesh = mesh;
+			}
 		} else if ( out->facetype != FACETYPE_FLARE ) {
-			out->mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), loadmodel->name );
-			out->mesh->xyz_array = loadbmodel->xyz_array + LittleLong ( in->firstvert );
-			out->mesh->normals_array = loadbmodel->normals_array + LittleLong ( in->firstvert );
-			out->mesh->st_array = loadbmodel->st_array + LittleLong ( in->firstvert );
-			out->mesh->lmst_array = loadbmodel->lmst_array + LittleLong ( in->firstvert );
-			out->mesh->colors_array = loadbmodel->colors_array + LittleLong ( in->firstvert );
-			out->mesh->numvertexes = LittleLong ( in->numverts );
+			mesh = out->mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), loadmodel->name );
+			mesh->xyz_array = loadbmodel->xyz_array + LittleLong ( in->firstvert );
+			mesh->normals_array = loadbmodel->normals_array + LittleLong ( in->firstvert );
+			mesh->st_array = loadbmodel->st_array + LittleLong ( in->firstvert );
+			mesh->lmst_array = loadbmodel->lmst_array + LittleLong ( in->firstvert );
+			mesh->colors_array = loadbmodel->colors_array + LittleLong ( in->firstvert );
+			mesh->numvertexes = LittleLong ( in->numverts );
 
-			out->mesh->indexes = loadbmodel->surfindexes + LittleLong ( in->firstindex );
-			out->mesh->numindexes = LittleLong ( in->numindexes );
+			mesh->indexes = loadbmodel->surfindexes + LittleLong ( in->firstindex );
+			mesh->numindexes = LittleLong ( in->numindexes );
 		} else {
 			int r, g, b;
+
+			mesh = out->mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), loadmodel->name );
+			mesh->xyz_array = (vec4_t *)Hunk_AllocName ( sizeof(vec4_t), loadmodel->name );
+			mesh->numvertexes = 1;
+			mesh->indexes = r_quad_indexes;
+			mesh->numindexes = 6;
+			VectorCopy ( out->origin, mesh->xyz_array[0] );
 
 			r = LittleFloat ( in->mins[0] ) * 255.0f;
 			r = bound ( 0, r, 255 );
@@ -477,15 +578,7 @@ void Mod_LoadFaces (lump_t *l)
 			b = LittleFloat ( in->mins[2] ) * 255.0f;
 			b = bound ( 0, b, 255 );
 
-			out->dlightbits = (unsigned int)((r << 0) | (g << 8) | (b << 16));
-
-			out->mesh = (mesh_t *)Hunk_AllocName ( sizeof(mesh_t), loadmodel->name );
-			out->mesh->xyz_array = (vec4_t *)Hunk_AllocName ( sizeof(vec4_t), loadmodel->name );
-			out->mesh->numvertexes = 1;
-			out->mesh->indexes = r_quad_indexes;
-			out->mesh->numindexes = 6;
-
-			VectorCopy ( out->origin, out->mesh->xyz_array[0] );
+			out->dlightbits = (unsigned int)COLOR_RGB ( r, g, b );
 		}
 
 		shadernum = LittleLong ( in->shadernum );
@@ -517,41 +610,24 @@ void Mod_LoadFaces (lump_t *l)
 			}
 		}
 
-		if ( !out->mesh || out->facetype == FACETYPE_FLARE ) {
+		if ( !mesh || out->facetype == FACETYPE_FLARE ) {
 			continue;
 		}
 
-		ClearBounds ( out->mesh->mins, out->mesh->maxs );
+		ClearBounds ( mesh->mins, mesh->maxs );
 
-		vert = out->mesh->xyz_array;
-		for ( j = 0; j < out->mesh->numvertexes; j++, vert++ )
-			AddPointToBounds ( *vert, out->mesh->mins, out->mesh->maxs );
+		vert = mesh->xyz_array[0];
+		for ( j = 0; j < out->mesh->numvertexes; j++, vert += 4 )
+			AddPointToBounds ( vert, mesh->mins, mesh->maxs );
 
-		out->mesh->radius = RadiusFromBounds ( out->mesh->mins, out->mesh->maxs );
+		mesh->radius = RadiusFromBounds ( mesh->mins, mesh->maxs );
 
 		if ( out->facetype == FACETYPE_PLANAR ) {
 			for ( j = 0; j < 3; j++ ) {
 				out->origin[j] = LittleFloat ( in->normal[j] );
 			}
 		}
-
-		GL_PretransformAutosprites ( out );
 	}
-}
-
-
-/*
-=================
-Mod_SetParent
-=================
-*/
-void Mod_SetParent (mnode_t *node, mnode_t *parent)
-{
-	node->parent = parent;
-	if (node->contents != -1)
-		return;
-	Mod_SetParent (node->children[0], node);
-	Mod_SetParent (node->children[1], node);
 }
 
 /*
@@ -576,14 +652,7 @@ void Mod_LoadNodes (lump_t *l)
 
 	for ( i=0 ; i<count ; i++, in++, out++)
 	{
-		for (j=0 ; j<3 ; j++)
-		{
-			out->mins[j] = (float)LittleLong ( in->mins[j] );
-			out->maxs[j] = (float)LittleLong ( in->maxs[j] );
-		}
-
 		out->plane = loadbmodel->planes + LittleLong ( in->planenum );
-		out->contents = CONTENTS_NODE;	// differentiate from leafs
 
 		for (j=0 ; j<2 ; j++)
 		{
@@ -594,8 +663,6 @@ void Mod_LoadNodes (lump_t *l)
 				out->children[j] = (mnode_t *)(loadbmodel->leafs + (-1 - p));
 		}
 	}
-	
-	Mod_SetParent ( loadbmodel->nodes, NULL );	// sets nodes and leafs
 }
 
 /*
@@ -720,19 +787,31 @@ void Mod_LoadLeafs (lump_t *l)
 			out->mins[j] = (float)LittleLong ( in->mins[j] );
 			out->maxs[j] = (float)LittleLong ( in->maxs[j] );
 		}
-
+		
 		out->cluster = LittleLong ( in->cluster );
 
 		if ( loadbmodel->vis ) {
-			if ( out->cluster > loadbmodel->vis->numclusters )
+			if ( out->cluster >= loadbmodel->vis->numclusters )
 				Com_Error (ERR_DROP, "MOD_LoadBmodel: leaf cluster > numclusters");
 		}
 
+		out->plane = NULL;
 		out->area = LittleLong ( in->area ) + 1;
-		out->nummarksurfaces = LittleLong ( in->numleaffaces );
-		out->firstmarksurface = loadbmodel->marksurfaces + LittleLong ( in->firstleafface );
 
-		out->contents = 0;
+		// check if degenerate
+		if ( out->mins[0] > out->maxs[0] || out->mins[1] > out->maxs[1] ||
+			out->mins[2] > out->maxs[2] || VectorCompare (out->mins, out->maxs) ) {
+			out->nummarksurfaces = 0;
+		} else {
+			out->nummarksurfaces = LittleLong ( in->numleaffaces );
+		}
+
+		j = LittleLong ( in->firstleafface );
+		if ( j < 0 || out->nummarksurfaces + j > loadbmodel->nummarksurfaces ) {
+			out->nummarksurfaces = loadbmodel->nummarksurfaces - j;
+		}
+
+		out->firstmarksurface = loadbmodel->marksurfaces + j;
 	}
 }
 
@@ -872,6 +951,7 @@ void Mod_LoadEntities (lump_t *l)
 	for ( count = 0; (token = COM_Parse (&data)) && token[0] == '{'; )
 	{
 		islight = false;
+		isworld = false;
 
 		while (1)
 		{
@@ -894,11 +974,25 @@ void Mod_LoadEntities (lump_t *l)
 			Q_strncpyz ( value, token, sizeof(value) );
 
 			// now that we have the key pair worked out...
-			if ( !strcmp ("classname", key) ) {
+			if ( !strcmp (key, "classname") ) {
 				if ( !strncmp (value, "light", 5) ) {
 					islight = true;
+				} else if ( !strcmp (value, "worldspawn") ) {
+					isworld = true;
+				}
+			} else if ( !strcmp (key, "gridsize") ) {
+				sscanf ( value, "%f %f %f", &gridsizef[0], &gridsizef[1], &gridsizef[2] );
+
+				if ( !gridsizef[0] || !gridsizef[1] || !gridsizef[2] ) {
+					sscanf ( value, "%i %i %i", &gridsizei[0], &gridsizei[1], &gridsizei[2] );
+					VectorCopy ( gridsizei, gridsizef );
 				}
 			}
+		}
+
+		if ( isworld ) {
+			VectorCopy ( gridsizef, loadmodel->gridSize );
+			continue;
 		}
 
 		if ( islight ) {
@@ -919,7 +1013,6 @@ void Mod_LoadEntities (lump_t *l)
 	for ( ; (token = COM_Parse (&data)) && token[0] == '{';  )
 	{
 		islight = false;
-		isworld = false;
 
 		while (1)
 		{
@@ -951,24 +1044,10 @@ void Mod_LoadEntities (lump_t *l)
 			} else if (!strcmp (key, "classname") ) {
 				if ( !strncmp (value, "light", 5) ) {
 					islight = true;
-				} else if ( !strcmp (value, "worldspawn") ) {
-					isworld = true;
 				}
 			} else if ( !strcmp (key, "target") ) {
 				Q_strncpyz ( target, value, sizeof(target) );
-			} else if ( !strcmp (key, "gridsize") ) {
-				sscanf ( value, "%f %f %f", &gridsizef[0], &gridsizef[1], &gridsizef[2] );
-
-				if ( !gridsizef[0] || !gridsizef[1] || !gridsizef[2] ) {
-					sscanf ( value, "%i %i %i", &gridsizei[0], &gridsizei[1], &gridsizei[2] );
-					VectorCopy ( gridsizei, gridsizef );
-				}
 			}
-		}
-
-		if ( isworld ) {
-			VectorCopy ( gridsizef, loadmodel->gridSize );
-			continue;
 		}
 
 		if ( !islight ) {
@@ -1073,7 +1152,7 @@ void Mod_LoadBrushModel (model_t *mod, void *buffer)
 		VectorSet ( mod->gridSize, 64, 64, 128 );
 	}
 
-	for ( i = 0; i < 3; i++ ) 
+	for ( i = 0; i < 3; i++ )
 	{
 		mod->gridMins[i] = mod->gridSize[i] * ceil( (mod->mins[i] + 1) / mod->gridSize[i] );
 		maxs[i] = mod->gridSize[i] * floor( (mod->maxs[i] - 1) / mod->gridSize[i] );
@@ -1201,7 +1280,6 @@ void R_BeginRegistration (char *model)
 	extern void CL_LoadingString (char *str);
 
 	registration_sequence++;
-	r_oldviewcluster = -1;		// force markleafs
 
 	Com_sprintf (fullname, sizeof(fullname), "maps/%s.bsp", model);
 	CL_LoadingString (fullname);
@@ -1214,7 +1292,7 @@ void R_BeginRegistration (char *model)
 
 	r_worldmodel = Mod_ForName(fullname, true);
 	r_worldbmodel = r_worldmodel->bmodel;
-	r_viewcluster = -1;
+	r_oldviewcluster = r_viewcluster = -1;		// force markleafs
 }
 
 
@@ -1226,7 +1304,9 @@ R_RegisterModel
 */
 struct model_s *R_RegisterModel (char *name)
 {
+	int			i;
 	model_t		*mod;
+	void		(*registerer) ( model_t *mod );
 
 	mod = Mod_ForName (name, false);
 	if (mod)
@@ -1235,13 +1315,19 @@ struct model_s *R_RegisterModel (char *name)
 
 		// register any images used by the models
 		if ( mod->type == mod_sprite ) {
-			Mod_RegisterSpriteModel ( mod );
+			registerer = Mod_RegisterSpriteModel;
 		} else if ( mod->type == mod_alias ) {
-			Mod_RegisterAliasModel ( mod );
+			registerer = Mod_RegisterAliasModel;
 		} else if ( mod->type == mod_dpm ) {
-			Mod_RegisterDarkPlacesModel ( mod );
+			registerer = Mod_RegisterDarkPlacesModel;
 		} else if ( mod->type == mod_brush ) {
-			Mod_RegisterBrushModel ( mod );
+			registerer = Mod_RegisterBrushModel;
+		}
+
+		registerer ( mod );
+		for ( i = 0; i < mod->numlods; i++ ) {
+			mod->lods[i]->registration_sequence = registration_sequence;
+			registerer ( mod->lods[i] );
 		}
 	}
 

@@ -149,7 +149,7 @@ int PM_SlideMove (void)
 		}
 
 		if (trace.fraction == 1)
-			 break;		// moved the entire distance
+			break;		// moved the entire distance
 
 		// save entity for contact
 		if (pm->numtouch < MAXTOUCH && trace.ent)
@@ -202,6 +202,7 @@ int PM_SlideMove (void)
 				break;
 			}
 			CrossProduct (planes[0], planes[1], dir);
+			VectorNormalize (dir);
 			d = DotProduct (dir, pml.velocity);
 			VectorScale (dir, d, pml.velocity);
 		}
@@ -280,7 +281,7 @@ void PM_StepSlideMove (void)
     up_dist = (up[0] - start_o[0])*(up[0] - start_o[0])
         + (up[1] - start_o[1])*(up[1] - start_o[1]);
 
-	if (down_dist >= up_dist || trace.plane.normal[2] < MIN_STEP_NORMAL)
+	if (down_dist > up_dist || trace.plane.normal[2] < MIN_STEP_NORMAL)
 	{
 		VectorCopy (down_o, pml.origin);
 		VectorCopy (down_v, pml.velocity);
@@ -324,7 +325,7 @@ void PM_Friction (void)
 	drop = 0;
 
 // apply ground friction
-	if ((pm->groundentity && pml.groundsurface && !(pml.groundsurface->flags & SURF_SLICK) ) || (pml.ladder) )
+	if ((pm->groundentity && pml.groundsurface && !(pml.groundsurface->flags & SURF_SLICK) ) && (pm->waterlevel < 2) || (pml.ladder) )
 	{
 		friction = pm_friction;
 		control = speed < pm_stopspeed ? pm_stopspeed : speed;
@@ -332,7 +333,7 @@ void PM_Friction (void)
 	}
 
 // apply water friction
-	if (pm->waterlevel && !pml.ladder)
+	if ((pm->waterlevel >= 2) && !pml.ladder)
 		drop += speed*pm_waterfriction*pm->waterlevel*pml.frametime;
 
 // scale the velocity
@@ -731,7 +732,7 @@ void PM_CheckSpecialMovement (void)
 	flatforward[0] = pml.forward[0];
 	flatforward[1] = pml.forward[1];
 	flatforward[2] = 0;
-	VectorNormalizeFast (flatforward);
+	VectorNormalize (flatforward);
 
 	VectorMA (pml.origin, 1, flatforward, spot);
 	trace = pm->trace (pml.origin, pm->mins, pm->maxs, spot);
@@ -808,8 +809,8 @@ void PM_FlyMove (qboolean doclip)
 	fmove = pm->cmd.forwardmove;
 	smove = pm->cmd.sidemove;
 	
-	VectorNormalizeFast (pml.forward);
-	VectorNormalizeFast (pml.right);
+	VectorNormalize (pml.forward);
+	VectorNormalize (pml.right);
 
 	for (i=0 ; i<3 ; i++)
 		wishvel[i] = pml.forward[i]*fmove + pml.right[i]*smove;
@@ -906,7 +907,7 @@ void PM_CheckDuck (void)
 
 	if (pm->s.pm_flags & PMF_DUCKED)
 	{
-		pm->maxs[2] = 16;
+		pm->maxs[2] = 14;
 		pm->viewheight = 12;
 	}
 	else
@@ -938,7 +939,7 @@ void PM_DeadMove (void)
 	}
 	else
 	{
-		VectorNormalizeFast (pml.velocity);
+		VectorNormalize (pml.velocity);
 		VectorScale (pml.velocity, forward, pml.velocity);
 	}
 }
@@ -1208,4 +1209,3 @@ void Pmove (pmove_t *pmove)
 
 	PM_SnapPosition ();
 }
-

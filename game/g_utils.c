@@ -675,7 +675,7 @@ void G_InitMover ( edict_t *ent )
 		}
 		b = bound ( 0, b, 255 );
 
-		ent->s.skinnum = (r << 0) | (g << 8) | (b << 16) | (i << 24);
+		ent->s.light = COLOR_RGBA ( r, g, b, i );
 	}
 }
 

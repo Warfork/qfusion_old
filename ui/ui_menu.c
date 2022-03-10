@@ -112,7 +112,7 @@ void M_PushMenu ( menuframework_s *m, void (*draw) (void), const char *(*key) (i
 
 	UI_UpdateMousePosition ();
 
-	trap_CL_SetKeyDest_f ( key_menu );
+	trap_CL_SetKeyDest ( key_menu );
 }
 
 void M_ForceMenuOff (void)
@@ -120,7 +120,7 @@ void M_ForceMenuOff (void)
 	m_active = 0;
 	m_drawfunc = 0;
 	m_keyfunc = 0;
-	trap_CL_SetKeyDest_f ( key_game );
+	trap_CL_SetKeyDest ( key_game );
 	m_menudepth = 0;
 	trap_Key_ClearStates ();
 	trap_Cvar_Set ("paused", "0");

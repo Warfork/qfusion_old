@@ -98,10 +98,6 @@ SOURCE=..\game\q_shared.c
 # End Source File
 # Begin Source File
 
-SOURCE=..\win32\q_shwin.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\ui_address.c
 # End Source File
 # Begin Source File

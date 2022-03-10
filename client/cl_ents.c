@@ -145,6 +145,9 @@ void CL_ParseDelta (entity_state_t *from, entity_state_t *to, int number, unsign
 
 	if (bits & U_SOLID)
 		to->solid = MSG_ReadShort (&net_message);
+
+	if (bits & U_LIGHT)
+		to->light = MSG_ReadLong (&net_message);
 }
 
 /*
@@ -722,10 +725,7 @@ void CL_AddPacketEntities (void)
 		{	// the four beam colors are encoded in 32 bits of skinnum (hack)
 			ent.type = ET_BEAM;
 			ent.radius = state->frame * 0.5f;
-			ent.color[0] = ( state->skinnum & 0xFF );
-			ent.color[1] = ( state->skinnum >> 8 ) & 0xFF;
-			ent.color[2] = ( state->skinnum >> 16 ) & 0xFF;
-			ent.color[3] = ( state->skinnum >> 24 ) & 0xFF;
+			*(int *)ent.color = state->skinnum;
 			ent.model = NULL;
 		}
 		else if ( renderfx & RF_PORTALSURFACE ) 
@@ -781,20 +781,21 @@ void CL_AddPacketEntities (void)
 			ent.flags = renderfx;
 		}
 
-		// bmodels with skinnum cast light
-		if ( (state->solid == 31) && state->skinnum ) {
-			int r, g, b, i;
-
-			r = ( state->skinnum & 0xFF );
-			g = ( state->skinnum >> 8 ) & 0xFF;
-			b = ( state->skinnum >> 16 ) & 0xFF;
-			i = ( state->skinnum >> 24 ) & 0xFF;
-
-			V_AddLight ( ent.origin, i * 4.0, r * (1.0/255.0), g * (1.0/255.0),	b * (1.0/255.0) );
+		// glow if light is set
+		if ( state->light ) {
+			V_AddLight ( ent.origin, 
+				COLOR_A ( state->light ) * 4.0, 
+				COLOR_R ( state->light ) * (1.0/255.0), 
+				COLOR_G ( state->light ) * (1.0/255.0),	
+				COLOR_B ( state->light ) * (1.0/255.0) );
 		}
 
 		// respawning items
-		msec = cl.time - cent->respawnTime;
+		if ( cent->respawnTime ) {
+			msec = cl.time - cent->respawnTime;
+		} else {
+			msec = ITEM_RESPAWN_TIME;
+		}
 		
 		if ( msec >= 0 && msec < ITEM_RESPAWN_TIME  ) {
 			ent.scale = (float)msec / ITEM_RESPAWN_TIME;
@@ -893,7 +894,7 @@ void CL_AddPacketEntities (void)
 			V_AddEntity (&ent);
 		}
 
-		ent.color[0] = ent.color[1] = ent.color[2] = ent.color[3] = 255;
+		Vector4Set ( ent.color, 255, 255, 255, 255 );
 
 		ent.customShader = NULL;		// never use a custom skin on others
 		ent.skinnum = 0;
@@ -965,12 +966,7 @@ void CL_AddPacketEntities (void)
 		// add automatic particle trails
 		if ( (effects&~EF_ROTATE) )
 		{
-			if (effects & EF_ROCKET)
-			{
-				CL_RocketTrail (cent->lerp_origin, ent.origin, cent);
-				V_AddLight (ent.origin, 300, 1, 1, 0);
-			}
-			else if (effects & EF_BLASTER)
+			if (effects & EF_BLASTER)
 			{
 				CL_BlasterTrail (cent->lerp_origin, ent.origin);
 				V_AddLight (ent.origin, 300, 1, 1, 0);
@@ -981,11 +977,16 @@ void CL_AddPacketEntities (void)
 			}
 			else if (effects & EF_GIB)
 			{
-				CL_DiminishingTrail (cent->lerp_origin, ent.origin, &cent->trailcount, effects);
+				CL_BloodTrail (cent->lerp_origin, ent.origin, &cent->trailcount);
 			}
+			if (effects & EF_ROCKET)
+			{
+				CL_RocketTrail (cent->lerp_origin, ent.origin);
+				V_AddLight (ent.origin, 300, 1, 1, 0);
+			} 
 			else if (effects & EF_GRENADE)
 			{
-				CL_DiminishingTrail (cent->lerp_origin, ent.origin, &cent->trailcount, effects);
+				CL_GrenadeTrail (cent->lerp_origin, ent.origin);
 			}
 			else if (effects & EF_FLIES)
 			{
@@ -1008,18 +1009,18 @@ void CL_AddPacketEntities (void)
 			}
 			else if ((effects & (EF_FLAG1|EF_FLAG2)) == EF_FLAG1)
 			{
-				CL_FlagTrail (cent->lerp_origin, ent.origin, 242);
+				CL_FlagTrail (cent->lerp_origin, ent.origin, EF_FLAG1);
 				V_AddLight (ent.origin, 225, 1, 0.1, 0.1);
 			}
 			else if ((effects & (EF_FLAG1|EF_FLAG2)) == EF_FLAG2)
 			{
-				CL_FlagTrail (cent->lerp_origin, ent.origin, 115);
+				CL_FlagTrail (cent->lerp_origin, ent.origin, EF_FLAG2);
 				V_AddLight (ent.origin, 225, 0.1, 0.1, 1);
 			}
 			else if ((effects & (EF_FLAG1|EF_FLAG2)) == (EF_FLAG1|EF_FLAG2))
 			{
-				CL_FlagTrail (cent->lerp_origin, ent.origin, 242);
-				CL_FlagTrail (cent->lerp_origin, ent.origin, 115);
+				CL_FlagTrail (cent->lerp_origin, ent.origin, EF_FLAG1);
+				CL_FlagTrail (cent->lerp_origin, ent.origin, EF_FLAG2);
 				V_AddLight (ent.origin, 225, 1, 0.2, 1);
 			}
 		}
@@ -1104,11 +1105,11 @@ void CL_CalcViewValues (void)
 	i = (cl.frame.serverframe - 1) & UPDATE_MASK;
 	oldframe = &cl.frames[i];
 	if (oldframe->serverframe != cl.frame.serverframe-1 || !oldframe->valid)
-		oldframe = &cl.frame;		// previous frame was dropped or involid
+		oldframe = &cl.frame;		// previous frame was dropped or invalid
 	ops = &oldframe->playerstate;
 
 	// see if the player entity was teleported this frame
-	if ( fabs(ops->pmove.origin[0] - ps->pmove.origin[0]) > 256*8
+	if ( abs(ops->pmove.origin[0] - ps->pmove.origin[0]) > 256*8
 		|| abs(ops->pmove.origin[1] - ps->pmove.origin[1]) > 256*8
 		|| abs(ops->pmove.origin[2] - ps->pmove.origin[2]) > 256*8)
 		ops = ps;		// don't interpolate
@@ -1118,7 +1119,7 @@ void CL_CalcViewValues (void)
 
 	// calculate the origin
 	if (cl_predict->value && !(cl.frame.playerstate.pmove.pm_flags & PMF_NO_PREDICTION)
-		&& !cl.thirdperson )
+		&& !cl.thirdperson)
 	{	// use predicted values
 		unsigned	delta;
 
@@ -1126,7 +1127,7 @@ void CL_CalcViewValues (void)
 		for (i=0 ; i<3 ; i++)
 		{
 			cl.refdef.vieworg[i] = cl.predicted_origin[i] + ops->viewoffset[i] 
-				+ cl.lerpfrac * (ps->viewoffset[i] - ops->viewoffset[i])
+				+ lerp * (ps->viewoffset[i] - ops->viewoffset[i])
 				- backlerp * cl.prediction_error[i];
 		}
 
@@ -1204,9 +1205,11 @@ void CL_AddEntities (void)
 		cl.lerpfrac = 1.0;
 
 	CL_CalcViewValues ();
-	// PMM - moved this here so the heat beam has the right values for the vieworg, and can lock the beam to the gun
+
 	CL_AddPacketEntities ();
-	CL_AddTEnts ();
+	CL_AddBeams ();
+	CL_AddLocalEntities ();
+	CL_AddDecals ();
 	CL_AddParticles ();
 	CL_AddDLights ();
 }

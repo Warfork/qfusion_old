@@ -44,7 +44,7 @@ static menuseparator_s	s_blankline;
 static void StartGame( void )
 {
 	// disable updates and start the cinematic going
-	trap_CL_ResetServerCount_f ();
+	trap_CL_ResetServerCount ();
 	M_ForceMenuOff ();
 	trap_Cvar_SetValue( "deathmatch", 0 );
 	trap_Cvar_SetValue( "coop", 0 );
@@ -52,7 +52,7 @@ static void StartGame( void )
 	trap_Cvar_SetValue( "gamerules", 0 );
 
 	trap_Cmd_ExecuteText ( EXEC_APPEND, "loading ; killserver ; wait ; newgame\n");
-	trap_CL_SetKeyDest_f ( key_game );
+	trap_CL_SetKeyDest ( key_game );
 }
 
 static void EasyGameFunc( void *data )

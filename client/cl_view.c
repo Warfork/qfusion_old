@@ -48,6 +48,9 @@ entity_t	r_entities[MAX_ENTITIES];
 int			r_numparticles;
 particle_t	r_particles[MAX_PARTICLES];
 
+int			r_numpolys;
+poly_t		r_polys[MAX_POLYS];
+
 char		cl_weaponmodels[MAX_CLIENTWEAPONMODELS][MAX_QPATH];
 int			num_cl_weaponmodels;
 
@@ -63,6 +66,7 @@ void V_ClearScene (void)
 	r_numdlights = 0;
 	r_numentities = 0;
 	r_numparticles = 0;
+	r_numpolys = 0;
 }
 
 
@@ -76,8 +80,7 @@ void V_AddEntity (entity_t *ent)
 {
 	if (r_numentities >= MAX_ENTITIES)
 		return;
-	r_entities[r_numentities] = *ent;
-	r_entities[r_numentities].number = r_numentities++;
+	r_entities[r_numentities++] = *ent;
 }
 
 
@@ -87,16 +90,21 @@ V_AddParticle
 
 =====================
 */
-void V_AddParticle (vec3_t org, int color, float alpha)
+void V_AddParticle (vec3_t org, float r, float g, float b, float alpha, float scale)
 {
 	particle_t	*p;
 
 	if (r_numparticles >= MAX_PARTICLES)
 		return;
+	if (scale <= 0)
+		return;
 	p = &r_particles[r_numparticles++];
 	VectorCopy (org, p->origin);
-	p->color = color;
-	p->alpha = alpha;
+	p->color[0] = FloatToByte (bound(0, r, 1.0f));
+	p->color[1] = FloatToByte (bound(0, g, 1.0f));
+	p->color[2] = FloatToByte (bound(0, b, 1.0f));
+	p->color[3] = FloatToByte (bound(0, alpha, 1.0f));
+	p->scale = scale;
 }
 
 /*
@@ -117,6 +125,19 @@ void V_AddLight (vec3_t org, float intensity, float r, float g, float b)
 	dl->color[0] = r;
 	dl->color[1] = g;
 	dl->color[2] = b;
+}
+
+/*
+=====================
+V_AddPoly
+
+=====================
+*/
+void V_AddPoly (poly_t *poly)
+{
+	if (r_numpolys >= MAX_POLYS)
+		return;
+	r_polys[r_numpolys++] = *poly;
 }
 
 /*
@@ -144,8 +165,8 @@ void V_TestParticles (void)
 			p->origin[j] = cl.refdef.vieworg[j] + cl.v_forward[j]*d +
 			cl.v_right[j]*r + cl.v_up[j]*u;
 
-		p->color = 8;
-		p->alpha = cl_testparticles->value;
+		p->scale = 1;
+		Vector4Set ( p->color, 127, 127, 127, 255 );
 	}
 }
 
@@ -278,7 +299,7 @@ void CL_PrepRefresh (void)
 	}
 
 	CL_LoadingString ("images");
-	CL_RegisterMediaPics ();
+	CL_RegisterMediaShaders ();
 
 	for (i=1 ; i<MAX_IMAGES && cl.configstrings[CS_IMAGES+i][0] ; i++)
 	{
@@ -475,6 +496,8 @@ void V_RenderView( float stereo_separation )
 			r_numparticles = 0;
 		if (!cl_add_lights->value)
 			r_numdlights = 0;
+		if (!cl_add_polys->value)
+			r_numpolys = 0;
 		if (!cl_add_blend->value)
 		{
 			cl.refdef.blend[0] = cl.refdef.blend[1] = cl.refdef.blend[2] = cl.refdef.blend[3] = 0;
@@ -486,6 +509,8 @@ void V_RenderView( float stereo_separation )
 		cl.refdef.particles = r_particles;
 		cl.refdef.num_dlights = r_numdlights;
 		cl.refdef.dlights = r_dlights;
+		cl.refdef.num_polys = r_numpolys;
+		cl.refdef.polys = r_polys;
 
 		cl.refdef.rdflags = cl.frame.playerstate.rdflags;
 
@@ -501,9 +526,9 @@ void V_RenderView( float stereo_separation )
 	R_RenderFrame (&cl.refdef);
 
 	if (cl_stats->value)
-		Com_Printf ("ent:%i  lt:%i  part:%i\n", r_numentities, r_numdlights, r_numparticles);
+		Com_Printf ("ent:%i  lt:%i  part:%i pls:%i\n", r_numentities, r_numdlights, r_numparticles, r_numpolys);
 	if ( log_stats->value && ( log_stats_file != 0 ) )
-		fprintf( log_stats_file, "%i,%i,%i,",r_numentities, r_numdlights, r_numparticles);
+		fprintf( log_stats_file, "%i,%i,%i,%i,",r_numentities, r_numdlights, r_numparticles, r_numpolys);
 
 	SCR_AddDirtyPoint (scr_vrect.x, scr_vrect.y);
 	SCR_AddDirtyPoint (scr_vrect.x+scr_vrect.width-1,

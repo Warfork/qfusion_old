@@ -22,32 +22,17 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #  include <windows.h>
 #endif
 
-#include <stdio.h>
 #include <GL/gl.h>
-#include <math.h>
+
+#include "../qcommon/qcommon.h"
 
 #include "../client/ref.h"
+#include "../client/cin.h"
+#include "../client/vid.h"
 
 #include "qgl.h"
 
 #define	REF_VERSION	"GL 0.01"
-
-// up / down
-#define	PITCH	0
-
-// left / right
-#define	YAW		1
-
-// fall over
-#define	ROLL	2
-
-#ifndef __VIDDEF_T
-#define __VIDDEF_T
-typedef struct
-{
-	unsigned		width, height;			// coordinates from main game
-} viddef_t;
-#endif
 
 extern	viddef_t	vid;
 
@@ -89,6 +74,9 @@ typedef struct image_s
 
 #define MAX_TEXTURE_UNITS	2
 
+#define FOG_TEXTURE_WIDTH	32
+#define FOG_TEXTURE_HEIGHT	32
+
 //===================================================================
 
 enum
@@ -117,9 +105,11 @@ extern	float	gldepthmin, gldepthmax;
 
 #define BACKFACE_EPSILON	0.01
 
-#define	SIDE_FRONT	0
-#define	SIDE_BACK	1
-#define	SIDE_ON		2
+#define	ON_EPSILON			0.1			// point on plane side epsilon
+
+#define	SIDE_FRONT			0
+#define	SIDE_BACK			1
+#define	SIDE_ON				2
 
 //====================================================
 
@@ -134,6 +124,7 @@ extern	image_t		*r_dlighttexture;
 extern	image_t		*r_fogtexture;
 extern	entity_t	*currententity;
 extern	model_t		*currentmodel;
+extern	mleaf_t		*r_vischain;
 extern	int			r_visframecount;
 extern	int			r_framecount;
 extern	cplane_t	frustum[4];
@@ -161,7 +152,8 @@ extern	cplane_t	r_clipplane;
 // screen size info
 //
 extern	refdef_t	r_newrefdef;
-extern	int		r_viewcluster, r_viewcluster2, r_oldviewcluster, r_oldviewcluster2;
+
+extern	int			r_viewcluster, r_oldviewcluster;
 
 extern	cvar_t	*r_norefresh;
 extern	cvar_t	*r_lefthand;
@@ -197,14 +189,18 @@ extern cvar_t	*gl_ext_sgis_mipmap;
 extern cvar_t	*gl_ext_texture_env_combine;
 extern cvar_t	*gl_ext_NV_texture_env_combine4;
 extern cvar_t	*gl_ext_compressed_textures;
+extern cvar_t	*gl_ext_bgra;
 
 extern	cvar_t	*r_shadows;
 extern	cvar_t	*r_shadows_alpha;
 extern	cvar_t	*r_shadows_nudge;
 
+extern	cvar_t	*r_lodbias;
+
 extern	cvar_t	*r_colorbits;
+extern	cvar_t	*r_texturebits;
+extern	cvar_t	*r_texturemode;
 extern	cvar_t	*r_mode;
-extern	cvar_t	*r_lightmap;
 extern	cvar_t	*r_nobind;
 extern	cvar_t	*r_picmip;
 extern	cvar_t	*r_skymip;
@@ -221,23 +217,9 @@ extern	cvar_t	*gl_cull;
 extern	cvar_t	*gl_drawbuffer;
 extern  cvar_t  *gl_driver;
 extern	cvar_t	*gl_swapinterval;
-extern	cvar_t	*gl_texturemode;
-extern	cvar_t	*gl_texturealphamode;
-extern	cvar_t	*gl_texturesolidmode;
 
 extern	cvar_t	*vid_fullscreen;
 extern	cvar_t	*vid_gamma;
-
-extern	cvar_t	*intensity;
-
-extern	int		gl_lightmap_format;
-extern	int		gl_solid_format;
-extern	int		gl_alpha_format;
-extern	int		gl_tex_solid_format;
-extern	int		gl_tex_alpha_format;
-
-extern	int		c_visible_lightmaps;
-extern	int		c_visible_textures;
 
 extern	mat4_t	r_modelview_matrix;
 extern	mat4_t	r_projection_matrix;
@@ -253,10 +235,14 @@ void GL_SelectTexture( GLenum );
 extern	model_t		*r_worldmodel;
 extern	bmodel_t	*r_worldbmodel;
 extern	entity_t	r_worldent;
+extern	entity_t	r_polyent;
 
 extern	unsigned	d_8to24table[256];
 
-extern	int			r_entvisframe[MAX_ENTITIES][2];
+extern	shader_t	*chars_shader;
+extern	shader_t	*propfont1_shader, *propfont1_glow_shader, *propfont2_shader;
+
+extern	shader_t	*particle_shader;
 
 extern	int			registration_sequence;
 extern	int			gl_maxtexsize;
@@ -273,7 +259,7 @@ void R_InitSpriteModels (void);
 void R_InitDarkPlacesModels (void);
 
 void R_RenderView ( refdef_t *fd, meshlist_t *list );
-void GL_ScreenShot_f (void);
+void R_ScreenShot_f (void);
 
 void R_PushFlare ( meshbuffer_t *mb );
 
@@ -282,30 +268,59 @@ void R_DrawSpriteModel (meshbuffer_t *mb);
 void R_DrawDarkPlacesModel (meshbuffer_t *mb, qboolean shadow);
 void R_DrawSpritePoly (meshbuffer_t *mb);
 
+void R_AliasModelLerpTag ( orientation_t *orient, maliasmodel_t *aliasmodel, int framenum, int oldframenum, 
+									  float backlerp, char *name );
+void R_DarkPlacesModelLerpAttachment ( orientation_t *orient, dpmmodel_t *dpmmodel, int framenum, int oldframenum, 
+									  float backlerp, char *name );
+
 void R_AddAliasModelToList (entity_t *e);
 void R_AddSpriteModelToList (entity_t *e);
 void R_AddDarkPlacesModelToList (entity_t *e);
 void R_AddBrushModelToList (entity_t *e);
 void R_AddSpritePolyToList (entity_t *e);
 
+void	GL_TransformToScreen_Vec3 ( vec3_t in, vec3_t out );
+
 void R_DrawBeam( entity_t *e );
 void R_DrawWorld (void);
-void R_RenderDlights (void);
 void Draw_InitLocal (void);
-qboolean R_CullBox (vec3_t mins, vec3_t maxs);
-qboolean R_CullSphere (vec3_t centre, float radius);
-mfog_t *R_FogForSphere (vec3_t centre, float radius);
+qboolean R_CullBox (const vec3_t mins, const vec3_t maxs, const int clipflags);
+qboolean R_CullSphere (const vec3_t centre, const float radius, const int clipflags);
+mfog_t *R_FogForSphere (const vec3_t centre, const float radius);
 void R_RotateForEntity (entity_t *e);
 void R_TranslateForEntity (entity_t *e);
-void R_MarkLeaves (void);
-void R_AddDynamicLights (meshbuffer_t *mb);
-void R_LightForEntity (entity_t *e, vec4_t *cArray);
-void R_SurfMarkLight (dlight_t *light, int bit, msurface_t *surf);
-void R_MarkLightWorldNode (dlight_t *light, int bit, mnode_t *node);
+
 float R_FastSin ( float t );
 
 void MYgluPerspective( GLdouble fovy, GLdouble aspect, GLdouble zNear, GLdouble zFar );
 
+//
+// r_light.c
+//
+void R_RenderDlights (void);
+void R_MarkLights (void);
+void R_SurfMarkLight (dlight_t *light, int bit, msurface_t *surf);
+void R_AddDynamicLights (meshbuffer_t *mb);
+void R_LightForEntity (entity_t *e, byte *bArray);
+void R_LightDirForOrigin ( vec3_t origin, vec3_t dir );
+
+//
+// r_poly.c
+//
+void R_InitPolys (void);
+void R_DrawPoly ( meshbuffer_t *mb );
+void R_AddPolysToList (void);
+
+//
+// r_surf.c
+//
+void R_MarkLeaves (void);
+void GL_CreateSurfaceLightmap (msurface_t *surf);
+mesh_t *GL_CreateMeshForPatch (model_t *mod, dface_t *surf);
+
+//
+// r_warp.c
+//
 void R_InitSkydome (void);
 void R_CreateSkydome (shader_t *shader, float skyheight);
 void R_ClearSkyBox (void);
@@ -314,8 +329,6 @@ void R_AddSkySurface (msurface_t *fa);
 
 void	R_BeginFrame( float camera_separation );
 void	R_SwapBuffers( int );
-
-int		Draw_GetPalette (void);
 
 void	GL_ResampleTexture (unsigned *indata, int inwidth, int inheight, unsigned *outdata, int outwidth, int outheight);
 
@@ -331,19 +344,10 @@ image_t	*GL_LoadImage (char *name, int flags);
 void	GL_TextureMode( char *string );
 void	GL_ImageList_f (void);
 
-void	GL_CreateSurfaceLightmap (msurface_t *surf);
-void	GL_CreateMesh ( model_t *mod, dface_t *in, msurface_t *out );
-void	GL_PretransformAutosprites (msurface_t *surf);
-
-void	GL_TransformToScreen_Vec3 ( vec3_t in, vec3_t out );
-
 void	GL_InitImages (void);
 void	GL_ShutdownImages (void);
 
 void	GL_FreeUnusedImages (void);
-
-void GL_TextureAlphaMode( char *string );
-void GL_TextureSolidMode( char *string );
 
 /*
 ** GL extension emulation functions
@@ -408,6 +412,7 @@ typedef struct
 	qboolean	nv_tex_env_combine4;
 	qboolean	sgis_mipmap;
 	qboolean	compressed_textures;
+	qboolean	bgra;
 } glconfig_t;
 
 typedef struct
@@ -428,37 +433,12 @@ typedef struct
 	qboolean gammaramp;
 	qboolean in2d;
 
-	qboolean blend;
-	qboolean alphatest;
-	qboolean cull;
-	qboolean offsetfill;
-	qboolean stencil;
-	qboolean scissor;
-
 	float	inv_pow2_ovrbr;
-	float	inv_pow2_mapovrbr;
+	float	pow2_mapovrbr;
 } glstate_t;
 
 extern glconfig_t  gl_config;
 extern glstate_t   gl_state;
-
-#define GLSTATE_DISABLE_ALPHATEST	if ( gl_state.alphatest ) { qglDisable(GL_ALPHA_TEST); gl_state.alphatest = false; }
-#define GLSTATE_ENABLE_ALPHATEST	if ( !gl_state.alphatest ) { qglEnable(GL_ALPHA_TEST); gl_state.alphatest = true; }
-
-#define GLSTATE_DISABLE_BLEND		if ( gl_state.blend ) { qglDisable(GL_BLEND); gl_state.blend = false; }
-#define GLSTATE_ENABLE_BLEND		if ( !gl_state.blend ) { qglEnable(GL_BLEND); gl_state.blend = true; }
-
-#define GLSTATE_DISABLE_CULL		if ( gl_state.cull ) { qglDisable(GL_CULL_FACE); gl_state.cull = false; }
-#define GLSTATE_ENABLE_CULL			if ( !gl_state.cull ) { qglEnable(GL_CULL_FACE); gl_state.cull = true; }
-
-#define GLSTATE_DISABLE_OFFSET		if ( gl_state.offsetfill ) { qglDisable(GL_POLYGON_OFFSET_FILL); gl_state.offsetfill = false; }
-#define GLSTATE_ENABLE_OFFSET		if ( !gl_state.offsetfill ) { qglEnable(GL_POLYGON_OFFSET_FILL); gl_state.offsetfill = true; }
-
-#define GLSTATE_DISABLE_STENCIL		if ( gl_state.stencil ) { qglDisable(GL_STENCIL_TEST); gl_state.stencil = false; }
-#define GLSTATE_ENABLE_STENCIL		if ( !gl_state.stencil ) { qglEnable(GL_STENCIL_TEST); gl_state.stencil = true; }
-
-#define GLSTATE_DISABLE_SCISSOR		if ( gl_state.scissor ) { qglDisable(GL_SCISSOR_TEST); gl_state.scissor = false; }
-#define GLSTATE_ENABLE_SCISSOR		if ( !gl_state.scissor ) { qglEnable(GL_SCISSOR_TEST); gl_state.scissor = true; }
 
 /*
 ====================================================================

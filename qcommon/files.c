@@ -703,7 +703,7 @@ void FS_Dir_f( void )
 FS_GetFileList
 ================
 */
-int FS_GetFileList (const char *dir, const char *extension, char *str, int bufsize)
+int FS_GetFileList (const char *dir, const char *extension, char *buf, int bufsize)
 {
 	int len, alllen;
 	int found, allfound;
@@ -714,7 +714,7 @@ int FS_GetFileList (const char *dir, const char *extension, char *str, int bufsi
 
 	for (search = fs_searchpaths ; search ; search = search->next)
 	{
-		// we are done
+	// we are done
 		if ( bufsize <= alllen ) {
 			return allfound;
 		}
@@ -722,11 +722,11 @@ int FS_GetFileList (const char *dir, const char *extension, char *str, int bufsi
 	// is the element a pak file?
 		if ( search->pack ) {
 		// look through all the pak file elements
-			found = unzGetStringForDir (search->pack->handle, dir, extension, str + alllen, bufsize - alllen, &len);
+			found = unzGetStringForDir (search->pack->handle, dir, extension, buf + alllen, bufsize - alllen, &len);
 
 			if ( found ) {
-				allfound += found;
 				alllen += len;
+				allfound += found;
 			}
 		}
 	}

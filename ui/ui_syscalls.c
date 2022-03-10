@@ -18,7 +18,7 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "../client/ref.h"
+#include "ui_local.h"
 #include "ui.h"
 
 static ui_import_t uii;
@@ -33,7 +33,7 @@ void UI_Keydown ( int key );
 void UI_MouseMove (int dx, int dy);
 
 void M_Menu_Main_f (void);
-void M_AddToServerList ( netadr_t *adr, char *info );
+void M_AddToServerList (char *adr, char *info);
 void M_ForceMenuOff (void);
 
 #define	MAXPRINTMSG	4096
@@ -95,20 +95,20 @@ void trap_S_StartLocalSound ( char *s ) {
 	uii.S_StartLocalSound ( s );
 }
 
-float trap_CL_GetTime_f (void) {
-	return uii.CL_GetTime_f ();
+int trap_CL_GetTime (void) {
+	return uii.CL_GetTime ();
 }
 
-void trap_CL_SetKeyDest_f ( int key_dest ) {
-	uii.CL_SetKeyDest_f ( key_dest );
+void trap_CL_SetKeyDest ( int key_dest ) {
+	uii.CL_SetKeyDest ( key_dest );
 }
 
-void trap_CL_ResetServerCount_f (void) {
-	uii.CL_ResetServerCount_f ();
+void trap_CL_ResetServerCount (void) {
+	uii.CL_ResetServerCount ();
 }
 
-void trap_CL_Quit_f (void) {
-	uii.CL_Quit_f ();
+void trap_CL_Quit (void) {
+	uii.CL_Quit ();
 }
 
 int trap_GetClientState (void) {
@@ -117,10 +117,6 @@ int trap_GetClientState (void) {
 
 int trap_GetServerState (void) {
 	return uii.GetServerState ();
-}
-
-char *trap_NET_AdrToString ( netadr_t *a ) {
-	return uii.NET_AdrToString ( a );
 }
 
 char *trap_Key_GetBindingBuf ( int binding ) {
@@ -218,22 +214,6 @@ void trap_EndFrame (void) {
 
 void trap_Vid_GetCurrentInfo ( int *width, int *height ) {
 	uii.Vid_GetCurrentInfo ( width, height );
-}
-
-int trap_GetWidth (void) {
-	static int vid_width;
-	uii.Vid_GetCurrentInfo ( &vid_width, NULL );
-	return vid_width;
-}
-
-int trap_GetHeight (void) {
-	static int vid_height;
-	uii.Vid_GetCurrentInfo ( NULL, &vid_height );
-	return vid_height;
-}
-
-int Q_PlayerGender ( void *player ) {
-	return GENDER_MALE;
 }
 
 ui_export_t *GetUIAPI (ui_import_t *uiimp)

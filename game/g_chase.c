@@ -99,8 +99,8 @@ void UpdateChaseCam(edict_t *ent)
 		char s[1024];
 
 		ent->client->update_chase = false;
-		sprintf(s, "xv 0 yb -68 string2 \"Chasing %s\"",
-			targ->client->pers.netname);
+		sprintf(s, "xv 0 yb -68 string \"%sChasing %s\"",
+			S_COLOR_YELLOW, targ->client->pers.netname);
 		gi.WriteByte (svc_layout);
 		gi.WriteString (s);
 		gi.unicast(ent, false);

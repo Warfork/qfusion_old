@@ -31,12 +31,12 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #define MAX_CM_MODELS			(MAX_MAP_MODELS)
 #define MAX_CM_BRUSHES			(MAX_MAP_BRUSHES << 1)
 #define MAX_CM_VISIBILITY		(MAX_MAP_VISIBILITY)
-#define MAX_CM_MESHES			(0x10000)
+#define MAX_CM_FACES			(MAX_MAP_FACES)
 #define MAX_CM_LEAFFACES		(MAX_MAP_LEAFFACES)
 #define MAX_CM_VERTEXES			(MAX_MAP_VERTEXES)
-#define MAX_CM_FACES			(MAX_MAP_FACES)
+#define MAX_CM_PATCHES			(0x10000)
+#define MAX_CM_PATCH_VERTS		(4096)
 #define MAX_CM_ENTSTRING		(MAX_MAP_ENTSTRING)
-#define MAX_CM_MESH_VERTS		(4096)
 
 typedef struct
 {
@@ -46,7 +46,7 @@ typedef struct
 	int		firstvert;
 
 	int		shadernum;
-	int		mesh_cp[2];
+	int		patch_cp[2];
 } cface_t;
 
 typedef struct
@@ -73,8 +73,8 @@ typedef struct
 	int			firstleafbrush;
 	int			numleafbrushes;
 
-	int			firstleafmesh;
-	int			numleafmeshes;
+	int			firstleafpatch;
+	int			numleafpatches;
 } cleaf_t;
 
 typedef struct
@@ -94,7 +94,7 @@ typedef struct
 
 	csurface_t	*surface;
 	int			checkcount;		// to avoid repeated testings
-} cmesh_t;
+} cpatch_t;
 
 typedef struct
 {
@@ -152,26 +152,20 @@ int			emptyleaf;
 cvar_t		*cm_noAreas;
 cvar_t		*cm_noCurves;
 
+cpatch_t	map_patches[MAX_CM_PATCHES];
+int			numpatches;
 
-// mesh loading -->
-cmesh_t		map_meshes[MAX_CM_MESHES];
-int			nummeshes;
+int			map_leafpatches[MAX_CM_LEAFFACES];
+int			numleafpatches;
 
-int			map_leafmeshes[MAX_CM_LEAFFACES];
-int			numleafmeshes;
-
-// FIXME: free after loading? - begin
-vec3_t		map_verts[MAX_CM_VERTEXES];
+vec4_t		*map_verts;
 int			numvertexes;
 
-cface_t		map_faces[MAX_CM_FACES];
+cface_t		*map_faces;
 int			numfaces;
 
-int			map_leaffaces[MAX_CM_LEAFFACES];
+int			*map_leaffaces;
 int			numleaffaces;
-// FIXME: free after loading? - end
-
-// <-- mesh loading
 
 void	CM_InitBoxHull (void);
 void	FloodAreaConnections (void);
@@ -185,7 +179,7 @@ byte	*cmod_base;
 /*
 ===============================================================================
 
-					MESH LOADING
+					PATCH LOADING
 
 ===============================================================================
 */
@@ -199,9 +193,9 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 	vec3_t	absmins, absmaxs;
 	cbrushside_t	*side;
 	cplane_t *plane;
-	static cplane_t mainplane, meshplanes[20];
+	static cplane_t mainplane, patchplanes[20];
 	qboolean skip[20];
-	int	nummeshplanes = 0;
+	int	numpatchplanes = 0;
 
 	// calc absmins & absmaxs
 	ClearBounds ( absmins, absmaxs );
@@ -211,18 +205,18 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 	PlaneFromPoints ( verts, &mainplane );
 
 	// front plane
-	plane = &meshplanes[nummeshplanes++];
+	plane = &patchplanes[numpatchplanes++];
 	*plane = mainplane;
 
 	// back plane
-	plane = &meshplanes[nummeshplanes++];
+	plane = &patchplanes[numpatchplanes++];
 	VectorNegate (mainplane.normal, plane->normal);
 	plane->dist = -mainplane.dist;
 
 	// axial planes
 	for ( i = 0; i < 3; i++ ) {
 		for (sign = -1; sign <= 1; sign += 2) {
-			plane = &meshplanes[nummeshplanes++];
+			plane = &patchplanes[numpatchplanes++];
 			VectorClear ( plane->normal );
 			plane->normal[i] = sign;
 			plane->dist = sign > 0 ? absmaxs[i] : -absmins[i];
@@ -244,7 +238,7 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 			if (VectorCompare (normal, vec3_origin))
 				continue;
 
-			plane = &meshplanes[nummeshplanes++];
+			plane = &patchplanes[numpatchplanes++];
 
 			VectorNormalize ( normal );
 			VectorCopy ( normal, plane->normal );
@@ -259,16 +253,14 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 	}
 
 	// set plane->type and mark duplicate planes for removal
-	for (i = 0; i < nummeshplanes; i++)
+	for (i = 0; i < numpatchplanes; i++)
 	{
-		CategorizePlane ( &meshplanes[i] );
+		CategorizePlane ( &patchplanes[i] );
 		skip[i] = false;
 
-		for (j = i + 1; j < nummeshplanes; j++)
-			if ( meshplanes[j].dist == meshplanes[i].dist
-				&& meshplanes[j].normal[0] == meshplanes[i].normal[0]
-				&& meshplanes[j].normal[1] == meshplanes[i].normal[1]
-				&& meshplanes[j].normal[2] == meshplanes[i].normal[2] )
+		for (j = i + 1; j < numpatchplanes; j++)
+			if ( patchplanes[j].dist == patchplanes[i].dist
+				&& VectorCompare (patchplanes[j].normal, patchplanes[i].normal) )
 			{
 				skip[i] = true;
 				break;
@@ -279,14 +271,14 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 	brush->firstbrushside = numbrushsides;
 
 	for (k = 0; k < 2; k++) {
-		for (i = 0; i < nummeshplanes; i++)	{
+		for (i = 0; i < numpatchplanes; i++)	{
 			if (skip[i])
 				continue;
 
 			// first, store all axially aligned planes
 			// then store everything else
 			// does it give a noticeable speedup?
-			if (!k && meshplanes[i].type >= 3)
+			if (!k && patchplanes[i].type >= 3)
 				continue;
 
 			skip[i] = true;
@@ -295,7 +287,7 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 				Com_Error (ERR_DROP, "CM_CreateBrush: numplanes == MAX_CM_PLANES");
 
 			plane = &map_planes[numplanes++];
-			*plane = meshplanes[i];
+			*plane = patchplanes[i];
 
 			if (numbrushsides == MAX_CM_BRUSHSIDES)
 				Com_Error (ERR_DROP, "CM_CreateBrush: numbrushsides == MAX_CM_BRUSHSIDES");
@@ -313,39 +305,34 @@ void CM_CreateBrush ( cbrush_t *brush, vec3_t *verts, csurface_t *surface )
 	}
 }
 
-void CM_CreateMesh ( cmesh_t *mesh, int numverts, vec3_t *verts, int *mesh_cp )
+void CM_CreatePatch ( cpatch_t *patch, int numverts, vec4_t *verts, int *patch_cp )
 {
     int step[2], size[2], flat[2], i, u, v;
-	vec4_t points[MAX_CM_MESH_VERTS], points2[MAX_CM_MESH_VERTS];
+	vec4_t points[MAX_CM_PATCH_VERTS];
 	vec3_t tverts[4], tverts2[4];
 	cbrush_t *brush;
 	cplane_t mainplane;
 
 // find the degree of subdivision in the u and v directions
-	for ( i = 0; i < numverts; i++ ) {
-		VectorCopy ( verts[i], points[i] ); points[i][3] = 0;
-	}
-
-// find the degree of subdivision in the u and v directions
-	Mesh_GetFlatness ( cm_subdivlevel, points, mesh_cp, flat );
+	Patch_GetFlatness ( cm_subdivlevel, verts, patch_cp, flat );
 
 	step[0] = (1 << flat[0]);
 	step[1] = (1 << flat[1]);
-	size[0] = (mesh_cp[0] / 2) * step[0] + 1;
-	size[1] = (mesh_cp[1] / 2) * step[1] + 1;
+	size[0] = (patch_cp[0] / 2) * step[0] + 1;
+	size[1] = (patch_cp[1] / 2) * step[1] + 1;
 
-	if ( size[0] * size[1] > MAX_CM_MESH_VERTS ) {
-		Com_Error ( ERR_DROP, "CM_CreateMesh: mesh has too many vertices" );
+	if ( size[0] * size[1] > MAX_CM_PATCH_VERTS ) {
+		Com_Error ( ERR_DROP, "CM_CreatePatch: patch has too many vertices" );
 		return;
 	}
 
 // fill in
-	Mesh_EvalQuadricBezierPatch ( points, mesh_cp, step, points2 );
+	Patch_Evaluate ( verts, patch_cp, step, points );
 
-	mesh->brushes = brush = map_brushes + numbrushes;
-	mesh->numbrushes = 0;
+	patch->brushes = brush = map_brushes + numbrushes;
+	patch->numbrushes = 0;
 
-	ClearBounds (mesh->absmins, mesh->absmaxs);
+	ClearBounds (patch->absmins, patch->absmaxs);
 
 // create a set of brushes
     for (v = 0; v < size[1]-1; v++)
@@ -353,32 +340,32 @@ void CM_CreateMesh ( cmesh_t *mesh, int numverts, vec3_t *verts, int *mesh_cp )
 		for (u = 0; u < size[0]-1; u++)
 		{
 			if (numbrushes >= MAX_CM_BRUSHES)
-				Com_Error (ERR_DROP, "CM_CreateMesh: too many mesh brushes");
+				Com_Error (ERR_DROP, "CM_CreatePatch: too many patch brushes");
 
 			i = v * size[0] + u;
-			VectorCopy (points2[i], tverts[0]);
-			VectorCopy (points2[i + size[0]], tverts[1]);
-			VectorCopy (points2[i + 1], tverts[2]);
-			VectorCopy (points2[i + size[0] + 1], tverts[3]);
+			VectorCopy (points[i], tverts[0]);
+			VectorCopy (points[i + size[0]], tverts[1]);
+			VectorCopy (points[i + 1], tverts[2]);
+			VectorCopy (points[i + size[0] + 1], tverts[3]);
 
 			for (i = 0; i < 4; i++)
-				AddPointToBounds (tverts[i], mesh->absmins, mesh->absmaxs);
+				AddPointToBounds (tverts[i], patch->absmins, patch->absmaxs);
 
 			PlaneFromPoints (tverts, &mainplane);
 
 			// create two brushes
-			CM_CreateBrush (brush, tverts, mesh->surface);
+			CM_CreateBrush (brush, tverts, patch->surface);
 
-			brush->contents = mesh->surface->contents;
-			brush++; numbrushes++; mesh->numbrushes++;
+			brush->contents = patch->surface->contents;
+			brush++; numbrushes++; patch->numbrushes++;
 
 			VectorCopy (tverts[2], tverts2[0]);
 			VectorCopy (tverts[1], tverts2[1]);
 			VectorCopy (tverts[3], tverts2[2]);
-			CM_CreateBrush (brush, tverts2, mesh->surface);
+			CM_CreateBrush (brush, tverts2, patch->surface);
 
-			brush->contents = mesh->surface->contents;
-			brush++; numbrushes++; mesh->numbrushes++;
+			brush->contents = patch->surface->contents;
+			brush++; numbrushes++; patch->numbrushes++;
 		}
     }
 }
@@ -388,13 +375,96 @@ void CM_CreateMesh ( cmesh_t *mesh, int numverts, vec3_t *verts, int *mesh_cp )
 
 /*
 =================
+CM_CreatePatchesForLeafs
+=================
+*/
+void CM_CreatePatchesForLeafs (void)
+{
+	int i, j, k;
+	cleaf_t *leaf;
+	cface_t *face;
+	csurface_t *surf;
+	cpatch_t *patch;
+	int checkout[MAX_CM_FACES];
+
+	memset (checkout, -1, sizeof(int)*MAX_CM_FACES);
+
+	for (i = 0, leaf = map_leafs; i < numleafs; i++, leaf++)
+	{
+		leaf->numleafpatches = 0;
+		leaf->firstleafpatch = numleafpatches;
+
+		if (leaf->cluster == -1)
+			continue;
+
+		for (j=0 ; j<leaf->numleaffaces ; j++)
+		{
+			k = leaf->firstleafface + j;
+			if (k >= numleaffaces) {
+				break;
+			}
+
+			k = map_leaffaces[k];
+			face = &map_faces[k];
+
+			if (face->facetype != FACETYPE_PATCH || face->numverts <= 0)
+				continue;
+			if (face->patch_cp[0] <= 0 || face->patch_cp[1] <= 0)
+				continue;
+			if (face->shadernum < 0 || face->shadernum >= numshaderrefs)
+				continue;
+
+			surf = &map_surfaces[face->shadernum];
+			if ( !surf->contents || (surf->flags & SURF_NONSOLID) )
+				continue;
+
+			if ( numleafpatches >= MAX_CM_LEAFFACES )
+				Com_Error (ERR_DROP, "CM_CreatePatchesForLeafs: map has too many faces");
+
+			// the patch was already built
+			if (checkout[k] != -1)
+			{
+				map_leafpatches[numleafpatches] = checkout[k];
+				patch = &map_patches[checkout[k]];
+			}
+			else
+			{
+				if (numpatches >= MAX_CM_PATCHES)
+					Com_Error (ERR_DROP, "CM_CreatePatchesForLeafs: map has too many patches");
+
+				patch = &map_patches[numpatches];
+				patch->surface = surf;
+				map_leafpatches[numleafpatches] = numpatches;
+				checkout[k] = numpatches++;
+
+				CM_CreatePatch ( patch, face->numverts, map_verts + face->firstvert, face->patch_cp );
+			}
+
+			leaf->contents |= patch->surface->contents;
+			leaf->numleafpatches++;
+
+			numleafpatches++;
+		}
+	}
+}
+
+/*
+===============================================================================
+
+					MAP LOADING
+
+===============================================================================
+*/
+
+/*
+=================
 CMod_LoadVertexes
 =================
 */
 void CMod_LoadVertexes (lump_t *l)
 {
 	dvertex_t	*in;
-	float		*out;
+	vec4_t		*out;
 	int			i, count, j;
 
 	in = (void *)(cmod_base + l->fileofs);
@@ -402,14 +472,18 @@ void CMod_LoadVertexes (lump_t *l)
 		Com_Error (ERR_DROP, "CMOD_LoadVertexes: funny lump size");
 	count = l->filelen / sizeof(*in);
 
-	out = *map_verts;
+	if (count > MAX_MAP_VERTEXES)
+		Com_Error (ERR_DROP, "Map has too many vertexes");
+
+	out = Q_malloc ( count*sizeof(*out) );
+	map_verts = out;
 	numvertexes = count;
 
-	for ( i=0 ; i<count ; i++, in++, out+=3)
+	for ( i=0 ; i<count ; i++, in++)
 	{
 		for ( j=0 ; j < 3 ; j++)
 		{
-			out[j] = LittleFloat ( in->point[j] );
+			out[i][j] = LittleFloat ( in->point[j] );
 		}
 	}
 }
@@ -431,7 +505,11 @@ void CMod_LoadFaces (lump_t *l)
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size");
 	count = l->filelen / sizeof(*in);
 
-	out = map_faces;
+	if (count > MAX_MAP_FACES)
+		Com_Error (ERR_DROP, "Map has too many faces");
+
+	out = Q_malloc ( count*sizeof(*out) );
+	map_faces = out;
 	numfaces = count;
 
 	for ( i=0 ; i<count ; i++, in++, out++)
@@ -442,8 +520,8 @@ void CMod_LoadFaces (lump_t *l)
 		out->numverts = LittleLong ( in->numverts );
 		out->firstvert = LittleLong ( in->firstvert );
 
-		out->mesh_cp[0] = LittleLong ( in->mesh_cp[0] );
-		out->mesh_cp[1] = LittleLong ( in->mesh_cp[1] );
+		out->patch_cp[0] = LittleLong ( in->patch_cp[0] );
+		out->patch_cp[1] = LittleLong ( in->patch_cp[1] );
 	}
 }
 
@@ -467,7 +545,8 @@ void CMod_LoadLeafFaces (lump_t *l)
 	if (count > MAX_MAP_LEAFFACES) 
 		Com_Error (ERR_DROP, "Map has too many leaffaces"); 
 
-	out = map_leaffaces;
+	out = Q_malloc ( count*sizeof(*out) );
+	map_leaffaces = out;
 	numleaffaces = count;
 
 	for ( i=0 ; i<count ; i++)
@@ -480,81 +559,6 @@ void CMod_LoadLeafFaces (lump_t *l)
 		out[i] = j;
 	}
 }
-
-/*
-=================
-CM_CreateMeshesForLeafs
-=================
-*/
-void CM_CreateMeshesForLeafs (void)
-{
-	int i, j, k;
-	cleaf_t *leaf;
-	cface_t *face;
-	csurface_t *surf;
-	cmesh_t *mesh;
-	int checkout[MAX_CM_FACES];
-
-	memset (checkout, -1, sizeof(int)*MAX_CM_FACES);
-
-	for (i = 0, leaf = map_leafs; i < numleafs; i++, leaf++)
-	{
-		leaf->numleafmeshes = 0;
-		leaf->firstleafmesh = numleafmeshes;
-
-		for (j=0 ; j<leaf->numleaffaces ; j++)
-		{
-			k = map_leaffaces[leaf->firstleafface + j];
-			face = &map_faces[k];
-
-			if (face->facetype != FACETYPE_MESH || face->numverts <= 0)
-				continue;
-			if (face->mesh_cp[0] <= 0 || face->mesh_cp[1] <= 0)
-				continue;
-			if (face->shadernum < 0 || face->shadernum >= numshaderrefs)
-				continue;
-
-			surf = &map_surfaces[face->shadernum];
-			if ( !surf->contents || (surf->flags & SURF_NONSOLID) )
-				continue;
-
-			if ( numleafmeshes >= MAX_CM_LEAFFACES )
-				Com_Error (ERR_DROP, "CM_CreateMeshesForLeafs: map has too many faces");
-
-			// the mesh was already built
-			if (checkout[k] != -1)
-			{
-				map_leafmeshes[numleafmeshes] = checkout[k];
-				mesh = &map_meshes[checkout[k]];
-			}
-			else
-			{
-				if (nummeshes >= MAX_CM_MESHES)
-					Com_Error (ERR_DROP, "CM_CreateMeshesForLeafs: map has too many meshes");
-
-				mesh = &map_meshes[nummeshes];
-				mesh->surface = surf;
-				map_leafmeshes[numleafmeshes] = nummeshes;
-				checkout[k] = nummeshes++;
-
-				CM_CreateMesh ( mesh, face->numverts, map_verts + face->firstvert, face->mesh_cp );
-			}
-
-			leaf->contents |= mesh->surface->contents;
-			leaf->numleafmeshes++;
-
-			numleafmeshes++;
-		}
-	}
-}
-
-/*
-===============================================================================
-
-					MAP LOADING
-
-===============================================================================
-*/
 
 /*
 =================
@@ -576,7 +580,7 @@ void CMod_LoadSubmodels (lump_t *l)
 
 	if (count < 1)
 		Com_Error (ERR_DROP, "Map with no models");
-	if (count > MAX_MAP_MODELS)
+	else if (count > MAX_MAP_MODELS)
 		Com_Error (ERR_DROP, "Map has too many models");
 
 	numcmodels = count;
@@ -628,10 +632,11 @@ void CMod_LoadSurfaces (lump_t *l)
 	if (l->filelen % sizeof(*in))
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size");
 	count = l->filelen / sizeof(*in);
+
 	if (count < 1)
-		Com_Error (ERR_DROP, "Map with no surfaces");
-	if (count > MAX_MAP_SHADERS)
-		Com_Error (ERR_DROP, "Map has too many surfaces");
+		Com_Error (ERR_DROP, "Map with no shaders");
+	else if (count > MAX_MAP_SHADERS)
+		Com_Error (ERR_DROP, "Map has too many shaders");
 
 	numshaderrefs = count;
 	out = map_surfaces;
@@ -663,7 +668,7 @@ void CMod_LoadNodes (lump_t *l)
 
 	if (count < 1)
 		Com_Error (ERR_DROP, "Map has no nodes");
-	if (count > MAX_MAP_NODES)
+	else if (count > MAX_MAP_NODES)
 		Com_Error (ERR_DROP, "Map has too many nodes");
 
 	out = map_nodes;
@@ -736,9 +741,7 @@ void CMod_LoadLeafs (lump_t *l)
 
 	if (count < 1)
 		Com_Error (ERR_DROP, "Map with no leafs");
-
-	// need to save space for box planes
-	if (count > MAX_MAP_LEAFS)
+	else if (count > MAX_MAP_LEAFS)
 		Com_Error (ERR_DROP, "Map has too many leafs");
 
 	out = map_leafs;	
@@ -751,9 +754,9 @@ void CMod_LoadLeafs (lump_t *l)
 		out->area = LittleLong ( in->area ) + 1;
 		out->firstleafface = LittleLong ( in->firstleafface );
 		out->numleaffaces = LittleLong ( in->numleaffaces );
+		out->contents = 0;
 		out->firstleafbrush = LittleLong ( in->firstleafbrush );
 		out->numleafbrushes = LittleLong ( in->numleafbrushes );
-		out->contents = 0;
 
 		for ( j=0 ; j<out->numleafbrushes ; j++)
 		{
@@ -805,8 +808,7 @@ void CMod_LoadPlanes (lump_t *l)
 
 	if (count < 1)
 		Com_Error (ERR_DROP, "Map with no planes");
-	// need to save space for box planes
-	if (count > MAX_MAP_PLANES)
+	else if (count > MAX_MAP_PLANES)
 		Com_Error (ERR_DROP, "Map has too many planes");
 
 	out = map_planes;	
@@ -844,8 +846,7 @@ void CMod_LoadLeafBrushes (lump_t *l)
 
 	if (count < 1)
 		Com_Error (ERR_DROP, "Map with no planes");
-	// need to save space for box planes
-	if (count > MAX_MAP_LEAFBRUSHES)
+	else if (count > MAX_MAP_LEAFBRUSHES)
 		Com_Error (ERR_DROP, "Map has too many leafbrushes");
 
 	out = map_leafbrushes;
@@ -872,7 +873,6 @@ void CMod_LoadBrushSides (lump_t *l)
 		Com_Error (ERR_DROP, "MOD_LoadBmodel: funny lump size");
 	count = l->filelen / sizeof(*in);
 
-	// need to save space for box planes
 	if (count > MAX_MAP_BRUSHSIDES)
 		Com_Error (ERR_DROP, "Map has too many brushsides");
 
@@ -934,6 +934,7 @@ void CM_CalcPHS (void)
 	unsigned	*dest, *src;
 	byte	*scan;
 	int		count, vcount;
+	int		numclusters;
 
 	Com_DPrintf ("Building PHS...\n");
 
@@ -943,13 +944,13 @@ void CM_CalcPHS (void)
 	memset ( map_phs, 0, MAX_CM_VISIBILITY );
 
 	map_phs->rowsize = map_pvs->rowsize;
-	map_phs->numclusters = map_pvs->numclusters;
+	map_phs->numclusters = numclusters = map_pvs->numclusters;
 
 	vcount = 0;
-	for (i=0 ; i<map_pvs->numclusters ; i++)
+	for (i=0 ; i<numclusters ; i++)
 	{
 		scan = CM_ClusterPVS ( i );
-		for (j=0 ; j<numleafs ; j++)
+		for (j=0 ; j<numclusters ; j++)
 		{
 			if ( scan[j>>3] & (1<<(j&7)) )
 			{
@@ -962,7 +963,7 @@ void CM_CalcPHS (void)
 	scan = (byte *)map_pvs->data;
 	dest = (unsigned *)((byte *)map_phs + 8);
 
-	for (i=0 ; i<map_pvs->numclusters ; i++, dest += rowwords, scan += rowbytes)
+	for (i=0 ; i<numclusters ; i++, dest += rowwords, scan += rowbytes)
 	{
 		memcpy (dest, scan, rowbytes);
 		for (j=0 ; j<rowbytes ; j++)
@@ -974,26 +975,22 @@ void CM_CalcPHS (void)
 			{
 				if (! (bitbyte & (1<<k)) )
 					continue;
-				// or this pvs row into the phs
-				// +1 because pvs is 1 based
-				index = (j<<3) + k + 1;
-				if (index >= numleafs)
-					continue;
+				// OR this pvs row into the phs
+				index = (j<<3) + k;
+				if (index >= numclusters)
+					Com_Error (ERR_DROP, "CM_CalcPHS: Bad bit in PVS");	// pad bits should be 0
 				src = (unsigned *)((byte*)map_pvs->data) + index*rowwords;
 				for (l=0 ; l<rowwords ; l++)
 					dest[l] |= src[l];
 			}
 		}
-
-		if (i == 0)
-			continue;
-		for (j=0 ; j<numleafs ; j++)
+		for (j=0 ; j<numclusters ; j++)
 			if ( ((byte *)dest)[j>>3] & (1<<(j&7)) )
 				count++;
 	}
 
-	Com_DPrintf ("Average leafs visible / hearable / total: %i / %i / %i\n"
-		, vcount/numleafs, count/numleafs, numleafs);
+	Com_DPrintf ("Average clusters visible / hearable / total: %i / %i / %i\n"
+		, vcount/numclusters, count/numclusters, numclusters);
 }
 
 /*
@@ -1029,8 +1026,11 @@ cmodel_t *CM_LoadMap (char *name, qboolean clientload, unsigned *checksum)
 	numcmodels = 0;
 	numvisibility = 0;
 	numentitychars = 0;
-	nummeshes = 0;
-	numleafmeshes = 0;
+	numvertexes = 0;
+	numfaces = 0;
+	numleaffaces = 0;
+	numpatches = 0;
+	numleafpatches = 0;
 	map_entitystring[0] = 0;
 	map_name[0] = 0;
 
@@ -1079,12 +1079,22 @@ cmodel_t *CM_LoadMap (char *name, qboolean clientload, unsigned *checksum)
 
 	FS_FreeFile (buf);
 
-	CM_CreateMeshesForLeafs ();
+	CM_CreatePatchesForLeafs ();
 
 	CM_InitBoxHull ();
 	FloodAreaConnections ();
 
 	CM_CalcPHS ();
+
+	if (map_verts) {
+		Q_free (map_verts);
+	}
+	if (map_faces) { 
+		Q_free (map_faces);
+	}
+	if (map_leaffaces) {
+		Q_free (map_leaffaces);
+	}
 
 	memset ( nullrow, 255, MAX_CM_LEAFS / 8 );
 
@@ -1599,10 +1609,10 @@ void CM_ClipBoxToBrush (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
 
 /*
 ================
-CM_ClipBoxToMesh
+CM_ClipBoxToPatch
 ================
 */
-void CM_ClipBoxToMesh (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
+void CM_ClipBoxToPatch (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
 					  trace_t *trace, cbrush_t *brush)
 {
 	int			i, j;
@@ -1697,7 +1707,7 @@ void CM_ClipBoxToMesh (vec3_t mins, vec3_t maxs, vec3_t p1, vec3_t p2,
 	}
 
 	if (!startout)
-		return;		// original point is inside the mesh
+		return;		// original point is inside the patch
 
 	if (enterfrac < leavefrac)
 	{
@@ -1772,10 +1782,10 @@ void CM_TestBoxInBrush (vec3_t mins, vec3_t maxs, vec3_t p1,
 
 /*
 ================
-CM_TestBoxInMesh
+CM_TestBoxInPatch
 ================
 */
-void CM_TestBoxInMesh (vec3_t mins, vec3_t maxs, vec3_t p1,
+void CM_TestBoxInPatch (vec3_t mins, vec3_t maxs, vec3_t p1,
 					  trace_t *trace, cbrush_t *brush)
 {
 	int			i, j;
@@ -1825,9 +1835,9 @@ void CM_TestBoxInMesh (vec3_t mins, vec3_t maxs, vec3_t p1,
 
 // FIXME
 //	if (maxdist < -0.25)
-//		return;		// deep inside the mesh
+//		return;		// deep inside the patch
 
-	// inside this mesh
+	// inside this patch
 	trace->startsolid = trace->allsolid = true;
 	trace->fraction = 0;
 	trace->contents = brush->contents;
@@ -1842,10 +1852,10 @@ CM_TraceToLeaf
 void CM_TraceToLeaf (int leafnum)
 {
 	int			i, j;
-	int			brushnum, meshnum;
+	int			brushnum, patchnum;
 	cleaf_t		*leaf;
 	cbrush_t	*b;
-	cmesh_t		*mesh;
+	cpatch_t	*patch;
 
 	leaf = &map_leafs[leafnum];
 	if ( !(leaf->contents & trace_contents))
@@ -1870,22 +1880,22 @@ void CM_TraceToLeaf (int leafnum)
 	if (cm_noCurves->value)
 		return;
 
-	// trace line against all meshes in the leaf
-	for (i = 0; i < leaf->numleafmeshes; i++)
+	// trace line against all patches in the leaf
+	for (i = 0; i < leaf->numleafpatches; i++)
 	{
-		meshnum = map_leafmeshes[leaf->firstleafmesh+i];
+		patchnum = map_leafpatches[leaf->firstleafpatch+i];
 
-		mesh = &map_meshes[meshnum];
-		if (mesh->checkcount == checkcount)
-			continue;	// already checked this mesh in another leaf
-		mesh->checkcount = checkcount;
-		if ( !(mesh->surface->contents & trace_contents) )
+		patch = &map_patches[patchnum];
+		if (patch->checkcount == checkcount)
+			continue;	// already checked this patch in another leaf
+		patch->checkcount = checkcount;
+		if ( !(patch->surface->contents & trace_contents) )
 			continue;
-		if ( !BoundsIntersect(mesh->absmins, mesh->absmaxs, trace_absmins, trace_absmaxs) )
+		if ( !BoundsIntersect(patch->absmins, patch->absmaxs, trace_absmins, trace_absmaxs) )
 			continue;
-		for (j = 0; j < mesh->numbrushes; j++)
+		for (j = 0; j < patch->numbrushes; j++)
 		{
-			CM_ClipBoxToMesh (trace_mins, trace_maxs, trace_start, trace_end, &trace_trace, &mesh->brushes[j]);
+			CM_ClipBoxToPatch (trace_mins, trace_maxs, trace_start, trace_end, &trace_trace, &patch->brushes[j]);
 			if (!trace_trace.fraction)
 				return;
 		}
@@ -1901,10 +1911,10 @@ CM_TestInLeaf
 void CM_TestInLeaf (int leafnum)
 {
 	int			i, j;
-	int			brushnum, meshnum;
+	int			brushnum, patchnum;
 	cleaf_t		*leaf;
 	cbrush_t	*b;
-	cmesh_t		*mesh;
+	cpatch_t	*patch;
 
 	leaf = &map_leafs[leafnum];
 	if ( !(leaf->contents & trace_contents))
@@ -1929,22 +1939,22 @@ void CM_TestInLeaf (int leafnum)
 	if (cm_noCurves->value)
 		return;
 
-	// trace line against all meshes in the leaf
-	for (i = 0; i < leaf->numleafmeshes; i++)
+	// trace line against all patches in the leaf
+	for (i = 0; i < leaf->numleafpatches; i++)
 	{
-		meshnum = map_leafmeshes[leaf->firstleafmesh+i];
+		patchnum = map_leafpatches[leaf->firstleafpatch+i];
 
-		mesh = &map_meshes[meshnum];
-		if (mesh->checkcount == checkcount)
-			continue;	// already checked this mesh in another leaf
-		mesh->checkcount = checkcount;
-		if ( !(mesh->surface->contents & trace_contents) )
+		patch = &map_patches[patchnum];
+		if (patch->checkcount == checkcount)
+			continue;	// already checked this patch in another leaf
+		patch->checkcount = checkcount;
+		if ( !(patch->surface->contents & trace_contents) )
 			continue;
-		if ( !BoundsIntersect(mesh->absmins, mesh->absmaxs, trace_absmins, trace_absmaxs) )
+		if ( !BoundsIntersect(patch->absmins, patch->absmaxs, trace_absmins, trace_absmaxs) )
 			continue;
-		for (j = 0; j < mesh->numbrushes; j++)
+		for (j = 0; j < patch->numbrushes; j++)
 		{
-			CM_TestBoxInMesh (trace_mins, trace_maxs, trace_start, &trace_trace, &mesh->brushes[j]);
+			CM_TestBoxInPatch (trace_mins, trace_maxs, trace_start, &trace_trace, &patch->brushes[j]);
 			if (!trace_trace.fraction)
 				return;
 		}
@@ -2042,7 +2052,7 @@ void CM_RecursiveHullCheck (int num, float p1f, float p2f, vec3_t p1, vec3_t p2)
 
 	// move up to the node
 	clamp ( frac, 0, 1 );
-		
+
 	midf = p1f + (p2f - p1f)*frac;
 	for (i=0 ; i<3 ; i++)
 		mid[i] = p1[i] + frac*(p2[i] - p1[i]);
@@ -2051,7 +2061,7 @@ void CM_RecursiveHullCheck (int num, float p1f, float p2f, vec3_t p1, vec3_t p2)
 
 	// go past the node
 	clamp ( frac2, 0, 1 );
-		
+
 	midf = p1f + (p2f - p1f)*frac2;
 	for (i=0 ; i<3 ; i++)
 		mid[i] = p1[i] + frac2*(p2[i] - p1[i]);

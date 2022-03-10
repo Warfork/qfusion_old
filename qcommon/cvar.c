@@ -393,7 +393,7 @@ void Cvar_FixCheatVars (void)
 	// if running a local server, check sv_cheats
 	// never allow cheats on a remote server
 	if (!(Com_ServerState() && !Cvar_VariableValue("sv_cheats")) &&
-		!(Com_ClientState() >= 3 /* ca_connected */) && !Com_ServerState())
+		!(Com_ClientState() >= ca_connected) && !Com_ServerState())
 		return;
 
 	for (var = cvar_vars ; var ; var = var->next)
@@ -531,7 +531,18 @@ void Cvar_WriteVariables (FILE *f)
 	{
 		if (var->flags & CVAR_ARCHIVE)
 		{
-			Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
+			if (var->flags & (CVAR_LATCH|CVAR_LATCH_VIDEO))
+			{
+				if (var->latched_string)
+					Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->latched_string);
+				else
+					Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
+			}
+			else
+			{
+				Com_sprintf (buffer, sizeof(buffer), "seta %s \"%s\"\n", var->name, var->string);
+			}
+
 			fprintf (f, "%s", buffer);
 		}
 	}

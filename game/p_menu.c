@@ -143,9 +143,9 @@ void PMenu_Do_Update(edict_t *ent)
 			x - ((hnd->cur == i) ? 8 : 0));
 
 		if (hnd->cur == i)
-			sprintf(string + strlen(string), "string2 \"\x0d%s\" ", t);
+			sprintf(string + strlen(string), "string \"%s\x0d%s\" ", S_COLOR_YELLOW, t);
 		else if (alt)
-			sprintf(string + strlen(string), "string2 \"%s\" ", t);
+			sprintf(string + strlen(string), "string \"%s%s\" ", S_COLOR_YELLOW, t);
 		else
 			sprintf(string + strlen(string), "string \"%s\" ", t);
 		alt = false;

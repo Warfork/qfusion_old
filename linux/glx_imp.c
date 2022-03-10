@@ -699,7 +699,7 @@ int GLimp_SetMode( int *pwidth, int *pheight, int mode, qboolean fullscreen ){
 
 		x11display.win = XCreateWindow (x11display.dpy, x11display.root, 0, 0, screen_width, screen_height,
 			0, CopyFromParent, InputOutput, CopyFromParent, mask, &wa);
-		XSetStandardProperties (x11display.dpy, x11display.win, "QFusion", None, None, NULL, 0, NULL);
+		XSetStandardProperties (x11display.dpy, x11display.win, APPLICATION, None, None, NULL, 0, NULL);
 		x11display.wmDeleteWindow = XInternAtom(x11display.dpy, "WM_DELETE_WINDOW", False);
 		XSetWMProtocols (x11display.dpy, x11display.win, &x11display.wmDeleteWindow, 1);
 
@@ -866,7 +866,6 @@ int GLimp_Init( void *hinstance, void *wndproc)
 */
 void GLimp_BeginFrame(float camera_seperation)
 {
-	r_shadertime = curtime * 0.001f;
 	Shader_RunCinematic ();
 }
 
@@ -879,7 +878,6 @@ void GLimp_BeginFrame(float camera_seperation)
 */
 void GLimp_EndFrame (void)
 {
-	qglFlush ();
 	qglXSwapBuffers (x11display.dpy, x11display.gl_win);
 }
 

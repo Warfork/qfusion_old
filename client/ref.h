@@ -20,12 +20,11 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 #ifndef __REF_H
 #define __REF_H
 
-#include "../qcommon/qcommon.h"
-#include "cin.h"
-
 #define	MAX_DLIGHTS		32
-#define	MAX_ENTITIES	128
+#define	MAX_ENTITIES	1023
 #define	MAX_PARTICLES	4096
+#define MAX_POLY_VERTS	3000
+#define MAX_POLYS		1024
 
 #define POWERSUIT_SCALE		4.0F
 
@@ -42,20 +41,34 @@ typedef struct
 	float			axis[3][3];
 } orientation_t;
 
+typedef struct
+{
+	int				firstvert;
+	int				numverts;		// can't exceed MAX_POLY_VERTS
+} fragment_t;
+
+typedef struct
+{
+	int				numverts;
+	vec3_t			*verts;
+	vec2_t			*stcoords;
+	byte_vec4_t		*colors;
+	struct shader_s	*shader;
+} poly_t;
+
 typedef enum
 {
 	ET_MODEL,
 	ET_SPRITE,
 	ET_BEAM,
 	ET_PORTALSURFACE,
+	ET_POLY,
 
 	NUM_ETYPES
 } etype_t;
 
 typedef struct entity_s
 {
-	unsigned int		number;
-
 	etype_t				type;
 	struct model_s		*model;			// opaque type outside refresh
 	struct shader_s		*customShader;	// NULL for inline skin
@@ -95,8 +108,8 @@ typedef struct
 typedef struct
 {
 	vec3_t	origin;
-	int		color;
-	float	alpha;
+	byte	color[4];
+	float	scale;
 } particle_t;
 
 typedef struct refdef_s
@@ -119,40 +132,9 @@ typedef struct refdef_s
 
 	int			num_particles;
 	particle_t	*particles;
+
+	int			num_polys;
+	poly_t		*polys;
 } refdef_t;
-
-void	R_BeginRegistration (char *map);
-void	R_EndRegistration (void);
-
-struct model_s	*R_RegisterModel (char *name);
-
-struct shader_s *R_RegisterPic (char *name);
-struct shader_s *R_RegisterShader (char *name);
-struct shader_s *R_RegisterSkin (char *name);
-
-void	R_RenderFrame (refdef_t *fd);
-
-void	Draw_StretchPic (int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, struct shader_s *shader);
-void	Draw_Char (int x, int y, int num, int fontstyle, vec4_t color);
-void	Draw_String (int x, int y, char *str, int fontstyle, vec4_t color);
-void	Draw_StringLen (int x, int y, char *str, int len, int fontstyle, vec4_t color);
-void	Draw_PropString (int x, int y, char *str, int fontstyle, vec4_t color);
-void	Draw_CenteredPropString (int y, char *str, int fontstyle, vec4_t color);
-int		Q_PropStringLength (char *str, int fontstyle);
-void	Draw_TileClear (int x, int y, int w, int h, char *name);
-void	Draw_FillRect (int x, int y, int w, int h, vec4_t color);
-void	Draw_FadeScreen (void);
-void	Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, int frame, byte *data);
-
-void	R_BeginFrame( float camera_separation );
-void	R_ApplySoftwareGamma( void );
-void	R_Flush (void);
-
-void	GLimp_EndFrame (void);
-
-void	GLimp_AppActivate( qboolean active );
-
-int		R_Init( void *hinstance, void *hWnd );
-void	R_Shutdown (void);
 
 #endif // __REF_H

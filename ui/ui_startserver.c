@@ -203,7 +203,7 @@ qboolean StartServer_MenuInit( void )
 	/*
 	** initialize the menu stuff
 	*/
-	s_startserver_menu.x = trap_GetWidth() / 2;
+	s_startserver_menu.x = uis.vidWidth / 2;
 	s_startserver_menu.y = y;
 	s_startserver_menu.nitems = 0;
 

@@ -139,7 +139,7 @@ static void KeyCursorDrawFunc( menuframework_s *menu )
 	if ( bind_grab )
 		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, '=', FONT_BIG, colorWhite );
 	else
-		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, 12 + ( ( int ) ( Sys_Milliseconds() / 250 ) & 1 ), FONT_BIG, colorWhite );
+		trap_DrawChar( menu->x + item->cursor_offset, menu->y + item->y, 12 + ( ( int ) ( trap_CL_GetTime() / 250 ) & 1 ), FONT_BIG, colorWhite );
 }
 
 static void DrawKeyBindingFunc( void *self )

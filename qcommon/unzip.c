@@ -34,10 +34,9 @@
 #define HASH_SIZE 128
 
 typedef struct cacheelem_s {
-	long int	pos_in_central_dir;
-	int			filenum;
-	char		name[MAX_QPATH];
-	struct cacheelem_s *next;
+	uLong	pos_in_central_dir;
+	char	name[MAX_QPATH];
+	struct	cacheelem_s *next;
 } cacheelem_t;
 
 #if !defined(unix) && !defined(CASESENSITIVITYDEFAULT_YES) && !defined(CASESENSITIVITYDEFAULT_NO)
@@ -307,10 +306,10 @@ local uLong unzlocal_SearchCentralDir(FILE *fin)
 	return uPosFound;
 }
 
-local unsigned int unzlocal_hashstring (const char *str)
+local uInt unzlocal_hashstring (const char *str)
 {
-	unsigned int hashval = 0;
 	int c;
+	uInt hashval = 0;
 
 	while ( (c = *str++) != 0 )
 		hashval = hashval*37 + tolower(c);
@@ -326,7 +325,7 @@ int Unz_GenCache( unz_s *s )
 	cacheelem_t *filecache;
 	int filecount;
 	int i, err;
-	unsigned int key;
+	uInt key;
 	char szCurrentFileName[UNZ_MAXFILENAMEINZIP+1];
 	unzFile	file = (unzFile)s;
 
@@ -357,7 +356,6 @@ int Unz_GenCache( unz_s *s )
 		filecache = (cacheelem_t *)TRYALLOC ( sizeof(cacheelem_t) );
 		Com_sprintf ( filecache->name, sizeof(filecache->name), szCurrentFileName );
 		key = unzlocal_hashstring ( filecache->name );
-		filecache->filenum = s->num_file;
 		filecache->pos_in_central_dir = s->pos_in_central_dir;
 		filecache->next = s->cache[key];
 		s->cache[key] = filecache;
@@ -480,9 +478,9 @@ extern unzFile ZEXPORT unzOpen (const char * path)
   return UNZ_OK if there is no problem. */
 extern int ZEXPORT unzClose (unzFile file)
 {
+	int i;
 	unz_s *s;
 	cacheelem_t *cache, *cache_next;
-	int i;
 
 	if (file == NULL)
 		return UNZ_PARAMERROR;
@@ -852,7 +850,7 @@ done:
 int unzFileExists (unzFile *pak, const char *file, int iCaseSensitivity)
 {
 	unz_s *s = (unz_s *)pak;
-	unsigned int key = unzlocal_hashstring (file);
+	uInt key = unzlocal_hashstring (file);
 	cacheelem_t *cache;
 
 	for (cache = s->cache[key]; cache; cache = cache->next)
@@ -883,7 +881,7 @@ extern int ZEXPORT unzLocateFile (unzFile file, const char *szFileName, int iCas
 	unz_s *s;
 	cacheelem_t *cache;
 	int err;
-	unsigned int key;
+	uInt key;
 	uLong num_fileSaved;
 	uLong pos_in_central_dirSaved;
 

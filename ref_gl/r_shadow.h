@@ -24,4 +24,5 @@ struct mesh_s;
 
 void R_BuildTriangleNeighbors (int *neighbors, index_t *indexes, int numtris);
 int R_BuildShadowVolumeTriangles (void);
+void R_Draw_SimpleShadow (entity_t *ent);
 void R_DrawShadowVolumes (struct mesh_s *mesh);

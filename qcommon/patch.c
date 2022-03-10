@@ -21,10 +21,10 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 /*
 ===============
-Mesh_FlatnessTest
+Patch_FlatnessTest
 ===============
 */
-static int Mesh_FlatnessTest ( float maxflat, vec4_t point0, vec4_t point1, vec4_t point2 )
+static int Patch_FlatnessTest ( float maxflat, vec4_t point0, vec4_t point1, vec4_t point2 )
 {
 	vec3_t v1, v2, v3;
 	vec3_t t, n;
@@ -51,40 +51,40 @@ static int Mesh_FlatnessTest ( float maxflat, vec4_t point0, vec4_t point1, vec4
 	VectorAvg ( point2, point1, v2 );
 	VectorAvg ( v1, v2, v3 );
 
-	ft0 = Mesh_FlatnessTest ( maxflat, point0, v1, v3 );
-	ft1 = Mesh_FlatnessTest ( maxflat, v3, v2, point2 );
+	ft0 = Patch_FlatnessTest ( maxflat, point0, v1, v3 );
+	ft1 = Patch_FlatnessTest ( maxflat, v3, v2, point2 );
 
 	return 1 + (int)floor( max ( ft0, ft1 ) + 0.5f );
 }
 
 /*
 ===============
-Mesh_GetFlatness
+Patch_GetFlatness
 ===============
 */
-void Mesh_GetFlatness ( float maxflat, vec4_t *points, int *mesh_cp, int *flat )
+void Patch_GetFlatness ( float maxflat, vec4_t *points, int *patch_cp, int *flat )
 {
 	int i, p, u, v;
 
 	flat[0] = flat[1] = 0;
-	for (v = 0; v < mesh_cp[1] - 1; v += 2)
+	for (v = 0; v < patch_cp[1] - 1; v += 2)
 	{
-		for (u = 0; u < mesh_cp[0] - 1; u += 2)
+		for (u = 0; u < patch_cp[0] - 1; u += 2)
 		{
-			p = v * mesh_cp[0] + u;
+			p = v * patch_cp[0] + u;
 
-			i = Mesh_FlatnessTest ( maxflat, points[p], points[p+1], points[p+2] );
+			i = Patch_FlatnessTest ( maxflat, points[p], points[p+1], points[p+2] );
 			flat[0] = max ( flat[0], i );
-			i = Mesh_FlatnessTest ( maxflat, points[p+mesh_cp[0]], points[p+mesh_cp[0]+1], points[p+mesh_cp[0]+2] );
+			i = Patch_FlatnessTest ( maxflat, points[p+patch_cp[0]], points[p+patch_cp[0]+1], points[p+patch_cp[0]+2] );
 			flat[0] = max ( flat[0], i );
-			i = Mesh_FlatnessTest ( maxflat, points[p+2*mesh_cp[0]], points[p+2*mesh_cp[0]+1], points[p+2*mesh_cp[0]+2] );
+			i = Patch_FlatnessTest ( maxflat, points[p+2*patch_cp[0]], points[p+2*patch_cp[0]+1], points[p+2*patch_cp[0]+2] );
 			flat[0] = max ( flat[0], i );
 
-			i = Mesh_FlatnessTest ( maxflat, points[p], points[p+mesh_cp[0]], points[p+2*mesh_cp[0]] );
+			i = Patch_FlatnessTest ( maxflat, points[p], points[p+patch_cp[0]], points[p+2*patch_cp[0]] );
 			flat[1] = max ( flat[1], i );
-			i = Mesh_FlatnessTest ( maxflat, points[p+1], points[p+mesh_cp[0]+1], points[p+2*mesh_cp[0]+1] );
+			i = Patch_FlatnessTest ( maxflat, points[p+1], points[p+patch_cp[0]+1], points[p+2*patch_cp[0]+1] );
 			flat[1] = max ( flat[1], i );
-			i = Mesh_FlatnessTest ( maxflat, points[p+2], points[p+mesh_cp[0]+2], points[p+2*mesh_cp[0]+2] );
+			i = Patch_FlatnessTest ( maxflat, points[p+2], points[p+patch_cp[0]+2], points[p+2*patch_cp[0]+2] );
 			flat[1] = max ( flat[1], i );
 		}
 	}
@@ -92,10 +92,10 @@ void Mesh_GetFlatness ( float maxflat, vec4_t *points, int *mesh_cp, int *flat )
 
 /*
 ===============
-Mesh_EvalQuadricBezier
+Patch_Evaluate_QuadricBezier
 ===============
 */
-static void Mesh_EvalQuadricBezier ( float t, vec4_t point0, vec4_t point1, vec3_t point2, vec4_t out )
+static void Patch_Evaluate_QuadricBezier ( float t, vec4_t point0, vec4_t point1, vec3_t point2, vec4_t out )
 {
 	float qt = t * t;
 	float dt = 2.0f * t, tt;
@@ -114,10 +114,10 @@ static void Mesh_EvalQuadricBezier ( float t, vec4_t point0, vec4_t point1, vec3
 
 /*
 ===============
-Mesh_EvalQuadricBezierPatch
+Patch_Evaluate
 ===============
 */
-void Mesh_EvalQuadricBezierPatch ( vec4_t *p, int *numcp, int *tess, vec4_t *dest )
+void Patch_Evaluate ( vec4_t *p, int *numcp, int *tess, vec4_t *dest )
 {
 	int num_patches[2], num_tess[2];
 	int index[3], dstpitch, i, u, v, x, y;
@@ -166,14 +166,14 @@ void Mesh_EvalQuadricBezierPatch ( vec4_t *p, int *numcp, int *tess, vec4_t *des
 
 			for ( y = 0; y < num_tess[1]; y++, t += step[1] )
 			{
-				Mesh_EvalQuadricBezier ( t, pv[0][0], pv[0][1], pv[0][2], v1 );
-				Mesh_EvalQuadricBezier ( t, pv[1][0], pv[1][1], pv[1][2], v2 );
-				Mesh_EvalQuadricBezier ( t, pv[2][0], pv[2][1], pv[2][2], v3 );
+				Patch_Evaluate_QuadricBezier ( t, pv[0][0], pv[0][1], pv[0][2], v1 );
+				Patch_Evaluate_QuadricBezier ( t, pv[1][0], pv[1][1], pv[1][2], v2 );
+				Patch_Evaluate_QuadricBezier ( t, pv[2][0], pv[2][1], pv[2][2], v3 );
 
 				s = 0.0f;
 				for ( x = 0; x < num_tess[0]; x++, s += step[0] )
 				{
-					Mesh_EvalQuadricBezier ( s, v1, v2, v3, tvec[x] );
+					Patch_Evaluate_QuadricBezier ( s, v1, v2, v3, tvec[x] );
 				}
 
 				tvec += dstpitch;

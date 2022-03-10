@@ -21,15 +21,16 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 #include "client.h"
 
-#define	MAX_LOCAL_ENTITIES	64
 #define	MAX_BEAMS			32
+#define	MAX_LOCAL_ENTITIES	512
 
 typedef enum
 {
 	LE_FREE, 
-	LE_MODEL, 
-	LE_SPRITE,
-	LE_GIB,
+	LE_NO_FADE,
+	LE_RGB_FADE,
+	LE_ALPHA_FADE,
+	LE_SCALE_ALPHA_FADE,
 	LE_LASER
 } letype_t;
 
@@ -49,7 +50,6 @@ typedef struct
 
 	int			trailcount;
 	int			frames;
-	int			baseframe;
 } lentity_t;
 
 typedef struct
@@ -66,7 +66,6 @@ lentity_t	cl_localents[MAX_LOCAL_ENTITIES];
 beam_t		cl_beams[MAX_BEAMS];
 
 void CL_BlasterParticles (vec3_t org, vec3_t dir);
-void CL_ExplosionParticles (vec3_t org);
 void CL_BFGExplosionParticles (vec3_t org);
 int	 CL_PMpointcontents (vec3_t point);
 
@@ -158,6 +157,7 @@ void CL_RegisterMediaModels (void)
 	cl.media.modPowerScreen = R_RegisterModel ("models/items/armor/effect/tris.md2");
 	cl.media.modLightning = R_RegisterModel ("models/proj/lightning/tris.md2");
 	cl.media.modMeatyGib = R_RegisterModel ("models/objects/gibs/sm_meat/tris.md2");
+	cl.media.modTeleportEffect = R_RegisterModel ( "models/misc/telep.md3" );
 
 	R_RegisterModel ("models/objects/laser/tris.md2");
 	R_RegisterModel ("models/objects/grenade2/tris.md2");
@@ -167,14 +167,20 @@ void CL_RegisterMediaModels (void)
 
 /*
 =================
-CL_RegisterMediaModels
+CL_RegisterMediaShaders
 =================
 */
-void CL_RegisterMediaPics (void)
+void CL_RegisterMediaShaders (void)
 {
 	cl.media.shaderGrenadeExplosion = R_RegisterShader ( "grenadeExplosion" );
 	cl.media.shaderRocketExplosion = R_RegisterShader ( "rocketExplosion" );
-	
+	cl.media.shaderWaterBubble = R_RegisterShader ( "waterBubble" );
+	cl.media.shaderTeleportEffect = R_RegisterShader ( "teleportEffect" );
+	cl.media.shaderSmokePuff = R_RegisterShader ( "smokePuff" );
+	cl.media.shaderBulletMark = R_RegisterShader( "gfx/damage/bullet_mrk" );
+	cl.media.shaderExplosionMark = R_RegisterShader ( "gfx/damage/burn_med_mrk" );
+	cl.media.shaderEnergyMark = R_RegisterShader ( "gfx/damage/plasma_mrk" );
+
 	cl.media.shaderPowerupQuad = R_RegisterSkin ( "powerups/quad" );
 	cl.media.shaderQuadWeapon = R_RegisterSkin ( "powerups/quadWeapon" );
 	cl.media.shaderPowerupPenta = R_RegisterSkin ( "powerups/blueflag" );
@@ -183,10 +189,10 @@ void CL_RegisterMediaPics (void)
 
 /*
 =================
-CL_ClearTEnts
+CL_ClearLocalEntities
 =================
 */
-void CL_ClearTEnts (void)
+void CL_ClearLocalEntities (void)
 {
 	memset ( cl_beams, 0, sizeof(cl_beams) );
 	memset ( cl_localents, 0, sizeof(cl_localents) );
@@ -201,36 +207,33 @@ lentity_t *CL_AllocLocalEntity ( int type )
 {
 	int			i;
 	int			time;
-	lentity_t	*le;
-	
-	for ( i = 0, le = cl_localents; i < MAX_LOCAL_ENTITIES; i++, le++ ) {
+	lentity_t	*free, *le;
+
+// find free or the oldest entity
+	time = cl.time;
+
+	for ( i = 0, le = cl_localents, free = le; i < MAX_LOCAL_ENTITIES; i++, le++ ) {
 		if ( le->type != LE_FREE ) {
+			if ( le->start >= time ) {
+				continue;
+			}
+
+			free = le;
+			time = le->start;
 			continue;
 		}
 
+		free = le;
 		goto done;
 	}
 
-// find the oldest entity
-	time = cl.time;
-	le = cl_localents;
-
-	for (i = 0; i < MAX_LOCAL_ENTITIES; i++ ) {
-		if ( cl_localents[i].start >= time ) {
-			continue;
-		}
-
-		le = &cl_localents[i];
-		time = le->start;
-	}
-
 done:
-	memset ( le, 0, sizeof (*le) );
+	memset ( free, 0, sizeof (*free) );
 
-	le->type = type;
-	le->start = cl.frame.servertime - 100;
+	free->type = type;
+	free->start = cl.frame.servertime - 100;
 
-	return le;
+	return free;
 }
 
 /*
@@ -238,12 +241,12 @@ done:
 CL_AllocPoly
 =================
 */
-lentity_t *CL_AllocPoly ( vec3_t origin, vec3_t angles, int frames,
+lentity_t *CL_AllocPoly ( letype_t type, vec3_t origin, vec3_t angles, int frames,
 				float light, float lr, float lg, float lb, struct model_s *model, struct shader_s *shader  )
 {
 	lentity_t	*le;
 
-	le = CL_AllocLocalEntity ( LE_MODEL );
+	le = CL_AllocLocalEntity ( type );
 	le->frames = frames;
 	le->light = light;
 	le->lightcolor[0] = lr;
@@ -272,12 +275,12 @@ lentity_t *CL_AllocPoly ( vec3_t origin, vec3_t angles, int frames,
 CL_AllocSprite
 =================
 */
-lentity_t *CL_AllocSprite ( vec3_t origin, float radius, int frames,
+lentity_t *CL_AllocSprite ( letype_t type, vec3_t origin, float radius, int frames,
 				float light, float lr, float lg, float lb, struct shader_s *shader  )
 {
 	lentity_t	*le;
 
-	le = CL_AllocLocalEntity ( LE_SPRITE );
+	le = CL_AllocLocalEntity ( type );
 	le->frames = frames;
 	le->light = light;
 	le->lightcolor[0] = lr;
@@ -338,49 +341,8 @@ void CL_SmokeAndFlash ( vec3_t origin )
 {
 	lentity_t	*le;
 
-	le = CL_AllocPoly ( origin, vec3_origin, 4, 0, 0, 0, 0, cl.media.modSmoke, NULL );
-	le = CL_AllocPoly ( origin, vec3_origin, 2, 0, 0, 0, 0, cl.media.modFlash, NULL );
-}
-
-/*
-===================
-CL_GibPlayer
-===================
-*/
-void CL_GibPlayer ( vec3_t origin, vec3_t mins, vec3_t maxs )
-{
-	int			i;
-	vec3_t		org, size, angles;
-	lentity_t	*le;
-
-	VectorSubtract ( maxs, mins, size );
-	VectorAdd ( origin, mins, org );
-	VectorMA ( org, 0.5f, size, org );
-
-	for ( i = 0; i < 4; i++ ) {
-		le = CL_AllocLocalEntity ( LE_GIB );
-		le->trailcount = 1024;
-		le->velocity[0] = 10.0 * crand();
-		le->velocity[1] = 10.0 * crand();
-		le->velocity[2] = 20.0 + 10.0 * frand();
-		le->baseframe = 0;
-		le->accel[0] = 0.0f;
-		le->accel[1] = 0.0f;
-		le->accel[2] = -100.0f;
-		le->frames = 50;
-
-		le->ent.type = ET_MODEL;
-		le->ent.flags = RF_NOSHADOW;
-		le->ent.model = cl.media.modMeatyGib;
-		le->ent.origin[0] = org[0] + crand() * size[0];
-		le->ent.origin[1] = org[1] + crand() * size[1];
-		le->ent.origin[2] = org[2] + crand() * size[2];
-
-		angles[0] = rand()%360;
-		angles[1] = rand()%360;
-		angles[2] = rand()%360;
-		AnglesToAxis ( angles, le->ent.axis );
-	}
+	le = CL_AllocPoly ( LE_NO_FADE, origin, vec3_origin, 2, 0, 0, 0, 0, cl.media.modFlash, NULL );
+	le = CL_AllocPoly ( LE_ALPHA_FADE, origin, vec3_origin, 4, 0, 0, 0, 0, cl.media.modSmoke, NULL );
 }
 
 /*
@@ -404,6 +366,10 @@ void CL_AddBeam (int ent, vec3_t start, vec3_t end, vec3_t offset, struct model_
 {
 	int		i;
 	beam_t	*b;
+
+	if ( !model ) {
+		return;
+	}
 
 // override any beam with the same entity
 	for ( i = 0, b = cl_beams; i < MAX_BEAMS; i++, b++ ) {
@@ -448,6 +414,10 @@ void CL_AddLightning (int srcEnt, int destEnt, vec3_t start, vec3_t end, struct 
 	int		i;
 	beam_t	*b;
 
+	if ( !model ) {
+		return;
+	}
+
 // override any beam with the same source AND destination entities
 	for ( i = 0, b = cl_beams; i < MAX_BEAMS; i++, b++ ) {
 		if ( b->entity != srcEnt || b->dest_entity != destEnt ) {
@@ -484,17 +454,140 @@ void CL_AddLightning (int srcEnt, int destEnt, vec3_t start, vec3_t end, struct 
 }
 
 /*
+===============
+CL_BubbleTrail
+===============
+*/
+void CL_BubbleTrail ( vec3_t start, vec3_t end, int dist )
+{
+	int			i;
+	float		len;
+	vec3_t		move, vec;
+	lentity_t	*le;
+
+	VectorCopy ( start, move );
+	VectorSubtract ( end, start, vec );
+	len = VectorNormalize ( vec );
+	VectorScale ( vec, dist, vec );
+
+	for ( i = 0; i < len; i += dist )
+	{
+		le = CL_AllocSprite ( LE_ALPHA_FADE, move, 3, 10, 0, 0, 0, 0, cl.media.shaderWaterBubble );
+		VectorSet ( le->velocity, crand()*5, crand()*5, crand()*5 + 6 );
+		VectorAdd ( move, vec, move );
+	}
+}
+
+/*
+===============
+CL_RocketTrail
+===============
+*/
+void CL_RocketTrail (vec3_t start, vec3_t end)
+{
+	lentity_t	*le;
+	float		len;
+	vec3_t		vec;
+	int			contents, oldcontents;
+
+	if ( frand() < 0.5f ) {
+		return;
+	}
+
+	VectorSubtract ( end, start, vec );
+	len = VectorNormalize ( vec );
+	if ( !len ) {
+		return;
+	}
+
+	contents = CM_PointContents (end, 0);
+	oldcontents = CM_PointContents (start, 0);
+
+	if ( contents & MASK_WATER ) {
+		if ( oldcontents & MASK_WATER ) {
+			CL_BubbleTrail ( start, end, 8 );
+		}
+		return;
+	}
+
+	le = CL_AllocSprite ( LE_SCALE_ALPHA_FADE, end, 5, 9, 0, 0, 0, 0, cl.media.shaderSmokePuff );
+	VectorSet ( le->velocity, -vec[0] * 5 + crand()*5, -vec[1] * 5 + crand()*5, -vec[2] * 5 + crand()*5 + 3 );
+}
+
+/*
+===============
+CL_GrenadeTrail
+===============
+*/
+void CL_GrenadeTrail (vec3_t start, vec3_t end)
+{
+	lentity_t	*le;
+	float		len;
+	vec3_t		vec;
+	int			contents, oldcontents;
+
+	if ( frand() < 0.4f ) {
+		return;
+	}
+
+	VectorSubtract ( end, start, vec );
+	len = VectorNormalize ( vec );
+	if ( !len ) {
+		return;
+	}
+
+	contents = CM_PointContents (end, 0);
+	oldcontents = CM_PointContents (start, 0);
+
+	if ( contents & MASK_WATER ) {
+		if ( oldcontents & MASK_WATER ) {
+			CL_BubbleTrail ( start, end, 8 );
+		}
+		return;
+	}
+
+	le = CL_AllocSprite ( LE_SCALE_ALPHA_FADE, end, 8, 8, 0, 0, 0, 0, cl.media.shaderSmokePuff );
+	VectorSet ( le->velocity, -vec[0] * 5 + crand()*5, -vec[1] * 5 + crand()*5, -vec[2] * 5 + crand()*5 + 3 );
+	le->ent.color[0] = 64;
+	le->ent.color[1] = 64;	
+	le->ent.color[2] = 64;
+}
+
+/*
+===============
+CL_TeleportEffect
+===============
+*/
+void CL_TeleportEffect ( vec3_t org )
+{
+	lentity_t *le;
+
+	le = CL_AllocPoly ( LE_RGB_FADE, org, vec3_origin, 5, 0, 0, 0, 0, cl.media.modTeleportEffect, cl.media.shaderTeleportEffect );
+	le->ent.origin[2] -= 24;
+}
+
+/*
 =================
 CL_ParseTEnt
 =================
 */
-static byte splash_color[] = {0x00, 0xe0, 0xb0, 0x50, 0xd0, 0xe0, 0xe8};
+static vec3_t splash_color[] = 
+{
+	{ 0, 0, 0 }, 
+	{ 1, 0.67, 0 },
+	{ 0.47, 0.48, 0.8 }, 
+	{ 0.48, 0.37, 0.3 },
+	{ 0, 1, 0 },
+	{ 1, 0.67, 0 },
+	{ 0.61, 0.1, 0 }
+};
 
 void CL_ParseTEnt (void)
 {
 	int			type;
 	vec3_t		pos, pos2, dir, angles;
-	int			cnt, color, r;
+	vec3_t		color;
+	int			cnt, r;
 	int			ent, ent2;
 	lentity_t	*le;
 
@@ -505,8 +598,7 @@ void CL_ParseTEnt (void)
 	case TE_BLOOD:			// bullet hitting flesh
 		MSG_ReadPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
-
-		CL_ParticleEffect (pos, dir, 0xe8, 60);
+		CL_ParticleEffect (pos, dir, 0.61, 0.1, 0, 60);
 		break;
 
 	case TE_GUNSHOT:			// bullet hitting wall
@@ -516,9 +608,9 @@ void CL_ParseTEnt (void)
 		MSG_ReadDir (&net_message, dir);
 
 		if (type == TE_GUNSHOT)
-			CL_ParticleEffect (pos, dir, 0, 40);
+			CL_ParticleEffect (pos, dir, 0, 0, 0, 40);
 		else
-			CL_ParticleEffect (pos, dir, 0xe0, 6);
+			CL_ParticleEffect (pos, dir, 1, 0.67, 0, 6);
 
 		if (type != TE_SPARKS)
 		{
@@ -532,6 +624,8 @@ void CL_ParseTEnt (void)
 				S_StartSound (pos, 0, 0, cl.media.sfxRic2, 1, ATTN_NORM, 0);
 			else
 				S_StartSound (pos, 0, 0, cl.media.sfxRic3, 1, ATTN_NORM, 0);
+
+			CL_SpawnDecal ( pos, dir, frand()*360, 8, 1, 1, 1, 1, 8, 1, false, cl.media.shaderBulletMark );
 		}
 
 		break;
@@ -542,9 +636,9 @@ void CL_ParseTEnt (void)
 		MSG_ReadDir (&net_message, dir);
 
 		if (type == TE_SCREEN_SPARKS)
-			CL_ParticleEffect (pos, dir, 0xd0, 40);
+			CL_ParticleEffect (pos, dir, 0, 1, 0, 40);
 		else
-			CL_ParticleEffect (pos, dir, 0xb0, 40);
+			CL_ParticleEffect (pos, dir, 0.47, 0.48, 0.8, 40);
 		//FIXME : replace or remove this sound
 		S_StartSound (pos, 0, 0, cl.media.sfxLashit, 1, ATTN_NORM, 0);
 		break;
@@ -553,8 +647,10 @@ void CL_ParseTEnt (void)
 		MSG_ReadPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 
-		CL_ParticleEffect (pos, dir, 0, 20);
-		CL_SmokeAndFlash(pos);
+		CL_ParticleEffect (pos, dir, 0, 0, 0, 20);
+		CL_SmokeAndFlash (pos);
+
+		CL_SpawnDecal ( pos, dir, frand()*360, 8, 1, 1, 1, 1, 8, 1, false, cl.media.shaderBulletMark );
 		break;
 
 	case TE_SPLASH:			// bullet hitting water
@@ -562,12 +658,13 @@ void CL_ParseTEnt (void)
 		MSG_ReadPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
 		r = MSG_ReadByte (&net_message);
-		if (r > 6)
-			color = 0x00;
-		else
-			color = splash_color[r];
 
-		CL_ParticleEffect (pos, dir, color, cnt);
+		if (r > 6)
+			VectorClear (color);
+		else
+			VectorCopy (splash_color[r], color);
+
+		CL_ParticleEffect (pos, dir, color[0], color[1], color[2], cnt);
 
 		if (r == SPLASH_SPARKS)
 		{
@@ -585,9 +682,13 @@ void CL_ParseTEnt (void)
 		cnt = MSG_ReadByte (&net_message);
 		MSG_ReadPos (&net_message, pos);
 		MSG_ReadDir (&net_message, dir);
-		color = MSG_ReadByte (&net_message);
+		r = MSG_ReadLong (&net_message);
 
-		CL_ParticleEffect2 (pos, dir, color, cnt);
+		CL_ParticleEffect2 (pos, dir, 
+			(( r	   ) & 0xFF) * (1.0 / 255.0), 
+			(( r >> 8  ) & 0xFF) * (1.0 / 255.0), 
+			(( r >> 16 ) & 0xFF) * (1.0 / 255.0), 
+			cnt);
 		break;
 
 	case TE_BLASTER:			// blaster hitting wall
@@ -608,8 +709,10 @@ void CL_ParseTEnt (void)
 		}
 		angles[2] = 0;
 
-		le = CL_AllocPoly ( pos, angles, 4, 150, 1, 1, 0, cl.media.modExplode, NULL  );
+		le = CL_AllocPoly ( LE_ALPHA_FADE, pos, angles, 4, 150, 1, 1, 0, cl.media.modExplode, NULL  );
 		S_StartSound (pos,  0, 0, cl.media.sfxLashit, 1, ATTN_NORM, 0);
+
+		CL_SpawnDecal ( pos, dir, frand()*360, 16, 1, 0.8, 0, 1, 8, 2, true, cl.media.shaderEnergyMark );
 		break;
 		
 	case TE_RAILTRAIL:			// railgun effect
@@ -620,36 +723,52 @@ void CL_ParseTEnt (void)
 		S_StartSound (pos2, 0, 0, cl.media.sfxRailg, 1, ATTN_NORM, 0);
 		break;
 
-	case TE_EXPLOSION2:
 	case TE_GRENADE_EXPLOSION:
 	case TE_GRENADE_EXPLOSION_WATER:
 		MSG_ReadPos (&net_message, pos);
+		MSG_ReadDir (&net_message, dir);
 
-		le = CL_AllocSprite ( pos, 62, 4, 350, 1, 1, 0, cl.media.shaderGrenadeExplosion );
+		le = CL_AllocSprite ( LE_NO_FADE, pos, 64, 5, 350, 1, 1, 0, cl.media.shaderGrenadeExplosion );
 
 		if (type == TE_GRENADE_EXPLOSION_WATER)
 			S_StartSound (pos, 0, 0, cl.media.sfxWatrexp, 1, ATTN_NORM, 0);
 		else
 			S_StartSound (pos, 0, 0, cl.media.sfxGrenexp, 1, ATTN_NORM, 0);
+
+		CL_SpawnDecal ( pos, dir, frand()*360, 64, 1, 1, 1, 1, 10, 1, false, cl.media.shaderExplosionMark );
 		break;
 
-	case TE_EXPLOSION1:
 	case TE_ROCKET_EXPLOSION:
 	case TE_ROCKET_EXPLOSION_WATER:
 		MSG_ReadPos (&net_message, pos);
+		MSG_ReadDir (&net_message, dir);
 
-		le = CL_AllocSprite ( pos, 62, 8, 350, 1, 0.75, 0, cl.media.shaderRocketExplosion  );
+		le = CL_AllocSprite ( LE_NO_FADE, pos, 64, 8, 350, 1, 0.75, 0, cl.media.shaderRocketExplosion  );
 
 		if (type == TE_ROCKET_EXPLOSION_WATER)
 			S_StartSound (pos, 0, 0, cl.media.sfxWatrexp, 1, ATTN_NORM, 0);
 		else
 			S_StartSound (pos, 0, 0, cl.media.sfxRockexp, 1, ATTN_NORM, 0);
+
+		CL_SpawnDecal ( pos, dir, frand()*360, 64, 1, 1, 1, 1, 10, 1, false, cl.media.shaderExplosionMark );
+		break;
+
+	case TE_EXPLOSION1:
+		MSG_ReadPos (&net_message, pos);
+		le = CL_AllocSprite ( LE_NO_FADE, pos, 64, 8, 350, 1, 0.75, 0, cl.media.shaderRocketExplosion  );
+		S_StartSound (pos, 0, 0, cl.media.sfxRockexp, 1, ATTN_NORM, 0);
+		break;
+
+	case TE_EXPLOSION2:
+		MSG_ReadPos (&net_message, pos);
+		le = CL_AllocSprite ( LE_NO_FADE, pos, 62, 5, 350, 1, 1, 0, cl.media.shaderGrenadeExplosion );
+		S_StartSound (pos, 0, 0, cl.media.sfxGrenexp, 1, ATTN_NORM, 0);
 		break;
 
 	case TE_BFG_EXPLOSION:
 		MSG_ReadPos (&net_message, pos);
 
-		le = CL_AllocPoly ( pos, vec3_origin, 4, 350, 0, 1.0, 0, cl.media.modBfgExplo, NULL  );
+		le = CL_AllocPoly ( LE_NO_FADE, pos, vec3_origin, 4, 350, 0, 1.0, 0, cl.media.modBfgExplo, NULL  );
 		break;
 
 	case TE_BFG_BIGEXPLOSION:
@@ -694,21 +813,21 @@ void CL_ParseTEnt (void)
 		MSG_ReadPos (&net_message, pos2);
 		MSG_ReadPos (&net_message, dir);
 
-		CL_AddBeam (ent, pos, pos2, dir, cl.media.modParasiteSegment);
+		CL_AddBeam (ent, pos, pos2, dir, cl.media.modGrappleCable);
 		break;
 
 	case TE_PLAYER_TELEPORT_IN:
 		MSG_ReadPos (&net_message, pos);
 
 		S_StartSound (pos, 0, 0, cl.media.sfxTeleportIn, 1, ATTN_NORM, 0);
-		CL_TeleportParticles (pos);
+		CL_TeleportEffect (pos);
 		break;
 
 	case TE_PLAYER_TELEPORT_OUT:
 		MSG_ReadPos (&net_message, pos);
 
 		S_StartSound (pos, 0, 0, cl.media.sfxTeleportOut, 1, ATTN_NORM, 0);
-		CL_TeleportParticles (pos);
+		CL_TeleportEffect (pos);
 		break;
 
 	case TE_LIGHTNING:
@@ -734,7 +853,7 @@ CL_AddBeams
 */
 void CL_AddBeams (void)
 {
-	int			i,j;
+	int			i, j;
 	beam_t		*b;
 	vec3_t		dist, org, angles, angles2;
 	float		d;
@@ -764,6 +883,10 @@ void CL_AddBeams (void)
 		d = VectorNormalize(dist);
 
 		memset (&ent, 0, sizeof(ent));
+
+		ent.scale = 1.0f;
+		ent.color[0] = ent.color[1] = ent.color[2] = ent.color[3] = 255;
+
 		if (b->model == cl.media.modLightning)
 		{
 			model_length = 35.0;
@@ -782,12 +905,13 @@ void CL_AddBeams (void)
 		if ((b->model == cl.media.modLightning) && (d <= model_length))
 		{
 			VectorCopy (b->end, ent.origin);
-			// offset to push beam outside of tesla model (negative because dist is from end to start
-			// for this beam)
+			VectorCopy (b->end, ent.oldorigin);
+
+			// offset to push beam outside of tesla model
+			// (negative because dist is from end to start for this beam)
 			ent.type = ET_MODEL;
-			ent.scale = 1.0f;
 			ent.model = b->model;
-			ent.flags = RF_FULLBRIGHT;
+			ent.flags = RF_FULLBRIGHT|RF_NOSHADOW;
 			angles[0] = angles2[0];
 			angles[1] = angles2[1];
 			angles[2] = rand()%360;
@@ -795,15 +919,18 @@ void CL_AddBeams (void)
 			V_AddEntity (&ent);			
 			return;
 		}
+
+		ent.type = ET_MODEL;
+		ent.flags = RF_NOSHADOW;
+		ent.model = b->model;
+
 		while (d > 0)
 		{
 			VectorCopy (org, ent.origin);
-			ent.type = ET_MODEL;
-			ent.scale = 1.0f;
-			ent.model = b->model;
+			VectorCopy (org, ent.oldorigin);
+
 			if (b->model == cl.media.modLightning)
 			{
-				ent.flags = RF_FULLBRIGHT;
 				angles[0] = -angles2[0];
 				angles[1] = angles2[1] + 180.0;
 				angles[2] = rand()%360;
@@ -829,22 +956,18 @@ void CL_AddBeams (void)
 
 /*
 =================
-CL_AddExplosions
+CL_AddLocalEntities
 =================
 */
-void CL_AddExplosions (void)
+void CL_AddLocalEntities (void)
 {
-	int			i;
+	int			i, f;
 	lentity_t	*le;
 	entity_t	*ent;
-	float		frac, time, time2;
-	float		frontlerp, backlerp;
-	int			f;
-
-	memset ( &ent, 0, sizeof(ent) );
+	float		frac, fade, time;
+	float		backlerp;
 
 	backlerp = 1.0f - cl.lerpfrac;
-	frontlerp = 1.0f - backlerp;
 
 	for ( i = 0, le = cl_localents; i < MAX_LOCAL_ENTITIES; i++, le++ )
 	{
@@ -853,37 +976,57 @@ void CL_AddExplosions (void)
 		}
 
 		frac = (cl.time - le->start) * 0.01f;
-		time = frac * 0.1f;
-		time2 = time * time * 0.5f;
+		time = cls.frametime;
+
+		if ( le->frames > 1 ) {
+			fade = 1.0 - frac / (le->frames-1);
+			fade = max ( fade, 0.0f );
+		} else {
+			fade = 1.0f;
+		}
 
 		f = floor (frac);
-		if ( f < 0 ) {
-			f = 0;
-		}
+		f = max ( f, 0.0f );
 
 		ent = &le->ent;
 
 		switch ( le->type )
 		{
-			case LE_MODEL:
-				if ( f >= le->frames-1 ) {
-					le->type = LE_FREE;
-				}
-				break;
-			case LE_SPRITE:
+			case LE_NO_FADE:
 				if (f >= le->frames-1) {
 					le->type = LE_FREE;
 				}
 				break;
-			case LE_GIB:
-				if ( f >= le->frames-1 ) { 
-					le->type = LE_FREE;
-				}
-				
-				if ( (CL_PMpointcontents(ent->origin) & (CONTENTS_SOLID|CONTENTS_NODROP)) ) {
+
+			case LE_RGB_FADE:
+				le->ent.color[0] = FloatToByte ( fade );
+				le->ent.color[1] = FloatToByte ( fade );
+				le->ent.color[2] = FloatToByte ( fade );
+
+				if (f >= le->frames-1) {
 					le->type = LE_FREE;
 				}
 				break;
+
+			case LE_ALPHA_FADE:
+				le->ent.color[3] = FloatToByte ( fade );
+
+				if (f >= le->frames-1) {
+					le->type = LE_FREE;
+				}
+				break;
+
+			case LE_SCALE_ALPHA_FADE:
+				le->ent.scale = 1.0 + 1/fade;
+				le->ent.scale = min (le->ent.scale, 5.0f);
+
+				le->ent.color[3] = FloatToByte ( fade );
+
+				if (f >= le->frames-1) {
+					le->type = LE_FREE;
+				}
+				break;
+
 			case LE_LASER:
 				if ( f >= le->frames-1 ) {
 					le->type = LE_FREE;
@@ -895,40 +1038,20 @@ void CL_AddExplosions (void)
 			continue;
 		}
 
-		if ( le->light ) {
-			V_AddLight (ent->origin, le->light*(1.0 - frac/(le->frames-1)),
+		if ( le->light && fade ) {
+			V_AddLight (ent->origin, le->light*fade,
 				le->lightcolor[0], le->lightcolor[1], le->lightcolor[2]);
 		}
 
+		ent->frame = f + 1;
+		ent->oldframe = f;
+		ent->backlerp = backlerp;
+
 		VectorCopy ( ent->origin, ent->oldorigin );
+		VectorMA ( ent->origin, time, le->velocity, ent->origin );
+		VectorMA ( le->velocity, time, le->accel, le->velocity );
 
-		ent->origin[0] += le->velocity[0]*time + le->accel[0]*time2;
-		ent->origin[1] += le->velocity[1]*time + le->accel[1]*time2;
-		ent->origin[2] += le->velocity[2]*time + le->accel[2]*time2;
-
-		if ( le->type != LE_GIB ) {
-			ent->frame = f + 1;
-			ent->oldframe = f;
-		} else {
-			ent->frame = 0;
-			ent->oldframe = 0;
-
-			CL_DiminishingTrail ( ent->oldorigin, ent->origin, &le->trailcount, EF_GIB );
-		}
-
-		ent->backlerp = 1.0 - cl.lerpfrac;
 		V_AddEntity (ent);
 	}
 }
 
-
-/*
-=================
-CL_AddTEnts
-=================
-*/
-void CL_AddTEnts (void)
-{
-	CL_AddBeams ();
-	CL_AddExplosions ();
-}

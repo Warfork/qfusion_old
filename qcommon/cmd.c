@@ -816,8 +816,7 @@ void Cmd_VStr_f (void)
 Cmd_CompleteCommand
 ============
 */
-char       *
-Cmd_CompleteCommand (char *partial)
+char *Cmd_CompleteCommand (char *partial)
 {
 	int				len;
 	cmdalias_t		*a;
@@ -849,12 +848,11 @@ Cmd_CompleteCommand (char *partial)
 
 /*
 ============
-	Cmd_CompleteCountPossible
-	Thanks for Taniwha's Help -EvilTypeGuy
+Cmd_CompleteCountPossible
+Thanks for Taniwha's Help -EvilTypeGuy
 ============
 */
-int
-Cmd_CompleteCountPossible (char *partial)
+int Cmd_CompleteCountPossible (char *partial)
 {
 	cmd_function_t	*cmd;
 	int				len, h = 0;
@@ -873,12 +871,11 @@ Cmd_CompleteCountPossible (char *partial)
 
 /*
 ============
-	Cmd_CompleteBuildList
-	Thanks for Taniwha's Help -EvilTypeGuy
+Cmd_CompleteBuildList
+Thanks for Taniwha's Help -EvilTypeGuy
 ============
 */
-char	**
-Cmd_CompleteBuildList (char *partial)
+char **Cmd_CompleteBuildList (char *partial)
 {
 	cmd_function_t	*cmd;
 	int				len, bpos = 0;
@@ -898,11 +895,10 @@ Cmd_CompleteBuildList (char *partial)
 }
 
 /*
-	Cmd_CompleteAlias
-	Thanks for Taniwha's Help -EvilTypeGuy
+Cmd_CompleteAlias
+Thanks for Taniwha's Help -EvilTypeGuy
 */
-char
-*Cmd_CompleteAlias (char * partial)
+char *Cmd_CompleteAlias (char *partial)
 {
 	static cmdalias_t	*alias;
 	int			len;
@@ -921,11 +917,10 @@ char
 }
 
 /*
-	Cmd_CompleteAliasCountPossible
-	Thanks for Taniwha's Help -EvilTypeGuy
+Cmd_CompleteAliasCountPossible
+Thanks for Taniwha's Help -EvilTypeGuy
 */
-int
-Cmd_CompleteAliasCountPossible (char *partial)
+int Cmd_CompleteAliasCountPossible (char *partial)
 {
 	cmdalias_t	*alias;
 	int			len, h = 0;
@@ -944,11 +939,10 @@ Cmd_CompleteAliasCountPossible (char *partial)
 }
 
 /*
-	Cmd_CompleteAliasBuildList
-	Thanks for Taniwha's Help -EvilTypeGuy
+Cmd_CompleteAliasBuildList
+Thanks for Taniwha's Help -EvilTypeGuy
 */
-char	**
-Cmd_CompleteAliasBuildList (char *partial)
+char **Cmd_CompleteAliasBuildList (char *partial)
 {
 	cmdalias_t	*alias;
 	int			len, bpos = 0;

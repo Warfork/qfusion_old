@@ -226,6 +226,7 @@ player_die
 */
 void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point)
 {
+	int		n;
 	int		contents;
 
 	VectorClear (self->avelocity);
@@ -311,6 +312,10 @@ void player_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damag
 
 	if ( self->health < GIB_HEALTH && !(contents & CONTENTS_NODROP) )
 	{	// gib
+
+		for (n= 0; n < 4; n++)
+			ThrowGib (self, "models/objects/gibs/sm_meat/tris.md2", damage, GIB_ORGANIC);
+
 		self->s.event = EV_GIB;
 
 		ThrowClientHead (self, damage);
@@ -740,8 +745,13 @@ void InitBodyQue (void)
 
 void body_die (edict_t *self, edict_t *inflictor, edict_t *attacker, int damage, vec3_t point)
 {
+	int n;
+
 	if (self->health >= GIB_HEALTH)
 		return;
+
+	for (n= 0; n < 4; n++)
+		ThrowGib (self, "models/objects/gibs/sm_meat/tris.md2", damage, GIB_ORGANIC);
 
 	self->s.event = EV_GIB;
 	self->s.origin[2] -= 48;
@@ -937,6 +947,7 @@ void PutClientInServer (edict_t *ent)
 
 	// clear entity state values
 	ent->s.effects = 0;
+	ent->s.light = 0;
 	ent->s.skinnum = ent - g_edicts - 1;
 	ent->s.modelindex = 255;		// will use the skin specified model
 	ent->s.modelindex2 = 255;		// custom gun model

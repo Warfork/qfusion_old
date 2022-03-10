@@ -47,6 +47,7 @@ static menuslider_s		s_tq_slider;
 static menuslider_s		s_sq_slider;
 static menulist_s		s_tf_box;
 static menulist_s		s_colordepth_box;
+static menulist_s		s_texturebits_box;
 static menuslider_s		s_screensize_slider;
 static menuslider_s		s_brightness_slider;
 static menulist_s		s_lighting_box;
@@ -88,12 +89,13 @@ static void ApplyChanges( void *unused )
 	trap_Cvar_SetValue( "vid_fullscreen", s_fs_box.curvalue );
 	trap_Cvar_SetValue( "r_mode", s_mode_list.curvalue );
 	trap_Cvar_SetValue( "r_colorbits", 16 * (int)s_colordepth_box.curvalue );
+	trap_Cvar_SetValue( "r_texturebits", 16 * (int)s_texturebits_box.curvalue );
 	trap_Cvar_SetValue( "r_detailtextures", s_detailtextures_list.curvalue );
 
 	if ( s_tf_box.curvalue ) {
-		trap_Cvar_Set( "gl_texturemode", "GL_LINEAR_MIPMAP_LINEAR" );
+		trap_Cvar_Set( "r_texturemode", "GL_LINEAR_MIPMAP_LINEAR" );
 	} else {
-	 	trap_Cvar_Set( "gl_texturemode", "GL_LINEAR_MIPMAP_NEAREST" );
+	 	trap_Cvar_Set( "r_texturemode", "GL_LINEAR_MIPMAP_NEAREST" );
 	}
 
 	trap_Cmd_ExecuteText (EXEC_APPEND, "vid_restart\n");
@@ -158,6 +160,11 @@ static void Video_MenuInit( void )
 	static const char *colordepth_names[] =
 	{
 		"desktop", "16 bits", "32 bits", 0
+	};
+
+	static const char *texturebits_names[] =
+	{
+		"default", "16", "32", 0
 	};
 
 	char *gl_driver = trap_Cvar_VariableString( "gl_driver" );
@@ -237,6 +244,19 @@ static void Video_MenuInit( void )
 	else
 		s_colordepth_box.curvalue		= 0;
 
+	s_texturebits_box.generic.type	= MTYPE_SPINCONTROL;
+	s_texturebits_box.generic.x		= 0;
+	s_texturebits_box.generic.y		= y+=y_offset;
+	s_texturebits_box.generic.name	= "texture bits";
+	s_texturebits_box.itemnames		= texturebits_names;
+
+	if ( !Q_stricmp( trap_Cvar_VariableString( "r_texturebits" ), "16" ) )
+		s_texturebits_box.curvalue		= 1;
+	else if ( !Q_stricmp( trap_Cvar_VariableString( "r_texturebits" ), "32" ) )
+		s_texturebits_box.curvalue		= 2;
+	else
+		s_texturebits_box.curvalue		= 0;
+
 	y+=y_offset;
 
 	s_detailtextures_list.generic.type		= MTYPE_SPINCONTROL;
@@ -268,7 +288,7 @@ static void Video_MenuInit( void )
 	s_tf_box.generic.name		= "texture filter";
 	s_tf_box.itemnames			= filter_names;
 
-	if ( !Q_stricmp( trap_Cvar_VariableString( "gl_texturemode" ), "GL_LINEAR_MIPMAP_NEAREST" ) )
+	if ( !Q_stricmp( trap_Cvar_VariableString( "r_texturemode" ), "GL_LINEAR_MIPMAP_NEAREST" ) )
 		s_tf_box.curvalue		= 0;
 	else
 		s_tf_box.curvalue		= 1;
@@ -302,6 +322,7 @@ static void Video_MenuInit( void )
 	Menu_AddItem( &s_video_menu, ( void * ) &s_brightness_slider );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_fs_box );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_colordepth_box );
+	Menu_AddItem( &s_video_menu, ( void * ) &s_texturebits_box );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_detailtextures_list );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_tq_slider );
 	Menu_AddItem( &s_video_menu, ( void * ) &s_sq_slider );

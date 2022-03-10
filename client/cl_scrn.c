@@ -256,9 +256,10 @@ void SCR_CenterPrint (char *str)
 void SCR_DrawCenterString (void)
 {
 	char	*start;
-	int		l;
+	int		l, length;
 	int		x, y;
-	int		remaining, c;
+	int		remaining;
+	int		fontstyle = FONT_SMALL|FONT_SHADOWED;
 
 // the finale prints the characters one at a time
 	remaining = 9999;
@@ -273,18 +274,25 @@ void SCR_DrawCenterString (void)
 
 	do	
 	{
+		length = 0;
 	// scan the width of the line
-		for (l=0 ; l<40 ; l++)
-			if (start[l] == '\n' || !start[l])
+		for (l=0 ; l<320/SMALL_CHAR_WIDTH ; l++) {
+			if ( Q_IsColorString (&start[l]) ) {
+				l++;
+			} else if ( start[l] == '\n' || !start[l] ) {
 				break;
-		x = (viddef.width - l*SMALL_CHAR_WIDTH)/2;
+			} else {
+				length++;
+			}
+		}
+
+		x = (viddef.width - length*SMALL_CHAR_WIDTH)/2;
 		SCR_AddDirtyPoint (x, y);
-		c = start[l];
-		start[l] = 0;
-		Draw_PropString ( x, y, start, FONT_SMALL|FONT_SHADOWED, colorWhite );
-		start[l] = c;
-		SCR_AddDirtyPoint (x, y+27);
-			
+
+		Draw_StringLen ( x, y, start, l, fontstyle, colorWhite );
+
+		SCR_AddDirtyPoint (x, y+SMALL_CHAR_HEIGHT);
+
 		y += SMALL_CHAR_HEIGHT;
 
 		while (*start && *start != '\n')
@@ -794,6 +802,24 @@ void SCR_DirtyScreen (void)
 
 /*
 ==============
+SCR_TileClearRect
+
+This repeats tile graphic to fill the screen around a sized down
+refresh window.
+==============
+*/
+void SCR_TileClearRect (int x, int y, int w, int h, struct shader_s *shader)
+{
+	float iw, ih;
+
+	iw = 1.0f / 64.0;
+	ih = 1.0f / 64.0;
+
+	Draw_StretchPic ( x, y, w, h, x*iw, y*ih, (x+w)*iw, (y+h)*ih, colorWhite, shader );
+}
+
+/*
+==============
 SCR_TileClear
 
 Clear any parts of the tiled background that were drawn on last frame
@@ -804,6 +830,7 @@ void SCR_TileClear (void)
 	int		i;
 	int		top, bottom, left, right;
 	dirty_t	clear;
+	struct shader_s *gfxBackTileShader;
 
 	if (scr_drawall->value)
 		SCR_DirtyScreen ();	// for power vr or broken page flippers...
@@ -851,32 +878,39 @@ void SCR_TileClear (void)
 	left = scr_vrect.x;
 	right = left + scr_vrect.width-1;
 
+	if ( (clear.y1 >= top) && (clear.y2 <= bottom) &&
+		(clear.x1 >= left) && (clear.x2 <= right) ) {
+		return;
+	}
+
+	gfxBackTileShader = R_RegisterPic ( "gfx/2d/backtile" );
+
 	if (clear.y1 < top)
 	{	// clear above view screen
-		i = clear.y2 < top-1 ? clear.y2 : top-1;
-		Draw_TileClear (clear.x1 , clear.y1,
-			clear.x2 - clear.x1 + 1, i - clear.y1+1, "gfx/2d/backtile");
+		i = clear.y2 < top - 1 ? clear.y2 : top - 1;
+		SCR_TileClearRect ( clear.x1, clear.y1,
+			clear.x2 - clear.x1 + 1, i - clear.y1 + 1, gfxBackTileShader );
 		clear.y1 = top;
 	}
 	if (clear.y2 > bottom)
 	{	// clear below view screen
-		i = clear.y1 > bottom+1 ? clear.y1 : bottom+1;
-		Draw_TileClear (clear.x1, i,
-			clear.x2-clear.x1+1, clear.y2-i+1, "gfx/2d/backtile");
+		i = clear.y1 > bottom + 1 ? clear.y1 : bottom + 1;
+		SCR_TileClearRect ( clear.x1, i,
+			clear.x2 - clear.x1 + 1, clear.y2 - i + 1, gfxBackTileShader );
 		clear.y2 = bottom;
 	}
 	if (clear.x1 < left)
 	{	// clear left of view screen
-		i = clear.x2 < left-1 ? clear.x2 : left-1;
-		Draw_TileClear (clear.x1, clear.y1,
-			i-clear.x1+1, clear.y2 - clear.y1 + 1, "gfx/2d/backtile");
+		i = clear.x2 < left - 1 ? clear.x2 : left - 1;
+		SCR_TileClearRect ( clear.x1, clear.y1,
+			i-clear.x1 + 1, clear.y2 - clear.y1 + 1, gfxBackTileShader );
 		clear.x1 = left;
 	}
 	if (clear.x2 > right)
 	{	// clear left of view screen
 		i = clear.x1 > right+1 ? clear.x1 : right+1;
-		Draw_TileClear (i, clear.y1,
-			clear.x2-i+1, clear.y2 - clear.y1 + 1, "gfx/2d/backtile");
+		SCR_TileClearRect ( i, clear.y1,
+			clear.x2 - i + 1, clear.y2 - clear.y1 + 1, gfxBackTileShader );
 		clear.x2 = right;
 	}
 }
@@ -896,76 +930,51 @@ char		*sb_nums[11] =
 	"gfx/2d/numbers/minus_32b"
 };
 
-#define	ICON_WIDTH	24
-#define	ICON_HEIGHT	24
-#define	CHAR_WIDTH	32
-#define	ICON_SPACE	8
 
-
-
-/*
-================
-SizeHUDString
-
-Allow embedded \n in the string
-================
-*/
-void SizeHUDString (char *string, int *w, int *h)
-{
-	int		lines, width, current;
-
-	lines = 1;
-	width = 0;
-
-	current = 0;
-	while (*string)
-	{
-		if (*string == '\n')
-		{
-			lines++;
-			current = 0;
-		}
-		else
-		{
-			current++;
-			if (current > width)
-				width = current;
-		}
-		string++;
-	}
-
-	*w = width * SMALL_CHAR_WIDTH;
-	*h = lines * SMALL_CHAR_HEIGHT;
-}
-
-void DrawHUDString (char *string, int x, int y, int centerwidth, vec4_t color)
+void DrawHUDString (char *string, int x, int y, int centerwidth, int fontstyle, vec4_t color)
 {
 	int		margin;
-	char	line[1024];
-	int		width;
+	int		length, l;
+	int		width, height;
+
+	if ( fontstyle & FONT_BIG ) {
+		width = BIG_CHAR_WIDTH;
+		height = BIG_CHAR_HEIGHT;
+	} else if ( fontstyle & FONT_GIANT ) {
+		width = GIANT_CHAR_WIDTH;
+		height = GIANT_CHAR_HEIGHT;
+	} else {	// FONT_SMALL is default
+		width = SMALL_CHAR_WIDTH;
+		height = SMALL_CHAR_HEIGHT;
+	}
 
 	margin = x;
 
 	while (*string)
 	{
 		// scan out one line of text from the string
-		width = 0;
-		while (*string && *string != '\n')
-			line[width++] = *string++;
-		line[width] = 0;
+		length = l = 0;
+		while (*string && *string != '\n') {
+			if ( Q_IsColorString (string) ) {
+				l += 2;
+			} else {
+				l++;
+				length++;
+			}
+		}
 
 		if (centerwidth)
-			x = margin + (centerwidth - width*SMALL_CHAR_WIDTH)/2;
+			x = margin + (centerwidth - length*width)/2;
 		else
 			x = margin;
 
-		Draw_StringLen ( x, y, line, width, FONT_SMALL, color );
+		Draw_StringLen ( x, y, string, l, fontstyle, color );
 
 		if (*string)
 		{
 			string++;	// skip the \n
 			x = margin;
-			y += SMALL_CHAR_HEIGHT;
+			y += height;
 		}
 	}
 }
@@ -990,13 +999,13 @@ void SCR_DrawField (int x, int y, float *color, int width, int value)
 		width = 5;
 
 	SCR_AddDirtyPoint (x, y);
-	SCR_AddDirtyPoint (x+width*CHAR_WIDTH+2, y+23);
+	SCR_AddDirtyPoint (x+width*32+2, y+31);
 
 	Com_sprintf (num, sizeof(num), "%i", value);
 	l = strlen(num);
 	if (l > width)
 		l = width;
-	x += 2 + CHAR_WIDTH*(width - l);
+	x += 2 + 32*(width - l);
 
 	ptr = num;
 	while (*ptr && l)
@@ -1007,7 +1016,7 @@ void SCR_DrawField (int x, int y, float *color, int width, int value)
 			frame = *ptr -'0';
 
 		Draw_StretchPic ( x, y, 32, 32, 0, 0, 1, 1, color, R_RegisterPic(sb_nums[frame]) );
-		x += CHAR_WIDTH;
+		x += 32;
 		ptr++;
 		l--;
 	}
@@ -1051,7 +1060,7 @@ SCR_ExecuteLayoutString
 */
 void SCR_ExecuteLayoutString (char *s)
 {
-	int		x, y;
+	int		x, y, w, h;
 	int		value;
 	char	*token;
 	int		width;
@@ -1112,14 +1121,18 @@ void SCR_ExecuteLayoutString (char *s)
 		if (!strcmp(token, "pic"))
 		{	// draw a pic from a stat number
 			token = COM_Parse (&s);
+			w = atoi (token);
+			token = COM_Parse (&s);
+			h = atoi (token);
+			token = COM_Parse (&s);
 			value = cl.frame.playerstate.stats[atoi(token)];
 			if (value >= MAX_IMAGES)
 				Com_Error (ERR_DROP, "Pic >= MAX_IMAGES");
 			if (cl.configstrings[CS_IMAGES+value])
 			{
 				SCR_AddDirtyPoint (x, y);
-				SCR_AddDirtyPoint (x+31, y+31);
-				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic(cl.configstrings[CS_IMAGES+value]) );
+				SCR_AddDirtyPoint (x+w-1, y+h-1);
+				Draw_StretchPic (x, y, w, h, 0, 0, 1, 1, colorWhite, R_RegisterPic(cl.configstrings[CS_IMAGES+value]) );
 			}
 			continue;
 		}
@@ -1213,9 +1226,13 @@ void SCR_ExecuteLayoutString (char *s)
 		if (!strcmp(token, "picn"))
 		{	// draw a pic from a name
 			token = COM_Parse (&s);
+			w = atoi (token);
+			token = COM_Parse (&s);
+			h = atoi (token);
+			token = COM_Parse (&s);
 			SCR_AddDirtyPoint (x, y);
-			SCR_AddDirtyPoint (x+31, y+31);
-			Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic(token) );
+			SCR_AddDirtyPoint (x+w-1, y+h-1);
+			Draw_StretchPic (x, y, w, h, 0, 0, 1, 1, colorWhite, R_RegisterPic(token) );
 			continue;
 		}
 
@@ -1243,9 +1260,6 @@ void SCR_ExecuteLayoutString (char *s)
 			else
 				color = colorRed;
 
-			if (cl.frame.playerstate.stats[STAT_FLASHES] & 1)
-				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("field_3") );
-
 			SCR_DrawField (x, y, color, width, value);
 			continue;
 		}
@@ -1263,9 +1277,6 @@ void SCR_ExecuteLayoutString (char *s)
 			else
 				continue;	// negative number = don't show
 
-			if (cl.frame.playerstate.stats[STAT_FLASHES] & 4)
-				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("field_3") );
-
 			SCR_DrawField (x, y, color, width, value);
 			continue;
 		}
@@ -1276,9 +1287,6 @@ void SCR_ExecuteLayoutString (char *s)
 			value = cl.frame.playerstate.stats[STAT_ARMOR];
 			if (value < 1)
 				continue;
-
-			if (cl.frame.playerstate.stats[STAT_FLASHES] & 2)
-				Draw_StretchPic (x, y, 32, 32, 0, 0, 1, 1, colorWhite, R_RegisterPic("field_3") );
 
 			SCR_DrawField (x, y, colorWhite, width, value);
 			continue;
@@ -1320,28 +1328,14 @@ void SCR_ExecuteLayoutString (char *s)
 		if (!strcmp(token, "cstring"))
 		{
 			token = COM_Parse (&s);
-			DrawHUDString (token, x, y, 320, colorWhite);
+			DrawHUDString (token, x, y, 320, FONT_SMALL, colorWhite);
 			continue;
 		}
 
 		if (!strcmp(token, "string"))
 		{
 			token = COM_Parse (&s);
-			Draw_String ( x, y, token, FONT_SMALL, colorWhite );
-			continue;
-		}
-
-		if (!strcmp(token, "cstring2"))
-		{
-			token = COM_Parse (&s);
-			DrawHUDString (token, x, y, 320, colorYellow);
-			continue;
-		}
-
-		if (!strcmp(token, "string2"))
-		{
-			token = COM_Parse (&s);
-			Draw_String ( x, y, token, FONT_SMALL, colorYellow );
+			DrawHUDString (token, x, y, 0, FONT_SMALL, colorWhite);
 			continue;
 		}
 
@@ -1350,6 +1344,96 @@ void SCR_ExecuteLayoutString (char *s)
 			token = COM_Parse (&s);
 			value = cl.frame.playerstate.stats[atoi(token)];
 			if (!value)
+			{	// skip to endif
+				while (s && strcmp(token, "endif") )
+				{
+					token = COM_Parse (&s);
+				}
+			}
+			continue;
+		}
+
+		if (!strcmp(token, "ifeq"))
+		{	// draw a number
+			token = COM_Parse (&s);
+			value = cl.frame.playerstate.stats[atoi(token)];
+			token = COM_Parse (&s);
+			if (value != atoi(token))
+			{	// skip to endif
+				while (s && strcmp(token, "endif") )
+				{
+					token = COM_Parse (&s);
+				}
+			}
+			continue;
+		}
+
+		if (!strcmp(token, "ifbit"))
+		{	// draw a number
+			token = COM_Parse (&s);
+			value = cl.frame.playerstate.stats[atoi(token)];
+			token = COM_Parse (&s);
+			if (!(value & atoi(token)))
+			{	// skip to endif
+				while (s && strcmp(token, "endif") )
+				{
+					token = COM_Parse (&s);
+				}
+			}
+			continue;
+		}
+
+		if (!strcmp(token, "ifle"))
+		{	// draw a number
+			token = COM_Parse (&s);
+			value = cl.frame.playerstate.stats[atoi(token)];
+			token = COM_Parse (&s);
+			if (value > atoi(token))
+			{	// skip to endif
+				while (s && strcmp(token, "endif") )
+				{
+					token = COM_Parse (&s);
+				}
+			}
+			continue;
+		}
+
+		if (!strcmp(token, "ifl"))
+		{	// draw a number
+			token = COM_Parse (&s);
+			value = cl.frame.playerstate.stats[atoi(token)];
+			token = COM_Parse (&s);
+			if (value >= atoi(token))
+			{	// skip to endif
+				while (s && strcmp(token, "endif") )
+				{
+					token = COM_Parse (&s);
+				}
+			}
+			continue;
+		}
+
+		if (!strcmp(token, "ifge"))
+		{	// draw a number
+			token = COM_Parse (&s);
+			value = cl.frame.playerstate.stats[atoi(token)];
+			token = COM_Parse (&s);
+			if (value < atoi(token))
+			{	// skip to endif
+				while (s && strcmp(token, "endif") )
+				{
+					token = COM_Parse (&s);
+				}
+			}
+			continue;
+		}
+
+		if (!strcmp(token, "ifg"))
+		{	// draw a number
+			token = COM_Parse (&s);
+			value = cl.frame.playerstate.stats[atoi(token)];
+			token = COM_Parse (&s);
+			if (value <= atoi(token))
 			{	// skip to endif
 				while (s && strcmp(token, "endif") )
 				{
@@ -1393,6 +1477,91 @@ void SCR_DrawLayout (void)
 
 	SCR_ExecuteLayoutString ( cl.layout );
 }
+
+/*
+================
+SCR_DrawInventory
+================
+*/
+#define	DISPLAY_ITEMS	17
+
+void SCR_DrawInventory (void)
+{
+	int		i, j;
+	int		num, selected_num, item;
+	int		index[MAX_ITEMS];
+	char	string[1024];
+	int		x, y;
+	char	binding[1024];
+	char	*bind;
+	int		selected;
+	int		top;
+
+	selected = cl.frame.playerstate.stats[STAT_SELECTED_ITEM];
+
+	num = 0;
+	selected_num = 0;
+	for (i=0 ; i<MAX_ITEMS ; i++)
+	{
+		if (i==selected)
+			selected_num = num;
+		if (cl.inventory[i])
+		{
+			index[num] = i;
+			num++;
+		}
+	}
+
+	// determine scroll point
+	top = selected_num - DISPLAY_ITEMS/2;
+	if (num - top < DISPLAY_ITEMS)
+		top = num - DISPLAY_ITEMS;
+	if (top < 0)
+		top = 0;
+
+	x = (viddef.width-256)/2;
+	y = (viddef.height-240)/2;
+
+	// repaint everything next frame
+	SCR_DirtyScreen ();
+
+	y += 24;
+	x += 24;
+
+	Draw_String ( x, y,   "hotkey ### item", FONT_SMALL, colorWhite );
+	Draw_String ( x, y+SMALL_CHAR_HEIGHT, "------ --- ----", FONT_SMALL, colorWhite );
+
+	y += SMALL_CHAR_HEIGHT * 2;
+	for (i=top ; i<num && i < top+DISPLAY_ITEMS ; i++)
+	{
+		item = index[i];
+		// search for a binding
+		Com_sprintf (binding, sizeof(binding), "use %s", cl.configstrings[CS_ITEMS+item]);
+		bind = "";
+		for (j=0 ; j<256 ; j++)
+			if (keybindings[j] && !Q_stricmp (keybindings[j], binding))
+			{
+				bind = Key_KeynumToString(j);
+				break;
+			}
+
+		Com_sprintf (string, sizeof(string), "%6s %3i %s", bind, cl.inventory[item],
+			cl.configstrings[CS_ITEMS+item] );
+
+		if (item != selected)
+			Draw_String ( x, y, string, FONT_SMALL, colorWhite );
+		else	// draw a blinky cursor by the selected item
+		{
+			if ( (int)(cls.realtime*10) & 1)
+				Draw_Char ( x-SMALL_CHAR_WIDTH, y, FONT_SMALL, 15, colorWhite );
+
+			Draw_String ( x, y, string, FONT_SMALL, colorYellow );
+		}
+
+		y += SMALL_CHAR_HEIGHT;
+	}
+}
+
 
 //=======================================================
 
@@ -1497,7 +1666,7 @@ void SCR_UpdateScreen (void)
 			if (cl.frame.playerstate.stats[STAT_LAYOUTS] & 1)
 				SCR_DrawLayout ();
 			if (cl.frame.playerstate.stats[STAT_LAYOUTS] & 2)
-				CL_DrawInventory ();
+				SCR_DrawInventory ();
 
 			SCR_DrawNet ();
 			SCR_CheckDrawCenterString ();

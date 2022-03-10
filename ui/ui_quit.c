@@ -35,8 +35,8 @@ static menuaction_s		s_no_action;
 
 void YesFunc ( void *unused )
 {
-	trap_CL_SetKeyDest_f ( key_console );
-	trap_CL_Quit_f ();
+	trap_CL_SetKeyDest ( key_console );
+	trap_CL_Quit ();
 }
 
 void NoFunc ( void *unused )
@@ -49,7 +49,7 @@ void M_QuitInit( void )
 	int y = 0;
 	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_quit_menu.x = trap_GetWidth() * 0.50;
+	s_quit_menu.x = uis.vidWidth / 2;
 	s_quit_menu.nitems = 0;
 
 	s_quit_title.generic.type		= MTYPE_SEPARATOR;
@@ -94,8 +94,8 @@ const char *M_Quit_Key (int key)
 
 	case 'Y':
 	case 'y':
-		trap_CL_SetKeyDest_f ( key_console );
-		trap_CL_Quit_f ();
+		trap_CL_SetKeyDest ( key_console );
+		trap_CL_Quit ();
 		return NULL;
 
 	default:

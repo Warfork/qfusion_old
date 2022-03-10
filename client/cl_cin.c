@@ -106,14 +106,11 @@ byte *SCR_ReadNextFrame (void)
 	{
 		RoQ_ReadChunk ( cin );
 
-		if ( cin->remaining <= 0 ) {
+		if ( cin->remaining <= 0 || chunk->size > cin->remaining ) {
 			return NULL;
 		}
 		if ( chunk->size <= 0 ) {
 			continue;
-		}
-		if ( chunk->size > cin->remaining ) {
-			chunk->size -= cin->remaining;
 		}
 
 		if ( chunk->id == RoQ_INFO ) {

@@ -31,13 +31,6 @@ unsigned	d_8to24table[256];
 void GL_Upload8 ( byte *data, int width, int height, int flags );
 void GL_Upload32 ( unsigned *data, int width, int height, int flags );
 
-
-int		gl_solid_format = 3;
-int		gl_alpha_format = 4;
-
-int		gl_tex_solid_format = 3;
-int		gl_tex_alpha_format = 4;
-
 int		gl_filter_min = GL_LINEAR_MIPMAP_NEAREST;
 int		gl_filter_max = GL_LINEAR;
 
@@ -140,37 +133,6 @@ glmode_t modes[] = {
 
 #define NUM_GL_MODES (sizeof(modes) / sizeof (glmode_t))
 
-typedef struct
-{
-	char *name;
-	int mode;
-} gltmode_t;
-
-gltmode_t gl_alpha_modes[] = {
-	{"default", 4},
-	{"GL_RGBA", GL_RGBA},
-	{"GL_RGBA8", GL_RGBA8},
-	{"GL_RGB5_A1", GL_RGB5_A1},
-	{"GL_RGBA4", GL_RGBA4},
-	{"GL_RGBA2", GL_RGBA2},
-};
-
-#define NUM_GL_ALPHA_MODES (sizeof(gl_alpha_modes) / sizeof (gltmode_t))
-
-gltmode_t gl_solid_modes[] = {
-	{"default", 3},
-	{"GL_RGB", GL_RGB},
-	{"GL_RGB8", GL_RGB8},
-	{"GL_RGB5", GL_RGB5},
-	{"GL_RGB4", GL_RGB4},
-	{"GL_R3_G3_B2", GL_R3_G3_B2},
-#ifdef GL_RGB2_EXT
-	{"GL_RGB2", GL_RGB2_EXT},
-#endif
-};
-
-#define NUM_GL_SOLID_MODES (sizeof(gl_solid_modes) / sizeof (gltmode_t))
-
 /*
 ===============
 GL_TextureMode
@@ -206,54 +168,6 @@ void GL_TextureMode( char *string )
 			qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
 		}
 	}
-}
-
-/*
-===============
-GL_TextureAlphaMode
-===============
-*/
-void GL_TextureAlphaMode( char *string )
-{
-	int		i;
-
-	for (i=0 ; i< NUM_GL_ALPHA_MODES ; i++)
-	{
-		if ( !Q_stricmp( gl_alpha_modes[i].name, string ) )
-			break;
-	}
-
-	if (i == NUM_GL_ALPHA_MODES)
-	{
-		Com_Printf ("bad alpha texture mode name\n");
-		return;
-	}
-
-	gl_tex_alpha_format = gl_alpha_modes[i].mode;
-}
-
-/*
-===============
-GL_TextureSolidMode
-===============
-*/
-void GL_TextureSolidMode( char *string )
-{
-	int		i;
-
-	for (i=0 ; i< NUM_GL_SOLID_MODES ; i++)
-	{
-		if ( !Q_stricmp( gl_solid_modes[i].name, string ) )
-			break;
-	}
-
-	if (i == NUM_GL_SOLID_MODES)
-	{
-		Com_Printf ("bad solid texture mode name\n");
-		return;
-	}
-
-	gl_tex_solid_format = gl_solid_modes[i].mode;
 }
 
 /*
@@ -899,7 +813,7 @@ GL_Upload32
 int		upload_width, upload_height;
 void GL_Upload32 (unsigned *data, int width, int height, int flags)
 {
-	int			samples;
+	int			samples, bits;
 	unsigned	*scaled;
 	int			scaled_width, scaled_height;
 	int			i, c;
@@ -941,33 +855,49 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 	// scan the texture for any non-255 alpha
 	c = width*height;
 	scan = ((byte *)data) + 3;
-	samples = gl_solid_format;
+	samples = 3;
 	for (i=0 ; i<c ; i++, scan += 4)
 	{
 		if ( *scan != 255 )
 		{
-			samples = gl_alpha_format;
+			samples = 4;
 			break;
 		}
 	}
 
 	if ( gl_config.compressed_textures )  {
-		if (samples == gl_solid_format) {
+		if ( samples == 3 ) {
 			comp = GL_COMPRESSED_RGB_ARB;
-		} else if (samples == gl_alpha_format) {
+		} else if ( samples == 4 ) {
 			comp = GL_COMPRESSED_RGBA_ARB;
-		} else {
-			Com_Printf ("Unknown number of texture components %i\n", samples);
-			comp = samples;
 		}
 	} else {
-		if (samples == gl_solid_format) {
-			comp = gl_tex_solid_format;
-		} else if (samples == gl_alpha_format) {
-			comp = gl_tex_alpha_format;
-		} else {
-			Com_Printf ("Unknown number of texture components %i\n", samples);
-			comp = samples;
+		bits = (int)r_texturebits->value;
+
+		if ( samples == 3 ) {
+			switch ( bits ) {
+				case 16:
+					comp = GL_RGB5;
+					break;
+				case 32:
+					comp = GL_RGB8;
+					break;
+				default:
+					comp = GL_RGB;
+					break;
+			}
+		} else if ( samples == 4 ) {
+			switch ( bits ) {
+				case 16:
+					comp = GL_RGBA4;
+					break;
+				case 32:
+					comp = GL_RGBA8;
+					break;
+				default:
+					comp = GL_RGBA;
+					break;
+			}
 		}
 	}
 
@@ -1009,17 +939,18 @@ void GL_Upload32 (unsigned *data, int width, int height, int flags)
 			}
 		}
 	}
+
 done: ;
 
 	if (!(flags & IT_NOMIPMAP))
 	{
-		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
-		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_min);
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
 	}
 	else
 	{
-		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
-		qglTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, gl_filter_max);
+		qglTexParameterf (GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, gl_filter_max);
 	}
 
 	if (flags & IT_CLAMP)
@@ -1095,25 +1026,11 @@ image_t *GL_LoadPic (char *name, byte *pic, int width, int height, int flags, in
 	image_t		*image = NULL;
 	int			i;
 
-	// find our old image_t
-	if ( flags & IT_CINEMATICS ) {
-		for (i=0, image=gltextures ; i<numgltextures ; i++,image++)
-		{
-			if (!strcmp(name, image->name))
-				break;
-		}
-
-		if (i == numgltextures)
-			image = NULL;
-	}
-
-	if ( !image ) {
-		// find a free image_t
-		for (i=0, image=gltextures ; i<numgltextures ; i++,image++)
-		{
-			if (!image->texnum)
-				break;
-		}
+	// find a free image_t
+	for (i=0, image=gltextures ; i<numgltextures ; i++,image++)
+	{
+		if (!image->texnum)
+			break;
 	}
 
 	if (i == numgltextures)
@@ -1135,7 +1052,7 @@ image_t *GL_LoadPic (char *name, byte *pic, int width, int height, int flags, in
 	image->texnum = TEXNUM_IMAGES + (image - gltextures);
 
 	GL_Bind (image->texnum);
-	
+
 	if ( !(flags & IT_FOG) ) {
 		if (bits == 8)
 			GL_Upload8 ( pic, width, height, flags );
@@ -1181,7 +1098,7 @@ image_t	*GL_FindImage (char *name, int flags)
 	// look for it
 	for (i=0, image=gltextures ; i<numgltextures ; i++,image++)
 	{
-		if (!strcmp(name, image->name))
+		if (!strcmp(name, image->name) && (image->flags == flags))
 		{
 			image->registration_sequence = registration_sequence;
 			return image;
@@ -1199,7 +1116,7 @@ image_t	*GL_FindImage (char *name, int flags)
 ===============
 GL_LoadImage
 
-Tries to load images in this sequence: .tga->.jpg->.pcx.
+Tries to load images in this sequence: .jpg->.tga->.pcx.
 ===============
 */
 image_t	*GL_LoadImage (char *name, int flags)
@@ -1302,10 +1219,10 @@ void GL_FreeUnusedImages (void)
 
 /*
 ===============
-Draw_GetPalette
+GL_GetPalette
 ===============
 */
-int Draw_GetPalette (void)
+void GL_GetPalette (void)
 {
 	int		i;
 	int		r, g, b;
@@ -1324,15 +1241,12 @@ int Draw_GetPalette (void)
 		r = pal[i*3+0];
 		g = pal[i*3+1];
 		b = pal[i*3+2];
-
 		v = (255<<24) + (r<<0) + (g<<8) + (b<<16);
 
 		d_8to24table[i] = LittleLong(v);
 	}
 
 	d_8to24table[255] &= LittleLong(0xffffff);	// 255 is transparent
-
-	return 0;
 }
 
 
@@ -1345,7 +1259,7 @@ void GL_InitImages (void)
 {
 	registration_sequence = 1;
 
-	Draw_GetPalette ();
+	GL_GetPalette ();
 
 	qglGetIntegerv (GL_MAX_TEXTURE_SIZE, &gl_maxtexsize);
 }

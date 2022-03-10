@@ -28,7 +28,7 @@ shader_t		*propfont2_shader;
 
 vec4_t			pic_xyz[4];
 vec2_t			pic_st[4];
-vec4_t			pic_colors[4];
+byte_vec4_t		pic_colors[4];
 
 mesh_t			pic_mesh;
 meshbuffer_t	pic_mbuffer;
@@ -66,37 +66,44 @@ Draw_GenericPic
 */
 void Draw_StretchPic ( int x, int y, int w, int h, float s1, float t1, float s2, float t2, float *color, shader_t *shader )
 {
+	byte_vec4_t bcolor;
+
 	if ( !shader ) {
 		return;
 	}
+
+	bcolor[0] = FloatToByte ( color[0] );
+	bcolor[1] = FloatToByte ( color[1] );
+	bcolor[2] = FloatToByte ( color[2] );
+	bcolor[3] = FloatToByte ( color[3] );
 
 	// lower-left
 	pic_mesh.xyz_array[0][0] = x;
 	pic_mesh.xyz_array[0][1] = y;
 	pic_mesh.st_array[0][0] = s1; 
 	pic_mesh.st_array[0][1] = t1;
-	Vector4Copy ( color, pic_mesh.colors_array[0] );
+	Vector4Copy ( bcolor, pic_mesh.colors_array[0] );
 
 	// lower-right
 	pic_mesh.xyz_array[1][0] = x+w;
 	pic_mesh.xyz_array[1][1] = y;
 	pic_mesh.st_array[1][0] = s2; 
 	pic_mesh.st_array[1][1] = t1;
-	Vector4Copy ( color, pic_mesh.colors_array[1] );
+	Vector4Copy ( bcolor, pic_mesh.colors_array[1] );
 
 	// upper-right
 	pic_mesh.xyz_array[2][0] = x+w;
 	pic_mesh.xyz_array[2][1] = y+h;
 	pic_mesh.st_array[2][0] = s2; 
 	pic_mesh.st_array[2][1] = t2;
-	Vector4Copy ( color, pic_mesh.colors_array[2] );
+	Vector4Copy ( bcolor, pic_mesh.colors_array[2] );
 
 	// upper-left
 	pic_mesh.xyz_array[3][0] = x;
 	pic_mesh.xyz_array[3][1] = y+h;
 	pic_mesh.st_array[3][0] = s1; 
 	pic_mesh.st_array[3][1] = t2;
-	Vector4Copy ( color, pic_mesh.colors_array[3] );
+	Vector4Copy ( bcolor, pic_mesh.colors_array[3] );
 
 	pic_mbuffer.shader = shader;
 
@@ -455,51 +462,6 @@ void Draw_CenteredPropString (int y, char *str, int fontstyle, vec4_t color)
 
 /*
 =============
-Draw_TileClear
-
-This repeats tile graphic to fill the screen around a sized down
-refresh window.
-=============
-*/
-void Draw_TileClear (int x, int y, int w, int h, char *pic)
-{
-	shader_t *shader;
-	shaderpass_t *pass;
-	image_t  *image;
-	float iw, ih;
-
-	shader = R_RegisterPic ( pic );
-	pass = shader->passes;
-	if (pass->flags & SHADER_PASS_ANIMMAP) {
-		image = pass->anim_frames[(int)(r_shadertime * pass->anim_fps) % pass->anim_numframes];
-	} else {
-		image = pass->anim_frames[0];
-	}
-
-	if (!image)
-	{
-		Com_Printf ("Can't find pic: %s\n", pic);
-		return;
-	}
-
-	iw = 1.0f / image->width;
-	ih = 1.0f / image->height;
-
-	GL_Bind (image->texnum);
-	qglBegin (GL_QUADS);
-	qglTexCoord2f (x*iw, y*ih);
-	qglVertex2f (x, y);
-	qglTexCoord2f ((x+w)*iw, y*ih);
-	qglVertex2f (x+w, y);
-	qglTexCoord2f ((x+w)*iw, (y+h)*ih);
-	qglVertex2f (x+w, y+h);
-	qglTexCoord2f (x*iw, (y+h)*ih);
-	qglVertex2f (x, y+h);
-	qglEnd ();
-}
-
-/*
-=============
 Draw_FillRect
 
 Fills a box of pixels with a single color
@@ -507,7 +469,8 @@ Fills a box of pixels with a single color
 */
 void Draw_FillRect (int x, int y, int w, int h, vec4_t color)
 {
-	qglDisable (GL_TEXTURE_2D);
+	GL_Bind ( r_whitetexture->texnum );
+
 	qglColor4fv ( color );
 	qglBegin (GL_QUADS);
 
@@ -519,40 +482,9 @@ void Draw_FillRect (int x, int y, int w, int h, vec4_t color)
 	qglEnd ();
 
 	qglColor3f (1,1,1);
-	qglEnable (GL_TEXTURE_2D);
 }
 
 //=============================================================================
-
-/*
-================
-Draw_FadeScreen
-
-================
-*/
-void Draw_FadeScreen (void)
-{
-	GLSTATE_ENABLE_BLEND;
-	qglDisable (GL_TEXTURE_2D);
-	
-	qglColor4f (0, 0, 0, 0.8);
-	qglBegin (GL_QUADS);
-
-	qglVertex2f (0,0);
-	qglVertex2f (vid.width, 0);
-	qglVertex2f (vid.width, vid.height);
-	qglVertex2f (0, vid.height);
-
-	qglEnd ();
-	qglColor4f (1,1,1,1);
-
-	qglEnable (GL_TEXTURE_2D);
-	GLSTATE_DISABLE_BLEND;
-}
-
-
-//====================================================================
-
 
 /*
 =============
@@ -591,7 +523,7 @@ void Draw_StretchRaw (int x, int y, int w, int h, int cols, int rows, int frame,
 			GL_RGBA, GL_UNSIGNED_BYTE, pic);
 	} else {
 		qglTexImage2D (GL_TEXTURE_2D, 0, 
-			gl_tex_solid_format, 
+			GL_RGB, 
 			image_width, image_height, 0, 
 			GL_RGBA, GL_UNSIGNED_BYTE, pic);
 

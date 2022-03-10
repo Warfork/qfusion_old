@@ -18,7 +18,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 
 */
 
-#include "../client/client.h"
+#include "client.h"
+#include "../ui/ui.h"
 
 // Structure containing functions exported from user interface DLL
 ui_export_t	*uie;
@@ -28,8 +29,7 @@ void UI_Printf (int print_level, char *fmt, ...)
 {
 	va_list		argptr;
 	char		msg[MAXPRINTMSG];
-	static qboolean	inupdate;
-	
+
 	va_start (argptr, fmt);
 	vsnprintf (msg, sizeof(msg), fmt, argptr);
 	va_end (argptr);
@@ -64,19 +64,19 @@ void VID_GetCurrentInfo (int *width, int *height)
 		*height = viddef.height;
 }
 
-float CL_GetTime_f (void)
+int CL_GetTime (void)
 {
 	return cls.realtime;
 }
 
-void CL_SetKeyDest_f ( int key_dest )
+void CL_SetKeyDest ( int key_dest )
 {
 	if (key_dest < key_game || key_dest > key_menu)
 		Com_Error (ERR_DROP, "CL_SetKeyDest_f: invalid key_dest");
 	cls.key_dest = key_dest;
 }
 
-void CL_ResetServerCount_f ( void )
+void CL_ResetServerCount ( void )
 {
 	cl.servercount = -1;
 }
@@ -105,10 +105,10 @@ void UI_Init (void)
 
 	ui.S_StartLocalSound = S_StartLocalSound;
 
-	ui.CL_Quit_f = CL_Quit_f;
-	ui.CL_GetTime_f = CL_GetTime_f;
-	ui.CL_SetKeyDest_f = CL_SetKeyDest_f;
-	ui.CL_ResetServerCount_f = CL_ResetServerCount_f;
+	ui.CL_Quit = CL_Quit_f;
+	ui.CL_GetTime = CL_GetTime;
+	ui.CL_SetKeyDest = CL_SetKeyDest;
+	ui.CL_ResetServerCount = CL_ResetServerCount;
 
 	ui.Cmd_AddCommand = Cmd_AddCommand;
 	ui.Cmd_RemoveCommand = Cmd_RemoveCommand;
@@ -134,8 +134,6 @@ void UI_Init (void)
 	ui.Cvar_ForceSet = Cvar_ForceSet;
 	ui.Cvar_VariableString = Cvar_VariableString;
 	ui.Cvar_VariableValue = Cvar_VariableValue;
-
-	ui.NET_AdrToString = NET_AdrToString;
 
 	ui.Key_ClearStates = Key_ClearStates;
 	ui.Key_GetBindingBuf = Key_GetBindingBuf;
@@ -220,7 +218,7 @@ void UI_ForceMenuOff (void)
 	uie->ForceMenuOff ();
 }
 
-void UI_AddToServerList ( netadr_t *adr, char *info )
+void UI_AddToServerList ( char *adr, char *info )
 {
 	if ( !uie )
 		return;

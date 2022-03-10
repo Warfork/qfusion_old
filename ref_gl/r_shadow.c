@@ -210,9 +210,9 @@ void R_ShadowProjectVertices ( vec3_t lightdist, float projectdistance )
 	for ( i = 0; i < numVerts; i++, in += 4, out += 4 )
 	{
 		VectorSubtract ( in, lightdist, diff );
-		VectorNormalizeFast ( diff );
+		VectorNormalize ( diff );
 		VectorMA ( in, projectdistance, diff, out );
-		VectorMA ( in, r_shadows_nudge->value, diff, in );
+//		VectorMA ( in, r_shadows_nudge->value, diff, in );
 	}
 }
 
@@ -241,14 +241,26 @@ void R_DrawShadowVolume (void)
 	R_UnlockArrays ();
 }
 
+qboolean R_CheckLightBoundaries ( vec3_t mins, vec3_t maxs, vec3_t lightorg, float intensity2 )
+{
+	vec3_t v;
+
+	v[0] = bound ( mins[0], lightorg[0], maxs[0] );
+	v[1] = bound ( mins[1], lightorg[1], maxs[1] );
+	v[2] = bound ( mins[2], lightorg[2], maxs[2] );
+
+	return ( DotProduct(v, v) < intensity2 );
+}
+
 void R_CastShadowVolume ( mesh_t *mesh, vec3_t lightorg, float intensity )
 {
-	float projectdistance;
+	float projectdistance, intensity2;
 	vec3_t lightdist, lightdist2;
 
+	intensity2 = intensity * intensity;
 	VectorSubtract ( lightorg, currententity->origin, lightdist2 );
 
-	if ( !BoundsAndSphereIntersect (mesh->mins, mesh->maxs, lightdist2, intensity) ) {
+	if ( !R_CheckLightBoundaries (mesh->mins, mesh->maxs, lightdist2, intensity2) ) {
 		return;
 	}
 
@@ -270,7 +282,7 @@ void R_CastShadowVolume ( mesh_t *mesh, vec3_t lightorg, float intensity )
 
 	R_BuildShadowVolume ( lightdist, projectdistance );
 
-	if ( r_shadows->value == 1 ) {
+	if ( r_shadows->value == 2 ) {
 		qglCullFace (GL_BACK); // quake is backwards, this culls front faces
 		qglStencilOp (GL_KEEP, GL_INCR, GL_KEEP);
 		R_DrawShadowVolume ();
@@ -290,6 +302,7 @@ void R_DrawShadowVolumes ( mesh_t *mesh )
 	dlight_t *dlight;	
 
 	if ( !r_worldmodel || !r_worldmodel->bmodel || !r_worldmodel->bmodel->numworldlights ) {
+		R_ClearArrays ();
 		return;
 	}
 
@@ -302,6 +315,56 @@ void R_DrawShadowVolumes ( mesh_t *mesh )
 	for ( i = 0; i < r_newrefdef.num_dlights; i++, dlight++ ) {
 		R_CastShadowVolume ( mesh, dlight->origin, dlight->intensity );
 	}
+
+	R_ClearArrays ();
+}
+
+void R_Draw_SimpleShadow ( entity_t *e )
+{
+	int i;
+	float *v;
+	float planedist, dist;
+	vec3_t planenormal, lightdir, lightdir2, point;
+	trace_t tr;
+	extern trace_t CL_Trace (vec3_t start, vec3_t mins, vec3_t maxs, vec3_t end, int ignore, int contentmask);
+
+	R_LightDirForOrigin ( e->origin, lightdir );
+
+	VectorSet ( lightdir, -lightdir[0], -lightdir[1], -1 );	
+	VectorNormalizeFast ( lightdir );
+	VectorMA ( e->origin, 1024.0f, lightdir, point );
+
+	tr = CL_Trace ( e->origin, vec3_origin, vec3_origin, point, -1, CONTENTS_SOLID );
+	if ( tr.fraction == 1.0f ) {
+		R_ClearArrays ();
+		return;
+	}
+
+	Matrix3_Multiply_Vec3 ( e->axis, lightdir, lightdir2 );
+	Matrix3_Multiply_Vec3 ( e->axis, tr.plane.normal, planenormal );
+
+	VectorSubtract ( tr.endpos, e->origin, point );
+	planedist = DotProduct ( point, tr.plane.normal ) + 1;
+	dist = -1.0f / DotProduct ( point, planenormal );
+	VectorScale ( point, dist, point );
+
+	v = (float *)(vertexArray[0]);
+	for (i = 0; i < numVerts; i++, v += 4)
+	{
+		dist = DotProduct ( v, planenormal ) - planedist;
+		if (dist > 0)
+			VectorMA ( v, dist, lightdir2, v );
+	}
+
+	R_LockArrays ( numVerts );
+
+	if ( !r_arrays_locked ) {
+		R_DrawTriangleStrips ( indexesArray, numIndexes );
+	} else {
+		qglDrawElements ( GL_TRIANGLES, numIndexes, GL_UNSIGNED_INT, indexesArray );
+	}
+
+	R_UnlockArrays ();
 
 	R_ClearArrays ();
 }

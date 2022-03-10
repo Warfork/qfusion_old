@@ -101,6 +101,10 @@ SOURCE=.\client\cl_cin.c
 # End Source File
 # Begin Source File
 
+SOURCE=.\client\cl_decals.c
+# End Source File
+# Begin Source File
+
 SOURCE=.\client\cl_ents.c
 # End Source File
 # Begin Source File
@@ -114,10 +118,6 @@ SOURCE=.\client\cl_fx.c
 # Begin Source File
 
 SOURCE=.\client\cl_input.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\client\cl_inv.c
 # End Source File
 # Begin Source File
 
@@ -201,15 +201,15 @@ SOURCE=.\qcommon\mdfour.c
 # End Source File
 # Begin Source File
 
-SOURCE=.\qcommon\mesh.c
-# End Source File
-# Begin Source File
-
 SOURCE=.\qcommon\net_chan.c
 # End Source File
 # Begin Source File
 
 SOURCE=.\win32\net_wins.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\qcommon\patch.c
 # End Source File
 # Begin Source File
 
@@ -270,6 +270,10 @@ SOURCE=.\ref_gl\r_misc.c
 # Begin Source File
 
 SOURCE=.\ref_gl\r_model.c
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\r_poly.c
 # End Source File
 # Begin Source File
 
@@ -346,10 +350,6 @@ SOURCE=.\qcommon\unzip.c
 # Begin Source File
 
 SOURCE=.\win32\vid_dll.c
-# End Source File
-# Begin Source File
-
-SOURCE=.\client\x86.c
 # End Source File
 # End Group
 # Begin Group "Header Files"
@@ -434,6 +434,10 @@ SOURCE=.\ref_gl\r_shadow.h
 # Begin Source File
 
 SOURCE=.\client\ref.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\ref_gl\render.h
 # End Source File
 # Begin Source File
 

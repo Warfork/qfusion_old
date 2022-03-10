@@ -291,6 +291,7 @@ int SV_FlyMove (edict_t *ent, float time, int mask)
 				return 7;
 			}
 			CrossProduct (planes[0], planes[1], dir);
+			VectorNormalize (dir);
 			d = DotProduct (dir, ent->velocity);
 			VectorScale (dir, d, ent->velocity);
 		}
@@ -743,6 +744,31 @@ void SV_Physics_Toss (edict_t *ent)
 	wasinwater = (ent->watertype & MASK_WATER);
 	ent->watertype = gi.pointcontents (ent->s.origin);
 	isinwater = ent->watertype & MASK_WATER;
+
+	// never allow items in CONTENTS_NODROP
+	if ( ent->item && (ent->watertype & CONTENTS_NODROP) ) {
+		// flags are important
+		if (strcmp(ent->classname, "team_CTF_redflag") == 0) {
+			CTFResetFlag(CTF_TEAM1); // this will free self!
+			gi.bprintf(PRINT_HIGH, "The %s flag has returned!\n",
+				CTFTeamName(CTF_TEAM1));
+			return;
+		}
+		if (strcmp(ent->classname, "team_CTF_blueflag") == 0) {
+			CTFResetFlag(CTF_TEAM2); // this will free self!
+			gi.bprintf(PRINT_HIGH, "The %s flag has returned!\n",
+				CTFTeamName(CTF_TEAM1));
+			return;
+		}
+		// techs are important too
+		if (ent->item->flags & IT_TECH) {
+			CTFRespawnTech(ent); // this frees self!
+			return;
+		}
+
+		G_FreeEdict (ent);
+		return;
+	}
 
 	if (isinwater)
 		ent->waterlevel = 1;

@@ -1,5 +1,5 @@
 /*
-Copyright (C) 2001-2002 Victor Luchits
+Copyright (C) 2002-2003 Victor Luchits
 
 This program is free software; you can redistribute it and/or
 modify it under the terms of the GNU General Public License
@@ -400,7 +400,7 @@ void Mod_LoadAliasMD3Model ( model_t *mod, void *buffer )
 		pinskin = ( dmd3skin_t * )( ( byte * )pinmesh + LittleLong (pinmesh->ofs_skins) );
 		poutskin = poutmesh->skins = Hunk_AllocName ( sizeof(maliasskin_t) * poutmesh->numskins, mod->name );
 
-		for ( j = 0, l = 0; j < poutmesh->numskins; j++, pinskin++, poutskin++ ) {
+		for ( j = 0; j < poutmesh->numskins; j++, pinskin++, poutskin++ ) {
 			COM_StripExtension ( pinskin->name, poutskin->name );
 		}
 
@@ -431,7 +431,7 @@ void Mod_LoadAliasMD3Model ( model_t *mod, void *buffer )
 	// load the vertexes and normals
 	//
 		pinvert = ( dmd3vertex_t * )( ( byte * )pinmesh + LittleLong (pinmesh->ofs_verts) );
-		poutvert = poutmesh->vertexes = Hunk_AllocName ( sizeof(maliasvertex_t) * poutmesh->numverts, mod->name );
+		poutvert = poutmesh->vertexes = Hunk_AllocName ( sizeof(maliasvertex_t) * poutmodel->numframes * poutmesh->numverts, mod->name );
 
 		for ( l = 0; l < poutmodel->numframes; l++ ) {
 			for ( j = 0; j < poutmesh->numverts; j++, pinvert++, poutvert++ ) {
@@ -516,28 +516,56 @@ void Mod_RegisterAliasModel ( model_t *mod )
 }
 
 /*
+** R_AliasLODForDistance
+*/
+model_t *R_AliasLODForDistance ( entity_t *e )
+{
+	vec3_t v;
+	int lod;
+	float dist;
+
+	if ( !e->model->numlods ) {
+		return e->model;
+	}
+
+	VectorSubtract ( e->origin, r_origin, v );
+	dist = VectorLength ( v );
+	dist *= tan (r_newrefdef.fov_x * (M_PI/180) * 0.5f);
+
+	lod = (int)(dist / e->model->radius);
+	lod /= 8;
+	lod += (int)max(r_lodbias->value, 0);
+
+	if ( lod < 1 ) {
+		return e->model;
+	} else {
+		return e->model->lods[min(lod, e->model->numlods)-1];
+	}
+}
+
+/*
 ** R_AliasModelBBox
 */
-void R_AliasModelBBox ( entity_t *e )
+void R_AliasModelBBox ( entity_t *e, model_t *mod )
 {
 	int				i;
-	maliasmodel_t	*model = e->model->aliasmodel;
+	maliasmodel_t	*aliasmodel = mod->aliasmodel;
 	maliasframe_t	*pframe, *poldframe;
 	float			*thismins, *oldmins, *thismaxs, *oldmaxs;
 
-	if ( ( e->frame >= model->numframes ) || ( e->frame < 0 ) )
+	if ( ( e->frame >= aliasmodel->numframes ) || ( e->frame < 0 ) )
 	{
-		Com_DPrintf ("R_DrawAliasModel %s: no such frame %d\n", e->model->name, e->frame);
+		Com_DPrintf ("R_DrawAliasModel %s: no such frame %d\n", mod->name, e->frame);
 		e->frame = 0;
 	}
-	if ( ( e->oldframe >= model->numframes ) || ( e->oldframe < 0 ) )
+	if ( ( e->oldframe >= aliasmodel->numframes ) || ( e->oldframe < 0 ) )
 	{
-		Com_DPrintf ("R_DrawAliasModel %s: no such oldframe %d\n", e->model->name, e->oldframe);
+		Com_DPrintf ("R_DrawAliasModel %s: no such oldframe %d\n", mod->name, e->oldframe);
 		e->oldframe = 0;
 	}
 
-	pframe = model->frames + e->frame;
-	poldframe = model->frames + e->oldframe;
+	pframe = aliasmodel->frames + e->frame;
+	poldframe = aliasmodel->frames + e->oldframe;
 
 	/*
 	** compute axially aligned mins and maxs
@@ -582,10 +610,8 @@ void R_AliasModelBBox ( entity_t *e )
 /*
 ** R_CullAliasModel
 */
-qboolean R_CullAliasModel( entity_t *e )
+qboolean R_CullAliasModel( entity_t *e, model_t *mod )
 {
-	R_AliasModelBBox ( e );
-
 	if ( e->flags & RF_WEAPONMODEL ) {
 		return false;
 	}
@@ -593,7 +619,7 @@ qboolean R_CullAliasModel( entity_t *e )
 		return !(r_mirrorview || r_portalview);
 	}
 
-	if ( R_CullSphere (e->origin, alias_mesh.radius) ) {
+	if ( R_CullSphere (e->origin, alias_mesh.radius, 15) ) {
 		return true;
 	}
 
@@ -607,12 +633,71 @@ qboolean R_CullAliasModel( entity_t *e )
 
 /*
 =============
+R_AliasModelLerpTag
+
+=============
+*/
+void R_AliasModelLerpTag ( orientation_t *orient, maliasmodel_t *aliasmodel, int framenum, int oldframenum, 
+									  float backlerp, char *name )
+{
+	int				i;
+	maliastag_t		*tag, *oldtag;
+	orientation_t	*neworient, *oldorient;
+
+	// find the appropriate tag
+	for ( i = 0; i < aliasmodel->numtags; i++ )
+	{
+		if ( !Q_stricmp (aliasmodel->tags[i].name, name) ) {
+			break;
+		}
+	}
+
+	if ( i == aliasmodel->numtags ) {
+		Com_DPrintf ("R_AliasModelLerpTag: no such tag %s\n", name );
+		return;
+	}
+
+	// ignore invalid frames
+	if ( ( framenum >= aliasmodel->numframes ) || ( framenum < 0 ) )
+	{
+		Com_DPrintf ("R_AliasModelLerpTag %s: no such oldframe %i\n", name, framenum);
+		framenum = 0;
+	}
+	if ( ( oldframenum >= aliasmodel->numframes ) || ( oldframenum < 0 ) )
+	{
+		Com_DPrintf ("R_AliasModelLerpTag %s: no such oldframe %i\n", name, oldframenum);
+		oldframenum = 0;
+	}
+
+	tag = aliasmodel->tags + framenum * aliasmodel->numtags + i;
+	oldtag = aliasmodel->tags + oldframenum * aliasmodel->numtags + i;
+
+	neworient = &tag->orient;
+	oldorient = &oldtag->orient;
+
+	// interpolate axis and origin
+	orient->axis[0][0] = neworient->axis[0][0] + (oldorient->axis[0][0] - neworient->axis[0][0]) * backlerp;
+	orient->axis[0][1] = neworient->axis[0][1] + (oldorient->axis[0][1] - neworient->axis[0][1]) * backlerp;
+	orient->axis[0][2] = neworient->axis[0][2] + (oldorient->axis[0][2] - neworient->axis[0][2]) * backlerp;
+	orient->origin[0] = neworient->origin[0] + (oldorient->origin[0] - neworient->origin[0]) * backlerp;
+	orient->axis[1][0] = neworient->axis[1][0] + (oldorient->axis[1][0] - neworient->axis[1][0]) * backlerp;
+	orient->axis[1][1] = neworient->axis[1][1] + (oldorient->axis[1][1] - neworient->axis[1][1]) * backlerp;
+	orient->axis[1][2] = neworient->axis[1][2] + (oldorient->axis[1][2] - neworient->axis[1][2]) * backlerp;
+	orient->origin[1] = neworient->origin[1] + (oldorient->origin[1] - neworient->origin[1]) * backlerp;
+	orient->axis[2][0] = neworient->axis[2][0] + (oldorient->axis[2][0] - neworient->axis[2][0]) * backlerp;
+	orient->axis[2][1] = neworient->axis[2][1] + (oldorient->axis[2][1] - neworient->axis[2][1]) * backlerp;
+	orient->axis[2][2] = neworient->axis[2][2] + (oldorient->axis[2][2] - neworient->axis[2][2]) * backlerp;
+	orient->origin[2] = neworient->origin[2] + (oldorient->origin[2] - neworient->origin[2]) * backlerp;
+}
+
+/*
+=============
 R_DrawAliasFrameLerp
 
 Interpolates between two frames and origins
 =============
 */
-void R_DrawAliasFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
+void R_DrawAliasFrameLerp ( meshbuffer_t *mb, model_t *mod, float backlerp, qboolean shadow )
 {
 	int				i, meshnum;
 	int				features;
@@ -621,9 +706,9 @@ void R_DrawAliasFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
 	maliasmesh_t	*mesh;
 	maliasvertex_t	*v, *ov;
 	entity_t		*e = mb->entity;
-	maliasmodel_t	*model = e->model->aliasmodel;
+	maliasmodel_t	*model = mod->aliasmodel;
 
-	if ( !shadow && !r_entvisframe[e->number][(r_portalview || r_mirrorview) ? 1 : 0] ) {
+	if ( !shadow && (e->flags & RF_VIEWERMODEL) && !r_mirrorview && !r_portalview ) {
 		return;
 	}
 
@@ -690,17 +775,26 @@ void R_DrawAliasFrameLerp ( meshbuffer_t *mb, float backlerp, qboolean shadow )
 	alias_mbuffer.entity = e;
 	alias_mbuffer.fog = mb->fog;
 
-	features = MF_NONBATCHED | mb->shader->features;
-	if ( r_shownormals->value ) {
+	features = MF_NONBATCHED | alias_mbuffer.shader->features;
+	if ( r_shownormals->value && !shadow ) {
 		features |= MF_NORMALS;
 	}
+	if ( alias_mbuffer.shader->features & SHADER_AUTOSPRITE ) {
+		features |= MF_NOCULL;
+	}
+
+	R_RotateForEntity ( e );
 
 	R_PushMesh ( &alias_mesh, features );
 	R_RenderMeshBuffer ( &alias_mbuffer, shadow );
 
 	if ( shadow ) {
-		R_AliasModelBBox ( e );
-		R_DrawShadowVolumes ( &alias_mesh );
+		if ( r_shadows->value == 1) {
+			R_Draw_SimpleShadow ( e );
+		} else {
+			R_AliasModelBBox ( e, mod );
+			R_DrawShadowVolumes ( &alias_mesh );
+		}
 	}
 }
 
@@ -740,9 +834,7 @@ void R_DrawAliasModel ( meshbuffer_t *mb, qboolean shadow )
 		e->backlerp = 0;
 	}
 
-	R_RotateForEntity ( e );
-
-	R_DrawAliasFrameLerp ( mb, e->backlerp, shadow );
+	R_DrawAliasFrameLerp ( mb, R_AliasLODForDistance (e), e->backlerp, shadow );
 
 	if ( ( e->flags & RF_WEAPONMODEL ) && ( r_lefthand->value == 1.0F ) ) {
 		qglMatrixMode( GL_PROJECTION );
@@ -765,31 +857,31 @@ void R_AddAliasModelToList (entity_t *e)
 {
 	int				i, j;
 	mfog_t			*fog;
-	maliasmodel_t	*model;
+	model_t			*mod;
+	maliasmodel_t	*aliasmodel;
 	maliasmesh_t	*mesh;
 
 	if ( (e->flags & RF_WEAPONMODEL) && (r_lefthand->value == 2) ) {
 		return;
 	}
-	if ( !(model = e->model->aliasmodel) ) {
+
+	mod = R_AliasLODForDistance ( e );
+	if ( !(aliasmodel = mod->aliasmodel) ) {
 		return;
 	}
-	if ( R_CullAliasModel( e ) ) {
-		if ( !r_shadows->value ) {
-			return;
-		}
-	} else {
-		r_entvisframe[e->number][(r_portalview || r_mirrorview) ? 1 : 0] = r_framecount;
+
+	R_AliasModelBBox ( e, mod );
+	if ( !r_shadows->value && R_CullAliasModel( e, mod ) ) {
+		return;
 	}
 
 	fog = R_FogForSphere ( e->origin, alias_mesh.radius );
-
-	for ( i = 0, mesh = model->meshes; i < model->nummeshes; i++, mesh++ )
+	for ( i = 0, mesh = aliasmodel->meshes; i < aliasmodel->nummeshes; i++, mesh++ )
 	{
 		if ( e->customShader ) {
 			R_AddMeshToBuffer ( NULL, fog, NULL, e->customShader, -(i+1) );
-		} else if ( (e->skinnum >= 0) && (e->skinnum < model->numskins) ) {
-			R_AddMeshToBuffer ( NULL, fog, NULL, model->skins[e->skinnum].shader, -(i+1) );
+		} else if ( (e->skinnum >= 0) && (e->skinnum < aliasmodel->numskins) ) {
+			R_AddMeshToBuffer ( NULL, fog, NULL, aliasmodel->skins[e->skinnum].shader, -(i+1) );
 		} else {
 			for ( j = 0; j < mesh->numskins; j++ ) {
 				R_AddMeshToBuffer ( NULL, fog, NULL, mesh->skins[j].shader, -(i+1) );

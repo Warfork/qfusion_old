@@ -75,7 +75,7 @@ void DownloadOptions_MenuInit( void )
 	int y = 0;
 	int y_offset = PROP_SMALL_HEIGHT - 2;
 
-	s_downloadoptions_menu.x = trap_GetWidth() * 0.50;
+	s_downloadoptions_menu.x = uis.vidWidth / 2;
 	s_downloadoptions_menu.nitems = 0;
 
 	s_download_title.generic.type = MTYPE_SEPARATOR;
